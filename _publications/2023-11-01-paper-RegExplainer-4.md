@@ -4,7 +4,7 @@ collection: publications
 permalink: /publication/2023-11-01-paper-RegExplainer-4
 excerpt: 'This paper is about the RegExplainer.'
 date: 2023-08-10
-venue: 'Learning on Graph 2023'
+venue: 'Learning on Graphs Conference'
 paperurl: 'https://https://arxiv.org/abs/2307.07840'
 citation: 'Jiaxing Zhang, Zhuomin Chen, Hao Mei, Dongsheng Luo, Hua Wei. 2023. RegExplainer: Generating Explanations for Graph Neural Networks in Regression Task. Preprint at Arxiv.'
 ---

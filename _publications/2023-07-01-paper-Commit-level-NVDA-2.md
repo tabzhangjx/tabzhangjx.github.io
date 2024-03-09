@@ -4,7 +4,7 @@ collection: publications
 permalink: /publication/2023-07-01-paper-Commit-level-NVDA-2
 excerpt: 'This paper is about Commit-level, Neural Vulnerability Detection and Assessment.'
 date: 2023-07-01
-venue: 'ESEC/FSE 2023'
+venue: 'ESEC/FSE'
 citation: 'Yi Li, Aashish Yadavally, Jiaxing Zhang, Shaohua Wang, Tien Nguyen. 2023. Commit-level, Neural Vulnerability Detection and Assessment. Accepted by ESEC/FSE 2023.'
 ---
 Software Vulnerabilities (SVs) are security flaws that are exploitable in cyber-attacks. Delay in the detection and 

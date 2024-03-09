@@ -2,9 +2,9 @@
 title: "MixupExplainer: Generalizing Explanations for Graph Neural Networks with Data Augmentation"
 collection: publications
 permalink: /publication/2023-08-05-paper-MixupExplainer-3
-excerpt: 'This paper is about the MixupExplainer. The paper number 4 is the following work.'
+excerpt: 'This paper is about the MixupExplainer. The RegExplainer 4 is the following work.'
 date: 2023-08-05
-venue: 'ACM SIGKDD 2023'
+venue: '29TH ACM SIGKDD CONFERENCE ON KNOWLEDGE DISCOVERY AND DATA MINING'
 paperurl: 'https://arxiv.org/abs/2307.07832'
 citation: 'Jiaxing Zhang, Dongsheng Luo, Hua Wei. 2023. MixupExplainer: Generalizing Explanations for Graph Neural Networks with Data Augmentation. In Proceedings of the 29th ACM SIGKDD International Conference on Knowledge Discovery and Data Mining.'
 ---

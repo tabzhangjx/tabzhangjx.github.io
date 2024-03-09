@@ -4,7 +4,7 @@ collection: publications
 permalink: /publication/2023-07-01-paper-DeMinify-1
 excerpt: 'This paper is about the DeMinify: Neural Variable Name Recovery and Type Inference.'
 date: 2023-07-01
-venue: 'ESEC/FSE 2023'
+venue: 'ESEC/FSE'
 citation: 'Yi Li, Aashish Yadavally, Jiaxing Zhang, Shaohua Wang, Tien Nguyen. 2023. DeMinify: Neural Variable Name Recovery and Type Inference. Accepted by ESEC/FSE 2023.'
 ---
 To avoid the exposure of original source code, the variable names deployed in the wild are often replaced by short, 

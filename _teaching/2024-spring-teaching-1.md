@@ -4,7 +4,7 @@ collection: teaching
 type: "Undergraduate course"
 permalink: /teaching/2024-spring-teaching-1
 venue: "New Jersey Institute of Technology, Department of Information Systems"
-date: 2024-01-016
+date: 2024-01-16
 location: "Newark, NJ, USA"
 ---
 

@@ -1,6 +1,6 @@
 ---
-title: "MixupExplainer"
-excerpt: "Model Architecture for MixupExplainer"
+title: "RegExplainer"
+excerpt: "Model Architecture for RegExplainer"
 collection: portfolio
 ---
 

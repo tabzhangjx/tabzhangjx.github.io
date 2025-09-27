@@ -25,3 +25,5 @@ I serve as a reviewer for KDD, ICML, ICLR, NeurIPS, AISTATS, WACV, PKDD and as A
 I actively welcome research collaborations across areas including (but not limited to):
 GNNs and their applications/explainability, LLM/VLM explainability and architecture optimization, training strategy optimization, video compression, and ML infrastructure.
 I’m also open to working with motivated, well-prepared interns.
+
+\[updated by 09/27/2025\]

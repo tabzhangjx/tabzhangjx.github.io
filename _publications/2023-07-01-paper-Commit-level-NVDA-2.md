@@ -2,26 +2,14 @@
 title: "Commit-level, Neural Vulnerability Detection and Assessment"
 collection: publications
 permalink: /publication/2023-07-01-paper-Commit-level-NVDA-2
-excerpt: 'This paper is about Commit-level, Neural Vulnerability Detection and Assessment.'
+excerpt: 'Commit-level vulnerability detection and CVSS assessment via context-aware graph learning.'
 date: 2023-07-01
-venue: 'ESEC/FSE'
-citation: 'Yi Li, Aashish Yadavally, Jiaxing Zhang, Shaohua Wang, Tien Nguyen. 2023. Commit-level, Neural Vulnerability Detection and Assessment. Accepted by ESEC/FSE 2023.'
+venue: 'ESEC/FSE 2023'
+paperurl: 'https://dl.acm.org/doi/10.1145/3611643.3616249'
+citation: 'Yi Li, Aashish Yadavally, Jiaxing Zhang, Shaohua Wang, Tien N. Nguyen. 2023. Commit-level, Neural Vulnerability Detection and Assessment. Proceedings of the 31st ACM Joint European Software Engineering Conference and Symposium on the Foundations of Software Engineering (ESEC/FSE 2023).'
 ---
-Software Vulnerabilities (SVs) are security flaws that are exploitable in cyber-attacks. Delay in the detection and 
-assessment of SVs might cause serious consequences due to the unknown impacts on the attacked systems. The state-of-the-art 
-approaches have been proposed to work directly on the committed code changes for early detection. However, none of 
-them could provide both commit-level vulnerability detection and assessment at once. Moreover, the assessment 
-approaches still suffer low accuracy due to limited representations for code changes and surrounding contexts.
-We propose a Context-aware, Graph-based, Commit-level Vulnerability Detection and Assessment Model, VDA, that evaluates 
-a code change, detects any vulnerability and provides the CVSS assessment grades. To build VDA, we have key novel 
-components. First, we design a novel context-aware, graph-based, representation learning model to learn the contextualized 
-embeddings for the code changes that integrate program dependencies and the surrounding contexts of code changes, 
-facilitating the automated vulnerability detection and assessment. Second, VDA considers the mutual impact of learning 
-to detect vulnerability and learning to assess each vulnerability assessment type. To do so, it leverages multi-task 
-learning among the vulnerability detection and vulnerability assessment tasks, improving all the tasks at the same time. 
-Our empirical evaluation shows that on a C vulnerability dataset, VDA achieves 25.5% and 26.9% relatively higher than 
-the baselines in vulnerability assessment regarding F-score and MCC, respectively. In a Java dataset, it achieves 31% and 
-33.3% relatively higher than the baselines in F-score and MCC, respectively. VDA also relatively improves the vulnerability 
-detection over the baselines from 13.4–322% in F-score.
+This work studies commit-level software vulnerability detection and assessment in a unified framework.
 
-Recommended citation: Yi Li, Aashish Yadavally, Jiaxing Zhang, Shaohua Wang, Tien Nguyen. 2023. Commit-level, Neural Vulnerability Detection and Assessment. Accepted by ESEC/FSE 2023.
+[Access paper](https://dl.acm.org/doi/10.1145/3611643.3616249){:target="_blank"}
+
+Recommended citation: Yi Li, Aashish Yadavally, Jiaxing Zhang, Shaohua Wang, Tien N. Nguyen. 2023. Commit-level, Neural Vulnerability Detection and Assessment. Proceedings of ESEC/FSE 2023.

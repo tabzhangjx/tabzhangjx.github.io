@@ -2,23 +2,14 @@
 title: "DeMinify: Neural Variable Name Recovery and Type Inference"
 collection: publications
 permalink: /publication/2023-07-01-paper-DeMinify-1
-excerpt: 'This paper is about the DeMinify: Neural Variable Name Recovery and Type Inference.'
+excerpt: 'Neural recovery of variable names and type inference from minified code.'
 date: 2023-07-01
-venue: 'ESEC/FSE'
-citation: 'Yi Li, Aashish Yadavally, Jiaxing Zhang, Shaohua Wang, Tien Nguyen. 2023. DeMinify: Neural Variable Name Recovery and Type Inference. Accepted by ESEC/FSE 2023.'
+venue: 'ESEC/FSE 2023'
+paperurl: 'https://dl.acm.org/doi/10.1145/3611643.3616232'
+citation: 'Yi Li, Aashish Yadavally, Jiaxing Zhang, Shaohua Wang, Tien N. Nguyen. 2023. DeMinify: Neural Variable Name Recovery and Type Inference. Proceedings of the 31st ACM Joint European Software Engineering Conference and Symposium on the Foundations of Software Engineering (ESEC/FSE 2023).'
 ---
-To avoid the exposure of original source code, the variable names deployed in the wild are often replaced by short, 
-meaningless names, thus making the code difficult to understand and be analyzed. We introduce DeMinify, a Deep-Learning 
-(DL)-based approach that formulates such recovery problem as the prediction of missing features in a Graph 
-Convolutional Network–Missing Features. The graph represents both the relations among the variables and the relations 
-among their types, in which the names or types of some nodes are missing. Moreover, DeMinify leverages dual-task 
-learning to propagate the mutual impact between the learning of the variable names and that of their types. We 
-conducted experiments to evaluate DeMinify in both name recovery and type prediction on a Python dataset with 180k methods 
-and a JavaScript (JS) dataset with 322k files. For variable name prediction, in 76.7% and 81.6% of the cases in Python 
-and JS code respectively, DeMinify can predict correctly the variables’ names with a single suggested name. DeMinify 
-relatively improves 15.3%–40.7% and 7.7%–49.7% in top-1 accuracy over the state-of-the-art variable name recovery 
-approaches for Python and JS code, respectively. It also relatively improves 14.5%–51.9% in top-1 accuracy over the 
-existing type prediction approaches. Our experimental results showed that learning of data types helps improve variable 
-name recovery and vice versa.
+This paper presents a neural approach for recovering meaningful variable names and inferring variable types from minified code.
 
-Recommended citation: Yi Li, Aashish Yadavally, Jiaxing Zhang, Shaohua Wang, Tien Nguyen. 2023. DeMinify: Neural Variable Name Recovery and Type Inference. Accepted by ESEC/FSE 2023.
+[Access paper](https://dl.acm.org/doi/10.1145/3611643.3616232){:target="_blank"}
+
+Recommended citation: Yi Li, Aashish Yadavally, Jiaxing Zhang, Shaohua Wang, Tien N. Nguyen. 2023. DeMinify: Neural Variable Name Recovery and Type Inference. Proceedings of ESEC/FSE 2023.

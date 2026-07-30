@@ -1,6 +1,7 @@
 ---
 title: "Is Your Explanation Reliable: Confidence-Aware Explanation on Graph Neural Networks"
 collection: publications
+research_track: structured
 permalink: /publication/2025-05-31-paper-Confidence-Aware-Explanation
 excerpt: 'Confidence-calibrated framework for reliable GNN explanations, especially under OOD settings.'
 date: 2025-05-31

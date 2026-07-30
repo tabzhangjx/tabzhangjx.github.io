@@ -1,6 +1,7 @@
 ---
 title: "LLMExplainer: Large Language Model based Bayesian Inference for Graph Explanation Generation"
 collection: publications
+research_track: structured
 permalink: /publication/2024-07-23-paper-LLMExplainer
 excerpt: 'Uses LLM-guided Bayesian inference to mitigate learning bias in graph explanation.'
 date: 2024-07-23

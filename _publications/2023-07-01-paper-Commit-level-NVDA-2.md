@@ -1,6 +1,7 @@
 ---
 title: "Commit-level, Neural Vulnerability Detection and Assessment"
 collection: publications
+research_track: structured
 permalink: /publication/2023-07-01-paper-Commit-level-NVDA-2
 excerpt: 'Commit-level vulnerability detection and CVSS assessment via context-aware graph learning.'
 date: 2023-07-01

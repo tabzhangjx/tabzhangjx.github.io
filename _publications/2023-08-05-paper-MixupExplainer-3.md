@@ -1,6 +1,7 @@
 ---
 title: "MixupExplainer: Generalizing Explanations for Graph Neural Networks with Data Augmentation"
 collection: publications
+research_track: structured
 permalink: /publication/2023-08-05-paper-MixupExplainer-3
 excerpt: 'A data-augmentation-based framework to improve OOD robustness of GNN explanations.'
 date: 2023-08-05

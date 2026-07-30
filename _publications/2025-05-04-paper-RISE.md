@@ -1,6 +1,7 @@
 ---
 title: "RISE: Radius of Influence based Subgraph Extraction for 3D Molecular Graph Explanation"
 collection: publications
+research_track: structured
 permalink: /publication/2025-05-04-paper-RISE
 excerpt: 'A 3D GNN explainer that localizes explanations through node-wise radius of influence.'
 date: 2025-05-04

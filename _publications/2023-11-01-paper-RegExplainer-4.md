@@ -1,6 +1,7 @@
 ---
 title: "RegExplainer: Generating Explanations for Graph Neural Networks in Regression Tasks"
 collection: publications
+research_track: structured
 permalink: /publication/2023-11-01-paper-RegExplainer-4
 excerpt: 'An explanation framework for graph regression models with improved reliability under distribution shift.'
 date: 2024-12-01

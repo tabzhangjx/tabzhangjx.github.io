@@ -1,6 +1,7 @@
 ---
 title: "GE-Chat: A Graph Enhanced RAG Framework for Evidential Response Generation of LLMs"
 collection: publications
+research_track: structured
 permalink: /publication/2025-05-15-paper-GE-Chat
 excerpt: 'Graph-enhanced RAG pipeline for evidence-grounded LLM responses.'
 date: 2025-05-15

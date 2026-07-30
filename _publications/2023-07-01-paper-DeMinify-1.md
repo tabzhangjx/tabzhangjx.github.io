@@ -1,6 +1,7 @@
 ---
 title: "DeMinify: Neural Variable Name Recovery and Type Inference"
 collection: publications
+research_track: structured
 permalink: /publication/2023-07-01-paper-DeMinify-1
 excerpt: 'Neural recovery of variable names and type inference from minified code.'
 date: 2023-07-01

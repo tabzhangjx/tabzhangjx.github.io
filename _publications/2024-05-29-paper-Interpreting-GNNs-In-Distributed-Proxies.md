@@ -1,6 +1,7 @@
 ---
 title: "Interpreting Graph Neural Networks with In-Distributed Proxies"
 collection: publications
+research_track: structured
 permalink: /publication/2024-05-29-paper-Interpreting-GNNs-In-Distributed-Proxies
 excerpt: 'Generates in-distribution proxy graphs to improve faithfulness of GNN explanations.'
 date: 2024-05-29

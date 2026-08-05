@@ -1,0 +1,1137 @@
+---
+layout: null
+title: "RnG：将 KV-Cache 用作隐式三维表示"
+date: 2026-08-05
+excerpt: "解析 CVPR 2026 Highlight 工作 RnG 如何以统一 Transformer 和 KV-Cache 隐式表示，从部分观测完成三维建模。"
+permalink: /blog/2026/08/05/rng-kv-cache-3d-modeling/
+blog_post: true
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RnG：把 KV-Cache 当作隐式三维表示 · 2026-08-05 · CVPR 2026 Highlight</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --accent-soft: #cde2fb;
+    --good: #006300;
+    --crit: #d03b3b;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --accent-soft: #184f95;
+    --good: #0ca30c;
+    --crit: #e66767;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  header.hero {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 32px 34px;
+    margin-bottom: 34px;
+  }
+  .eyebrow {
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; margin: 0 0 10px;
+  }
+  h1 { font-size: 30px; line-height: 1.3; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .subtitle { font-size: 17px; color: var(--text-secondary); margin: 0 0 18px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    font-size: 12.5px; padding: 4px 11px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--text-secondary);
+    background: var(--page);
+  }
+  .chip.venue { border-color: var(--series-1); color: var(--series-1); font-weight: 600; }
+  .chip.warn { border-color: var(--series-2); color: var(--series-2); font-weight: 600; }
+  .lede {
+    border-left: 3px solid var(--series-1);
+    padding: 4px 0 4px 18px; margin: 20px 0 0;
+    color: var(--text-secondary); font-size: 15.5px;
+  }
+  h2 {
+    font-size: 22px; margin: 52px 0 16px; padding-bottom: 10px;
+    border-bottom: 1px solid var(--border); letter-spacing: -0.01em;
+  }
+  h3 { font-size: 18px; margin: 34px 0 12px; }
+  h3:first-child { margin-top: 0; }
+  h4 { font-size: 15.5px; margin: 24px 0 8px; color: var(--text-secondary); }
+  p { margin: 0 0 14px; }
+  section.card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 26px 30px; margin-bottom: 20px;
+  }
+  a { color: var(--series-1); text-decoration: none; border-bottom: 1px solid transparent; }
+  a:hover { border-bottom-color: var(--series-1); }
+  code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px; background: var(--page); padding: 1.5px 5px;
+    border-radius: 4px; border: 1px solid var(--border);
+  }
+  .formula {
+    background: var(--page); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 16px; margin: 12px 0; font-family: ui-monospace, Menlo, monospace;
+    font-size: 13.5px; overflow-x: auto; color: var(--text-primary);
+    white-space: pre;
+  }
+  .tablewrap { overflow-x: auto; margin: 16px 0 20px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  .tablewrap table { margin: 0; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--accent-soft); font-weight: 600; }
+  :root[data-theme="dark"] tr.best td { background: rgba(57,135,229,.18); }
+  tr.grouphead td { background: var(--page); color: var(--muted); font-size: 12.5px; font-weight: 600; letter-spacing: .04em; }
+  .tablewrap.compact table { font-size: 12.5px; }
+  .tablewrap.compact th, .tablewrap.compact td { padding: 7px 7px; }
+  .tablewrap.compact th { font-size: 10.5px; letter-spacing: .02em; }
+  .tablewrap.compact td:first-child { white-space: nowrap; }
+  .good { color: var(--good); font-weight: 600; }
+  .crit { color: var(--crit); font-weight: 600; }
+  ol, ul { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 8px; }
+  .callout {
+    border-left: 3px solid var(--series-2); background: var(--page);
+    padding: 14px 18px; border-radius: 0 8px 8px 0; margin: 18px 0;
+    font-size: 15px; color: var(--text-secondary);
+  }
+  .callout strong { color: var(--text-primary); }
+  .callout.blue { border-left-color: var(--series-1); }
+  .quote {
+    border-left: 3px solid var(--baseline); background: var(--page);
+    padding: 12px 18px; border-radius: 0 8px 8px 0; margin: 14px 0;
+    font-size: 14.5px; color: var(--text-secondary); font-style: italic;
+  }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  button.tgl {
+    font: inherit; font-size: 13px; padding: 6px 14px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface-1);
+    color: var(--text-secondary); cursor: pointer;
+  }
+  button.tgl:hover { color: var(--text-primary); }
+  .figure { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 24px 26px; margin: 24px 0; }
+  .fig-title { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+  .fig-sub { font-size: 13.5px; color: var(--muted); margin: 0 0 18px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 16px; font-size: 13.5px; color: var(--text-secondary); }
+  .legend span.sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 7px; vertical-align: -1px; }
+  svg.chart { width: 100%; height: auto; display: block; }
+  svg.chart text { font-family: system-ui, -apple-system, "PingFang SC", sans-serif; }
+  svg.chart .bar, svg.chart .dot { cursor: pointer; transition: opacity .12s; }
+  svg.chart .bar:hover, svg.chart .dot:hover { opacity: 1 !important; }
+  .tip {
+    position: fixed; pointer-events: none; opacity: 0; transition: opacity .1s;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 12px; font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,.14);
+    z-index: 50; color: var(--text-primary); white-space: nowrap;
+  }
+  .tip b { display: block; font-size: 13.5px; margin-bottom: 2px; }
+  .flow {
+    background: var(--page); border: 1px solid var(--border); border-radius: 10px;
+    padding: 20px 22px; font-family: ui-monospace, Menlo, monospace;
+    font-size: 12.5px; line-height: 1.8; overflow-x: auto; color: var(--text-secondary);
+    white-space: pre;
+  }
+  footer { margin-top: 60px; padding-top: 22px; border-top: 1px solid var(--border); font-size: 13.5px; color: var(--muted); }
+  footer a { color: var(--muted); border-bottom: 1px solid var(--border); }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    header.hero { padding: 22px 18px; }
+    h1 { font-size: 23px; }
+    h2 { font-size: 19px; margin: 36px 0 12px; }
+    h3 { font-size: 16.5px; }
+    .subtitle { font-size: 15px; }
+    section.card { padding: 20px 18px; }
+    .figure { padding: 18px 14px; }
+    table { font-size: 12.5px; }
+    th, td { padding: 7px 8px; }
+    .formula, .flow { font-size: 11.5px; }
+    .legend { gap: 12px; font-size: 12.5px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="toolbar">
+    <button class="tgl" onclick="const r=document.documentElement; r.setAttribute('data-theme', r.getAttribute('data-theme')==='dark'?'light':'dark'); this.textContent = r.getAttribute('data-theme')==='dark'?'☀ 浅色':'☾ 深色';">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ML/AI 每日深度论文追踪 · 周三 · 生成模型</p>
+    <h1>RnG：把 KV-Cache 当作隐式三维表示</h1>
+    <p class="subtitle">A Unified Transformer for Complete 3D Modeling from Partial Observations</p>
+    <div class="meta">
+      <span class="chip venue">CVPR 2026 Highlight</span>
+      <span class="chip">2026-08-05</span>
+      <span class="chip">arXiv:2603.01194 · v1 · 2026-03-01</span>
+      <span class="chip">候选池 27 篇 · shuf 随机命中 #14 · 重抽 0 次</span>
+      <span class="chip warn">索引未自动更新（见脚注）</span>
+    </div>
+    <p class="lede">三维表示不必是点云、不必是高斯、也不必是三平面 —— 它可以就是重建网络自己的 KV-Cache。RnG 只加了一个 0/1 注意力掩码和两个输出头，就让 CVPR 2025 最佳论文 VGGT 从「只能重建看得见的」变成「能生成看不见的」：Chamfer Distance 降低 10×，速度比扩散式统一模型快 317×。但论文最有意思的地方在于，它自己的消融数据显示：那个写进标题的因果掩码，在 10 项质量指标里输掉了 8 项。</p>
+  </header>
+
+  <section class="card">
+    <h3>0. 本期元信息与坦诚性声明</h3>
+    <div class="tablewrap"><table>
+      <tr><th>项</th><th>内容</th></tr>
+      <tr><td>日期 / 星期</td><td>2026-08-05，周三（<code>date +%u</code> = 3）</td></tr>
+      <tr><td>轮转领域</td><td><strong>生成模型</strong> —— 扩散 / 流匹配、自回归生成、3D 生成、世界模型</td></tr>
+      <tr><td>候选池</td><td>27 篇（ICLR 2026 Oral 9 · CVPR 2026 Highlight 7 · ICML 2026 Oral 4 · arXiv 2026 7）</td></tr>
+      <tr><td>抽取方式</td><td><code>shuf -i 1-27 -n 1</code> → 命中 <strong>#14</strong>，重抽 <strong>0</strong> 次</td></tr>
+      <tr class="best"><td>核心论文</td><td>RnG: A Unified Transformer for Complete 3D Modeling from Partial Observations（CVPR 2026 Highlight）</td></tr>
+    </table></div>
+
+    <div class="callout">
+      <strong>坦诚性声明（前置）。</strong> 本报告基于 arXiv HTML 全文（v1，2026-03-01）、项目主页与 CVPR 2026 Highlight 页面。以下三点是本次分析的已知盲区，正文会再次点名：
+      <ol style="margin-top:10px">
+        <li>代码仓库（GitHub）与权重（Hugging Face）链接由项目页给出，但本次抓取工具因来源白名单限制<strong>未能独立打开验证</strong>，表中标注为「未独立验证」。</li>
+        <li>论文的 CO3D 实验<strong>没有任何定量表格</strong>，只有定性图（Fig. 10），因此关于真实场景泛化的判断只能是推断。</li>
+        <li>表 2 中 MUSt3R 一行的 RA@5 与 RT@5 数值完全相同（21.683 / 21.683），这在两个独立指标上是罕见巧合，疑为原文排版或 HTML 解析问题，我无法核对 PDF 原始排版。</li>
+      </ol>
+    </div>
+  </section>
+
+  <h2>1 · 链接验证表</h2>
+  <section class="card">
+    <p style="font-size:14px;color:var(--muted)">✅ = 本次运行实际抓取并确认可达；⚠️ = 来源可信但本次未能独立打开。</p>
+    <div class="tablewrap"><table>
+      <tr><th>论文</th><th>出版 / 会议页</th><th>arXiv</th><th>Code</th><th>数据 / 权重</th><th>项目页</th></tr>
+      <tr class="best">
+        <td><strong>核心：RnG</strong><br><span style="font-size:12.5px;color:var(--muted)">CVPR 2026 Highlight</span></td>
+        <td><a href="https://cvpr.thecvf.com/virtual/2026/events/Highlights2026">CVPR 2026 Highlights</a> ✅</td>
+        <td><a href="https://arxiv.org/abs/2603.01194">2603.01194</a> ✅<br><a href="https://arxiv.org/html/2603.01194">HTML 全文</a> ✅</td>
+        <td><code>github.com/XiangMochu/RnG</code> ⚠️</td>
+        <td>Objaverse-LVIS 113.5K；<code>hf.co/MochuXiang/RnG</code> ⚠️</td>
+        <td><a href="https://npucvr.github.io/RnG/">npucvr.github.io/RnG</a> ✅</td>
+      </tr>
+      <tr>
+        <td>DUSt3R<br><span style="font-size:12.5px;color:var(--muted)">CVPR 2024</span></td>
+        <td><a href="https://openaccess.thecvf.com/content/CVPR2024/papers/Wang_DUSt3R_Geometric_3D_Vision_Made_Easy_CVPR_2024_paper.pdf">CVF PDF</a> ✅</td>
+        <td><a href="https://arxiv.org/abs/2312.14132">2312.14132</a> ✅</td>
+        <td><a href="https://github.com/naver/dust3r">naver/dust3r</a> ✅</td>
+        <td>Habitat / MegaDepth / ScanNet++ 混合</td>
+        <td><a href="https://cvpr.thecvf.com/virtual/2024/poster/29338">CVPR Poster</a> ✅</td>
+      </tr>
+      <tr>
+        <td>LRM<br><span style="font-size:12.5px;color:var(--muted)">ICLR 2024</span></td>
+        <td><a href="https://proceedings.iclr.cc/paper_files/paper/2024/file/dcad3425f5c8c36b5b3885c091bf1257-Paper-Conference.pdf">ICLR PDF</a> ✅ · <a href="https://openreview.net/forum?id=sllU8vvsFF">OpenReview</a> ✅</td>
+        <td><a href="https://arxiv.org/abs/2311.04400">2311.04400</a> ✅</td>
+        <td>官方未开源；<a href="https://github.com/3DTopia/OpenLRM">OpenLRM</a> ✅</td>
+        <td>Objaverse + MVImgNet</td>
+        <td>未找到</td>
+      </tr>
+      <tr>
+        <td>LVSM<br><span style="font-size:12.5px;color:var(--muted)">ICLR 2025 <strong>Oral</strong></span></td>
+        <td><a href="https://proceedings.iclr.cc/paper_files/paper/2025/hash/9676c5283df26cabca412ca66b164a7d-Abstract-Conference.html">ICLR Proceedings</a> ✅ · <a href="https://iclr.cc/virtual/2025/oral/31849">Oral 页</a> ✅</td>
+        <td><a href="https://arxiv.org/abs/2410.17242">2410.17242</a> ✅</td>
+        <td><a href="https://github.com/haian-jin/LVSM">haian-jin/LVSM</a> ✅</td>
+        <td>Objaverse、RealEstate10K</td>
+        <td><a href="https://haian-jin.github.io/projects/LVSM/">项目页</a> ✅</td>
+      </tr>
+      <tr>
+        <td>VGGT<br><span style="font-size:12.5px;color:var(--muted)">CVPR 2025 <strong>Best Paper</strong></span></td>
+        <td><a href="https://openaccess.thecvf.com/content/CVPR2025/html/Wang_VGGT_Visual_Geometry_Grounded_Transformer_CVPR_2025_paper.html">CVF Open Access</a> ✅</td>
+        <td><a href="https://arxiv.org/abs/2503.11651">2503.11651</a> ✅</td>
+        <td><a href="https://github.com/facebookresearch/vggt">facebookresearch/vggt</a> ✅</td>
+        <td>VGGT-1B（非商用）/ VGGT-1B-Commercial（Co3D AUC@30 90.37 vs 89.98）</td>
+        <td><a href="https://vgg-t.github.io/">vgg-t.github.io</a> ✅</td>
+      </tr>
+      <tr>
+        <td>Matrix3D<br><span style="font-size:12.5px;color:var(--muted)">CVPR 2025</span></td>
+        <td><a href="https://openaccess.thecvf.com/content/CVPR2025/html/Lu_Matrix3D_Large_Photogrammetry_Model_All-in-One_CVPR_2025_paper.html">CVF Open Access</a> ✅ pp.11250–11263</td>
+        <td><a href="https://arxiv.org/abs/2502.07685">2502.07685</a> ✅</td>
+        <td>见项目页</td>
+        <td>CO3D 等</td>
+        <td><a href="https://nju-3dv.github.io/projects/matrix3d/">nju-3dv</a> ✅</td>
+      </tr>
+      <tr>
+        <td>RayZer<br><span style="font-size:12.5px;color:var(--muted)">ICCV 2025 BSP-HM</span></td>
+        <td><a href="https://openaccess.thecvf.com/content/ICCV2025/papers/Jiang_RayZer_A_Self-supervised_Large_View_Synthesis_Model_ICCV_2025_paper.pdf">ICCV CVF PDF</a> ✅</td>
+        <td><a href="https://arxiv.org/abs/2505.00702">2505.00702</a> ✅</td>
+        <td><a href="https://github.com/hwjiang1510/RayZer">hwjiang1510/RayZer</a> ✅</td>
+        <td>—</td>
+        <td><a href="https://hwjiang1510.github.io/RayZer/">项目页</a> ✅</td>
+      </tr>
+    </table></div>
+  </section>
+
+  <h2>2 · 核心论文深度解析</h2>
+
+  <section class="card">
+    <h3>2.1 一句话定位</h3>
+    <div class="callout blue" style="font-size:16.5px">
+      <strong>三维表示不必是点云、不必是高斯、也不必是三平面 —— 它可以就是重建网络自己的 KV-Cache。</strong>
+    </div>
+    <p>这句话里最关键的不是「KV-Cache 很快」，而是「<strong>重建网络的中间激活本身已经编码了它从未被监督过的那部分几何</strong>」。RnG 的全部工程都是为了把这条假设变成可查询、可渲染、可导出的东西。</p>
+  </section>
+
+  <section class="card">
+    <h3>2.2 Motivation 与问题论证</h3>
+    <h4>痛点的精确形式</h4>
+    <p>前馈式可泛化三维重建（DUSt3R → VGGT 这条线）在两年内把「稀疏图像 → 三维」压到亚秒级，但它们<strong>在训练目标上就只被要求恢复可见区域的几何</strong>。</p>
+    <div class="quote">"their representations are often confined to observed regions, leaving unseen geometry un-modeled." —— Abstract<br><br>"Most 3D reconstruction pipelines are explicitly trained to recover geometry only for regions visible in the input camera views. Consequently, their geometric outputs are incomplete, hindering downstream applications that demand a complete object representation, such as physics simulation or content generation." —— Introduction</div>
+
+    <h4>痛点如何被量化</h4>
+    <p>论文没有用抽象的「不完整率」，而是用 <strong>Chamfer Distance（CD）</strong> 作为全篇判决指标。表 2：VGGT 作为纯重建模型，源视角深度 Rel 只有 5.960（已很强），但完整三维 CD = 0.0260；RnG 的 CD = 0.0067，<span class="good">低 74.2%（3.88×）</span>。这就是「可见几何做得再好，也换不来完整几何」的定量表述。</p>
+    <p>更有说服力的是反向对照：Matrix3D 是当时唯一能生成不可见区域的统一模型，其无位姿设置下 CD = 0.0670 —— <span class="crit">比完全不做生成的 VGGT（0.0260）还差 2.58×</span>。截至 RnG 之前，社区面对的是一个非此即彼的困境：</p>
+    <div class="tablewrap"><table>
+      <tr><th>路线</th><th>代表</th><th>可见几何</th><th>不可见几何</th><th>实时性</th></tr>
+      <tr><td>判别式重建</td><td>VGGT</td><td><strong>极强</strong>（Rel 5.960 / CD 0.0260）</td><td><span class="crit">不建模</span></td><td>✅ &lt; 1 s</td></tr>
+      <tr><td>生成式统一</td><td>Matrix3D</td><td>弱（Rel 9.430 / CD 0.0670）</td><td>可生成但不一致</td><td><span class="crit">❌ 27 s</span></td></tr>
+    </table></div>
+
+    <h4>为什么值得解决</h4>
+    <ul>
+      <li><strong>应用层</strong> —— 物理仿真、碰撞检测、3D 打印、内容创作都要求闭合几何，只有正面的点云不可用。</li>
+      <li><strong>系统层</strong> —— 扩散式统一模型 27 s 的推理把交互式应用整条堵死。</li>
+      <li><strong>表示层</strong>（最有意思的一点）—— 如果重建模型的隐空间里<em>本来就有</em>完整几何，那么「生成」就不需要独立的生成模型，只是一次<strong>读取方式的改变</strong>。</li>
+    </ul>
+    <div class="quote">"Although prior work has focused on adapting generative priors for reconstruction, we demonstrate that the <strong>reverse direction of transferring reconstruction priors to generation</strong> is viable and effective." —— Related Work</div>
+    <p>过去两年主流做法是「给生成模型（扩散）打上几何补丁」（Zero-1-to-3、Matrix3D、Gen3R 皆属此类）；RnG 走的是「给重建模型开一个生成出口」。</p>
+  </section>
+
+  <section class="card">
+    <h3>2.3 论文的故事线（论证结构）</h3>
+    <p>论文的论证不是「我们提出模块 X，效果好」，而是一条有明确转折点的推理链：</p>
+    <h4>第一步：提出一个可证伪的假设</h4>
+    <div class="quote">"feed-forward 3D reconstruction foundation models, while primarily trained to recover visible geometry, <strong>may possess the potential to infer a more complete 3D representation within their latent space</strong>"</div>
+    <p>这是全文的支点。它可证伪 —— 如果为真，只需要一个<strong>解码器</strong>就能读出完整几何，而不需要重训生成模型。</p>
+    <h4>第二步：设计一个「只加读取通道、不改写表示」的架构</h4>
+    <p>关键推论：要验证「隐空间里已经有完整三维」，就必须保证<strong>加入目标视角查询这件事本身不能改变重建结果</strong>。否则你无法区分「隐空间里本来有」与「目标视角把答案偷渡进来了」。这直接推出了因果掩码。</p>
+    <div class="callout"><strong>这是全文最漂亮的一步：</strong> 因果掩码在这里首先是一个<strong>科学控制变量的手段</strong>，其次才是一个工程优化。</div>
+    <h4>第三步：从科学控制里收获工程红利</h4>
+    <p>一旦源视角的 K/V 与目标视角无关，它们就可以被缓存。于是「隐式三维表示」= 缓存的 K/V 张量，查询新视角 = 一次跨注意力。表 4：FLOPs 12.26 T → 2.29 T（<strong>5.35×</strong>），单视角 85 ms，比 Matrix3D 的 27 s 快 <strong>317.6×</strong>。</p>
+    <h4>第四步：用「不做什么」来定义贡献</h4>
+    <p>RnG 不引入扩散、不引入 GAN、不引入 3DGS/NeRF、不引入新的三维表示。它只加了一个 0/1 掩码和两个输出头。</p>
+    <h4>隐含的设计权衡</h4>
+    <p>论文没明说但表 2/3 写得很清楚：<strong>用纹理细节换几何完整性与速度</strong>。RnG 的 PSNR 26.276 低于 LVSM-100K 的 27.522（<span class="crit">−1.246 dB</span>），LPIPS 0.0975 差于 0.0895。换来的是 CD 从「不可得」变成 0.0067，以及 317× 的加速。</p>
+  </section>
+
+  <section class="card">
+    <h3>2.4 方法论与机制解剖</h3>
+    <h4>2.4.1 整体流程</h4>
+    <div class="flow">                  ┌────────────── 源视角 (S 张, 无需位姿) ──────────────┐
+输入              │  I_1 ... I_S  ──DINO ViT──▶ patch tokens (1024/view)│
+                  └──────────────────────────┬─────────────────────────┘
+                                             │  + camera tokens
+                                             │  + register tokens
+目标视角查询       Plücker ray map  ──Linear──┤
+                  (任意视角, 可无限多)         │
+                                             ▼
+                        ┌────────────────────────────────────┐
+                        │  L = 24 层  交替 (frame ↔ global)  │
+                        │  attention，global 层施加因果掩码 M │
+                        │                                    │
+                        │   源→源 ✅    源→目标 ❌(被 M 屏蔽) │
+                        │   目标→源 ✅  目标→目标 ✅          │
+                        └───────────┬────────────┬───────────┘
+                                    │            │
+                       源视角 token │            │ 目标视角 token
+                                    ▼            ▼
+                            ┌────────────┐  ┌──────────────────┐
+                            │ camera head│  │ D_RGB  → Î_t     │
+                            │  → ĝ_s     │  │ D_pmap → P̂_t     │
+                            └────────────┘  └──────────────────┘
+                                                   │
+                                    多视角查询累积 ─┴─▶ 完整 3D 点云</div>
+
+    <h4>2.4.2 核心机制：重建引导的因果注意力</h4>
+    <p>设 <code>{s}</code> 为源视角 token 下标集合，<code>{t}</code> 为目标视角 token 下标集合：</p>
+    <div class="formula">M_{i,j} = 0,  若 i ∈ {s} 且 j ∈ {t}
+M_{i,j} = 1,  其余情况
+
+Out = softmax( (M ⊙ QKᵀ) / √d_k ) V</div>
+    <p><strong>语义</strong>：源视角 query <strong>禁止</strong>访问目标视角 key。这不是标准的自回归下三角因果掩码，而是一个<strong>任务级的单向屏障</strong> —— 「重建」这一侧对「生成」这一侧完全免疫。论文称之为 <em>reconstruction-guided</em>。</p>
+    <ul>
+      <li><strong>副产物 1 · 参数共享</strong>：源、目标两路走同一组权重，零额外参数。</li>
+      <li><strong>副产物 2 · 目标视角不变性</strong>：无论查询 1 个还是 1000 个目标视角，源视角的重建输出逐比特相同 —— <strong>架构级保证</strong>，不是训练出来的近似。</li>
+    </ul>
+
+    <h4>2.4.3 KV-Cache 作为隐式三维表示</h4>
+    <p><strong>阶段一 · 重建与缓存</strong>（与目标视角无关，可离线做一次）：</p>
+    <div class="formula">K'_s = Cache(K_s),   V'_s = Cache(V_s)</div>
+    <p>对每一层、每个源视角 token 缓存 K/V。这组张量<strong>就是</strong>场景的三维表示。</p>
+    <p><strong>阶段二 · 生成与查询</strong>（每个新视角只做这一步）：</p>
+    <div class="formula">Out_t = softmax( Q_t · [K'_s ; K_t]ᵀ / √d_k ) · [V'_s ; V_t]
+
+Î = D_RGB(Out_t)        # 新视角 RGB
+P̂ = D_pmap(Out_t)       # 像素对齐点图（含不可见区域的推测几何）</div>
+    <p>目标视角的 Plücker 射线经线性投影得到 Q_t，直接查询缓存，<strong>完全跳过源视角分支的前向计算</strong>。</p>
+
+    <h4>2.4.4 关键机制汇总</h4>
+    <div class="tablewrap"><table>
+      <tr><th>机制 / 维度</th><th>设计选择</th><th>动机</th><th>关键超参 / 数值</th></tr>
+      <tr><td>骨干</td><td>继承 VGGT 架构 <strong>与权重</strong></td><td>复用「隐空间已含完整三维」的先验</td><td>L = 24 层，交替 frame/global attention</td></tr>
+      <tr><td>源视角编码</td><td>DINO ViT patch token</td><td>沿用 VGGT 预训练分布</td><td>256×256，patch 8 → <strong>1024 token/view</strong></td></tr>
+      <tr><td>目标视角编码</td><td>Plücker ray map + Linear</td><td>与 LVSM 同构；把「视角」变成可查询 token</td><td>6 维射线 → d_model</td></tr>
+      <tr class="best"><td>任务分离</td><td>二值因果掩码 M</td><td>保证重建对目标视角不变 → 才能缓存</td><td>0/1，<strong>无参数</strong></td></tr>
+      <tr class="best"><td>三维表示</td><td>24 层 K/V 缓存</td><td>无需显式几何，读取即渲染</td><td>4 view × 1024 token × 24 层 × (K,V)</td></tr>
+      <tr><td>几何输出</td><td>像素对齐点图 D_pmap</td><td>继承 DUSt3R/VGGT 的 pointmap 范式</td><td>逐像素 3D 坐标</td></tr>
+      <tr><td>外观输出</td><td>D_RGB</td><td>直接回归，无扩散</td><td>MSE + 感知损失</td></tr>
+      <tr><td>世界系锚定</td><td>首个源视角钉死</td><td>隐式定义世界坐标</td><td>ĝ_{s=1} = [I₃ₓ₃ | (0,0,−1)ᵀ]</td></tr>
+    </table></div>
+
+    <h4>2.4.5 训练目标</h4>
+    <div class="formula">L = L_RGB + λ_pmap · L_pmap + λ_c · L_cam
+
+L_RGB  = ‖I_t − Î_t‖₂ + λ_p · Perceptual(I_t, Î_t)
+
+L_pmap = ‖Σ_t ⊙ (P_t − P̂_t)‖ + ‖Σ_t ⊙ (∇P_t − ∇P̂_t)‖ − α · log Σ_t
+
+L_cam  = Σ_s |g_s − ĝ_s|_ε        (Huber)</div>
+    <p><code>L_pmap</code> 第二项是<strong>梯度域</strong>监督（法向 / 边界锐度），第三项 <code>−α log Σ_t</code> 是不确定性正则，防止网络把所有区域的 Σ 压到 0 逃避监督。</p>
+
+    <h4>2.4.6 工程细节与超参</h4>
+    <div class="tablewrap"><table>
+      <tr><th>项</th><th>取值</th><th>项</th><th>取值</th></tr>
+      <tr><td>硬件</td><td>8 × A800</td><td>训练步数</td><td>40 K（主结果）/ 15 K（消融）</td></tr>
+      <tr><td>Batch</td><td>96 = 6 物体 × 3 目标视角 × 2 梯度累积</td><td>分辨率 / patch</td><td>256 × 256 / 8</td></tr>
+      <tr><td>损失权重</td><td>λ_pmap = 0.2，<strong>λ_c = 1</strong>，λ_p = 0.5，α = 0.2</td><td>学习率</td><td>峰值 6e-4，3000 步 warmup + cosine</td></tr>
+      <tr><td>训练数据</td><td>Objaverse LVIS 子集，113.5 K 物体</td><td>推理</td><td>重建 ≈ 0.2 s；每新视角 &lt; 0.1 s</td></tr>
+    </table></div>
+    <div class="callout"><strong>埋点提示。</strong> 注意 λ_c = 1 是三项里权重最大的。第 2.7 节批判 #4 会回到这一点 —— 权重最大的那一项，在消融里对下游指标的贡献是 <strong>0</strong>。</div>
+  </section>
+
+  <h2>3 · 实验设计与定量结果</h2>
+
+  <section class="card">
+    <h3>3.1 基准与协议</h3>
+    <div class="tablewrap"><table>
+      <tr><th>用途</th><th>数据集</th><th>规模</th><th>说明</th></tr>
+      <tr><td>训练</td><td>Objaverse（LVIS 子集）</td><td class="num">113.5 K 物体</td><td>合成物体，环视轨迹</td></tr>
+      <tr><td>主评测</td><td><strong>Google Scanned Objects (GSO)</strong></td><td class="num">1,030 物体</td><td>真实扫描的合成渲染，零样本</td></tr>
+      <tr><td>泛化</td><td>CO3D</td><td class="num">—</td><td><span class="crit">⚠️ 仅定性（Fig. 10），无定量表</span></td></tr>
+    </table></div>
+    <div class="tablewrap"><table>
+      <tr><th>分组</th><th>指标</th><th>含义</th></tr>
+      <tr><td>重建 · 位姿</td><td>RA@5↑ / RT@5↑ / AUC@30↑</td><td>旋转、平移在 5° 内的准确率；位姿 AUC</td></tr>
+      <tr><td>重建 · 源视角深度</td><td>Rel↓ / a1↑</td><td>相对误差（%）；δ&lt;1.25 内点率（%）</td></tr>
+      <tr><td>生成 · 新视角深度</td><td>Rel↓ / a1↑</td><td>同上，但对未观测视角</td></tr>
+      <tr><td>生成 · 新视角合成</td><td>PSNR↑ / SSIM↑ / LPIPS↓</td><td>外观质量</td></tr>
+      <tr class="best"><td>完整三维</td><td><strong>CD↓</strong></td><td>Chamfer Distance —— 全文唯一的「完整性」判据</td></tr>
+    </table></div>
+  </section>
+
+  <section class="card">
+    <h3>3.2 主结果矩阵（表 2，GSO，4 输入视角）</h3>
+    <p style="font-size:14px;color:var(--muted)">表 2 原文 caption：<em>"Quantitative comparison. We evaluate the reconstruction and generation ability of all models on the GSO dataset. '—' means that the model is not capable of delivering that result."</em></p>
+    <div class="tablewrap compact"><table>
+      <tr>
+        <th>方法</th>
+        <th class="num">RA@5↑</th><th class="num">RT@5↑</th><th class="num">AUC@30↑</th>
+        <th class="num">源 Rel↓</th><th class="num">源 a1↑</th>
+        <th class="num">新 Rel↓</th><th class="num">新 a1↑</th>
+        <th class="num">PSNR↑</th><th class="num">SSIM↑</th><th class="num">LPIPS↓</th><th class="num">CD↓</th>
+      </tr>
+      <tr class="grouphead"><td colspan="12">（A）已知位姿设置</td></tr>
+      <tr><td>LVSM [18] <span style='color:var(--muted)'>(100K)</span></td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num"><span class="good">27.522</span></td><td class="num"><span class="good">0.902</span></td><td class="num"><span class="good">0.0895</span></td><td class="num">—</td></tr>
+      <tr><td>LGM [44]</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">13.704</td><td class="num">85.646</td><td class="num">16.804</td><td class="num">82.205</td><td class="num">16.677</td><td class="num">0.751</td><td class="num">0.2248</td><td class="num">0.1130</td></tr>
+      <tr><td>Matrix3D [30] <span style='color:var(--muted)'>(posed)</span></td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">8.782</td><td class="num">95.383</td><td class="num">8.897</td><td class="num">93.858</td><td class="num">19.941</td><td class="num">0.803</td><td class="num">0.1684</td><td class="num">0.0580</td></tr>
+      <tr><td>pixelSplat [4]</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">33.594</td><td class="num">33.241</td><td class="num">39.819</td><td class="num">20.723</td><td class="num">12.904</td><td class="num">0.718</td><td class="num">0.4514</td><td class="num">0.4898</td></tr>
+      <tr class="grouphead"><td colspan="12">（B）无位姿设置 —— RnG 的正式赛道</td></tr>
+      <tr><td>MUSt3R [3] <span style="color:var(--crit)">※</span></td><td class="num">21.683</td><td class="num">21.683 <span style="color:var(--crit)">※</span></td><td class="num">33.490</td><td class="num">10.941</td><td class="num">92.663</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">0.7757</td></tr>
+      <tr><td>VGGT [50]</td><td class="num">74.239</td><td class="num">65.680</td><td class="num">77.234</td><td class="num">5.960</td><td class="num">97.723</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">0.0260</td></tr>
+      <tr><td>VGGT [50] + LVSM [18]</td><td class="num">74.239</td><td class="num">65.680</td><td class="num">77.234</td><td class="num">5.960</td><td class="num">97.723</td><td class="num">—</td><td class="num">—</td><td class="num">19.394</td><td class="num">0.796</td><td class="num">0.1980</td><td class="num">0.0260</td></tr>
+      <tr><td>Matrix3D [30] <span style='color:var(--muted)'>(unposed)</span></td><td class="num">43.770</td><td class="num">65.922</td><td class="num">66.389</td><td class="num">9.430</td><td class="num">92.261</td><td class="num">9.964</td><td class="num">90.282</td><td class="num">18.736</td><td class="num">0.786</td><td class="num">0.1930</td><td class="num">0.0670</td></tr>
+      <tr class="best"><td><strong>RnG (Ours)</strong></td><td class="num">85.146</td><td class="num">86.019</td><td class="num">86.942</td><td class="num">0.584</td><td class="num">99.929</td><td class="num">0.717</td><td class="num">99.850</td><td class="num">26.276</td><td class="num">0.891</td><td class="num">0.0975</td><td class="num">0.0067</td></tr>
+    </table></div>
+    <p style="font-size:13.5px;color:var(--muted)">※ MUSt3R 的 RA@5 与 RT@5 数值相同，疑为原文排版或本次 HTML 解析问题，未能核对 PDF。</p>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">图 1 · GSO 新视角合成 PSNR 对比</p>
+    <p class="fig-sub">数据来源：论文表 2 与表 3。悬停查看具体数值。注意 RnG 是唯一无需真值位姿却达到 26+ dB 的方法。</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-2)"></span>RnG（本文，无位姿）</span>
+      <span><span class="sw" style="background:var(--series-1);opacity:.55"></span>基线方法</span>
+    </div>
+    <svg id="chart1" class="chart" viewBox="0 0 900 380" xmlns="http://www.w3.org/2000/svg">
+<line x1="150.0" y1="20" x2="150.0" y2="334" stroke="var(--grid)" stroke-width="1"/>
+<text x="150.0" y="356" fill="var(--muted)" font-size="12" text-anchor="middle">0</text>
+<line x1="270.0" y1="20" x2="270.0" y2="334" stroke="var(--grid)" stroke-width="1"/>
+<text x="270.0" y="356" fill="var(--muted)" font-size="12" text-anchor="middle">5</text>
+<line x1="390.0" y1="20" x2="390.0" y2="334" stroke="var(--grid)" stroke-width="1"/>
+<text x="390.0" y="356" fill="var(--muted)" font-size="12" text-anchor="middle">10</text>
+<line x1="510.0" y1="20" x2="510.0" y2="334" stroke="var(--grid)" stroke-width="1"/>
+<text x="510.0" y="356" fill="var(--muted)" font-size="12" text-anchor="middle">15</text>
+<line x1="630.0" y1="20" x2="630.0" y2="334" stroke="var(--grid)" stroke-width="1"/>
+<text x="630.0" y="356" fill="var(--muted)" font-size="12" text-anchor="middle">20</text>
+<line x1="750.0" y1="20" x2="750.0" y2="334" stroke="var(--grid)" stroke-width="1"/>
+<text x="750.0" y="356" fill="var(--muted)" font-size="12" text-anchor="middle">25</text>
+<line x1="870.0" y1="20" x2="870.0" y2="334" stroke="var(--grid)" stroke-width="1"/>
+<text x="870.0" y="356" fill="var(--muted)" font-size="12" text-anchor="middle">30</text>
+<line x1="150" y1="20" x2="150" y2="334" stroke="var(--baseline)" stroke-width="1.5"/>
+<rect class="bar" x="150" y="27.5" width="309.7" height="24.3" rx="3" fill="var(--series-1)" opacity="0.55" data-label="pixelSplat" data-value="PSNR 12.904 dB"/>
+<text x="140" y="43.6" fill="var(--text-secondary)" font-size="12.5" font-weight="400" text-anchor="end">pixelSplat</text>
+<text x="467.7" y="43.6" fill="var(--text-primary)" font-size="12.5" font-weight="400">12.904</text>
+<rect class="bar" x="150" y="66.7" width="400.2" height="24.3" rx="3" fill="var(--series-1)" opacity="0.55" data-label="LGM" data-value="PSNR 16.677 dB"/>
+<text x="140" y="82.9" fill="var(--text-secondary)" font-size="12.5" font-weight="400" text-anchor="end">LGM</text>
+<text x="558.2" y="82.9" fill="var(--text-primary)" font-size="12.5" font-weight="400">16.677</text>
+<rect class="bar" x="150" y="106.0" width="449.7" height="24.3" rx="3" fill="var(--series-1)" opacity="0.55" data-label="Matrix3D (unposed)" data-value="PSNR 18.736 dB"/>
+<text x="140" y="122.1" fill="var(--text-secondary)" font-size="12.5" font-weight="400" text-anchor="end">Matrix3D (unposed)</text>
+<text x="607.7" y="122.1" fill="var(--text-primary)" font-size="12.5" font-weight="400">18.736</text>
+<rect class="bar" x="150" y="145.2" width="465.5" height="24.3" rx="3" fill="var(--series-1)" opacity="0.55" data-label="VGGT + LVSM" data-value="PSNR 19.394 dB"/>
+<text x="140" y="161.4" fill="var(--text-secondary)" font-size="12.5" font-weight="400" text-anchor="end">VGGT + LVSM</text>
+<text x="623.5" y="161.4" fill="var(--text-primary)" font-size="12.5" font-weight="400">19.394</text>
+<rect class="bar" x="150" y="184.5" width="478.6" height="24.3" rx="3" fill="var(--series-1)" opacity="0.55" data-label="Matrix3D (posed)" data-value="PSNR 19.941 dB"/>
+<text x="140" y="200.6" fill="var(--text-secondary)" font-size="12.5" font-weight="400" text-anchor="end">Matrix3D (posed)</text>
+<text x="636.6" y="200.6" fill="var(--text-primary)" font-size="12.5" font-weight="400">19.941</text>
+<rect class="bar" x="150" y="223.7" width="590.9" height="24.3" rx="3" fill="var(--series-1)" opacity="0.55" data-label="LVSM-40K" data-value="PSNR 24.619 dB"/>
+<text x="140" y="239.9" fill="var(--text-secondary)" font-size="12.5" font-weight="400" text-anchor="end">LVSM-40K</text>
+<text x="748.9" y="239.9" fill="var(--text-primary)" font-size="12.5" font-weight="400">24.619</text>
+<rect class="bar" x="150" y="263.0" width="630.6" height="24.3" rx="3" fill="var(--series-2)" opacity="1" data-label="RnG (Ours)" data-value="PSNR 26.276 dB"/>
+<text x="140" y="279.1" fill="var(--text-secondary)" font-size="12.5" font-weight="600" text-anchor="end">RnG (Ours)</text>
+<text x="788.6" y="279.1" fill="var(--text-primary)" font-size="12.5" font-weight="600">26.276</text>
+<rect class="bar" x="150" y="302.2" width="660.5" height="24.3" rx="3" fill="var(--series-1)" opacity="0.55" data-label="LVSM-100K" data-value="PSNR 27.522 dB"/>
+<text x="140" y="318.4" fill="var(--text-secondary)" font-size="12.5" font-weight="400" text-anchor="end">LVSM-100K</text>
+<text x="818.5" y="318.4" fill="var(--text-primary)" font-size="12.5" font-weight="400">27.522</text>
+<text x="510.0" y="374" fill="var(--muted)" font-size="12" text-anchor="middle">PSNR (dB) — 越高越好</text>
+</svg>
+  </div>
+
+  <div class="figure">
+    <p class="fig-title">图 2 · 完整三维 Chamfer Distance（对数刻度）</p>
+    <p class="fig-sub">数据来源：论文表 2 最后一列。两年内 CD 下降约 73×，且下降不平滑 —— VGGT 与 RnG 各贡献一次数量级跳变。</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-2)"></span>RnG（本文）</span>
+      <span><span class="sw" style="background:var(--series-1);opacity:.55"></span>基线方法</span>
+    </div>
+    <svg id="chart2" class="chart" viewBox="0 0 900 320" xmlns="http://www.w3.org/2000/svg">
+<line x1="181.6" y1="20" x2="181.6" y2="274" stroke="var(--grid)" stroke-width="1"/>
+<text x="181.6" y="296" fill="var(--muted)" font-size="12" text-anchor="middle">0.005</text>
+<line x1="279.8" y1="20" x2="279.8" y2="274" stroke="var(--grid)" stroke-width="1"/>
+<text x="279.8" y="296" fill="var(--muted)" font-size="12" text-anchor="middle">0.01</text>
+<line x1="378.1" y1="20" x2="378.1" y2="274" stroke="var(--grid)" stroke-width="1"/>
+<text x="378.1" y="296" fill="var(--muted)" font-size="12" text-anchor="middle">0.02</text>
+<line x1="507.9" y1="20" x2="507.9" y2="274" stroke="var(--grid)" stroke-width="1"/>
+<text x="507.9" y="296" fill="var(--muted)" font-size="12" text-anchor="middle">0.05</text>
+<line x1="606.1" y1="20" x2="606.1" y2="274" stroke="var(--grid)" stroke-width="1"/>
+<text x="606.1" y="296" fill="var(--muted)" font-size="12" text-anchor="middle">0.1</text>
+<line x1="704.3" y1="20" x2="704.3" y2="274" stroke="var(--grid)" stroke-width="1"/>
+<text x="704.3" y="296" fill="var(--muted)" font-size="12" text-anchor="middle">0.2</text>
+<line x1="834.2" y1="20" x2="834.2" y2="274" stroke="var(--grid)" stroke-width="1"/>
+<text x="834.2" y="296" fill="var(--muted)" font-size="12" text-anchor="middle">0.5</text>
+<rect class="bar" x="150" y="28.5" width="681.2" height="25.4" rx="3" fill="var(--series-1)" opacity="0.55" data-label="pixelSplat" data-value="CD 0.4898"/>
+<text x="140" y="45.2" fill="var(--text-secondary)" font-size="12.5" font-weight="400" text-anchor="end">pixelSplat</text>
+<text x="839.2" y="45.2" fill="var(--text-primary)" font-size="12.5" font-weight="400">0.4898</text>
+<rect class="bar" x="150" y="70.8" width="473.4" height="25.4" rx="3" fill="var(--series-1)" opacity="0.55" data-label="LGM" data-value="CD 0.1130"/>
+<text x="140" y="87.5" fill="var(--text-secondary)" font-size="12.5" font-weight="400" text-anchor="end">LGM</text>
+<text x="631.4" y="87.5" fill="var(--text-primary)" font-size="12.5" font-weight="400">0.1130</text>
+<rect class="bar" x="150" y="113.1" width="399.4" height="25.4" rx="3" fill="var(--series-1)" opacity="0.55" data-label="Matrix3D (unposed)" data-value="CD 0.0670"/>
+<text x="140" y="129.8" fill="var(--text-secondary)" font-size="12.5" font-weight="400" text-anchor="end">Matrix3D (unposed)</text>
+<text x="557.4" y="129.8" fill="var(--text-primary)" font-size="12.5" font-weight="400">0.0670</text>
+<rect class="bar" x="150" y="155.5" width="378.9" height="25.4" rx="3" fill="var(--series-1)" opacity="0.55" data-label="Matrix3D (posed)" data-value="CD 0.0580"/>
+<text x="140" y="172.2" fill="var(--text-secondary)" font-size="12.5" font-weight="400" text-anchor="end">Matrix3D (posed)</text>
+<text x="536.9" y="172.2" fill="var(--text-primary)" font-size="12.5" font-weight="400">0.0580</text>
+<rect class="bar" x="150" y="197.8" width="265.2" height="25.4" rx="3" fill="var(--series-1)" opacity="0.55" data-label="VGGT" data-value="CD 0.0260"/>
+<text x="140" y="214.5" fill="var(--text-secondary)" font-size="12.5" font-weight="400" text-anchor="end">VGGT</text>
+<text x="423.2" y="214.5" fill="var(--text-primary)" font-size="12.5" font-weight="400">0.0260</text>
+<rect class="bar" x="150" y="240.1" width="73.1" height="25.4" rx="3" fill="var(--series-2)" opacity="1" data-label="RnG (Ours)" data-value="CD 0.0067"/>
+<text x="140" y="256.8" fill="var(--text-secondary)" font-size="12.5" font-weight="600" text-anchor="end">RnG (Ours)</text>
+<text x="231.1" y="256.8" fill="var(--text-primary)" font-size="12.5" font-weight="600">0.0067</text>
+<line x1="150" y1="20" x2="150" y2="274" stroke="var(--baseline)" stroke-width="1.5"/>
+<text x="505.0" y="314" fill="var(--muted)" font-size="12" text-anchor="middle">Chamfer Distance（对数刻度）— 越低越好</text>
+</svg>
+  </div>
+
+  <section class="card">
+    <h3>3.3 相对提升汇总</h3>
+    <div class="tablewrap"><table>
+      <tr><th>对比对象</th><th>位姿 RA@5</th><th>源深度 Rel</th><th>PSNR</th><th>CD</th></tr>
+      <tr><td>vs VGGT（最强纯重建）</td><td><span class="good">+10.907 pp</span>（+14.7 %）</td><td>5.960 → 0.584，<span class="good">降低 90.2 %（10.21×）</span></td><td>—</td><td>0.0260 → 0.0067，<span class="good">降低 74.2 %（3.88×）</span></td></tr>
+      <tr><td>vs VGGT + LVSM（拼接管线）</td><td>同上</td><td>同上</td><td><span class="good">+6.882 dB</span></td><td>同上</td></tr>
+      <tr><td>vs Matrix3D（unposed，最强统一模型）</td><td><span class="good">+41.376 pp</span></td><td>降低 93.8 %</td><td><span class="good">+7.540 dB</span></td><td><span class="good">降低 90.0 %（恰好 10.0×）</span></td></tr>
+      <tr><td>vs Matrix3D（posed）</td><td>—</td><td>降低 93.3 %</td><td>+6.335 dB</td><td>降低 88.4 %（8.66×）</td></tr>
+      <tr><td>vs LGM</td><td>—</td><td>降低 95.7 %</td><td>+9.599 dB</td><td>降低 94.1 %（16.87×）</td></tr>
+      <tr><td><strong>vs LVSM-100K（唯一败绩）</strong></td><td>—</td><td>—</td><td><span class="crit">−1.246 dB</span></td><td>—</td></tr>
+    </table></div>
+
+    <div class="callout blue">
+      <strong>⭐ 全文最有说服力的定量证据：源视角深度相对误差从 VGGT 的 5.960 降到 0.584 —— 一个数量级（10.21×）。</strong>
+      <p style="margin-top:10px">这个数字之所以关键，在于 RnG <strong>继承的正是 VGGT 的权重</strong>。同一套骨干、同一批初始化，仅仅换了训练目标与领域，可见几何误差就掉了 90.2 %。它同时支撑与削弱论文的主张：</p>
+      <ul style="margin-bottom:0">
+        <li><strong>支撑</strong>：证明 VGGT 的隐空间确实「没有被榨干」，还有大量几何信息未被原目标读出 —— 这正是论文核心假设的直接证据。</li>
+        <li><strong>削弱</strong>：如此巨大的落差也说明这里有<strong>领域适配</strong>的成分。VGGT 在通用场景训练，RnG 在物体级合成渲染上微调并在同分布的 GSO 上评测。5.960 → 0.584 里有多少是「读出了隐藏信息」、多少是「换了个更容易的分布」，论文没有做拆解实验。<strong>这是我认为全文最重要的一个缺失对照组。</strong></li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>3.4 消融研究（表 3）</h3>
+    <div class="tablewrap compact"><table>
+      <tr><th>配置</th><th class="num">RA@5↑</th><th class="num">RT@5↑</th><th class="num">AUC@30↑</th><th class="num">源 Rel↓</th><th class="num">源 a1↑</th><th class="num">新 Rel↓</th><th class="num">新 a1↑</th><th class="num">PSNR↑</th><th class="num">SSIM↑</th><th class="num">LPIPS↓</th></tr>
+      <tr><td>LVSM-100K（对照）</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">27.522</td><td class="num">0.902</td><td class="num">0.0895</td></tr>
+      <tr><td>LVSM-40K（等步数对照）</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">24.619</td><td class="num">0.864</td><td class="num">0.1544</td></tr>
+      <tr class="best"><td><strong>Ours-40K（完整）</strong></td><td class="num">85.146</td><td class="num">86.019</td><td class="num">86.942</td><td class="num">0.584</td><td class="num">99.929</td><td class="num">0.717</td><td class="num">99.850</td><td class="num">26.276</td><td class="num">0.891</td><td class="num">0.0975</td></tr>
+      <tr><td>Ours-15K</td><td class="num">81.650</td><td class="num">82.233</td><td class="num">82.631</td><td class="num">0.742</td><td class="num">99.884</td><td class="num">0.882</td><td class="num">99.788</td><td class="num">24.856</td><td class="num">0.873</td><td class="num">0.1243</td></tr>
+      <tr><td>Ours-15K-scratch（无预训练）</td><td class="num"><span class="crit">8.252</span></td><td class="num">17.184</td><td class="num">33.654</td><td class="num">2.331</td><td class="num">99.475</td><td class="num">2.331</td><td class="num">99.364</td><td class="num"><span class="crit">20.784</span></td><td class="num">0.819</td><td class="num">0.2035</td></tr>
+      <tr><td>Ours-15K-w/o cam（去 L_cam）</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">0.739</td><td class="num">99.890</td><td class="num">0.878</td><td class="num">99.789</td><td class="num">24.850</td><td class="num">0.873</td><td class="num">0.1235</td></tr>
+      <tr><td>Ours-15K-FullAttn（<strong>去因果掩码</strong>）</td><td class="num">82.718</td><td class="num">81.456</td><td class="num">82.686</td><td class="num">0.727</td><td class="num">99.906</td><td class="num">0.892</td><td class="num">99.792</td><td class="num">24.861</td><td class="num">0.874</td><td class="num">0.1193</td></tr>
+    </table></div>
+
+    <h4>逐层增量分解</h4>
+    <div class="tablewrap"><table>
+      <tr><th>增量</th><th>位姿 RA@5</th><th>源深度 Rel</th><th>PSNR</th><th>解读</th></tr>
+      <tr class="best"><td>scratch → 预训练（15K）</td><td><span class="good">+73.398 pp</span></td><td>2.331 → 0.742（−68.2 %）</td><td><span class="good">+4.072 dB</span></td><td><strong>VGGT 预训练是绝对主导因素</strong></td></tr>
+      <tr><td>15K → 40K（训练量 ×2.67）</td><td>+3.496 pp</td><td>0.742 → 0.584（−21.3 %）</td><td>+1.420 dB</td><td>收益递减但仍显著</td></tr>
+      <tr><td>FullAttn → 因果掩码</td><td><span class="crit">−1.068 pp</span></td><td>0.727 → 0.742（<span class="crit">变差 2.1 %</span>）</td><td>+0.005 dB（噪声级）</td><td><strong>⚠️ 见下</strong></td></tr>
+      <tr><td>有 L_cam → 无 L_cam</td><td>（失去位姿输出）</td><td>0.742 → 0.739（略优）</td><td>−0.006 dB</td><td><strong>L_cam 对质量零贡献</strong></td></tr>
+    </table></div>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">图 3 · 设计选择对 PSNR 的增量贡献分解</p>
+    <p class="fig-sub">从 Ours-15K-scratch 的 20.784 dB 出发，逐项叠加。数据来源：论文表 3。</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-1)"></span>VGGT 预训练权重</span>
+      <span><span class="sw" style="background:var(--series-2)"></span>训练量 15K→40K</span>
+      <span><span class="sw" style="background:var(--muted)"></span>因果掩码（≈ 0）</span>
+    </div>
+    <svg id="chart4" class="chart" viewBox="0 0 900 230" xmlns="http://www.w3.org/2000/svg">
+<line x1="60.0" y1="50" x2="60.0" y2="170" stroke="var(--grid)" stroke-width="1"/>
+<text x="60.0" y="194" fill="var(--muted)" font-size="12" text-anchor="middle">20</text>
+<line x1="174.3" y1="50" x2="174.3" y2="170" stroke="var(--grid)" stroke-width="1"/>
+<text x="174.3" y="194" fill="var(--muted)" font-size="12" text-anchor="middle">21</text>
+<line x1="288.6" y1="50" x2="288.6" y2="170" stroke="var(--grid)" stroke-width="1"/>
+<text x="288.6" y="194" fill="var(--muted)" font-size="12" text-anchor="middle">22</text>
+<line x1="402.9" y1="50" x2="402.9" y2="170" stroke="var(--grid)" stroke-width="1"/>
+<text x="402.9" y="194" fill="var(--muted)" font-size="12" text-anchor="middle">23</text>
+<line x1="517.1" y1="50" x2="517.1" y2="170" stroke="var(--grid)" stroke-width="1"/>
+<text x="517.1" y="194" fill="var(--muted)" font-size="12" text-anchor="middle">24</text>
+<line x1="631.4" y1="50" x2="631.4" y2="170" stroke="var(--grid)" stroke-width="1"/>
+<text x="631.4" y="194" fill="var(--muted)" font-size="12" text-anchor="middle">25</text>
+<line x1="745.7" y1="50" x2="745.7" y2="170" stroke="var(--grid)" stroke-width="1"/>
+<text x="745.7" y="194" fill="var(--muted)" font-size="12" text-anchor="middle">26</text>
+<line x1="860.0" y1="50" x2="860.0" y2="170" stroke="var(--grid)" stroke-width="1"/>
+<text x="860.0" y="194" fill="var(--muted)" font-size="12" text-anchor="middle">27</text>
+<rect x="60" y="87.0" width="89.6" height="46" fill="var(--baseline)" opacity="0.5" rx="3"/>
+<text x="104.8" y="114.0" fill="var(--text-secondary)" font-size="12" text-anchor="middle">scratch 20.784</text>
+<rect class="bar" x="149.6" y="87.0" width="465.4" height="46" fill="var(--series-1)" opacity="0.85" rx="3" data-label="+ VGGT 预训练权重" data-value="ΔPSNR +4.072 dB"/>
+<text x="382.3" y="114.0" fill="#fff" font-size="12" font-weight="600" text-anchor="middle">+4.072</text>
+<rect class="bar" x="615.0" y="87.0" width="162.3" height="46" fill="var(--series-2)" opacity="0.85" rx="3" data-label="+ 训练量 15K→40K" data-value="ΔPSNR +1.420 dB"/>
+<text x="696.1" y="114.0" fill="#fff" font-size="12" font-weight="600" text-anchor="middle">+1.420</text>
+<rect class="bar" x="776.7" y="87.0" width="3.0" height="46" fill="var(--muted)" opacity="0.85" rx="3" data-label="+ 因果掩码（相对 FullAttn）" data-value="ΔPSNR -0.005 dB"/>
+<line x1="776.7" y1="73.0" x2="776.7" y2="147.0" stroke="var(--text-primary)" stroke-width="1.6"/>
+<text x="776.7" y="67.0" fill="var(--text-primary)" font-size="12.5" font-weight="600" text-anchor="middle">Ours-40K = 26.271 ≈ 26.276</text>
+<text x="460.0" y="220" fill="var(--muted)" font-size="12" text-anchor="middle">PSNR (dB) — 各设计选择的增量贡献分解（表 3）</text>
+</svg>
+  </div>
+
+  <section class="card">
+    <div class="callout">
+      <strong>⚠️ 相变式的反直觉发现：标题级贡献在质量维度上是负收益</strong>
+      <p style="margin-top:10px">对比 <code>Ours-15K</code>（因果掩码）与 <code>Ours-15K-FullAttn</code>（全注意力），逐指标差值（FullAttn 减 Causal）：</p>
+    </div>
+    <div class="tablewrap"><table>
+      <tr><th>指标</th><th class="num">Causal</th><th class="num">FullAttn</th><th class="num">差值</th><th>谁赢</th></tr>
+      <tr><td>RA@5↑</td><td class="num">81.650</td><td class="num">82.718</td><td class="num"><strong>+1.068</strong></td><td>FullAttn</td></tr>
+      <tr><td>RT@5↑</td><td class="num">82.233</td><td class="num">81.456</td><td class="num">−0.777</td><td>Causal</td></tr>
+      <tr><td>AUC@30↑</td><td class="num">82.631</td><td class="num">82.686</td><td class="num">+0.055</td><td>FullAttn</td></tr>
+      <tr><td>源 Rel↓</td><td class="num">0.742</td><td class="num">0.727</td><td class="num">−0.015</td><td>FullAttn</td></tr>
+      <tr><td>源 a1↑</td><td class="num">99.884</td><td class="num">99.906</td><td class="num">+0.022</td><td>FullAttn</td></tr>
+      <tr><td>新 Rel↓</td><td class="num">0.882</td><td class="num">0.892</td><td class="num">+0.010</td><td>Causal</td></tr>
+      <tr><td>新 a1↑</td><td class="num">99.788</td><td class="num">99.792</td><td class="num">+0.004</td><td>FullAttn</td></tr>
+      <tr><td>PSNR↑</td><td class="num">24.856</td><td class="num">24.861</td><td class="num">+0.005</td><td>FullAttn</td></tr>
+      <tr><td>SSIM↑</td><td class="num">0.873</td><td class="num">0.874</td><td class="num">+0.001</td><td>FullAttn</td></tr>
+      <tr><td>LPIPS↓</td><td class="num">0.1243</td><td class="num">0.1193</td><td class="num"><strong>−0.0050</strong></td><td>FullAttn</td></tr>
+    </table></div>
+    <p><strong>全注意力在 10 项中赢 8 项。</strong> 论文题目和摘要都把 "reconstruction-guided causal attention" 作为一级贡献，但它的价值<strong>完全不在质量维度</strong>，而在两件事上：（1）<strong>架构级的目标视角不变性保证</strong>；（2）<strong>使 KV-Cache 成为可能</strong>，从而拿到 5.35× FLOPs 削减。这两点都成立且重要，但论文的叙述方式容易让读者误读为掩码提升了效果。</p>
+    <p>诚实的表述应该是：<strong>「我们用 8/10 项指标上 0.01–1.07 的微小退化，换来了 5.35× 的推理加速与一个可缓存的三维表示」</strong> —— 这个 trade-off 极其划算，但它是 trade-off，不是免费午餐。</p>
+  </section>
+
+  <section class="card">
+    <h3>3.5 效率分析（表 4）</h3>
+    <p style="font-size:14px;color:var(--muted)">caption：<em>"Efficiency comparison of models with and without KV-Cache for inferring a single novel-view appearance and geometry."</em></p>
+    <div class="tablewrap"><table>
+      <tr><th>方法</th><th class="num">峰值显存</th><th class="num">FLOPs</th><th class="num">单视角耗时</th></tr>
+      <tr><td>Matrix3D [30]</td><td class="num">11.31 G</td><td class="num">2228 T</td><td class="num"><span class="crit">27 s</span></td></tr>
+      <tr><td>RnG w/o KV-Cache</td><td class="num">8.12 G</td><td class="num">12.26 T</td><td class="num">213 ms</td></tr>
+      <tr class="best"><td><strong>RnG w/ KV-Cache</strong></td><td class="num">7.10 G</td><td class="num">2.29 T</td><td class="num">85 ms</td></tr>
+    </table></div>
+    <div class="tablewrap"><table>
+      <tr><th>比较</th><th class="num">FLOPs</th><th class="num">时间</th><th class="num">显存</th></tr>
+      <tr><td>KV-Cache 开启 vs 关闭</td><td class="num"><span class="good">5.35× ↓</span></td><td class="num"><span class="good">2.51× ↓</span></td><td class="num">12.6 % ↓</td></tr>
+      <tr class="best"><td>RnG (cache) vs Matrix3D</td><td class="num"><strong>972.9× ↓</strong></td><td class="num"><strong>317.6× ↓</strong></td><td class="num">37.2 % ↓</td></tr>
+    </table></div>
+    <div class="callout">
+      <strong>注意 5.35× 与 2.51× 之间的 2.13× 缺口。</strong> 计算量削减了 5 倍多，墙钟只快了 2.5 倍，说明缓存查询路径已经<strong>从计算受限转为访存受限</strong>。粗算：24 层 × 4 源视角 × 1024 token × d_model（VGGT-1B 量级约 1024）× K/V 两份 × 2 字节 ≈ <strong>400 MB 量级</strong>的缓存需在每次查询时被完整读过。这对 RnG 宣称的 "real-time interactive" 有直接影响 —— 见批判 #7。
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>3.6 输入视角数敏感性（表 5）</h3>
+    <div class="tablewrap"><table>
+      <tr><th>输入视角数</th><th class="num">PSNR↑</th><th class="num">SSIM↑</th><th class="num">LPIPS↓</th><th class="num">ΔPSNR</th></tr>
+      <tr><td>1</td><td class="num">19.452</td><td class="num">0.811</td><td class="num">0.1821</td><td class="num">—</td></tr>
+      <tr><td>2</td><td class="num">23.403</td><td class="num">0.860</td><td class="num">0.1249</td><td class="num">+3.951</td></tr>
+      <tr class="best"><td><strong>4（训练设置）</strong></td><td class="num">26.276</td><td class="num">0.891</td><td class="num">0.0975</td><td class="num">+2.873</td></tr>
+      <tr><td>8</td><td class="num">27.608</td><td class="num">0.903</td><td class="num">0.0857</td><td class="num">+1.332</td></tr>
+    </table></div>
+    <p><strong>衰减结构</strong>：增益比 = 2.873/3.951 = <strong>0.727</strong>，1.332/2.873 = <strong>0.464</strong>，呈明显几何衰减。若以后段比率 r ≈ 0.464 外推，剩余可获收益 ≈ 1.332 × r/(1−r) ≈ 1.15 dB，<strong>渐近线约 28.7–28.8 dB</strong>。</p>
+    <div class="callout blue">
+      <strong>三个值得单独高亮的观察：</strong>
+      <ol style="margin-top:8px;margin-bottom:0">
+        <li><strong>8 视角时 RnG（27.608）反超 LVSM-100K（27.522）</strong> —— 且 RnG 是<strong>无位姿</strong>的，LVSM 需要真值位姿。这是论文里被低估的一个结果。</li>
+        <li><strong>1 视角的 RnG（19.452）已经超过 4 视角的 VGGT+LVSM（19.394）和 Matrix3D-unposed（18.736）</strong> —— 用 1/4 的观测打平/超越竞品的 4 视角结果。</li>
+        <li><strong>模型完全没有在 1/2/8 视角上训练过</strong>（训练固定 4 源视角 × 3 目标视角），却单调、平滑地泛化。这是对「KV-Cache 是良定义的三维表示」的间接支持：缓存条目数变化不破坏语义。</li>
+      </ol>
+    </div>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">图 4 · PSNR 随输入视角数的变化与外推</p>
+    <p class="fig-sub">数据来源：论文表 5。增益比 0.727 → 0.464 呈几何衰减，暗示存在容量天花板。论文停在 8 视角，未做 16/32 视角实验来证伪这一外推。</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-1)"></span>RnG（无位姿）</span>
+      <span><span class="sw" style="background:var(--series-2)"></span>LVSM-100K 参考线（需真值位姿）</span>
+      <span><span class="sw" style="background:var(--muted)"></span>几何衰减外推渐近线</span>
+    </div>
+    <svg id="chart3" class="chart" viewBox="0 0 900 360" xmlns="http://www.w3.org/2000/svg">
+<line x1="70" y1="308.0" x2="750.0" y2="308.0" stroke="var(--grid)" stroke-width="1"/>
+<text x="60" y="312.0" fill="var(--muted)" font-size="12" text-anchor="end">18</text>
+<line x1="70" y1="261.0" x2="750.0" y2="261.0" stroke="var(--grid)" stroke-width="1"/>
+<text x="60" y="265.0" fill="var(--muted)" font-size="12" text-anchor="end">20</text>
+<line x1="70" y1="214.0" x2="750.0" y2="214.0" stroke="var(--grid)" stroke-width="1"/>
+<text x="60" y="218.0" fill="var(--muted)" font-size="12" text-anchor="end">22</text>
+<line x1="70" y1="167.0" x2="750.0" y2="167.0" stroke="var(--grid)" stroke-width="1"/>
+<text x="60" y="171.0" fill="var(--muted)" font-size="12" text-anchor="end">24</text>
+<line x1="70" y1="120.0" x2="750.0" y2="120.0" stroke="var(--grid)" stroke-width="1"/>
+<text x="60" y="124.0" fill="var(--muted)" font-size="12" text-anchor="end">26</text>
+<line x1="70" y1="73.0" x2="750.0" y2="73.0" stroke="var(--grid)" stroke-width="1"/>
+<text x="60" y="77.0" fill="var(--muted)" font-size="12" text-anchor="end">28</text>
+<line x1="70" y1="26.0" x2="750.0" y2="26.0" stroke="var(--grid)" stroke-width="1"/>
+<text x="60" y="30.0" fill="var(--muted)" font-size="12" text-anchor="end">30</text>
+<text x="70.0" y="332.0" fill="var(--muted)" font-size="12" text-anchor="middle">1</text>
+<text x="296.7" y="332.0" fill="var(--muted)" font-size="12" text-anchor="middle">2</text>
+<text x="523.3" y="332.0" fill="var(--muted)" font-size="12" text-anchor="middle">4</text>
+<text x="750.0" y="332.0" fill="var(--muted)" font-size="12" text-anchor="middle">8</text>
+<line x1="70" y1="84.2" x2="750.0" y2="84.2" stroke="var(--series-2)" stroke-width="1.6" stroke-dasharray="6 5"/>
+<text x="760.0" y="78.2" fill="var(--series-2)" font-size="12" font-weight="600">LVSM-100K = 27.522</text>
+<text x="760.0" y="95.2" fill="var(--muted)" font-size="11.5">（需真值位姿）</text>
+<line x1="70" y1="55.1" x2="750.0" y2="55.1" stroke="var(--muted)" stroke-width="1.2" stroke-dasharray="2 5"/>
+<text x="760.0" y="59.1" fill="var(--muted)" font-size="11.5">外推渐近线 ≈ 28.8</text>
+<path d="M70.0 273.9 L296.7 181.0 L523.3 113.5 L750.0 82.2" fill="none" stroke="var(--series-1)" stroke-width="2.6" stroke-linejoin="round"/>
+<circle class="dot" cx="70.0" cy="273.9" r="5.5" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="2" data-label="1 输入视角" data-value="PSNR 19.452 dB"/>
+<text x="70.0" y="259.9" fill="var(--text-primary)" font-size="12.5" font-weight="600" text-anchor="middle">19.452</text>
+<circle class="dot" cx="296.7" cy="181.0" r="5.5" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="2" data-label="2 输入视角" data-value="PSNR 23.403 dB"/>
+<text x="296.7" y="167.0" fill="var(--text-primary)" font-size="12.5" font-weight="600" text-anchor="middle">23.403</text>
+<circle class="dot" cx="523.3" cy="113.5" r="5.5" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="2" data-label="4 输入视角" data-value="PSNR 26.276 dB"/>
+<text x="523.3" y="99.5" fill="var(--text-primary)" font-size="12.5" font-weight="600" text-anchor="middle">26.276</text>
+<circle class="dot" cx="750.0" cy="82.2" r="5.5" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="2" data-label="8 输入视角" data-value="PSNR 27.608 dB"/>
+<text x="750.0" y="68.2" fill="var(--text-primary)" font-size="12.5" font-weight="600" text-anchor="middle">27.608</text>
+<text x="183.3" y="249.5" fill="var(--series-2)" font-size="12" font-weight="600" text-anchor="middle">+3.951</text>
+<text x="410.0" y="169.3" fill="var(--series-2)" font-size="12" font-weight="600" text-anchor="middle">+2.873</text>
+<text x="636.7" y="119.9" fill="var(--series-2)" font-size="12" font-weight="600" text-anchor="middle">+1.332</text>
+<line x1="70" y1="26" x2="70" y2="308" stroke="var(--baseline)" stroke-width="1.5"/>
+<line x1="70" y1="308.0" x2="750.0" y2="308.0" stroke="var(--baseline)" stroke-width="1.5"/>
+<text x="410.0" y="352" fill="var(--muted)" font-size="12" text-anchor="middle">输入源视角数（对数刻度）</text>
+<text x="18" y="167.0" fill="var(--muted)" font-size="12" text-anchor="middle" transform="rotate(-90 18 167.0)">PSNR (dB)</text>
+</svg>
+  </div>
+
+  <section class="card">
+    <h3>3.7 统计显著性</h3>
+    <div class="callout">
+      <strong>⚠️ 论文未报告任何标准差、置信区间或多次运行结果。</strong> 表 2/3/5 均为单次运行的点估计。这在 PSNR 差异达 6–9 dB 的主结果上无伤大雅，但对表 3 中 FullAttn vs Causal 的 0.005 dB 差异是<strong>致命的</strong> —— 该差异几乎肯定落在随机种子噪声内。因此上文「全注意力赢 8/10」应理解为「<strong>两者在质量上无法区分</strong>」，而非「全注意力确实更好」。这个更弱的表述反而更有利于论文：因果掩码是<strong>免费的</strong>（不损失质量），而不是有代价的。
+    </div>
+  </section>
+
+  <h2>4 · 价值分析</h2>
+  <section class="card">
+    <h3>真正的贡献是什么</h3>
+    <p><strong>不是「又一个统一模型」，而是重新定义了「三维表示」的候选空间。</strong> 过去五年，三维表示的演进是 显式网格 → 体素 → NeRF → 3DGS → 三平面 latent → 结构化 latent。这些全都是<strong>为三维专门设计的数据结构</strong>。RnG 的主张是：一个<strong>通用 transformer 的中间激活</strong>可以直接充当这个角色 —— 只要你保证它对查询不变。这个主张的分量在于它把三维表示问题<strong>归约</strong>成了一个注意力掩码设计问题。</p>
+
+    <h3>可以脱离本文单独复用的设计</h3>
+    <div class="tablewrap"><table>
+      <tr><th>可复用件</th><th>复用方式</th><th>适用范围</th></tr>
+      <tr><td><strong>任务级因果掩码</strong></td><td>在任何「A 任务不应被 B 任务污染」的多任务共享骨干里，用 0/1 掩码切断单向信息流</td><td>远超三维：多模态理解+生成、检索+重排、感知+规划</td></tr>
+      <tr><td><strong>KV-Cache 即表示</strong></td><td>凡「一次编码、多次查询」的任务，把编码侧 K/V 缓存当作可导出的中间产物</td><td>视频世界模型的场景记忆、长文档 QA、具身智能的空间记忆</td></tr>
+      <tr><td><strong>重建先验 → 生成</strong>的方向反转</td><td>不必训生成模型，而是给判别式基座开解码出口</td><td>检测/分割/深度基座 → 相应的生成任务</td></tr>
+      <tr><td>Plücker ray 查询接口</td><td>把「视角」token 化，使查询数量与模型结构解耦</td><td>任意需要连续参数化查询的渲染/仿真任务</td></tr>
+      <tr><td><strong>不变性作为可缓存性的前提</strong></td><td>「先证明不变，再缓存」这条推理模式</td><td>系统层的通用设计原则</td></tr>
+    </table></div>
+
+    <h3>对后续工作的启发</h3>
+    <p>RnG 打开的研究空间可以按「缓存的语义」来组织：</p>
+    <ul>
+      <li><strong>如果 KV-Cache 是三维表示，它可以被编辑吗？</strong> 直接在缓存上做算术（物体删除、替换、材质编辑）而不重新前向。</li>
+      <li><strong>它可以被压缩/量化吗？</strong> 400 MB 的表示若能压到 40 MB，就有了三维资产的「神经压缩格式」。</li>
+      <li><strong>它可以被拼接吗？</strong> 两个场景的缓存拼在一起是否等于场景合并？这直接对应场景级扩展。</li>
+      <li><strong>它可以被时间索引吗？</strong> 加上时间维度后，KV-Cache 就成了世界模型的显式记忆。</li>
+    </ul>
+    <p>最后一条与本周领域（生成模型 / 世界模型）的连接最紧：视频世界模型的长时一致性问题本质上就是「记忆该以什么形式存在」，而 RnG 给出了一个答案 —— <strong>以重建网络的 KV 形式存在</strong>。</p>
+  </section>
+
+  <h2>5 · 局限性</h2>
+
+  <section class="card">
+    <h3>第一类：论文自述（第 5 节，原文引用）</h3>
+    <h4>（1）细节缺失</h4>
+    <div class="quote">"Unlike diffusion-based image generators that produce eye-catching images with very rich details (although they can be wrong), RnG has difficulties in representing intricate textures. This is also an issue in LVSM [18]. Introducing image-generation pretraining or auto-encoding components might resolve this issue."</div>
+    <p>对应数据：LPIPS 0.0975 vs LVSM 0.0895（差 8.9 %），PSNR −1.246 dB。</p>
+    <h4>（2）世界原点定义</h4>
+    <div class="quote">"For object-level reconstruction task, an ideal world origin would be the object center. However, in data preparation, all cameras look at the world center, which may confuse the network to regard the intersection of source views' optical axes as the world origin. This also limits model's real-world applications, where multiview images captured by hand-held devices have to look at a common 3D point to get the best result."</div>
+    <h4>（3）多视角三维累积</h4>
+    <div class="quote">"Although our model generates highly consistent point maps from viewpoint queries, it requires to accumulate multi-view observations to obtain a complete 3D. Multi-view geometry integration might also introduce noise and conflicts."</div>
+    <p>即：单次查询得到的是<strong>像素对齐点图</strong>（2.5D），要得到闭合三维仍需多次查询 + 融合。所谓「完整三维」是<strong>查询后拼出来的</strong>，不是一次前向出来的。</p>
+  </section>
+
+  <section class="card">
+    <h3>第二类：补充批判（独立观察，8 点）</h3>
+
+    <h4>批判 1 · <span style="color:var(--series-2)">论证缺口</span> —— 标题级贡献在质量维度上无正收益，论文未如实定位</h4>
+    <p>表 3 中 <code>Ours-15K-FullAttn</code> 在 10 项指标里 8 项优于或持平 <code>Ours-15K</code>（LPIPS 0.1193 vs 0.1243，差距 0.0050，是 15K→40K 训练量翻倍所带来 LPIPS 改善 0.0268 的 <strong>18.7 %</strong>）。论文摘要将因果注意力列为核心创新并暗示其带来性能，但证据只支持「它不损害性能且使缓存成为可能」。</p>
+
+    <h4>批判 2 · <span style="color:var(--series-2)">缺乏关键竞品的公平对比</span> —— 「40K vs 40K」不是 compute-matched</h4>
+    <p>论文用 <code>LVSM-40K</code>（24.619）而非 <code>LVSM-100K</code>（27.522）来支撑自己更数据高效（+1.657 dB）。但 RnG 从 VGGT 权重初始化，而 VGGT 本身在大规模多数据集上预训练过。论文自己的 <code>Ours-15K-scratch</code> 给出了这个先验的量级：<strong>PSNR 20.784（−4.072 dB）、RA@5 8.252（−73.398 pp）</strong>。把预训练算力计入后，「同为 40K 步」的说法失去意义。</p>
+    <p><strong>缺失的对照组</strong>：把 LVSM 也从 VGGT 权重初始化，或把 VGGT 按原目标在同样的 Objaverse 上微调 40K 步后再接 LVSM。前者能分离「RnG 的架构」与「VGGT 的先验」，后者能分离「读出了隐藏几何」与「适配了更简单的分布」。</p>
+
+    <h4>批判 3 · <span style="color:var(--series-2)">指标有效性</span> —— CD 是「完整性」的唯一证据，但协议不透明且未做分解</h4>
+    <ul>
+      <li>论文未说明 CD 是单向还是双向、是否做尺度对齐、采样点数是多少。</li>
+      <li>未报告 <strong>accuracy / completeness</strong> 的分解。这是关键：CD 是两项之和，一个把物体内部填成实心的模型会显著改善 completeness 而不改善 accuracy，总 CD 依然漂亮。</li>
+      <li>更根本的是 VGGT 的 CD = 0.0260 本身语义可疑 —— VGGT 不输出不可见区域，它的「完整三维点云」是怎么构造出来参与 CD 计算的？若只用可见部分算单向 CD（预测→真值），它天然占便宜；若用双向 CD，缺失的背面会被重罚。<strong>这两种协议下 3.88× 的差距含义完全不同。</strong></li>
+    </ul>
+
+    <h4>批判 4 · <span style="color:var(--series-2)">实验设计问题</span> —— 权重最大的损失项贡献为零</h4>
+    <p><code>Ours-15K-w/o cam</code> 与 <code>Ours-15K</code>：PSNR 24.850 vs 24.856（−0.006），LPIPS 0.1235 vs 0.1243（<strong>更优</strong>），源深度 Rel 0.739 vs 0.742（<strong>更优</strong>）。也就是说 <strong>λ_c = 1（三项中最大权重）的位姿损失，对外观和几何的贡献严格为零甚至略负</strong>。合理推断：位姿能力已完全由 VGGT 预训练权重承载，L_cam 只是在<strong>保持</strong>而非<strong>学习</strong>。</p>
+    <p>论文既没讨论这一现象，也没做 λ_c 的敏感性扫描。<strong>如果 λ_c 可以降到 0.1 甚至 0.01 而不损失位姿精度，那么外观项能分到更大的有效梯度预算，批判 1 里的「细节缺失」或许能部分缓解。</strong></p>
+
+    <h4>批判 5 · <span style="color:var(--series-2)">评测覆盖不均</span> —— 真实场景零定量结果</h4>
+    <p>所有定量结论建立在 <strong>GSO（1,030 个物体级、干净背景、环视轨迹的合成渲染）</strong> 之上，训练集是同类型的 Objaverse-LVIS。CO3D 只有一张定性图，论文自承 "predictions may be misaligned with the ground truth"。与此同时论文宣称面向 "real-time interactive applications"。<strong>一个每视角 85 ms 但只在合成物体上验证过的模型，其「实时交互」的实用性主张缺乏证据。</strong> 场景级（室内、街景）、手持轨迹、强遮挡、非朗伯材质 —— 这四类真实条件一个都没有数字。</p>
+
+    <h4>批判 6 · <span style="color:var(--series-2)">论证缺口</span> —— 世界原点歧义是方法论缺陷，不是数据处理问题</h4>
+    <p>论文把世界原点问题归为可通过 "improving the data-processing pipeline" 解决。但看架构：<code>ĝ_{s=1} = [I₃ₓ₃ | (0,0,−1)ᵀ]</code> 把第一个源视角<strong>钉死</strong>为世界系，物体中心只能由「所有源视角光轴的交点」<strong>隐式</strong>定义。训练数据里所有相机都 look-at 世界中心，这个隐式定义恰好成立 —— 因此模型学到的是<strong>数据集采集协议</strong>，而非<strong>几何不变量</strong>。</p>
+    <div class="callout">
+      <strong>这构成一条自洽的证据链</strong>：架构上的隐式假设（批判 6）→ 训练协议与真实采集不匹配 → CO3D 上出现对齐偏差（论文自述）→ 因此 CO3D 无法给出定量表（批判 5）。<strong>三个现象是同一个根因。</strong> 换数据处理管线不能解决它，需要的是<strong>显式的、与源视角选择无关的世界系定义</strong>。
+    </div>
+
+    <h4>批判 7 · <span style="color:var(--series-2)">可扩展性论证缺失</span> —— 5.35× FLOPs 只换来 2.51× 加速</h4>
+    <p>表 4 显示计算量削减 5.35× 但墙钟只快 2.51×，2.13× 的缺口指向<strong>访存瓶颈</strong>。当前配置：256×256、patch 8 → 每视角 1024 token；4 源视角 × 24 层的 K/V 缓存约数百 MB。若按论文展望扩展：</p>
+    <div class="tablewrap"><table>
+      <tr><th>扩展方向</th><th class="num">token 数变化</th><th class="num">缓存规模</th><th>后果</th></tr>
+      <tr><td>512×512 分辨率</td><td class="num">×4</td><td class="num">×4（~1.6 GB）</td><td>带宽先于算力饱和</td></tr>
+      <tr><td>8→16 源视角</td><td class="num">×4</td><td class="num">×4</td><td>同上</td></tr>
+      <tr><td>加入时间维（动态场景）</td><td class="num">×T</td><td class="num">×T</td><td>线性爆炸</td></tr>
+    </table></div>
+    <p><strong>KV-Cache 作为三维表示的最大弱点恰恰是它的规模与观测量成正比 —— 而好的三维表示应该与场景复杂度成正比，与观测量无关。</strong> 一个 3DGS 场景不会因为你多拍了 100 张照片就变大 100 倍。论文没有讨论缓存压缩、剪枝或去冗余。</p>
+
+    <h4>批判 8 · <span style="color:var(--series-2)">论证缺口</span> —— 存在容量天花板的迹象，论文未证伪</h4>
+    <p>表 5 的增益比 0.727 → 0.464 呈几何衰减，外推渐近线约 <strong>28.7 dB</strong>。这意味着即使给到 16 或 32 个视角，RnG 也难以显著超越 LVSM-100K 的 27.522。若属实，瓶颈就不在观测量，而在（a）解码器 D_RGB 的容量、（b）256×256 的分辨率上限、或（c）无生成先验导致的高频细节上限（与论文自述的 "Lack of details" 一致）。<strong>论文停在 8 视角，一个 16 视角的数据点就能区分「几何衰减（有天花板）」与「对数增长（无天花板）」。</strong></p>
+
+    <h3>我自己分析的不完备之处</h3>
+    <ul>
+      <li>未能独立打开 GitHub 与 Hugging Face 链接，因此<strong>无法核实代码/权重是否真的已发布</strong>、训练代码是否包含、许可为何。批判 3 中关于 CD 协议的疑问，本来最有可能通过读评测代码解决。</li>
+      <li>未读 PDF 原文，表格数据来自 arXiv HTML 版的结构化抽取；MUSt3R 行的异常（RA@5 = RT@5）无法排除是抽取误差。</li>
+      <li>论文补充材料（Fig. 13–15 失败案例）我只拿到了文字描述，没有看到图，因此对失败模式的刻画依赖论文自述。</li>
+      <li>未做任何独立复现或数值验算，所有性能数字均转引自论文表 2/3/4/5。</li>
+    </ul>
+  </section>
+
+  <h2>6 · 相关工作回溯</h2>
+  <p style="color:var(--text-secondary)">以下五篇构成一条<strong>清晰的问题传递链</strong>，而非平行罗列。每一篇解决了链条上的一个维度，同时留下了下一篇要接手的缺口。</p>
+
+  <section class="card">
+    <h3>6.1 DUSt3R — 2023.12（arXiv）/ CVPR 2024</h3>
+    <h4>解决了什么问题</h4>
+    <p>传统 MVS/SfM 管线要求已知或先估计相机内外参，一旦位姿估计失败整条管线崩溃。DUSt3R 把成对图像的三维重建<strong>重新表述为 pointmap 回归</strong>：网络直接输出每个像素在共同坐标系下的三维坐标，"relaxing strict projective camera model constraints"。核心贡献一句话：<strong>用一个回归任务吞掉了整条几何管线。</strong></p>
+    <h4>遗留了什么缺口</h4>
+    <p>（a）<strong>本质上是成对的</strong> —— N 张图需 O(N²) 次前向再加昂贵的全局对齐优化，破坏了「前馈」的纯粹性；（b）<strong>尺度歧义</strong>；（c）<strong>只建模可见</strong> —— pointmap 是像素对齐的，没有像素就没有几何，这是表示形式内生的限制。</p>
+    <h4>核心工作如何回应</h4>
+    <p>RnG 完全继承 pointmap 作为几何输出格式（<code>D_pmap</code> 头、<code>L_pmap</code> 损失），但对缺口 (c) 给出了一个巧妙的<strong>绕过</strong>而非<strong>解决</strong>：既然 pointmap 只能覆盖有像素的地方，那就<strong>让查询视角提供像素</strong>。目标视角的 Plücker 射线在不可见区域也有射线，于是 <code>D_pmap</code> 在那里输出的就是「推测的」几何。</p>
+    <h4>关键设计的传递</h4>
+    <p>pointmap + 异方差不确定性加权损失从 DUSt3R 经 VGGT 一路传到 RnG，形式几乎未变。这是本链条上<strong>最稳定的技术遗产</strong>。</p>
+  </section>
+
+  <section class="card">
+    <h3>6.2 LRM — 2023.11（arXiv）/ ICLR 2024</h3>
+    <h4>解决了什么问题</h4>
+    <p>在 LRM 之前，单图到三维几乎全靠 per-scene 优化（SDS），一个物体要跑几十分钟。LRM 证明了<strong>大规模前馈回归可以取代优化</strong>：大 Transformer + Objaverse 规模数据，5 秒出一个三平面 NeRF。核心贡献一句话：<strong>把三维重建变成一个「大模型问题」而非「优化问题」。</strong></p>
+    <h4>遗留了什么缺口</h4>
+    <p>（a）单图设置下<strong>「重建」与「生成」在概念上被混同了</strong> —— 单张图的背面必然是生成的，但 LRM 没有任何机制去区分「我看到了所以确信」和「我没看到所以在猜」；（b）三平面 NeRF 的几何精度受限；（c）需要规范化的相机。</p>
+    <h4>核心工作如何回应</h4>
+    <p>缺口 (a) 是 RnG 的<strong>直接靶心</strong>。因果掩码在架构层面把两者切开：源视角分支只做重建（且被证明与目标视角无关），目标视角分支才做生成。<strong>「区分确信与猜测」这件事，从 LRM 的「无机制」变成了 RnG 的「架构保证」。</strong></p>
+    <h4>关键设计的传递</h4>
+    <p>「前馈大模型 + Objaverse 训练协议」这个范式，以及 GSO 作为零样本评测集的惯例，都始自 LRM 这条线。RnG 的 113.5 K Objaverse-LVIS + GSO 1,030 物体评测正是它的直接延续。</p>
+  </section>
+
+  <section class="card">
+    <h3>6.3 LVSM — 2024.10（arXiv）/ ICLR 2025 Oral</h3>
+    <h4>解决了什么问题</h4>
+    <p>即便到了 LRM 之后，新视角合成仍普遍依赖 3D 归纳偏置：NeRF/3DGS 的显式表示、epipolar 约束、plane sweep。LVSM 把它们<strong>全部删掉</strong>，只留一个纯 Transformer：输入图像 token + 目标视角的 Plücker 射线 → 输出像素。结果是相对此前 SOTA <strong>+1.5 ~ 3.5 dB PSNR</strong>，且 1–2 张 GPU 就能超过所有此前方法。核心贡献一句话：<strong>证明三维归纳偏置不是必需品，数据和规模可以替代它。</strong></p>
+    <p>LVSM 有两个变体，对理解 RnG 至关重要：<strong>Encoder-Decoder</strong> 把输入压成固定数量的 1D latent token 作为场景表示（一个「学出来的隐式三维表示」）；<strong>Decoder-Only</strong> 完全去掉中间表示，质量更好但更贵。</p>
+    <h4>遗留了什么缺口</h4>
+    <p>（a）<strong>必须有真值相机位姿</strong> —— RnG 为了对比不得不用 VGGT 给它补位姿，得到 "VGGT + LVSM" 这个拼接基线，PSNR 只有 19.394，<strong>比 LVSM 自己的 27.522 掉了 8.1 dB</strong>，说明拼接管线的误差传播极其严重；（b）<strong>不输出任何几何</strong>；（c）Encoder-Decoder 的 latent 虽是「隐式三维」，但它是<strong>为渲染新学的</strong>，与任何重建任务都不对齐，因此无法从中读出几何。</p>
+    <h4>核心工作如何回应</h4>
+    <ul>
+      <li>对 (a)：因为骨干是 VGGT，位姿是<strong>内生输出</strong>而非外部输入 —— 且 RnG 的 RA@5 = 85.146 比 VGGT 自己的 74.239 还高 10.9 pp，说明加入生成任务反而<strong>改善</strong>了位姿估计。</li>
+      <li>对 (b)：并联 <code>D_pmap</code> 头，同一份 token 同时出 RGB 与几何。</li>
+      <li>对 (c)：<strong>这是最深刻的一处回应。</strong> LVSM 的隐式表示是「学一个新 latent」，RnG 的隐式表示是「复用重建网络的 KV-Cache」—— 后者天然与几何任务对齐，因为它本来就是为几何训练出来的。<strong>从「学一个新表示」到「复用一个旧表示」，是本链条上最大的一次观念转变。</strong></li>
+    </ul>
+    <h4>关键设计的传递</h4>
+    <p>极其直接：<strong>Plücker ray map 作为目标视角查询接口</strong>，RnG 与 LVSM 完全同构。可以把 RnG 理解为「<strong>把 LVSM 的编码器换成 VGGT，并把 latent token 换成 KV-Cache</strong>」。RnG 也诚实地把 LVSM 列为纹理细节缺失问题的同病相怜者。</p>
+  </section>
+
+  <section class="card">
+    <h3>6.4 VGGT — 2025.03（arXiv）/ CVPR 2025 <strong>Best Paper</strong></h3>
+    <h4>解决了什么问题</h4>
+    <p>DUSt3R 的成对限制与全局对齐开销。VGGT 用一个前馈网络、交替的 frame-attention 与 global-attention，从任意数量视角<strong>同时</strong>推出相机参数、深度图、点图与三维点轨迹，<strong>&lt; 1 秒</strong>，且无需任何后处理优化即超过带优化的方法。核心贡献一句话：<strong>三维感知的所有任务可以由一个网络一次前向全部输出。</strong></p>
+    <h4>遗留了什么缺口</h4>
+    <p>一个，但很大：<strong>它是纯判别式的，输出是「观测的函数」而非「场景的模型」。</strong>（a）只建模可见区域，CD = 0.0260 里没有任何背面信息；（b）没有任何生成能力；（c）—— 这一点是 RnG 的洞察 —— <strong>它的隐空间可能已经知道答案，只是没有出口。</strong></p>
+    <h4>核心工作如何回应</h4>
+    <p>RnG 的回应是<strong>最小侵入式</strong>的：不改架构、不改预训练权重的初始化、不加新模块，只加（i）一个 0/1 注意力掩码、（ii）两个输出头、（iii）目标视角的射线输入，然后微调 40 K 步。结果是 VGGT 的所有能力被保留并<strong>增强</strong>（RA@5 74.239 → 85.146，源深度 Rel 5.960 → 0.584），同时获得了生成能力。</p>
+    <h4>关键设计的传递</h4>
+    <p>传递的是<strong>权重本身</strong>，这是本链条上唯一一处「继承」而非「借鉴」。也正因如此，<code>Ours-15K-scratch</code> 的崩塌（PSNR −4.072 dB、RA@5 −73.4 pp）才是全文最重要的消融 —— 它量化了这份遗产的价值。<strong>从技术传递的角度说，RnG 的贡献不是「造了一个新模型」，而是「发现了 VGGT 里一个没人用的出口」。</strong> 这既是它的优雅之处，也是批判 2 的根源。</p>
+  </section>
+
+  <section class="card">
+    <h3>6.5 Matrix3D — 2025.02（arXiv）/ CVPR 2025</h3>
+    <h4>解决了什么问题</h4>
+    <p>Matrix3D 是<strong>第一个把「统一重建 + 生成」明确设为目标</strong>的工作。它用多模态 DiT 把图像、相机参数、深度图三种模态统一进一个扩散过程，配合 mask learning 策略「enables full-modality model training even with partially complete data」。核心贡献一句话：<strong>用扩散模型的模态补全能力，把摄影测量的所有任务变成同一个「填空」问题。</strong></p>
+    <h4>遗留了什么缺口</h4>
+    <ul>
+      <li><strong>速度</strong>：27 s / 视角，2228 T FLOPs。论文直言 "incurs high computational costs, making it unsuitable for real-time applications"。</li>
+      <li><strong>一致性</strong>：生成 "eye candy" 图像但 "often fails to keep 3D consistency"。数据佐证：无位姿设置下 CD = 0.0670，<strong>比不做任何生成的 VGGT（0.0260）还差 2.58×</strong>。</li>
+    </ul>
+    <h4>核心工作如何回应</h4>
+    <p>RnG 是对 Matrix3D 的<strong>方向反转式回答</strong>。Matrix3D 说：拿一个生成模型（扩散），教它做重建。RnG 说：拿一个重建模型（VGGT），给它开一个生成出口。结果是全面碾压：CD 降低 <strong>10.0×</strong>（恰好一个数量级）、PSNR <strong>+7.540 dB</strong>、速度 <strong>317.6×</strong>。</p>
+    <h4>关键设计的传递</h4>
+    <p>传递的是<strong>问题定义与评测协议</strong>，而非技术模块。Matrix3D 定义了「统一模型该被怎样评价」（位姿 + 深度 + NVS + 完整三维四维度同时报），RnG 的表 2 结构就是这个协议的直接继承 —— 只是把每一格的数字都改写了。<strong>这是一种「批判式继承」：接受对手的评价标准，然后在对手的标准上击败它。</strong></p>
+  </section>
+
+  <h2>7 · 技术演进脉络</h2>
+  <section class="card">
+    <h3>7.1 演进树（非线性）</h3>
+    <div class="flow">                 2023.11  LRM  [前馈大模型范式 · 单图→三平面NeRF · Objaverse协议]
+                    │            缺口：重建/生成不分 · 需规范位姿
+                    │
+                 2023.12  DUSt3R  [pointmap回归 · 免位姿 · 成对]
+                    │            缺口：O(N²)+全局对齐 · 只建模可见
+                    │
+        ┌───────────┴─────────────────────────────────┐
+        │  「怎么把观测变成几何」              「怎么把观测变成新视角」
+        ▼                                             ▼
+   2025.03  VGGT (CVPR'25 Best Paper)          2024.10  LVSM (ICLR'25 Oral)
+   [多视角一次前馈出 位姿/深度/点图/轨迹]        [删除全部3D归纳偏置]
+   [交替 frame ↔ global attention · &lt;1s]        [Plücker ray 查询 · latent as scene]
+        │ 缺口：纯判别式，无生成                     │ 缺口：需真值位姿、无几何输出
+        │      隐空间「有答案但无出口」               │      latent 与重建任务不对齐
+        │                                             │
+        │        2025.02  Matrix3D (CVPR'25)          │
+        │        [多模态DiT + mask learning]           │
+        │        [首次明确「统一重建+生成」]            │
+        │        缺口：27s不可实时 · 3D一致性差         │
+        │        (CD 0.0670 &gt; VGGT 0.0260 ❗)          │
+        │             │                               │
+        │             │  ── 定义了问题与评测协议 ──    │
+        │             ▼                               │
+        └────────────▶●◀──────────────────────────────┘
+                      │
+        2026.03  ★ RnG (CVPR'26 Highlight) —— 汇聚点
+        ├─ 继承 VGGT 的架构 + 权重          （几何先验）
+        ├─ 继承 LVSM 的 Plücker ray 查询    （生成接口）
+        ├─ 继承 DUSt3R 的 pointmap 输出     （几何格式）
+        ├─ 继承 LRM 的 Objaverse/GSO 协议   （评测惯例）
+        ├─ 继承 Matrix3D 的问题定义         （四维度评测矩阵）
+        └─ 新增：任务级因果掩码 M  →  KV-Cache 即三维表示
+                 CD 0.0067 · PSNR 26.276 · 85 ms/view
+
+        ─────────── 平行的其他汇聚尝试（2026） ───────────
+        Gen3R (2601.04090)   [VGGT适配器 + 视频扩散 latent 对齐 → 场景级]
+        NOVA3R (2603.04179)  [非像素对齐 ViT → amodal 3D，绕开 pointmap 的可见性限制]</div>
+
+    <h3>7.2 演进的内在逻辑</h3>
+    <h4>推动力一：表示的「去专用化」</h4>
+    <div class="formula">显式网格/体素 → NeRF(隐式场) → 3DGS(显式基元) → 三平面 latent
+   → LVSM 的 1D latent token（学出来的）
+      → RnG 的 KV-Cache（借来的）</div>
+    <p>每一步都在削弱「三维表示必须是专门设计的数据结构」这个前提。RnG 是目前这条线的终点：<strong>表示不再被设计，而被复用。</strong></p>
+
+    <h4>推动力二：监督的「去标注化」</h4>
+    <div class="formula">需要位姿+深度真值 → DUSt3R 去掉位姿 → RayZer 连位姿监督也去掉（自监督）
+   → VGGT 用海量混合数据把几何先验做成基座 → RnG 只需 RGB + pointmap 微调 40K 步</div>
+
+    <h4>推动力三：判别与生成的合流，以及方向的反转</h4>
+    <div class="tablewrap"><table>
+      <tr><th>阶段</th><th>主导思路</th><th>代表</th><th>结果</th></tr>
+      <tr><td>2023–2024</td><td>各自为政</td><td>LRM（重建）/ Zero-1-to-3（生成）</td><td>两条独立技术栈</td></tr>
+      <tr><td>2025 上半</td><td><strong>给生成模型加几何</strong></td><td>Matrix3D</td><td>能生成，但慢且不一致（CD 0.0670）</td></tr>
+      <tr><td>2025 下半</td><td>重建基座成熟</td><td>VGGT（Best Paper）</td><td>判别侧封顶，生成侧空白</td></tr>
+      <tr class="best"><td>2026</td><td><strong>给重建模型开生成出口</strong></td><td><strong>RnG</strong></td><td>快 317×、CD 降 10×</td></tr>
+    </table></div>
+    <p><strong>阶段间的关键转折点</strong>有两个：</p>
+    <ol>
+      <li><strong>VGGT 的出现（2025.03）改变了力量对比。</strong> 在它之前，重建模型不够强，「给生成模型加几何」是合理的；在它之后，重建基座的几何精度远超任何扩散模型，方向反转成为必然。RnG 只是第一个明确说出这件事的工作。</li>
+      <li><strong>「不变性 → 可缓存性」的推理（2026.03）把科学问题变成了系统红利。</strong> RnG 引入因果掩码本是为做控制变量，却顺手拿到了 5.35× 的 FLOPs 削减。<strong>这类「因为要严谨所以变快了」的巧合，在系统与算法交界处并不常见，值得单独记下。</strong></li>
+    </ol>
+    <p><strong>社区关注点的转移</strong>：早期关注<strong>精度</strong>（PSNR、Chamfer），中期关注<strong>泛化</strong>（零样本、跨数据集），当前正转向<strong>表示的可操作性</strong> —— 能不能编辑、压缩、拼接、加时间维。RnG 的 KV-Cache 恰好把这些问题变成了熟悉的 LLM 系统问题（KV 压缩、缓存复用、注意力剪枝），这可能是它最大的溢出价值。</p>
+  </section>
+
+  <h2>8 · 相关工作表格对标</h2>
+  <section class="card">
+    <div class="tablewrap"><table>
+      <tr><th>工作</th><th>年月</th><th>会议 / 出版</th><th>核心贡献</th><th>关键指标</th><th>与 RnG 的关系</th></tr>
+      <tr><td>LRM</td><td>2023.11</td><td>ICLR 2024</td><td>前馈大模型取代 per-scene 优化</td><td>单图 → 三平面 NeRF，~5 s</td><td>提供范式与 Objaverse/GSO 评测协议</td></tr>
+      <tr><td>DUSt3R</td><td>2023.12</td><td>CVPR 2024</td><td>pointmap 回归，免位姿成对重建</td><td>深度/相对位姿多项 SOTA</td><td>提供 pointmap 输出格式与不确定性损失</td></tr>
+      <tr><td>LVSM</td><td>2024.10</td><td><strong>ICLR 2025 Oral</strong></td><td>删除全部 3D 归纳偏置</td><td>GSO PSNR <strong>27.522</strong>（需真值位姿）</td><td>提供 Plücker ray 查询接口；<strong>唯一在 PSNR 上胜过 RnG 的方法</strong></td></tr>
+      <tr><td>Matrix3D</td><td>2025.02</td><td>CVPR 2025</td><td>多模态 DiT 统一重建+生成</td><td>CD 0.0670 / PSNR 18.736 / <strong>27 s</strong></td><td>定义问题与评测协议；RnG 的<strong>主要打击目标</strong></td></tr>
+      <tr><td>VGGT</td><td>2025.03</td><td><strong>CVPR 2025 Best Paper</strong></td><td>一次前馈出全部 3D 属性</td><td>RA@5 74.239 / Rel 5.960 / CD 0.0260</td><td><strong>架构与权重的直接来源</strong>；RnG 的性能地板</td></tr>
+      <tr><td>RayZer</td><td>2025.05</td><td>ICCV 2025 (BSP-HM)</td><td>完全自监督，无位姿无几何标注</td><td>与有位姿方法可比</td><td>表 1 中列为「无几何重建」的对照</td></tr>
+      <tr><td>Gen3R</td><td>2026.01</td><td>arXiv (v2 2026.03)</td><td>VGGT 适配器 + 视频扩散 latent 对齐</td><td>单/多图条件场景生成 SOTA</td><td><strong>平行路线</strong>：同基于 VGGT，但耦合扩散</td></tr>
+      <tr><td>NOVA3R</td><td>2026.03</td><td>arXiv</td><td>非像素对齐 ViT 做 amodal 3D</td><td>—</td><td><strong>平行路线</strong>：直接攻击 pointmap 的可见性限制</td></tr>
+      <tr class="best"><td><strong>★ RnG</strong></td><td><strong>2026.03</strong></td><td><strong>CVPR 2026 Highlight</strong></td><td><strong>KV-Cache 即隐式三维表示 + 任务级因果掩码</strong></td><td><strong>RA@5 85.146 / Rel 0.584 / PSNR 26.276 / CD 0.0067 / 85 ms</strong></td><td><strong>汇聚点</strong></td></tr>
+    </table></div>
+    <div class="callout"><strong>读表要点：</strong> 沿时间轴看 CD 一列 —— pixelSplat 0.4898 → LGM 0.1130 → Matrix3D 0.0670 → VGGT 0.0260 → <strong>RnG 0.0067</strong>，两年内下降约 73×，且下降不平滑：VGGT（判别式基座）与 RnG（在基座上开生成出口）各贡献了一次数量级跳变。</div>
+  </section>
+
+  <h2>9 · 开放挑战与研究机会</h2>
+
+  <section class="card">
+    <h3>9.1 理论层面</h3>
+    <h4>T1 · KV-Cache 作为三维表示的容量下界是什么？</h4>
+    <p>不是泛泛地「研究表示能力」，而是：<strong>在固定的 L 层 × N token × d 维缓存预算下，可无损重建的场景复杂度上界是多少？</strong> 可操作实验：固定 RnG 骨干，对缓存做低秩截断（保留 top-r 奇异值）或 token 剪枝（保留 k% token），画出「缓存压缩率 vs CD/PSNR」曲线。若存在明显拐点（相变），那就是这个表示的信息容量；若曲线平滑，说明缓存高度冗余。<strong>这是本方向高价值低门槛的第一空白 —— 不需要重训，推理时就能做。</strong></p>
+    <h4>T2 · 目标视角不变性是否是「表示」的充要条件？</h4>
+    <p>表 3 显示 FullAttn 在质量上并不更差 —— 说明<strong>即使不做架构保证，网络也自发学到了近似的不变性</strong>。可操作实验：在 FullAttn 模型上直接测量「同一组源视角在不同目标查询下的重建输出差异」，若该差异 &lt; 0.1 % 相对变化，那么因果掩码就是一个<strong>可以事后验证而非事前强加</strong>的性质。<strong>这个实验会直接改变对本文核心贡献的定性。</strong></p>
+    <h4>T3 · 「重建先验 → 生成」的可迁移边界</h4>
+    <p>RnG 证明了 VGGT 的隐空间含有未被监督的完整几何。这是普遍现象还是三维任务特有？可操作对照：对分割基座（SAM 系）、深度基座、检测基座做同样的手术 —— 加查询接口 + 生成头 + 少量微调，看是否也能读出「未被监督的能力」。</p>
+  </section>
+
+  <section class="card">
+    <h3>9.2 工程与应用层</h3>
+    <h4>E1 · 缺失的对照组必须被补上（承批判 2）</h4>
+    <p><strong>具体空白</strong>：判定「RnG 优于 LVSM」缺乏 head-to-head 的公平实验。建议在<strong>相同硬件、相同数据预算、相同初始化</strong>下做三组对比：(i) LVSM from scratch；(ii) LVSM 从 VGGT 权重初始化；(iii) RnG。若 (ii) 追平 (iii)，则 RnG 的增益主要来自预训练而非架构。<strong>这是下一步最关键的单一实验。</strong></p>
+    <h4>E2 · CD 的分解报告应成为该子领域的规范（承批判 3）</h4>
+    <p><strong>具体空白</strong>：建议社区统一报告 <strong>accuracy / completeness 分解 + 可见区域 / 不可见区域分别统计</strong>的四格矩阵。对 RnG 而言最有信息量的是「不可见区域的 accuracy」—— 那才是「生成得对不对」的唯一诚实指标。当前的总 CD 无法区分「补全得准」与「补全得多」。</p>
+    <h4>E3 · 从物体级到场景级的基准缺失（承批判 5）</h4>
+    <p><strong>具体空白</strong>：需要一个「不完整几何」的场景级基准：室内房间的手持视频，标注<strong>被家具遮挡的墙面/地板真值</strong>。评测协议应直接对准「遮挡区域的几何精度」，而非整体 CD。没有这个基准，「完整三维建模」在真实场景里就无法被证伪。</p>
+    <h4>E4 · 动态在线设置下的缓存策略</h4>
+    <p><strong>具体空白</strong>：当观测流式到来（机器人边走边看），缓存必须增量更新。<strong>新观测应该追加为新的 KV 条目，还是与旧条目融合？</strong> 追加导致线性增长（批判 7 的瓶颈），融合会引入信息损失。可操作研究：设计缓存准入/淘汰策略（类比 LLM 的 H2O、StreamingLLM），用「加入该视角后 CD 的改善量」作为准入分数，测量固定缓存预算下的 CD-预算曲线。</p>
+    <h4>E5 · 缓存的可编辑性</h4>
+    <p><strong>具体空白</strong>：可操作的第一步实验：屏蔽对应某个物体区域的源视角 token 的 K/V，看渲染结果是否干净地删除该物体（而非产生伪影）。<strong>这个实验一天就能做完，而它的成败会决定「KV-Cache 是表示还是仅仅是加速缓冲」这个定性问题。</strong></p>
+  </section>
+
+  <section class="card">
+    <h3>9.3 新兴方向</h3>
+    <h4>N1 · 时间维度：KV-Cache 作为世界模型的显式记忆</h4>
+    <p><strong>具体空白</strong>：当前视频世界模型的长时一致性依赖各种外挂记忆机制，其表示形式大多是启发式设计的。RnG 提示了另一种可能：<strong>用三维重建骨干的 KV-Cache 作为世界模型的空间记忆</strong>，视频生成器每帧向它查询。研究问题：<strong>几何一致的记忆 vs 外观一致的记忆，哪个对长时一致性更关键？</strong> 可操作对照：在同一视频生成器上分别接入（a）RnG 式几何缓存、（b）纯视觉特征缓存、（c）两者拼接，测量 1000 帧后的漂移量。</p>
+    <h4>N2 · 世界系的等变性（承批判 6）</h4>
+    <p><strong>具体空白</strong>：<strong>能否设计一个与源视角选择等变的世界系定义？</strong> 可操作方案：以预测点云质心作为原点、以点云主轴作为朝向做规范化，并在训练中加入随机源视角置换的一致性损失。评测指标：同一物体在不同源视角子集下的重建结果之间的 CD（越低越等变）。<strong>这个指标目前根本没有人报告。</strong></p>
+    <h4>N3 · 缓存压缩与三维资产的「神经格式」</h4>
+    <p><strong>具体空白</strong>：如果 400 MB 的 KV-Cache 能压到 10 MB 且 CD 退化 &lt; 5 %，它就成了一种可传输的三维资产格式，且天然支持「解压即渲染」。研究问题：<strong>三维内容的 rate-distortion 曲线在神经缓存表示下是什么形状？</strong> 与 3DGS 压缩、网格压缩直接对标。</p>
+    <h4>N4 · 不确定性的显式建模</h4>
+    <p><strong>具体空白</strong>：RnG 的 <code>L_pmap</code> 里已经有 aleatoric 不确定性项 Σ_t，但论文从未把它作为输出使用。研究问题：<strong>Σ_t 能否作为「这块几何是看到的还是猜的」的可靠指示？</strong> 可操作实验：在 GSO 上按真值可见性把像素分成两组，检验 Σ_t 的分布是否可分（AUROC）。若可分，RnG 就免费获得了一个「置信度感知的完整三维」输出 —— 这对下游物理仿真是刚需。<strong>这个能力论文已经训出来了，只是没有拿出来用。</strong></p>
+  </section>
+
+  <h2>10 · 其他值得关注的近期工作</h2>
+  <section class="card">
+    <h4>Gen3R: 3D Scene Generation Meets Feed-Forward Reconstruction（2026.01，v2 2026.03，arXiv）</h4>
+    <p>与 RnG 同样基于 VGGT，但选择<strong>耦合视频扩散</strong>而非纯前馈：训练适配器把 VGGT 的几何 latent 与视频扩散的外观 latent 对齐，同时生成 RGB 视频与几何。是「场景级」路线的代表。值得看的理由：<strong>它证明了 VGGT 隐空间可复用这件事不止一条实现路径。</strong><br>
+    <a href="https://arxiv.org/abs/2601.04090">arXiv</a> ｜ <a href="https://arxiv.org/html/2601.04090v1">HTML</a></p>
+
+    <h4>NOVA3R: Non-pixel-aligned Visual Transformer for Amodal 3D Reconstruction（2026.03，arXiv）</h4>
+    <p>直接攻击 pointmap 表示的根本限制：像素对齐意味着「没有像素就没有几何」。NOVA3R 放弃像素对齐，用非对齐 ViT 做 amodal（含遮挡部分）三维重建。<strong>与 RnG 是同一问题的两种解法</strong> —— RnG 用「让查询视角提供像素」绕过，NOVA3R 用「不再需要像素」正面解决。<br>
+    <a href="https://arxiv.org/html/2603.04179v2">arXiv HTML</a></p>
+
+    <h4>TRELLIS.2 / Native and Compact Structured Latents for 3D Generation（2025.12，arXiv:2512.14692）</h4>
+    <p>三维生成的另一极：不走「从图像重建」而走「原生三维 latent 扩散」。与 RnG 形成表示层面的直接对立 —— 一个主张「专门设计的结构化 latent」，一个主张「复用通用 transformer 的 KV」。<strong>两条路线的 rate-distortion 对比会是接下来两年的核心争论。</strong><br>
+    <a href="https://arxiv.org/abs/2512.14692">arXiv</a> ｜ <a href="https://microsoft.github.io/TRELLIS.2/">项目页</a></p>
+
+    <h4>Matrix-Game 3.0: Real-Time and Streaming Interactive World Model with Long-Horizon Memory（2026.04，arXiv:2604.08995）</h4>
+    <p>实时流式交互世界模型，核心难点正是<strong>长时记忆的表示形式</strong>。与 RnG 的 KV-Cache 思路可直接对话（见 9.3-N1）。值得看：它给出了「实时 + 长时一致」这组约束下当前工程实践的上界。<br>
+    <a href="https://arxiv.org/abs/2604.08995">arXiv</a> ｜ <a href="https://matrix-game-v3.github.io/">项目页</a></p>
+
+    <h4>Transition Models: Rethinking the Generative Learning Objective（CVPR 2026 Highlight）</h4>
+    <p>提出可适配任意步数转移的生成目标，把「少步生成」从蒸馏问题变回训练目标问题。与本期主线正交但相关：<strong>如果扩散能真正做到少步，RnG 相对 Matrix3D 的 317× 速度优势会被侵蚀多少？</strong><br>
+    <a href="https://cvpr.thecvf.com/virtual/2026/events/Highlights2026">CVPR 2026 Highlights</a></p>
+
+    <h4>tttLRM: Test-Time Training for Long Context and Autoregressive 3D Reconstruction（CVPR 2026 Highlight）</h4>
+    <p>用测试时训练处理长上下文的自回归三维重建。与 RnG 的缓存扩展性问题（批判 7）直接相关：<strong>当观测数超出模型训练配置时，是扩缓存还是做 TTT？</strong><br>
+    <a href="https://cvpr.thecvf.com/virtual/2026/events/Highlights2026">CVPR 2026 Highlights</a></p>
+
+    <h4>RayZer: A Self-supervised Large View Synthesis Model（ICCV 2025，Best Student Paper HM）</h4>
+    <p>完全去掉位姿与几何监督，只用 2D 图像自监督，唯一的三维先验是射线结构。值得看：<strong>如果 RnG 的路线要摆脱对 VGGT 预训练的依赖（批判 2），RayZer 的自监督框架是最可能的替代方案。</strong><br>
+    <a href="https://arxiv.org/abs/2505.00702">arXiv</a> ｜ <a href="https://github.com/hwjiang1510/RayZer">Code</a> ｜ <a href="https://hwjiang1510.github.io/RayZer/">项目页</a></p>
+
+    <h4>LVSM（ICLR 2025 Oral）—— 值得单独重申</h4>
+    <p><strong>它至今仍是 GSO PSNR 上的最强方法（27.522），且代码完全开源。</strong> 任何声称在新视角合成上超越前人的工作，都应当与 LVSM-100K 而非 LVSM-40K 做对比。<br>
+    <a href="https://arxiv.org/abs/2410.17242">arXiv</a> ｜ <a href="https://github.com/haian-jin/LVSM">Code</a> ｜ <a href="https://proceedings.iclr.cc/paper_files/paper/2025/hash/9676c5283df26cabca412ca66b164a7d-Abstract-Conference.html">ICLR Proceedings</a></p>
+  </section>
+
+  <h2>11 · 一页速览</h2>
+  <section class="card">
+    <div class="tablewrap"><table>
+      <tr><th>维度</th><th>结论</th></tr>
+      <tr class="best"><td><strong>一句话</strong></td><td>三维表示可以就是重建网络自己的 KV-Cache</td></tr>
+      <tr><td><strong>最强证据</strong></td><td>源深度 Rel 5.960（VGGT）→ 0.584（RnG），同一骨干同一权重，降低 <strong>90.2 %</strong></td></tr>
+      <tr><td><strong>最大反差</strong></td><td>标题级贡献「因果掩码」在表 3 的 10 项质量指标中输掉 8 项；其价值全在 5.35× FLOPs 削减与架构不变性保证</td></tr>
+      <tr><td><strong>唯一败绩</strong></td><td>PSNR 26.276 &lt; LVSM-100K 的 27.522（−1.246 dB），论文自承细节表现力不足</td></tr>
+      <tr><td><strong>最被低估的结果</strong></td><td>8 输入视角时 RnG（27.608）<strong>无位姿</strong>反超 LVSM-100K（27.522）<strong>有位姿</strong></td></tr>
+      <tr><td><strong>最大方法论缺陷</strong></td><td>世界原点由「源视角光轴交点」隐式定义 → 学到的是数据集协议而非几何不变量 → CO3D 无定量结果</td></tr>
+      <tr><td><strong>最该补的实验</strong></td><td>LVSM 从 VGGT 权重初始化的对照组；CD 的 accuracy/completeness 分解；16/32 视角外推</td></tr>
+      <tr><td><strong>最大溢出价值</strong></td><td>把三维表示问题翻译成了 LLM 系统问题（KV 压缩、缓存复用、注意力剪枝）</td></tr>
+    </table></div>
+  </section>
+
+  <footer>
+    <p><strong>脚注 1 · 索引未自动更新。</strong> 本次为云端定时任务运行，用户桌面设备不可达（定时任务不连接本地文件系统），因此 <code>ml-report-index.md</code> 未能追加记录。建议手动补入：<br>
+    <code>2026-08-05 | 生成模型 | RnG: A Unified Transformer for Complete 3D Modeling from Partial Observations | CVPR 2026 Highlight | 把重建 Transformer 的 KV-Cache 当作可查询的隐式三维表示，用任务级因果掩码换来 5.35× FLOPs 削减与 10× 的 Chamfer Distance 改善。</code></p>
+    <p><strong>脚注 2 · 数据来源。</strong> 所有性能数字均转引自 <a href="https://arxiv.org/abs/2603.01194">arXiv:2603.01194</a> (v1) 的表 2 / 表 3 / 表 4 / 表 5，正文中已逐处标注来源表号与行标签。派生量（相对提升、倍率、外推渐近线）由本报告计算，计算式在正文给出。</p>
+    <p><strong>脚注 3 · 抽样过程。</strong> 候选池 27 篇，随机抽取 <code>shuf -i 1-27 -n 1</code> → 14，重抽 0 次。领域轮转由 <code>date +%u</code> = 3 决定（周三 = 生成模型）。</p>
+    <p style="margin-top:18px;color:var(--baseline)">ML/AI 每日深度论文追踪 · 生成于 2026-08-05 · 报告为自动生成的技术分析，所有批判性判断均基于公开论文内容，可能存在误读，欢迎对照原文核验。</p>
+  </footer>
+
+</div>
+<div class="tip" id="tip"></div>
+<script>
+(function(){
+  var tip = document.getElementById('tip');
+  document.querySelectorAll('svg.chart .bar, svg.chart .dot').forEach(function(el){
+    el.addEventListener('mouseenter', function(e){
+      tip.innerHTML = '<b>' + el.getAttribute('data-label') + '</b>' + el.getAttribute('data-value');
+      tip.style.opacity = '1';
+    });
+    el.addEventListener('mousemove', function(e){
+      var x = e.clientX + 14, y = e.clientY - 12;
+      if (x + 220 > window.innerWidth) x = e.clientX - 200;
+      tip.style.left = x + 'px';
+      tip.style.top = y + 'px';
+    });
+    el.addEventListener('mouseleave', function(){ tip.style.opacity = '0'; });
+  });
+})();
+</script>
+</body>
+</html>

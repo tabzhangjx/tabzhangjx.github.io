@@ -1,0 +1,879 @@
+---
+layout: null
+title: "MAGMA：将单一记忆图拆成四类关系图"
+date: 2026-08-05
+excerpt: "深入解析 MAGMA 如何用四张正交关系图组织 Agent 记忆，并审视其在 LoCoMo、LongMemEval 上的实验结果、贡献与局限。"
+permalink: /blog/2026/08/05/magma-multigraph-agent-memory/
+blog_post: true
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MAGMA 深度解析 · Agent Memory 每日文献追踪 · 2026-08-05</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --accent-soft: #cde2fb;
+    --good: #006300;
+    --crit: #d03b3b;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --accent-soft: #184f95;
+    --good: #0ca30c;
+    --crit: #e66767;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  header.hero {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 32px 34px;
+    margin-bottom: 34px;
+  }
+  .eyebrow {
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; margin: 0 0 10px;
+  }
+  h1 { font-size: 30px; line-height: 1.3; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .subtitle { font-size: 17px; color: var(--text-secondary); margin: 0 0 18px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    font-size: 12.5px; padding: 4px 11px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--text-secondary);
+    background: var(--page);
+  }
+  .chip.venue { border-color: var(--series-1); color: var(--series-1); font-weight: 600; }
+  .chip.warn { border-color: var(--series-2); color: var(--series-2); font-weight: 600; }
+  .lede {
+    border-left: 3px solid var(--series-1);
+    padding: 4px 0 4px 18px; margin: 20px 0 0;
+    color: var(--text-secondary); font-size: 15.5px;
+  }
+  h2 {
+    font-size: 22px; margin: 52px 0 16px; padding-bottom: 10px;
+    border-bottom: 1px solid var(--border); letter-spacing: -0.01em;
+  }
+  h3 { font-size: 18px; margin: 34px 0 12px; }
+  h3:first-child { margin-top: 0; }
+  h4 { font-size: 15.5px; margin: 24px 0 8px; color: var(--text-secondary); }
+  p { margin: 0 0 14px; }
+  section.card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 26px 30px; margin-bottom: 20px;
+  }
+  a { color: var(--series-1); text-decoration: none; border-bottom: 1px solid transparent; }
+  a:hover { border-bottom-color: var(--series-1); }
+  code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px; background: var(--page); padding: 1.5px 5px;
+    border-radius: 4px; border: 1px solid var(--border);
+  }
+  .formula {
+    background: var(--page); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 16px; margin: 12px 0; font-family: ui-monospace, Menlo, monospace;
+    font-size: 13.5px; overflow-x: auto; color: var(--text-primary); white-space: pre;
+  }
+  .tw { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0 20px; font-size: 14.5px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--grid); }
+  th { color: var(--muted); font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: .05em; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.best td { background: var(--accent-soft); font-weight: 600; }
+  :root[data-theme="dark"] tr.best td { background: rgba(57,135,229,.18); }
+  td.up { color: var(--good); font-weight: 600; }
+  td.dn { color: var(--crit); font-weight: 600; }
+  ol, ul { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 8px; }
+  .callout {
+    border-left: 3px solid var(--series-2); background: var(--page);
+    padding: 14px 18px; border-radius: 0 8px 8px 0; margin: 18px 0;
+    font-size: 15px; color: var(--text-secondary);
+  }
+  .callout strong { color: var(--text-primary); }
+  .callout.hi { border-left-width: 5px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  button.tgl {
+    font: inherit; font-size: 13px; padding: 6px 14px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface-1);
+    color: var(--text-secondary); cursor: pointer;
+  }
+  button.tgl:hover { color: var(--text-primary); }
+  .figure { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 24px 26px; margin: 24px 0; }
+  .fig-title { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+  .fig-sub { font-size: 13.5px; color: var(--muted); margin: 0 0 18px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 16px; font-size: 13.5px; color: var(--text-secondary); }
+  .legend span.sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 7px; vertical-align: -1px; }
+  svg.chart { width: 100%; height: auto; display: block; }
+  svg.chart text { font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  svg.chart rect.bar { transition: opacity .12s; cursor: pointer; }
+  svg.chart rect.bar:hover { opacity: .78; }
+  .tip {
+    position: fixed; pointer-events: none; opacity: 0; transition: opacity .1s;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 12px; font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,.14);
+    z-index: 50; color: var(--text-primary); white-space: nowrap;
+  }
+  .flow {
+    background: var(--page); border: 1px solid var(--border); border-radius: 10px;
+    padding: 20px 22px; font-family: ui-monospace, Menlo, monospace;
+    font-size: 12.5px; line-height: 1.8; overflow-x: auto; color: var(--text-secondary);
+    white-space: pre;
+  }
+  .refgrid { display: grid; grid-template-columns: 1fr; gap: 0; }
+  footer { margin-top: 60px; padding-top: 22px; border-top: 1px solid var(--border); font-size: 13.5px; color: var(--muted); }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    h1 { font-size: 23px; }
+    h2 { font-size: 19px; margin-top: 38px; }
+    section.card { padding: 20px 16px; }
+    header.hero { padding: 22px 18px; }
+    table { font-size: 12.5px; }
+    th, td { padding: 6px 7px; }
+    .figure { padding: 18px 14px; }
+    .flow { font-size: 10.5px; padding: 14px 12px; }
+    .formula { font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="toolbar">
+    <button class="tgl" id="tglBtn">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ACL 2026 · Agent Memory · 每日文献追踪</p>
+    <h1>MAGMA：把「一张记忆图」拆成四张正交关系图</h1>
+    <p class="subtitle">Multi-Graph based Agentic Memory Architecture for AI Agents · Jiang, Li, Li, Li（UT Dallas / U. Florida）</p>
+    <div class="meta">
+      <span class="chip venue">ACL 2026 主会 Long</span>
+      <span class="chip">arXiv 2601.03236 · 2026-01</span>
+      <span class="chip">LoCoMo + LongMemEval</span>
+      <span class="chip">代码开源</span>
+      <span class="chip warn">本报告发现：18.6% 提升中 98.98% 来自弃权校准</span>
+    </div>
+    <p class="lede"><strong>一句话定位：</strong>记忆的结构不该是一张什么都往里塞的图，而应该是若干张<strong>语义上互不重叠的关系视图</strong>；检索则退化为一个由「问题意图」决定走哪张图的<strong>策略性遍历</strong>问题。</p>
+  </header>
+
+  <section class="card">
+    <h3>0. 当日检索情况说明</h3>
+    <p>本期检索覆盖 ACL Anthology 2026、EACL 2026、NeurIPS 2025 proceedings、ICLR 2026 MemAgents workshop、arXiv cs.CL/cs.AI，以及 <a href="https://github.com/Shichun-Liu/Agent-Memory-Paper-List">Agent-Memory-Paper-List</a> 与若干 awesome-list，累计过筛 25+ 篇 2025-08 至 2026-07 的候选工作。</p>
+    <p>按任务给定优先级（顶会主会长文 &gt; Findings/Workshop &gt; arXiv 预印本），选定 <strong>MAGMA（ACL 2026 主会长文）</strong>。它满足全部硬条件：ACL 2026 Vol.1 Long Papers、arXiv v1 为 2026-01（6 个月内）、有可访问开源实现、与已覆盖的 MemGPT / A-MEM / Mem0 / Memory-R1 / MemAct / AgeMem 均不重复——A-MEM、MemoryOS 在本报告中仅作为<strong>前驱工作</strong>出现。覆盖子方向：<strong>记忆架构 + 记忆检索</strong>。</p>
+    <div class="callout">
+      <strong>必须坦白的检索局限。</strong>MAGMA 的 arXiv HTML（v1）渲染时截断于 §3.4，全部实验表格与 Limitations 均取自 <a href="https://aclanthology.org/2026.acl-long.1709.pdf">ACL Anthology 正式 PDF</a>。本报告中所有数字都标注了出处表号；凡由我自行计算的数值，一律显式标注为「<strong>本报告推算</strong>」。
+    </div>
+  </section>
+
+  <h2>1. 链接清单（全部实际访问验证）</h2>
+
+  <section class="card">
+    <h3>1.1 核心工作</h3>
+    <div class="tw"><table>
+      <tr><th>项目</th><th>链接</th><th>状态</th></tr>
+      <tr><td>会议页（ACL Anthology）</td><td><a href="https://aclanthology.org/2026.acl-long.1709/">2026.acl-long.1709</a></td><td>✅ 已访问</td></tr>
+      <tr><td>正式 PDF</td><td><a href="https://aclanthology.org/2026.acl-long.1709.pdf">acl-long.1709.pdf</a></td><td>✅ 已访问</td></tr>
+      <tr><td>DOI</td><td>10.18653/v1/2026.acl-long.1709</td><td>✅</td></tr>
+      <tr><td>arXiv（v1, 2026-01）</td><td><a href="https://arxiv.org/abs/2601.03236">2601.03236</a> · <a href="https://arxiv.org/html/2601.03236v1">HTML</a></td><td>✅ 已访问</td></tr>
+      <tr class="best"><td>代码</td><td><a href="https://github.com/FredJiang0324/MAGMA">FredJiang0324/MAGMA</a></td><td>✅ 已访问（约 150 stars，README 标注 ACL 2026）</td></tr>
+      <tr><td>HuggingFace Papers</td><td><a href="https://huggingface.co/papers/2601.03236">papers/2601.03236</a></td><td>✅</td></tr>
+    </table></div>
+    <div class="callout">
+      <strong>论文自身的一处笔误。</strong>ACL PDF 正文印出的代码链接为 <code>github.com/FredJiang0324/MAMGA</code>（<code>MAMGA</code> 拼写颠倒），实际可达仓库是 <code>.../MAGMA</code>。按论文原文复制会 404。
+    </div>
+
+    <h3>1.2 评测基准</h3>
+    <div class="tw"><table>
+      <tr><th>基准</th><th>论文</th><th>链接</th><th>代码 / 数据</th></tr>
+      <tr><td><strong>LoCoMo</strong></td><td>Maharana et al., ACL 2024</td><td><a href="https://aclanthology.org/2024.acl-long.747/">ACL Anthology</a> · <a href="https://arxiv.org/abs/2402.17753">arXiv 2402.17753</a></td><td><a href="https://github.com/snap-research/locomo">snap-research/locomo</a> · <a href="https://snap-research.github.io/locomo/">项目页</a></td></tr>
+      <tr><td><strong>LongMemEval</strong></td><td>Wu et al., ICLR 2025</td><td><a href="https://arxiv.org/abs/2410.10813">arXiv 2410.10813</a> · <a href="https://openreview.net/forum?id=pZiyCaVuti">OpenReview</a></td><td><a href="https://github.com/xiaowu0162/LongMemEval">xiaowu0162/LongMemEval</a></td></tr>
+    </table></div>
+
+    <h3>1.3 回溯的相关工作</h3>
+    <div class="tw"><table>
+      <tr><th>工作</th><th>会议页</th><th>arXiv</th><th>代码</th></tr>
+      <tr><td><strong>MemGPT</strong> (2023)</td><td>ACL 2023 companion（按论文引用）</td><td><a href="https://arxiv.org/abs/2310.08560">2310.08560</a>（本次未逐一验证，标注为论文引用）</td><td>未找到（论文未印出）</td></tr>
+      <tr><td><strong>GraphRAG</strong> (2024)</td><td>未找到正式会议页</td><td><a href="https://arxiv.org/abs/2404.16130">2404.16130</a>（v1 2024-04-24；v2 2025-02-19）</td><td>论文未印出（社区仓库 microsoft/graphrag）</td></tr>
+      <tr><td><strong>Zep / Graphiti</strong> (2025)</td><td>未找到正式会议页（技术报告）</td><td><a href="https://arxiv.org/abs/2501.13956">2501.13956</a>（v1 2025-01-20，12 页 3 表）</td><td>论文未印出</td></tr>
+      <tr><td><strong>A-MEM</strong> (2025)</td><td><a href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/19909c36f51abc4856b4560aff3d36d6-Abstract-Conference.html">NeurIPS 2025 Proceedings</a></td><td><a href="https://arxiv.org/abs/2502.12110">2502.12110</a></td><td><a href="https://github.com/WujiangXu/A-mem">WujiangXu/A-mem</a></td></tr>
+      <tr><td><strong>MemoryOS</strong> (2025)</td><td><a href="https://aclanthology.org/2025.emnlp-main.1318/">EMNLP 2025 Main（Oral）</a></td><td><a href="https://arxiv.org/abs/2506.06326">2506.06326</a></td><td><a href="https://github.com/BAI-LAB/MemoryOS">BAI-LAB/MemoryOS</a></td></tr>
+      <tr><td><strong>Nemori</strong> (2025→2026)</td><td>未找到正式会议页</td><td><a href="https://arxiv.org/abs/2508.03341">2508.03341</a>（v1 2025-08-05；v4 2026-04-16 <strong>已改题</strong>）</td><td>未找到</td></tr>
+    </table></div>
+    <div class="callout">
+      <strong>一处引用陷阱。</strong>MAGMA 引用的「Nemori: Self-Organizing Agent Memory Inspired by Cognitive Science (Nan et al., 2025)」对应 arXiv 2508.03341，但该条目在 2026-04 的 v4 中已更名为 <em>What Deserves Memory: Adaptive Memory Distillation for LLM Agents</em>（Ma, Nan, Wu, Chen）。按标题检索会找不到，按 arXiv ID 才对得上。
+    </div>
+  </section>
+
+  <h2>2. 核心工作深度解析</h2>
+
+  <section class="card">
+    <h3>2.1 摘要与核心定位</h3>
+    <p><strong>原文主张的译述</strong>（非泛化概括）：现有 Memory-Augmented Generation（MAG）系统把记忆存成<strong>单一的、以语义相似度为唯一索引的整体库</strong>，因此「把时序、因果与实体信息纠缠（entangle）在一起」。MAGMA 让每一条记忆条目<strong>同时存在于语义、时序、因果、实体四张正交图中</strong>，并把检索<strong>形式化为在这些关系视图上的策略引导遍历（policy-guided traversal）</strong>。</p>
+    <div class="callout hi">
+      <strong>一句话核心创新：</strong>检索不再是「在一个向量空间里找最近邻」，而是「先判断这个问题问的是哪一类关系，再沿那一类关系的边走出去」。
+    </div>
+    <p>这句话的分量在于：它把<strong>记忆系统的瓶颈从「存什么」重新定位到「以什么关系存」</strong>。Nemori 回答「什么值得记」，MemoryOS 回答「记多久、放哪一层」，A-MEM 回答「记忆之间要不要连边」——MAGMA 问的是<strong>「连的是哪一种边，以及提问时该走哪一种边」</strong>。</p>
+  </section>
+
+  <section class="card">
+    <h3>2.2 Motivation 与问题论证</h3>
+    <p><strong>具体痛点（论文 §1）</strong>：① 注意力随距离衰减（lost-in-the-middle）——单靠拉长上下文无法解决长程记忆；② 单一语义索引丢失关系结构，论文点名 A-MEM 一类方法「retrieval via semantic embedding similarity, missing relations such as temporal or causal」；③ 对象恒常性断裂——同一实体在被打断的时间线片段中被反复提及时，纯语义检索无法把这些片段串成一个对象，这是引入 entity graph 的直接理由。</p>
+    <p><strong>痛点是如何被量化的？</strong>论文<strong>没有</strong>给出独立的诊断性实验来量化这三条，采用的是<strong>间接论证</strong>：既然全上下文（101K tokens）在 LongMemEval 上只有 55.0%，而 3.4K tokens 的结构化检索能到 61.2%，那么「更长上下文 ≠ 更好记忆」就被证成了。</p>
+    <p>不过<strong>案例研究（Table 8 / §E.2）</strong>提供了三个可核查的定性证据：</p>
+    <div class="tw"><table>
+      <tr><th>场景</th><th>基线行为</th><th>MAGMA 行为</th><th>归因的图</th></tr>
+      <tr><td>事实检索</td><td>A-MEM / MemoryOS 只取回 "clarinet"，漏掉 "violin"</td><td>沿实体子图遍历，两者都取回</td><td>Entity</td></tr>
+      <tr><td>逻辑推断（"几个孩子？"）</td><td>基线只抽取显式的 "two"</td><td>多跳实体消解（照片两个 + 一个儿子 + 兄弟区分）→ "at least three"</td><td>Entity + Causal</td></tr>
+      <tr><td>时间归一化（"yesterday"）</td><td>A-MEM / MemoryOS 幻觉出错误日期</td><td>正确归一到 2023-10-19</td><td>Temporal</td></tr>
+    </table></div>
+    <p><strong>问题的新颖之处</strong>：新意不在于「用图」（GraphRAG、Zep 都用图），而在于<strong>拒绝把不同语义类型的关系压进同一张图</strong>。Zep 把时间做成边上的属性；GraphRAG 把实体和社区做成一张图的两个层级；A-MEM 的链接是同质的。MAGMA 的赌注是：<strong>关系类型的解耦本身就能带来增益，因为它让「检索策略」有了可以选择的对象。</strong></p>
+  </section>
+
+  <section class="card">
+    <h3>2.3 论文的故事线（论证结构）</h3>
+    <p>论文的推进不是章节罗列，而是一条相当干净的归谬链：</p>
+    <div class="flow">观察 A：上下文越长，注意力越不可靠（lost-in-the-middle）
+   ↓ 所以不能靠拉长窗口
+观察 B：外部记忆必须被检索，而检索目前只有一种信号 —— 语义相似度
+   ↓ 那么凡是「不能被语义相似度表达的关系」都会丢失
+推论 C：时序（A 在 B 之前）、因果（A 导致 B）、共指（A 和 B 是同一个人）
+        这三类关系，恰恰都不是语义相似度
+   ↓ ★ 关键转折点
+假设 D：如果把这三类关系显式建成独立的边集，
+        检索就从「找最近邻」变成「在若干种边上选一种走」
+   ↓ 于是问题从「表示学习」变成「策略选择」
+方法 E：query intent 分类（Why / When / Entity）→ 决定边类型权重 w_{T_q}
+        → beam search 遍历 → 图线性化成 prompt
+   ↓ 但这样做每写一条记忆都要 LLM 推因果，太慢
+工程 F：双流架构 —— 快路径只做「时间链 + 向量索引」，
+        慢路径异步做 LLM 因果 / 语义稠密化</div>
+    <div class="callout">
+      <strong>最关键的一步是 C→D。</strong>整篇论文的可证伪性都压在这里：如果「时序/因果/实体」这三类关系其实可以被足够好的 embedding 隐式编码，那么四图分解就是纯粹的工程复杂度。论文用 Table 5 的单图消融来回应——但回应得并不完整（见 §2.7 B2）。
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>2.4 方法论与机制解剖</h3>
+
+    <h4>2.4.1 数据结构层</h4>
+    <div class="formula">G_t = (N_t , E_t)                          时变有向多重图
+
+n_i = ⟨ c_i , τ_i , v_i , A_i ⟩            统一事件节点（Event-Node）
+
+   c_i ∈ Text     事件内容（观察 / 动作 / 状态变化）
+   τ_i ∈ ℕ        离散时间戳
+   v_i ∈ ℝ^d      稠密向量（写入向量库；默认 d = 384）
+   A_i            结构化元数据（实体、时间线索、上下文描述符）</div>
+
+    <h4>2.4.2 四类关系图（论文 §3.1）</h4>
+    <div class="tw"><table>
+      <tr><th>图</th><th>边集定义</th><th>判定方式</th><th>解决的具体失效</th></tr>
+      <tr><td><strong>时序</strong> E<sub>temp</sub></td><td>严格有序对 (n_i, n_j)，τ_i &lt; τ_j</td><td>规则，写入时 O(1) 即时建立</td><td>"yesterday" 无法归一到绝对日期</td></tr>
+      <tr><td><strong>因果</strong> E<sub>causal</sub></td><td>有向边，S(n_j|n_i, q) &gt; δ</td><td>LLM 慢路径异步推断，带置信度</td><td>"为什么" 类问题无法从结果回溯原因</td></tr>
+      <tr><td><strong>语义</strong> E<sub>sem</sub></td><td>无向边，cos(v_i, v_j) &gt; θ<sub>sim</sub></td><td>向量相似度阈值</td><td>（传统 RAG 的能力，作为基座）</td></tr>
+      <tr><td><strong>实体</strong> E<sub>ent</sub></td><td>事件 ↔ 抽象实体节点的二部连接</td><td>元数据 A_i 中的实体抽取</td><td>对象恒常性：同一实体跨不连续时间片断裂</td></tr>
+    </table></div>
+    <div class="callout">
+      <strong>注意一个不对称性。</strong>四张图里只有<strong>语义图</strong>是「传统方法本来就有的」，而消融实验（Table 4 / 5）恰恰只拆了另外三张。这个不对称在 §2.7 B2 会被展开成一条实质批评。
+    </div>
+
+    <h4>2.4.3 查询流程：自适应分层检索（Algorithm 1，四阶段）</h4>
+    <p><strong>阶段 1 — 查询分析与分解</strong>：意图分类 <code>T_q ∈ {Why, When, Entity}</code>；时间解析（相对表达 → 绝对区间 <code>[τ_s, τ_e]</code>）；表示抽取（稠密 <code>q⃗</code> + 稀疏关键词 <code>q_key</code>）。</p>
+    <p><strong>阶段 2 — 多信号锚点识别（Reciprocal Rank Fusion）</strong>：</p>
+    <div class="formula">S_anchor = Top_K (  Σ_{m ∈ {vec, key, time}}  1 / ( k + r_m(n) )  )</div>
+    <p><strong>阶段 3 — 自适应遍历策略（启发式 beam search）</strong>，转移打分同时吃「结构对齐」和「语义亲和」：</p>
+    <div class="formula">S(n_j | n_i , q) = exp(  λ₁ · φ( type(e_ij) , T_q )  +  λ₂ · sim( n⃗_j , q⃗ )  )
+
+结构对齐项：      φ(r , T_q) = w_{T_q}ᵀ · 𝟙_r</div>
+    <p>即：<strong>边类型权重向量 w 是意图 T_q 的函数</strong>——问 "Why" 时因果边权重抬高，问 "When" 时时序边权重抬高。每步保留 top-k 节点，随深度施加衰减因子 γ。</p>
+    <p><strong>阶段 4 — 图线性化的叙事合成</strong>：</p>
+    <div class="formula">C_prompt = ⊕_{n_i ∈ Sort(G_sub)}  [ &lt;t:τ_i&gt; n_i.content &lt;ref:n_i.id&gt; ]
+
+排序规则：时序类问题按 τ 排序；因果类问题在 E_causal 上做拓扑排序（因先于果）
+预算分配：高相关节点保留全文，低概率节点压缩成简写码（salience-based budgeting）</div>
+
+    <h4>2.4.4 双流记忆演化</h4>
+    <div class="flow">写入事件 I
+   │
+   ├─── 快路径（Algorithm 2 · 延迟敏感 · 非阻塞 · 无 LLM）
+   │     ① n_t ← SegmentEvent(I)
+   │     ② G.AddEdge(n_prev, n_t, type=Temp)          ← 时间骨架立刻建好
+   │     ③ v_t ← Encoder(n_t.c) ; VDB.Add(v_t, n_t.id)
+   │     ④ Queue.Enqueue(n_t.id)
+   │
+   └─── 慢路径（Algorithm 3 · 异步 · LLM 密集）
+         ⑤ 出队近期事件，稠密化图结构
+         ⑥ E_new = Φ_reason( N(n_t) , H_history )     ← LLM 推断潜在因果 / 语义边
+         ⑦ 更新因果边置信度；合并冗余语义簇</div>
+    <div class="callout">
+      <strong>这是整篇论文最值得单独复用的工程设计。</strong>它把「必须即时完成的」（时间链 + 向量索引，纯规则/纯编码器）与「可以延后的」（因果推断、语义聚类，需 LLM）在<strong>关键路径层面</strong>切开。MemoryOS 的 32.68 s 查询延迟（Table 3）大概率正是没做这个切分的代价。
+    </div>
+
+    <h4>2.4.5 超参配置（Appendix B）与实验设置</h4>
+    <div class="tw"><table>
+      <tr><th>参数</th><th>取值 / 范围</th><th>作用</th></tr>
+      <tr><td>λ₁（结构系数）</td><td class="num">1.0（基准）</td><td>边类型对齐权重</td></tr>
+      <tr><td>λ₂（语义系数）</td><td class="num">0.3 – 0.7</td><td>语义亲和权重</td></tr>
+      <tr><td>θ<sub>sim</sub></td><td class="num">0.75</td><td>语义边建边阈值</td></tr>
+      <tr><td>δ（因果置信阈）</td><td class="num">0.6</td><td>因果边建边阈值</td></tr>
+      <tr><td>Beam width</td><td class="num">8</td><td>每步保留节点数</td></tr>
+      <tr><td>Max depth</td><td class="num">4 – 5 hops</td><td>遍历深度上限</td></tr>
+      <tr><td>Max nodes retrieved</td><td class="num">200</td><td>子图规模上限</td></tr>
+      <tr><td>γ（衰减）</td><td class="num">0.85</td><td>逐层衰减</td></tr>
+      <tr><td>意图自适应权重 w</td><td class="num">entity 2.5–6.0 / temporal 0.5–4.0 / causal 3.0–5.0</td><td>w<sub>T_q</sub> 实际取值域</td></tr>
+    </table></div>
+    <p>论文自述这些参数「empirically optimized on the LoCoMo benchmark」，但<strong>没有给出任何一条敏感性曲线或扫参表</strong>（见 §2.7 B3）。</p>
+    <p><strong>实验设置</strong>：主干 <code>gpt-4o-mini</code>（检索推理 + 回答生成 + LLM-as-Judge，judge 温度 0.0）；嵌入默认 <code>all-MiniLM-L6-v2</code>（384 维），可选 <code>text-embedding-3-small</code>（1536 维）。<strong>LoCoMo</strong> 1,986 条 = single-hop 841 / adversarial 446 / temporal 321 / multi-hop 282 / open-domain 96，对话平均约 9K tokens。<strong>LongMemEval</strong> 平均上下文 &gt;100K tokens，6 类问题。指标：主指标 LLM-as-a-Judge（[0,1]），辅助 token-level F1、BLEU-1。</p>
+  </section>
+
+  <h2>3. 实验设计与定量结果</h2>
+
+  <section class="card">
+    <h3>3.1 主结果 A：LoCoMo（论文 Table 1，LLM-Judge 分）</h3>
+    <div class="tw"><table>
+      <tr><th>方法</th><th class="num">Multi-Hop</th><th class="num">Temporal</th><th class="num">Open-Domain</th><th class="num">Single-Hop</th><th class="num">Adversarial</th><th class="num">Overall</th></tr>
+      <tr><td>Full Context</td><td class="num">0.468</td><td class="num">0.562</td><td class="num">0.486</td><td class="num">0.630</td><td class="num">0.205</td><td class="num">0.481</td></tr>
+      <tr><td>A-MEM</td><td class="num">0.495</td><td class="num">0.474</td><td class="num">0.385</td><td class="num">0.653</td><td class="num">0.616</td><td class="num">0.580</td></tr>
+      <tr><td>MemoryOS</td><td class="num">0.552</td><td class="num">0.422</td><td class="num">0.504</td><td class="num">0.674</td><td class="num">0.428</td><td class="num">0.553</td></tr>
+      <tr><td>Nemori</td><td class="num">0.569</td><td class="num">0.649</td><td class="num">0.485</td><td class="num">0.764</td><td class="num">0.325</td><td class="num">0.590</td></tr>
+      <tr class="best"><td>MAGMA (ours)</td><td class="num">0.528</td><td class="num">0.650</td><td class="num">0.517</td><td class="num">0.776</td><td class="num">0.742</td><td class="num">0.700</td></tr>
+      <tr><td><em>样本数（占比）</em></td><td class="num">282 (14.2%)</td><td class="num">321 (16.2%)</td><td class="num">96 (4.8%)</td><td class="num">841 (42.4%)</td><td class="num">446 (22.5%)</td><td class="num">1,986</td></tr>
+    </table></div>
+
+    <h4>相对最强基线的提升（本报告推算）</h4>
+    <div class="tw"><table>
+      <tr><th>类别</th><th>最强基线</th><th class="num">MAGMA</th><th class="num">绝对差</th><th class="num">相对提升</th></tr>
+      <tr><td>Multi-Hop</td><td>Nemori 0.569</td><td class="num">0.528</td><td class="num dn">−0.041</td><td class="num dn">−7.2%（失手）</td></tr>
+      <tr><td>Temporal</td><td>Nemori 0.649</td><td class="num">0.650</td><td class="num">+0.001</td><td class="num">+0.2%</td></tr>
+      <tr><td>Open-Domain</td><td>MemoryOS 0.504</td><td class="num">0.517</td><td class="num">+0.013</td><td class="num">+2.6%</td></tr>
+      <tr><td>Single-Hop</td><td>Nemori 0.764</td><td class="num">0.776</td><td class="num">+0.012</td><td class="num">+1.6%</td></tr>
+      <tr><td>Adversarial</td><td>A-MEM 0.616</td><td class="num">0.742</td><td class="num up">+0.126</td><td class="num up">+20.5%</td></tr>
+      <tr class="best"><td>Overall</td><td>Nemori 0.590</td><td class="num">0.700</td><td class="num">+0.110</td><td class="num">+18.6%</td></tr>
+    </table></div>
+  </section>
+
+  <section class="card">
+    <h3>3.2 ⚡ 相变式发现：18.6% 的整体提升，98.98% 来自「对抗性（不可答）」这一类</h3>
+    <p>这是<strong>全文最有说服力、同时也最令人不安的定量证据</strong>——而它并不在论文里，是从论文自己的表格算出来的。</p>
+    <p>LoCoMo 的 Overall 是<strong>样本加权微平均</strong>。用样本数回代 Table 1，可以精确复现 MAGMA（0.7003 vs 报告 0.700）、A-MEM（0.5804 vs 0.580）、MemoryOS（0.5525 vs 0.553）三行。把 MAGMA 相对 Nemori 的总差值按类别分解：</p>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">图 1 · MAGMA 相对 Nemori 的 LoCoMo 总差值，按问题类别分解</p>
+    <p class="fig-sub">单位：对加权 Overall 的绝对贡献（本报告推算，基于论文 Table 1 与 §4.6 样本数）· 悬浮查看数值</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-1)"></span>正向贡献</span>
+      <span><span class="sw" style="background:var(--series-2)"></span>负向贡献（MAGMA 落后）</span>
+    </div>
+    <svg class="chart" viewBox="0 0 900 262" xmlns="http://www.w3.org/2000/svg">
+      <line x1="268.2" y1="26" x2="268.2" y2="228" stroke="var(--baseline)" stroke-width="1.5"/>
+      <line x1="210.0" y1="26" x2="210.0" y2="228" stroke="var(--grid)" stroke-width="1"/>
+      <text x="210.0" y="246" text-anchor="middle" font-size="11.5" fill="var(--muted)">-0.010</text>
+      <text x="268.2" y="246" text-anchor="middle" font-size="11.5" fill="var(--muted)">+0.000</text>
+      <line x1="413.6" y1="26" x2="413.6" y2="228" stroke="var(--grid)" stroke-width="1"/>
+      <text x="413.6" y="246" text-anchor="middle" font-size="11.5" fill="var(--muted)">+0.025</text>
+      <line x1="559.1" y1="26" x2="559.1" y2="228" stroke="var(--grid)" stroke-width="1"/>
+      <text x="559.1" y="246" text-anchor="middle" font-size="11.5" fill="var(--muted)">+0.050</text>
+      <line x1="704.5" y1="26" x2="704.5" y2="228" stroke="var(--grid)" stroke-width="1"/>
+      <text x="704.5" y="246" text-anchor="middle" font-size="11.5" fill="var(--muted)">+0.075</text>
+      <line x1="850.0" y1="26" x2="850.0" y2="228" stroke="var(--grid)" stroke-width="1"/>
+      <text x="850.0" y="246" text-anchor="middle" font-size="11.5" fill="var(--muted)">+0.100</text>
+      <text x="196" y="55" text-anchor="end" font-size="13" fill="var(--text-primary)">Adversarial（不可答）</text>
+      <rect class="bar" x="268.2" y="34" width="544.9" height="30" rx="3" fill="var(--series-1)" data-t="Adversarial（不可答）：+0.09365，占总差值 +98.98%"/>
+      <text x="821.1" y="54" text-anchor="start" font-size="12.5" font-weight="600" fill="var(--text-secondary)">+98.98%</text>
+      <text x="196" y="95" text-anchor="end" font-size="13" fill="var(--text-primary)">Single-Hop</text>
+      <rect class="bar" x="268.2" y="74" width="29.6" height="30" rx="3" fill="var(--series-1)" data-t="Single-Hop：+0.00508，占总差值 +5.37%"/>
+      <text x="305.7" y="94" text-anchor="start" font-size="12.5" font-weight="600" fill="var(--text-secondary)">+5.37%</text>
+      <text x="196" y="135" text-anchor="end" font-size="13" fill="var(--text-primary)">Open-Domain</text>
+      <rect class="bar" x="268.2" y="114" width="9.0" height="30" rx="3" fill="var(--series-1)" data-t="Open-Domain：+0.00155，占总差值 +1.63%"/>
+      <text x="285.2" y="134" text-anchor="start" font-size="12.5" font-weight="600" fill="var(--text-secondary)">+1.63%</text>
+      <text x="196" y="175" text-anchor="end" font-size="13" fill="var(--text-primary)">Temporal</text>
+      <rect class="bar" x="268.2" y="154" width="1.5" height="30" rx="3" fill="var(--series-1)" data-t="Temporal：+0.00016，占总差值 +0.17%"/>
+      <text x="277.1" y="174" text-anchor="start" font-size="12.5" font-weight="600" fill="var(--text-secondary)">+0.17%</text>
+      <text x="196" y="215" text-anchor="end" font-size="13" fill="var(--text-primary)">Multi-Hop</text>
+      <rect class="bar" x="234.3" y="194" width="33.9" height="30" rx="3" fill="var(--series-2)" data-t="Multi-Hop：−0.00582，占总差值 −6.15%"/>
+      <text x="276.2" y="214" text-anchor="start" font-size="12.5" font-weight="600" fill="var(--series-2)">−6.15%</text>
+    </svg>
+  </div>
+
+  <div class="figure">
+    <p class="fig-title">图 2 · 报告的 Overall 分 vs 剔除对抗类后的加权分（LoCoMo）</p>
+    <p class="fig-sub">蓝：论文 Table 1 报告的 Overall（含 446 条不可答样本）· 橙：仅 1,540 条可答样本上的加权分（本报告推算）</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-1)"></span>Overall（论文报告）</span>
+      <span><span class="sw" style="background:var(--series-2)"></span>非对抗子集（本报告推算）</span>
+    </div>
+    <svg class="chart" viewBox="0 0 900 340" xmlns="http://www.w3.org/2000/svg">
+      <line x1="70" y1="300.0" x2="870" y2="300.0" stroke="var(--grid)" stroke-width="1"/>
+      <text x="58" y="304.0" text-anchor="end" font-size="12" fill="var(--muted)">0.0</text>
+      <line x1="70" y1="232.5" x2="870" y2="232.5" stroke="var(--grid)" stroke-width="1"/>
+      <text x="58" y="236.5" text-anchor="end" font-size="12" fill="var(--muted)">0.2</text>
+      <line x1="70" y1="165.0" x2="870" y2="165.0" stroke="var(--grid)" stroke-width="1"/>
+      <text x="58" y="169.0" text-anchor="end" font-size="12" fill="var(--muted)">0.4</text>
+      <line x1="70" y1="97.5" x2="870" y2="97.5" stroke="var(--grid)" stroke-width="1"/>
+      <text x="58" y="101.5" text-anchor="end" font-size="12" fill="var(--muted)">0.6</text>
+      <line x1="70" y1="30.0" x2="870" y2="30.0" stroke="var(--grid)" stroke-width="1"/>
+      <text x="58" y="34.0" text-anchor="end" font-size="12" fill="var(--muted)">0.8</text>
+      <rect class="bar" x="104.0" y="137.7" width="44" height="162.3" rx="3" fill="var(--series-1)" data-t="Full Context · Overall（论文报告）：0.481"/>
+      <text x="126.0" y="130.7" text-anchor="middle" font-size="11.5" fill="var(--text-secondary)">0.481</text>
+      <rect class="bar" x="152.0" y="105.2" width="44" height="194.8" rx="3" fill="var(--series-2)" data-t="Full Context · 非对抗子集（推算）：0.5772"/>
+      <text x="174.0" y="98.2" text-anchor="middle" font-size="11.5" fill="var(--text-secondary)">0.577</text>
+      <text x="150.0" y="322" text-anchor="middle" font-size="13" fill="var(--text-primary)">Full Context</text>
+      <rect class="bar" x="264.0" y="104.3" width="44" height="195.7" rx="3" fill="var(--series-1)" data-t="A-MEM · Overall（论文报告）：0.580"/>
+      <text x="286.0" y="97.3" text-anchor="middle" font-size="11.5" fill="var(--text-secondary)">0.580</text>
+      <rect class="bar" x="312.0" y="107.6" width="44" height="192.4" rx="3" fill="var(--series-2)" data-t="A-MEM · 非对抗子集（推算）：0.5701"/>
+      <text x="334.0" y="100.6" text-anchor="middle" font-size="11.5" fill="var(--text-secondary)">0.570</text>
+      <text x="310.0" y="322" text-anchor="middle" font-size="13" fill="var(--text-primary)">A-MEM</text>
+      <rect class="bar" x="424.0" y="113.4" width="44" height="186.6" rx="3" fill="var(--series-1)" data-t="MemoryOS · Overall（论文报告）：0.553"/>
+      <text x="446.0" y="106.4" text-anchor="middle" font-size="11.5" fill="var(--text-secondary)">0.553</text>
+      <rect class="bar" x="472.0" y="101.4" width="44" height="198.6" rx="3" fill="var(--series-2)" data-t="MemoryOS · 非对抗子集（推算）：0.5885"/>
+      <text x="494.0" y="94.4" text-anchor="middle" font-size="11.5" fill="var(--text-secondary)">0.589</text>
+      <text x="470.0" y="322" text-anchor="middle" font-size="13" fill="var(--text-primary)">MemoryOS</text>
+      <rect class="bar" x="584.0" y="100.9" width="44" height="199.1" rx="3" fill="var(--series-1)" data-t="Nemori · Overall（论文报告）：0.590"/>
+      <text x="606.0" y="93.9" text-anchor="middle" font-size="11.5" fill="var(--text-secondary)">0.590</text>
+      <rect class="bar" x="632.0" y="68.2" width="44" height="231.8" rx="3" fill="var(--series-2)" data-t="Nemori · 非对抗子集（推算）：0.6869"/>
+      <text x="654.0" y="61.2" text-anchor="middle" font-size="11.5" fill="var(--text-secondary)">0.687</text>
+      <text x="630.0" y="322" text-anchor="middle" font-size="13" fill="var(--text-primary)">Nemori</text>
+      <rect class="bar" x="744.0" y="63.8" width="44" height="236.2" rx="3" fill="var(--series-1)" data-t="MAGMA · Overall（论文报告）：0.700"/>
+      <text x="766.0" y="56.8" text-anchor="middle" font-size="11.5" fill="var(--text-secondary)">0.700</text>
+      <rect class="bar" x="792.0" y="67.7" width="44" height="232.3" rx="3" fill="var(--series-2)" data-t="MAGMA · 非对抗子集（推算）：0.6882"/>
+      <text x="814.0" y="60.7" text-anchor="middle" font-size="11.5" fill="var(--text-secondary)">0.688</text>
+      <text x="790.0" y="322" text-anchor="middle" font-size="13" fill="var(--text-primary)">MAGMA</text>
+      <line x1="70" y1="300" x2="870" y2="300" stroke="var(--baseline)" stroke-width="1.5"/>
+      <text x="58" y="20" text-anchor="end" font-size="11.5" fill="var(--muted)">LLM-Judge</text>
+    </svg>
+  </div>
+
+  <section class="card">
+    <div class="tw"><table>
+      <tr><th>类别</th><th class="num">权重</th><th class="num">对总差值的贡献</th><th class="num">占比</th></tr>
+      <tr class="best"><td>Adversarial</td><td class="num">22.46%</td><td class="num">+0.0937</td><td class="num">+98.98%</td></tr>
+      <tr><td>Single-Hop</td><td class="num">42.35%</td><td class="num">+0.0051</td><td class="num">+5.37%</td></tr>
+      <tr><td>Open-Domain</td><td class="num">4.83%</td><td class="num">+0.0015</td><td class="num">+1.63%</td></tr>
+      <tr><td>Temporal</td><td class="num">16.16%</td><td class="num">+0.0002</td><td class="num">+0.17%</td></tr>
+      <tr><td>Multi-Hop</td><td class="num">14.20%</td><td class="num dn">−0.0058</td><td class="num dn">−6.15%</td></tr>
+      <tr><td><strong>合计</strong></td><td class="num">100%</td><td class="num">+0.0946</td><td class="num">100%</td></tr>
+    </table></div>
+    <div class="callout hi">
+      <strong>剔除 adversarial 后的 1,540 条样本上：MAGMA 0.6882 vs Nemori 0.6869，差 +0.13 个百分点（相对 +0.19%）。</strong>
+      LoCoMo 的 adversarial 类是<strong>不可从对话中回答的问题</strong>，正确行为是拒答。因此这一列度量的主要不是推理能力，而是<strong>弃权校准（abstention calibration）</strong>。Full Context 拿 0.205（几乎全在幻觉），A-MEM 0.616，Nemori 0.325。
+    </div>
+    <p><strong>这不意味着 MAGMA 没有价值</strong>——把弃权校准从 0.325 拉到 0.742 是一个非常实用的工程成果，很可能正是 <code>&lt;ref:n_i.id&gt;</code> provenance 标注 + 结构化子图（「我沿着因果边走了 4 跳都没找到相关节点」是一个比「向量相似度都很低」更可判定的证据）带来的。<strong>但论文把它包装成「在长程推理任务上一致优于 SOTA」，是一个与自己数据不符的叙述</strong>：在真正需要推理的 1,540 条上，MAGMA 与 Nemori 统计上无法区分。</p>
+  </section>
+
+  <section class="card">
+    <h3>3.3 ⚠️ Table 1 的两行对不上账</h3>
+    <div class="tw"><table>
+      <tr><th>方法</th><th class="num">由分项复现的微平均</th><th class="num">论文报告的 Overall</th><th class="num">差值</th></tr>
+      <tr><td>MAGMA</td><td class="num">0.7003</td><td class="num">0.700</td><td class="num up">+0.0003 ✅</td></tr>
+      <tr><td>A-MEM</td><td class="num">0.5804</td><td class="num">0.580</td><td class="num up">+0.0004 ✅</td></tr>
+      <tr><td>MemoryOS</td><td class="num">0.5525</td><td class="num">0.553</td><td class="num up">−0.0005 ✅</td></tr>
+      <tr><td><strong>Nemori</strong></td><td class="num">0.6057</td><td class="num">0.590</td><td class="num dn">+0.0157 ❌</td></tr>
+      <tr><td><strong>Full Context</strong></td><td class="num">0.4936</td><td class="num">0.481</td><td class="num dn">+0.0126 ❌</td></tr>
+    </table></div>
+    <p>三行严丝合缝（误差 &lt;0.0005），两行差 0.013–0.016。<strong>这两行恰好是论文自己没有跑、极可能直接引自 Nemori 原论文的两行</strong>（Nemori 与 Full-Context 通常成对出现在 Nemori 的表里）。若成立，则该表混合了两套 judge 协议。</p>
+    <div class="callout">
+      <strong>对结论的影响是可量化的：</strong>把 Nemori 的 Overall 按其分项修正为 0.6057，MAGMA 的领先从 +0.110（+18.6%）缩到 <strong>+0.094（+15.6%）</strong>。方向不变，幅度打了七折。而 Table 5（单图消融）五行全部完美自洽（0.5898→0.590、0.5765→0.577、0.5311→0.531），进一步支持「问题只出在外部引用的两行」这一假说。
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>3.4 主结果 B：LongMemEval（论文 Table 2，准确率 %）</h3>
+    <div class="tw"><table>
+      <tr><th>问题类型</th><th class="num">Full-context (101K tok)</th><th class="num">Nemori (3.7–4.8K tok)</th><th class="num">MAGMA (0.7–4.2K tok)</th></tr>
+      <tr><td>single-session-preference</td><td class="num">6.7</td><td class="num">62.7</td><td class="num up">73.3</td></tr>
+      <tr><td>single-session-assistant</td><td class="num up">89.3</td><td class="num">73.2</td><td class="num">83.9</td></tr>
+      <tr><td>temporal-reasoning</td><td class="num">42.1</td><td class="num">43.0</td><td class="num up">45.1</td></tr>
+      <tr><td>multi-session</td><td class="num">38.3</td><td class="num up">51.4</td><td class="num">50.4</td></tr>
+      <tr><td>knowledge-update</td><td class="num up">78.2</td><td class="num">52.6</td><td class="num">66.7</td></tr>
+      <tr><td>single-session-user</td><td class="num up">78.6</td><td class="num">77.7</td><td class="num">72.9</td></tr>
+      <tr class="best"><td>Average（论文报告）</td><td class="num">55.0</td><td class="num">56.2</td><td class="num">61.2</td></tr>
+    </table></div>
+
+    <h4>同一类问题再次出现（本报告推算）</h4>
+    <div class="tw"><table>
+      <tr><th>统计口径</th><th class="num">Full-context</th><th class="num">Nemori</th><th class="num">MAGMA</th></tr>
+      <tr><td>论文报告的 Average</td><td class="num">55.0</td><td class="num">56.2</td><td class="num">61.2</td></tr>
+      <tr><td>六类的算术平均</td><td class="num">55.53</td><td class="num">60.10</td><td class="num">65.38</td></tr>
+      <tr><td>差值</td><td class="num">−0.53</td><td class="num dn">−3.90</td><td class="num dn">−4.18</td></tr>
+      <tr class="best"><td>剔除 preference 后五类算术平均</td><td class="num">65.30</td><td class="num">59.58</td><td class="num">63.80</td></tr>
+    </table></div>
+    <p><strong>两点推论：</strong>① 论文的 "Average" 行<strong>不是</strong>所列六类的算术平均，说明使用了各类样本数加权——但论文<strong>没有披露每类的样本数</strong>，读者无法复核，这是一处透明度缺口。② 更关键：<strong>一旦剔除 single-session-preference 这一类，Full-context（65.30）反超 MAGMA（63.80）</strong>。MAGMA 在 6 类中有 3 类输给 Full-context（assistant −5.4pp、knowledge-update −11.5pp、user −5.7pp）。</p>
+    <div class="callout">
+      <strong>全表最需要解释、却完全没被解释的一项：</strong>single-session-preference 上 Full-context 只拿 <strong>6.7%</strong>。一个能看到全部 101K tokens 原文的系统，在「用户偏好」类问题上比随机基线还难看，比 MAGMA 低 11 倍。合理解释是评测协议下 full-context 在这一类系统性地不给出偏好性回答（格式失配而非知识缺失），但论文没有讨论。
+    </div>
+    <p><strong>因此 LongMemEval 上诚实的结论应当是</strong>：MAGMA 用<strong>约 96% 更少的 token</strong>（0.7–4.2K vs 101K）取得了<strong>与全上下文大体相当、略优的</strong>平均准确率，并在偏好类问题上有巨大优势——这是一个漂亮的<strong>效率</strong>结论，而不是一个<strong>能力</strong>结论。</p>
+  </section>
+
+  <section class="card">
+    <h3>3.5 消融研究（论文 Table 4，LoCoMo）</h3>
+    <div class="tw"><table>
+      <tr><th>配置</th><th class="num">Judge</th><th class="num">F1</th><th class="num">BLEU-1</th></tr>
+      <tr><td>w/o Adaptive Policy</td><td class="num">0.637</td><td class="num">0.413</td><td class="num">0.357</td></tr>
+      <tr><td>w/o Causal Links</td><td class="num">0.644</td><td class="num">0.439</td><td class="num">0.354</td></tr>
+      <tr><td>w/o Temporal Backbone</td><td class="num">0.647</td><td class="num">0.438</td><td class="num">0.349</td></tr>
+      <tr><td>w/o Entity Links</td><td class="num">0.666</td><td class="num">0.451</td><td class="num">0.363</td></tr>
+      <tr class="best"><td>MAGMA (Full)</td><td class="num">0.700</td><td class="num">0.467</td><td class="num">0.378</td></tr>
+    </table></div>
+    <h4>留一法（LOO）边际贡献（本报告推算）</h4>
+    <div class="tw"><table>
+      <tr><th>移除的组件</th><th class="num">ΔJudge</th><th class="num">相对降幅</th><th class="num">ΔF1</th><th class="num">ΔBLEU-1</th></tr>
+      <tr class="best"><td>Adaptive Policy</td><td class="num">−0.063</td><td class="num">−9.00%</td><td class="num">−0.054 (−11.6%)</td><td class="num">−0.021 (−5.6%)</td></tr>
+      <tr><td>Causal Links</td><td class="num">−0.056</td><td class="num">−8.00%</td><td class="num">−0.028 (−6.0%)</td><td class="num">−0.024 (−6.3%)</td></tr>
+      <tr><td>Temporal Backbone</td><td class="num">−0.053</td><td class="num">−7.57%</td><td class="num">−0.029 (−6.2%)</td><td class="num">−0.029 (−7.7%)</td></tr>
+      <tr><td>Entity Links</td><td class="num">−0.034</td><td class="num">−4.86%</td><td class="num">−0.016 (−3.4%)</td><td class="num">−0.015 (−4.0%)</td></tr>
+    </table></div>
+    <div class="callout hi">
+      <strong>这条排序反驳了论文自己的叙事重心。</strong>标题、摘要、贡献列表都把重点放在「四张正交图」这个<strong>表示</strong>创新上，但消融告诉我们，单一最大贡献者是 <strong>Adaptive Traversal Policy 这个检索策略</strong>（−0.063 &gt; 因果 −0.056 &gt; 时序 −0.053 &gt; 实体 −0.034）。MAGMA 真正的价值可能是「意图路由」而非「多图分解」——多图只是让路由有东西可路由。
+    </div>
+
+    <h3>3.6 单图消融（论文 Table 5，LoCoMo）</h3>
+    <div class="tw"><table>
+      <tr><th>配置</th><th class="num">Multi-Hop</th><th class="num">Temporal</th><th class="num">Open-Domain</th><th class="num">Single-Hop</th><th class="num">Adversarial</th><th class="num">Overall</th></tr>
+      <tr><td>Causal Only</td><td class="num">0.470</td><td class="num">0.460</td><td class="num">0.430</td><td class="num">0.650</td><td class="num">0.680</td><td class="num">0.590</td></tr>
+      <tr><td>Temporal Only</td><td class="num">0.440</td><td class="num">0.620</td><td class="num">0.450</td><td class="num">0.650</td><td class="num">0.520</td><td class="num">0.577</td></tr>
+      <tr><td>Entity Only</td><td class="num">0.485</td><td class="num">0.420</td><td class="num">0.460</td><td class="num">0.640</td><td class="num">0.450</td><td class="num">0.531</td></tr>
+      <tr class="best"><td>Full MAGMA</td><td class="num">0.528</td><td class="num">0.650</td><td class="num">0.517</td><td class="num">0.776</td><td class="num">0.742</td><td class="num">0.700</td></tr>
+    </table></div>
+    <p><strong>三条可验证的观察（本报告推算）：</strong></p>
+    <ol>
+      <li><strong>单图已足以打平最强基线。</strong>Causal Only 的 0.590 = Nemori 报告的 0.590。只用一张因果图 + 意图路由就到了 Nemori 的水平；四图全开才拿到剩下的 0.110。</li>
+      <li><strong>「正交」这个词与自己的数据打架。</strong>LOO 降幅之和 = 0.063+0.056+0.053+0.034 = <strong>0.206</strong>；而「全图 − 最好单图」的间隙只有 0.700−0.590 = <strong>0.110</strong>。前者是后者的 <strong>1.87 倍</strong>。若四张图的贡献真是可加/独立的，两者应当接近。1.87× 的超可加性说明四张图在功能上<strong>高度纠缠</strong>——表示层的正交（边集互不相交）不等于效果层的独立。</li>
+      <li><strong>对角线是干净的</strong>：Temporal Only 在 Temporal 类拿最高（0.620）、Causal Only 在 Adversarial 拿最高（0.680）、Entity Only 在 Open-Domain 拿到单图最高（0.460）。这是「每张图确实各司其职」的最好证据，值得肯定。</li>
+    </ol>
+    <div class="callout">
+      <strong>精度不一致提示。</strong>Table 5 全为两位小数，Table 1 为三位小数；Table 5 中 Causal Only 与 Temporal Only 的 Single-Hop 恰好都是 0.650、Entity Only 是 0.640——在 841 条样本上出现这样整齐的取值，提示 Table 5 可能是四舍五入后的估计值，不宜按 0.001 量级解读。
+    </div>
+
+    <h3>3.7 系统效率（论文 Table 3）</h3>
+    <div class="tw"><table>
+      <tr><th>方法</th><th class="num">Build Time (h)</th><th class="num">Tokens/Query (k)</th><th class="num">Latency (s)</th></tr>
+      <tr><td>Full Context</td><td class="num">N/A</td><td class="num">8.53</td><td class="num">1.74</td></tr>
+      <tr><td>A-MEM</td><td class="num">1.01</td><td class="num up">2.62</td><td class="num">2.26</td></tr>
+      <tr><td>MemoryOS</td><td class="num">0.91</td><td class="num">4.76</td><td class="num dn">32.68</td></tr>
+      <tr><td>Nemori</td><td class="num up">0.29</td><td class="num">3.46</td><td class="num">2.59</td></tr>
+      <tr class="best"><td>MAGMA</td><td class="num">0.39</td><td class="num">3.37</td><td class="num">1.47</td></tr>
+    </table></div>
+    <p><strong>相对差（本报告推算）</strong>：MAGMA 查询延迟 1.47 s 比 Nemori 快 <strong>43.2%</strong>、比 A-MEM 快 35.0%、比 MemoryOS 快 <strong>95.5%</strong>、甚至比 Full Context 还快 15.5%（送进去的 token 少 60.5%）。代价在构建侧：0.39 h 比 Nemori 慢 <strong>34.5%</strong>；tokens/query 3.37k 比 A-MEM 多 <strong>28.6%</strong>。</p>
+    <div class="callout">
+      <strong>这张表最重要的一点是它没说的。</strong>双流架构把 LLM 因果推断挪到异步慢路径，所以 Latency 一列<strong>天然对 MAGMA 有利</strong>——慢路径的算力既不体现在 Latency，也不体现在 Tokens/Query（该列度量查询时的 token），只能部分体现在 Build Time 里。论文没有报告慢路径消耗的 LLM token 总量，因此 <strong>MAGMA 的总拥有成本（TCO）在这张表里是不可见的</strong>。对一个把「异步 LLM 稠密化」作为核心机制的系统，这是最该补的一个数。
+    </div>
+  </section>
+
+  <h2>4. 价值分析与局限性</h2>
+
+  <section class="card">
+    <h3>4.1 价值分析</h3>
+    <p><strong>它真正的贡献是什么。</strong>MAGMA 把 agent memory 的检索问题从<strong>度量学习问题</strong>（怎么把 query 和 memory 嵌到同一个空间里）改写成了<strong>策略问题</strong>（在若干种已知语义的关系上，选择走哪一种）。这个改写的价值在于：<strong>它让检索行为变得可解释、可干预、可组合</strong>。向量检索的失败你只能靠换 embedding 修；关系遍历的失败你可以定位到「因果边没建出来」或「意图分类判错了」。</p>
+    <h4>可以脱离本文单独复用的四个设计</h4>
+    <ol>
+      <li><strong>双流写入（快/慢路径分离）</strong>——与四图分解完全解耦。任何在写入时需要 LLM 做结构推断的记忆系统都可直接采纳：规则可完成的骨架放同步路径，需要推理的稠密化放异步队列。MemoryOS 的 32.68 s 就是没这么做的反例。</li>
+      <li><strong>意图 → 边类型权重的路由</strong>（<code>φ(r, T_q) = w_{T_q}ᵀ·𝟙_r</code>）——只要记忆有多种边类型就能用，与边的具体语义无关。消融显示它是单一最大贡献项（−0.063）。</li>
+      <li><strong>拓扑排序的上下文线性化</strong>——因果类问题让「因」在 prompt 中先于「果」出现。几乎零成本，且与检索方式正交。</li>
+      <li><strong><code>&lt;ref:id&gt;</code> provenance 标注</strong>——很可能是 adversarial 从 0.325 跃升到 0.742 的机制性来源（模型可以「看见」自己没有证据）。</li>
+    </ol>
+    <p><strong>对后续工作的启发。</strong>把 <code>φ</code> 从<strong>手工权重表</strong>换成<strong>学出来的策略</strong>是最直接的下一步。目前 <code>w_{T_q}</code> 是人工设定的（entity 2.5–6.0 / temporal 0.5–4.0 / causal 3.0–5.0），意图分类也只有三类。这正好是 <a href="https://arxiv.org/abs/2601.03192">MemRL</a> / Memory-R1 那条 RL 线可以嫁接进来的位置——<strong>MAGMA 提供了动作空间，RL 那条线提供了学习信号。</strong></p>
+  </section>
+
+  <section class="card">
+    <h3>4.2 局限性 A：论文自述（§6 原文要点）</h3>
+    <ol>
+      <li><strong>依赖 LLM 的推理保真度</strong>。"the quality of the constructed memory graph depends on the reasoning fidelity of the underlying Large Language Models used during asynchronous consolidation"，并承认「erroneous or missing relations may still arise and propagate to downstream retrieval」，只靠结构化 prompt 与保守阈值缓解。</li>
+      <li><strong>多图带来存储与工程复杂度</strong>。"Maintaining multiple relational views and dual-stream processing incurs a little higher implementation and memory overhead"，资源受限环境下适用性有限。</li>
+      <li><strong>评测范围窄</strong>。承认包括自身在内的多数 agentic memory 系统只在 LoCoMo / LongMemEval 这类长上下文对话基准上评测，未覆盖多模态、异构观测流等场景。</li>
+    </ol>
+
+    <h3>4.3 局限性 B：补充批判（本报告的独立观察）</h3>
+
+    <h4>B1 · 论证缺口 —— 核心主张与自身数据不符（最严重）</h4>
+    <p>论文声称「consistently outperforms SOTA agentic memory systems on long-horizon reasoning tasks」。但按 §3.2 的分解，相对最强基线 Nemori 的整体优势中 <strong>98.98% 来自 adversarial（弃权）一列</strong>；剔除该列后的 1,540 条样本上，MAGMA 0.6882 vs Nemori 0.6869，差 <strong>+0.13pp</strong>。"consistently" 一词在 multi-hop 上也被直接证伪（0.528 vs 0.569，−7.2%）。准确的主张应当是「显著改善了不可答问题上的弃权校准，并在同等推理精度下大幅降低延迟」。</p>
+
+    <h4>B2 · 实验设计问题 —— 四图声明，只消融了三图</h4>
+    <p>论文反复强调 semantic / temporal / causal / entity 四张<strong>正交</strong>图，但 Table 4 只有 w/o Causal / w/o Temporal / w/o Entity，<strong>没有 w/o Semantic</strong>；Table 5 只有 Causal Only / Temporal Only / Entity Only，<strong>没有 Semantic Only</strong>。而 "Semantic Only" 恰恰是本文的<strong>零假设</strong>——它约等于把 MAGMA 退化成一个带 beam search 的向量 RAG。缺了这一格，「关系解耦带来增益」这个核心主张就没有对照它自己的 null。这不是可有可无的一格，是唯一那格。</p>
+
+    <h4>B3 · 实验设计问题 —— 承诺了超参研究，实际只给了取值范围</h4>
+    <p>Appendix B 给出 λ₂ ∈ [0.3, 0.7]、θ<sub>sim</sub>=0.75、δ=0.6、beam=8、γ=0.85，自述「empirically optimized on LoCoMo」，但<strong>没有一条敏感性曲线、没有一张扫参表</strong>。后果有二：(i) 无法判断 0.700 有多少来自在测试基准上调参（θ<sub>sim</sub> 与 δ 直接决定图的稠密度，是高杠杆参数）；(ii) 无法判断该配置迁移到别的语料需要多少重新调参。对一个把阈值建图作为机制核心的系统，这是实质性缺失。</p>
+
+    <h4>B4 · 指标有效性问题 —— Overall 列的两行无法从分项复现</h4>
+    <p>按 §3.3，MAGMA / A-MEM / MemoryOS 三行可由分项精确复现（|Δ|&lt;0.0005），而 Nemori（Δ=+0.0157）与 Full Context（Δ=+0.0126）两行不能。修正 Nemori 后，MAGMA 的领先从 +18.6% 降到 +15.6%。这两行恰好是最可能被外部引用而非自跑的两行，暗示表内混合了两套评测协议。</p>
+
+    <h4>B5 · 术语与证据不一致 —— "orthogonal" 一词被过度承载</h4>
+    <p>LOO 降幅之和 0.206 是「全图 − 最好单图」间隙 0.110 的 <strong>1.87 倍</strong>（§3.6）。若四视图真具备论文所暗示的独立性，二者应接近。1.87× 说明四张图功能上强耦合。论文的 "orthogonal" 仅指<strong>边集互不相交</strong>（表示层），但全文语气持续暗示<strong>贡献可分解</strong>（效果层）。这是一个会误导后续工作的措辞——按「可分解」去做模块化裁剪的人会拿到远低于预期的结果。</p>
+
+    <h4>B6 · 缺乏关键竞品对比 —— 没有一个图结构基线</h4>
+    <p>Table 1 的四个基线是 Full Context / A-MEM / MemoryOS / Nemori，<strong>没有任何一个图记忆系统</strong>。而 related work 明确点名了 GraphRAG 与 Zep，Zep 原论文还报告了 LongMemEval 上「最高 +18.5% 准确率、−90% 延迟」。既然核心主张是「单图不够，要多图」，那么<strong>至少要有一个单图（Zep 或 GraphRAG）基线</strong>才能把「多图 vs 单图」这一刀切出来。目前的对照只能证明「有结构 &gt; 无结构」，不能证明「多图 &gt; 单图」——而后者才是本文的贡献声明。</p>
+
+    <h4>B7 · 失手的子任务及其结构性解释</h4>
+    <p>MAGMA 在 multi-hop 上 0.528，落后 Nemori 的 0.569 达 4.1pp（−7.2%）。这在结构上是<strong>反直觉</strong>的：多图遍历本该最擅长多跳。一个可检验的假说是 beam width=8 / max depth=4–5 的剪枝在多跳场景下过早收敛——Table 5 显示 Causal Only 在 multi-hop 只有 0.470、Entity Only 0.485，全图才 0.528，说明多跳恰恰最依赖跨图组合，而 beam search 的逐层剪枝会在跨图切换时丢掉候选。论文对此<strong>完全没有讨论</strong>。相比之下 Nemori 走「叙事化压缩」路线，把跨事件关系提前烘焙进叙事文本，反而不受遍历剪枝之苦。</p>
+
+    <h4>B8 · 假设性讨论 —— 如果把弃权和推理拆开评测会怎样</h4>
+    <p>LoCoMo 把 22.5% 的样本设为不可答，然后用同一个 LLM-Judge 分把「答对了」和「正确地拒答了」加总成一个 Overall。这个聚合方式让<strong>弃权保守的系统天然占优</strong>——一个永远拒答的系统能在 adversarial 上拿满分、拿到 0.225 的免费 Overall。建议后续工作报告<strong>两个分离的数字</strong>：非对抗子集上的准确率（能力）与对抗子集上的弃权率（校准），像检测任务报告 precision/recall 那样。若 LoCoMo 采用这个口径，MAGMA 的论文叙事会完全不同（能力持平、校准大胜）——而这恰恰是更有信息量的结论。</p>
+
+    <h4>B9 · 坦白本报告分析的不完备之处</h4>
+    <ul>
+      <li>我无法<em>证明</em> Table 1 的 Overall 用的是样本加权微平均——三行能精确复现是强证据，不是证明。</li>
+      <li>LongMemEval 各类样本数未公开，§3.4 的「剔除 preference」推算用的是<strong>无权算术平均</strong>；若真实权重差异很大，结论方向可能变化（但 Full-context 在 3/6 类胜过 MAGMA 这一事实不受影响）。</li>
+      <li>我没有运行 <a href="https://github.com/FredJiang0324/MAGMA">FredJiang0324/MAGMA</a> 复现任何数字，全部结论基于论文报告值的<strong>内部一致性检验</strong>。</li>
+      <li>论文未公开慢路径的 LLM 调用量，因此 §3.7 关于 TCO 的批评是基于机制推断而非测量。</li>
+    </ul>
+  </section>
+
+  <h2>5. 相关工作回溯：一条「记忆结构逐步显式化」的问题传递链</h2>
+
+  <section class="card">
+    <p>这五篇不是平行的同方向论文，而是沿着<strong>同一个问题被逐级剥离</strong>的历史：记忆从「一段可分页的文本」→「一堆带链接的笔记」→「一个分层的生命周期」→「一张带时间的知识图」→「一组被选择过的叙事」→ MAGMA 的「若干张按关系类型分离、按意图路由的图」。</p>
+
+    <h3>5.1 GraphRAG（Edge et al., arXiv 2404.16130，v1 2024-04，v2 2025-02）</h3>
+    <p><strong>解决了什么问题。</strong>朴素 RAG 只能回答「文档里哪一段提到了 X」，无法回答需要跨整个语料综合的全局性问题。GraphRAG 用 LLM 分两阶段建索引：先抽实体知识图，再预生成社区摘要；查询时由社区摘要生成局部答案再归并。<strong>一句话：把「检索单元」从 chunk 提升为「图上的社区」。</strong></p>
+    <p><strong>遗留了什么问题。</strong>GraphRAG 的图是<strong>静态语料索引</strong>，为「一次性建好、反复查询」设计。它不处理增量写入，不表示时间有效性（一条事实何时开始为真、何时被推翻），也不区分关系类型——实体图里的边就是「共现/相关」。对一个持续交互、事实不断被更新的 agent 而言，这三点都是硬伤。</p>
+    <p><strong>MAGMA 如何回应。</strong>继承了「用 LLM 抽结构」这一步（慢路径的 <code>Φ_reason</code>），但把它从<strong>离线批处理</strong>改成<strong>在线异步流</strong>，并把「一种边」拆成四种。GraphRAG 的社区摘要对应 MAGMA 的 salience-based budgeting。</p>
+    <p><strong>关键设计的传递。</strong>「LLM 作为图构建器」这个范式直接传下来了；但「预计算全局摘要」被替换为「查询时按意图动态遍历」——从<strong>预烘焙</strong>转向<strong>按需路由</strong>。</p>
+
+    <h3>5.2 MemGPT（Packer et al., 2023；MAGMA 按 ACL 2023 companion 引用）</h3>
+    <p><strong>解决了什么问题。</strong>第一个把操作系统的虚拟内存隐喻搬进 LLM：主上下文 = 物理内存，外部存储 = 磁盘，由 LLM 自己通过函数调用在两者间分页。<strong>一句话：让模型自己管理「什么该在上下文里」。</strong></p>
+    <p><strong>遗留了什么问题。</strong>分页的<strong>粒度是文本块，组织方式是无结构的</strong>。MemGPT 解决了「放不下」，没解决「放进去的东西彼此什么关系」。检索仍然回落到相似度搜索，且全部决策依赖 prompt 中的启发式指令，脆弱且不可学习。</p>
+    <p><strong>MAGMA 如何回应。</strong>是<strong>综合而非对抗</strong>：保留了「外部持久存储 + 按需调入」的骨架，但把「无结构块」换成「带四类关系的事件节点」，把「LLM 靠 prompt 决定调什么」换成「意图分类器 + 加权遍历」。</p>
+    <p><strong>关键设计的传递。</strong>双流架构中的「快路径不阻塞、慢路径异步整理」，本质上是 MemGPT 的「前台交互 / 后台内存管理」在延迟维度上的重新切分。</p>
+
+    <h3>5.3 A-MEM（Xu et al., <strong>NeurIPS 2025 主会</strong>，arXiv 2502.12110）</h3>
+    <p><strong>解决了什么问题。</strong>借 Zettelkasten 卡片盒法，让记忆<strong>自己长出网络</strong>：新记忆写入时生成含上下文描述、关键词、标签的结构化笔记，系统分析历史记忆建立链接，且新记忆会<strong>反向触发旧记忆表示的更新</strong>（memory evolution）。原文批评：「Current memory systems enable basic storage and retrieval but lack sophisticated memory organization... these systems' fixed operations and structures limit their adaptability」。<strong>一句话：记忆条目之间应当有链接，且链接与内容都会演化。</strong></p>
+    <p><strong>遗留了什么问题。</strong>A-MEM 的链接是<strong>同质的</strong>——所有边都是「语义上相关」，建边依据仍是 embedding 相似度。后果有二：(i) 时序与因果关系无法被表达，只能寄希望于 embedding 隐式编码；(ii) 检索仍是向量搜索，链接主要用于扩展召回而非<strong>引导</strong>召回。数据上也印证了：A-MEM 在 LoCoMo Temporal 类只有 0.474（Table 1），全表倒数第二。</p>
+    <p><strong>MAGMA 如何回应。</strong>这是<strong>直接对抗</strong>：整个立论就是「A-MEM 那种同质链接不够」。它把 A-MEM 的一种边裂解成四种，并让边类型进入打分函数 <code>φ(type(e_ij), T_q)</code>。效果上 Temporal 从 0.474 抬到 0.650（<strong>+37.1%，本报告推算</strong>）。</p>
+    <p><strong>关键设计的传递。</strong>「写入时用 LLM 生成结构化元数据 A_i（实体、时间线索、上下文描述符）」几乎是 A-MEM 笔记模式的直接继承；A-MEM 的 memory evolution 则演化为 MAGMA 慢路径中的「更新因果边置信度、合并冗余语义簇」。</p>
+
+    <h3>5.4 MemoryOS（Kang et al., <strong>EMNLP 2025 Main, Oral</strong>，arXiv 2506.06326）</h3>
+    <p><strong>解决了什么问题。</strong>把记忆按<strong>生命周期</strong>分层：短期 / 中期 / 长期个人记忆三级存储，配四个算子（存储、更新、检索、生成）。在 LoCoMo 上用 GPT-4o-mini 取得 F1 +48.36%、BLEU-1 +46.18% 的相对提升。<strong>一句话：记忆需要一套显式的分层管理与换页策略，而不只是一个库。</strong></p>
+    <p><strong>遗留了什么问题。</strong>分层轴是<strong>时效/热度</strong>，不是<strong>关系类型</strong>：它回答了「一条记忆该放哪一层、何时被提升或淘汰」，但没回答「两条记忆之间是什么关系」。此外把四个算子串在同步路径上的代价极其可观：Table 3 显示其查询延迟 <strong>32.68 s</strong>，是 MAGMA 的 <strong>22.2 倍</strong>（本报告推算），交互式场景基本不可用。</p>
+    <p><strong>MAGMA 如何回应。</strong>在<strong>两个正交的轴上</strong>分别回应：(i) 用四张关系图补上缺失的「关系轴」；(ii) 用双流架构把重算子挪出关键路径，延迟压到 1.47 s。值得注意的是 MemoryOS 在 Open-Domain 上是最强基线（0.504），MAGMA 只领先 2.6%——分层管理在开放域上确有独立价值。</p>
+    <p><strong>关键设计的传递。</strong>「不同的记忆操作应该被区别对待」这个思想被保留，但<strong>分类维度从「时效层级」换成了「同步性」</strong>（快/慢路径）。这是一个很干净的重新切分。</p>
+
+    <h3>5.5 Zep / Graphiti（Rasmussen et al., arXiv 2501.13956，v1 2025-01-20）</h3>
+    <p><strong>解决了什么问题。</strong>第一个把<strong>时间有效性</strong>做成一等公民的 agent 记忆系统：Graphiti 引擎在知识图上维护双时态信息（事实发生时间 vs 被记录时间），从而能表达「这条事实曾经为真、现在已被推翻」。报告 DMR 94.8%（vs MemGPT 93.4%）、LongMemEval 最高 +18.5% 准确率、延迟降低最多 90%。<strong>一句话：agent 记忆里的事实是有有效期的，图必须能表达失效。</strong></p>
+    <p><strong>遗留了什么问题。</strong>Zep 只把<strong>一个</strong>维度（时间）显式化了，因果与实体共指仍隐含在同一张图的边和节点属性里。更重要的是，Zep 的检索<strong>不因问题类型而改变遍历方式</strong>——它是一张更聪明的图，配一套固定的检索流程。</p>
+    <p><strong>MAGMA 如何回应。</strong>把 Zep 的「时间作为一等公民」推广成「<strong>每一类关系都是一等公民，各占一张图</strong>」，并额外增加了 Zep 没有的一层：<strong>让 query 的意图决定走哪张图</strong>。可以说 MAGMA = Zep 的思想在维度数上的展开 + 一个路由层。</p>
+    <p><strong>关键设计的传递。</strong>时序骨架 <code>E_temp</code>（严格按 τ 排序的不可变链）几乎就是 Zep 时间轴的简化版；MAGMA 的「相对表达 → 绝对区间 [τ_s, τ_e]」也直接对应 Zep 的时间归一化。</p>
+    <div class="callout">
+      <strong>一处必须指出的空白。</strong>如 B6 所述，<strong>MAGMA 没有把 Zep 放进基线</strong>。这是整个实验设计里最可惜的一处——Zep 是「单一但时间感知的图」的最佳代表，正是「多图 vs 单图」这个核心命题的天然对照组。
+    </div>
+
+    <h3>5.6 Nemori（Ma, Nan, Wu, Chen；arXiv 2508.03341，v1 2025-08，v4 2026-04 已改题）</h3>
+    <p><strong>解决了什么问题。</strong>从「什么值得记」这个此前被设计者启发式包办的问题入手，用<strong>预测误差（prediction error）</strong>作为价值信号：模型能预测到的交互不值得存，预测失败的才是新知识。两个组件——把原始交互转成结构化叙事、按可预测性抽取洞见。<strong>一句话：记忆的写入门槛应该由「意外程度」而非人工规则决定。</strong></p>
+    <p><strong>遗留了什么问题。</strong>Nemori 把功夫全下在<strong>内容选择</strong>上，选出来之后的<strong>组织形式仍是（结构化的）叙事文本</strong>，检索回到语义匹配。这带来一个非常具体的失效：Table 1 中 Nemori 在 adversarial 类只有 <strong>0.325</strong>，是除 Full Context 外最低的。原因可以推断：既然写入时已把「值得记的」蒸馏成连贯叙事，检索时几乎总能找到一段「看起来相关」的叙事，于是模型倾向于强答——<strong>高质量的压缩反而削弱了「我没有证据」这个判断的可用性</strong>。</p>
+    <p><strong>MAGMA 如何回应。</strong>这正是 §3.2 中那 98.98% 的来源。MAGMA 的结构化子图 + <code>&lt;ref:id&gt;</code> provenance 让「找不到」变成一个<strong>可判定的结构事实</strong>（沿因果边走满深度仍无相关节点），而非一个模糊的相似度低分。adversarial 从 0.325 抬到 0.742（<strong>+128%，本报告推算</strong>）。</p>
+    <p><strong>同时也是 MAGMA 的失手处。</strong>Nemori 的叙事化压缩在 multi-hop 上仍然领先（0.569 vs 0.528）——把跨事件关系提前烘焙进文本，比查询时用 beam search 现场拼更稳。</p>
+    <p><strong>关键设计的传递。</strong>Nemori 是 MAGMA 的<strong>主对照</strong>而非技术来源。二者构成一组干净的对立：<strong>写入时压缩（Nemori）vs 查询时组装（MAGMA）</strong>。这组对立本身就是下一步最值得做的实验。</p>
+  </section>
+
+  <h2>6. 技术演进脉络</h2>
+
+  <section class="card">
+    <h3>6.1 非线性演进树</h3>
+    <div class="flow">2023  MemGPT  [虚拟内存分页 · prompt 驱动 · 无结构文本块]
+        │  解决「放不下」，遗留「放进去的东西没有关系」
+        │
+        ├────────────────┬─────────────────┬──────────────────┐
+        ↓                ↓                 ↓                  ↓
+2024  GraphRAG      2025  A-MEM       2025  MemoryOS     2025  Zep/Graphiti
+      [实体图+社区]      [Zettelkasten     [三级存储        [双时态知识图]
+      语料级结构          链接+演化]         +四算子]          时间有效性
+      ⚠ 静态·无时间      ⚠ 链接同质        ⚠ 分层轴是时效    ⚠ 只显式化了
+        无增量             仍靠向量检索       不是关系          时间一个维度
+        │                 │                 │  延迟 32.68s     │
+        └────────┬────────┴─────────────────┴──────────────────┘
+                 │        「结构」这条线：各自补全一个维度
+                 │
+                 │      2025  Nemori  [预测误差决定「什么值得记」]
+                 │              「内容」这条线：写入时压缩成叙事
+                 │              ⚠ 组织仍是扁平叙事 · adversarial 崩到 0.325
+                 │                       │
+                 └───────────┬───────────┘
+                             ↓
+                 2026  MAGMA  (ACL'26 Long)
+                 ┌──────────────────────────────────────────┐
+                 │ 表示：四张正交关系图（sem/temp/caus/ent）│
+                 │ 检索：意图 → 边类型权重 → beam 遍历      │
+                 │ 写入：快路径(规则) ‖ 慢路径(LLM 异步)    │
+                 └──────────────────────────────────────────┘
+                   ✓ adversarial 0.325 → 0.742（结构可判定「无证据」）
+                   ✓ 延迟 2.59s → 1.47s（LLM 移出关键路径）
+                   ✗ multi-hop 0.569 → 0.528（beam 剪枝跨图丢候选）
+                   ✗ 非对抗子集上与 Nemori 持平（+0.13pp）</div>
+
+    <h3>6.2 演进的内在逻辑</h3>
+    <p>这条线的推动力是一个反复出现的模式：<strong>每一代都把上一代隐含在「相似度」或「启发式」里的某个东西显式化，代价是引入一个新的、需要被管理的对象。</strong></p>
+    <div class="tw"><table>
+      <tr><th>阶段</th><th>被显式化的东西</th><th>引入的新对象</th><th>新的管理成本</th></tr>
+      <tr><td>MemGPT (2023)</td><td>上下文的进出（分页）</td><td>外部存储层</td><td>换页策略</td></tr>
+      <tr><td>GraphRAG (2024)</td><td>跨文档的全局结构</td><td>实体图 + 社区</td><td>索引构建</td></tr>
+      <tr><td>A-MEM (2025)</td><td>记忆间的关联</td><td>链接 + 演化</td><td>链接维护</td></tr>
+      <tr><td>MemoryOS (2025)</td><td>记忆的生命周期</td><td>三级存储 + 四算子</td><td>延迟（32.68 s）</td></tr>
+      <tr><td>Zep (2025)</td><td>事实的时间有效性</td><td>双时态边</td><td>失效判定</td></tr>
+      <tr><td>Nemori (2025)</td><td>写入的价值判断</td><td>预测误差信号</td><td>压缩损失（弃权崩塌）</td></tr>
+      <tr class="best"><td>MAGMA (2026)</td><td>关系的类型</td><td>四张图 + 遍历策略</td><td>策略参数（手工设定）</td></tr>
+    </table></div>
+    <div class="callout hi">
+      <strong>阶段间的关键转折：</strong>prompt 驱动（MemGPT）→ 规则编码（GraphRAG / MemoryOS）→ 结构显式化（A-MEM / Zep）→ 内容选择（Nemori）→ <strong>检索策略化（MAGMA）</strong>。<br><br>
+      而 MAGMA 引入的新管理成本——<strong>策略参数 <code>w_{T_q}</code> 目前是手工设定的</strong>——正好是下一代的入口。按这个模式外推，2026 下半年最可能出现的工作是「<strong>把遍历策略变成学出来的</strong>」：意图分类器和边权重都由 RL 从任务回报中学习。<a href="https://arxiv.org/abs/2601.03192">MemRL</a>、<a href="https://arxiv.org/abs/2512.18746">MemEvolve</a> 已在往这个方向走，但它们优化的是记忆内容与记忆系统配置，还没人优化<strong>图上的遍历策略</strong>本身。
+    </div>
+  </section>
+
+  <h2>7. 开放挑战与研究机会</h2>
+
+  <section class="card">
+    <h3>7.1 理论层面</h3>
+    <h4>7.1.1 「关系正交性」需要一个可测量的定义（高价值 · 低门槛）</h4>
+    <p>§3.6 显示 LOO 降幅之和是「全图−最优单图」间隙的 1.87 倍，说明四视图功能上强耦合，而 "orthogonal" 目前只是边集不交这一句话。<strong>具体可做的：</strong>借用方差分解，把「全图性能 − 各单图性能」拆成主效应 + 二阶交互项，用 2⁴=16 组图子集配置跑一遍 LoCoMo（成本可控，构图只需一次），直接得出一张交互矩阵，回答「哪两张图是真冗余、哪两张图是真互补」。目前整个领域没有人做过这个。</p>
+    <h4>7.1.2 弃权与能力必须在指标层面分离（高价值 · 低门槛）</h4>
+    <p>LoCoMo 把 22.5% 的不可答样本和 77.5% 的可答样本用同一个 Judge 分聚合，导致纯保守的系统能白拿 0.225。<strong>具体可做的：</strong>定义 <code>(Acc_answerable, AbstentionRate_unanswerable)</code> 二元组，并通过扫描弃权阈值画出 trade-off 曲线。这不需要新数据，只需要重新汇报——但它会改写现有多篇论文的结论排序（§3.2 已给出一个实例）。</p>
+    <h4>7.1.3 「写入时压缩 vs 查询时组装」的理论刻画</h4>
+    <p>Nemori 与 MAGMA 构成一组干净对立。信息论上这是一个<strong>在哪一端付出失真代价</strong>的问题：写入时压缩把失真固化（不可逆），查询时组装把失真推迟但要付遍历成本。<a href="https://arxiv.org/html/2607.08032v1">What to Keep, What to Forget</a> 已开始用 rate–distortion 视角看记忆压缩，但还没人把「压缩<em>时机</em>」作为变量纳入。<strong>具体可做的：</strong>在给定 token 预算下刻画两种策略的失真下界，并预测交叉点位于什么样的查询分布。</p>
+
+    <h3>7.2 工程与应用层</h3>
+    <h4>7.2.1 补上那格缺失的对照：Semantic Only 与 Zep 基线（判决性实验 · 极低门槛）</h4>
+    <p>这是本报告认为<strong>最紧迫的一个空白</strong>。MAGMA 的核心主张是「多图优于单图」，但实验里既没有 Semantic-Only（自身的 null），也没有 Zep/GraphRAG（外部的单图代表）。<strong>具体可做的：</strong>在 <a href="https://github.com/FredJiang0324/MAGMA">开源仓库</a>上关掉三张图跑 Semantic Only，再接一个 Graphiti 基线，同一 judge、同一 backbone。这是一次周末实验，却能判决整篇论文的核心主张成立与否。<strong>在这个数据出来之前，「多图 &gt; 单图」应被视为未经验证。</strong></p>
+    <h4>7.2.2 报告慢路径的总算力，而非只报查询延迟</h4>
+    <p>§3.7 指出双流架构让 Latency 与 Tokens/Query 两列都系统性地对 MAGMA 有利。<strong>具体可做的：</strong>所有采用异步整理的记忆系统统一汇报 <code>(query latency, query tokens, background LLM calls per stored event, background tokens per stored event)</code> 四元组。这会让一批「低延迟」的说法回到可比状态。</p>
+    <h4>7.2.3 多跳遍历的剪枝失效需要单独攻</h4>
+    <p>MAGMA 在 multi-hop 上落后 Nemori 7.2%，而多跳本该是多图的主场。<strong>具体可做的：</strong>做一个 beam width × depth 网格（4/8/16 × 3/4/5/6），只看 multi-hop 一列；若性能随 beam 单调上升且未饱和，则剪枝假说成立，问题可以用算力换回来；若不上升，则问题在打分函数 <code>φ</code> 的<strong>跨图可比性</strong>上（不同边类型的分数没有归一化到同一尺度）——后者更有意思，因为它是一个真正的建模缺陷。</p>
+    <h4>7.2.4 动态/在线设置与图的老化</h4>
+    <p>MAGMA 的图只增不减：慢路径会合并冗余语义簇，但没有任何<strong>遗忘或降权</strong>机制。长期部署下（数月量级），因果边会随 LLM 抽取误差累积而污染。<a href="https://arxiv.org/html/2603.11768v1">SSGM</a> 已论证「evolving memory 的错误是累积且持久的」。<strong>具体可做的：</strong>给因果边加一个基于后续检索效用的置信度更新规则（被检索到且回答正确 → 升权；被检索到但回答错误 → 降权），本质上是把 7.3.1 的「学出来的策略」先做一个无梯度版本。</p>
+
+    <h3>7.3 新兴方向</h3>
+    <h4>7.3.1 学出来的遍历策略（最直接的下一步）</h4>
+    <p>把 <code>φ(r, T_q) = w_{T_q}ᵀ·𝟙_r</code> 中的 <code>w</code> 从手工设定换成 RL 学出来的策略，意图空间也从 <code>{Why, When, Entity}</code> 三类放开为连续表示。MAGMA 提供动作空间，<a href="https://arxiv.org/abs/2601.03192">MemRL</a> 那条线提供学习信号。<strong>具体可做的：</strong>以遍历轨迹为 episode、以最终答案的 judge 分为 reward 做 GRPO——<a href="https://arxiv.org/html/2606.27472v1">Supersede</a> 已证明 GRPO 能把小模型的记忆更新能力从 9.0% 拉到 16.7%，说明这类「记忆操作策略」确实可训练。</p>
+    <h4>7.3.2 可逆的关系压缩</h4>
+    <p>MAGMA 的 salience-based budgeting 把低相关节点压成「简写码」，这是<strong>不可逆</strong>的——一旦压错就再也找不回来。<a href="https://arxiv.org/abs/2502.15957">R³Mem</a> 已在探索可逆压缩。<strong>具体可做的：</strong>把简写码设计成可在遍历中途「展开」的形式（发现该分支变得重要时回查原文），让压缩决策变成可撤销的。</p>
+    <h4>7.3.3 多视角编码与多模态扩展</h4>
+    <p>四图分解在多模态下有一个自然的扩展点：<strong>视觉观测天然带时间戳和实体，但几乎没有语义 embedding 上的可比性</strong>。这意味着多模态场景下四张图的相对重要性会剧烈变化（temporal / entity 权重应大幅上升）——而这恰好是「学出来的权重」比「手工权重」优势最大的场景。</p>
+    <h4>7.3.4 关系图的安全面</h4>
+    <p>四张图带来四个攻击面。因果边由 LLM 在慢路径异步推断，<strong>不经过任何人类或规则校验</strong>，是最脆弱的一环：注入一条伪因果边，就能让「Why」类查询被系统性地导向攻击者选定的节点。<a href="https://arxiv.org/html/2603.11768v1">SSGM</a> 的四维失效分类（Stability / Validity / Efficiency / Safety）提供了框架，但还没人针对<strong>多图记忆</strong>做具体的攻击面分析。<strong>具体可做的：</strong>设计一个「因果边投毒」基准，度量注入 k 条伪因果边后 Why 类查询的劫持率。</p>
+  </section>
+
+  <h2>8. 相关工作表格对标</h2>
+
+  <section class="card">
+    <div class="tw"><table>
+      <tr><th>工作</th><th>发表年月</th><th>会议 / 出版</th><th>核心贡献</th><th>主要指标</th><th>与 MAGMA 的关系</th></tr>
+      <tr><td><strong>MemGPT</strong></td><td>2023-10</td><td>ACL 2023 companion（论文引用）</td><td>虚拟内存分页，LLM 自管上下文</td><td>Zep 报告其 DMR 93.4%</td><td>骨架来源：外部持久存储 + 按需调入；MAGMA 补上「结构」</td></tr>
+      <tr><td><strong>GraphRAG</strong></td><td>2024-04 (v2 2025-02)</td><td>arXiv（未找到正式会议页）</td><td>LLM 建实体图 + 社区摘要，检索单元从 chunk 升为社区</td><td>全局 sensemaking 优于朴素 RAG</td><td>技术来源：LLM as graph builder；MAGMA 改为在线异步 + 四类边</td></tr>
+      <tr><td><strong>A-MEM</strong></td><td>2025-02</td><td><strong>NeurIPS 2025 主会</strong></td><td>Zettelkasten 式链接 + 记忆演化</td><td>LoCoMo Overall <strong>0.580</strong>；Temporal 仅 0.474</td><td>主要批评对象：链接同质、仍靠向量检索；MAGMA 拆成四类边</td></tr>
+      <tr><td><strong>MemoryOS</strong></td><td>2025-06</td><td><strong>EMNLP 2025 Main, Oral</strong></td><td>三级存储 + 四算子的生命周期管理</td><td>LoCoMo F1 +48.36% / BLEU-1 +46.18%；<strong>延迟 32.68 s</strong></td><td>正交补充：MemoryOS 管「时效轴」，MAGMA 管「关系轴」；双流把延迟压到 1.47 s</td></tr>
+      <tr><td><strong>Zep / Graphiti</strong></td><td>2025-01</td><td>arXiv 技术报告</td><td>双时态知识图，事实有效期一等公民</td><td>DMR 94.8%（vs MemGPT 93.4%）；LongMemEval 最高 +18.5%，延迟 −90%</td><td>思想母体：MAGMA = Zep 在维度数上的展开 + 意图路由层。<strong>⚠ 却未被列为基线</strong></td></tr>
+      <tr><td><strong>Nemori</strong></td><td>2025-08 (v4 2026-04)</td><td>arXiv（未找到正式会议页）</td><td>预测误差决定「什么值得记」，写入时蒸馏成叙事</td><td>LoCoMo Overall 0.590（multi-hop <strong>0.569</strong> 最优，adversarial <strong>0.325</strong> 崩塌）</td><td>最强基线兼主对照：写入时压缩 vs 查询时组装。MAGMA 的 98.98% 优势来自补上它的 adversarial 短板</td></tr>
+      <tr class="best"><td><strong>MAGMA</strong></td><td>2026-01</td><td><strong>ACL 2026 主会 Long</strong></td><td>四张正交关系图 + 意图路由遍历 + 双流写入</td><td>LoCoMo <strong>0.700</strong>（非对抗子集 0.688）；LongMemEval <strong>61.2%</strong>；延迟 <strong>1.47 s</strong></td><td>本期核心工作</td></tr>
+    </table></div>
+    <h4>这张表读出来的三条趋势</h4>
+    <ol>
+      <li><strong>性能阶梯是真的，但集中在特定能力上。</strong>LoCoMo Overall 从 A-MEM 0.580 → MemoryOS 0.553 → Nemori 0.590 → MAGMA 0.700 看起来是一条上升线；但按 §3.2 拆开后，2025→2026 这一跳几乎全在弃权校准上，推理能力（非对抗子集）从 Nemori 的 0.687 到 MAGMA 的 0.688 基本停滞。<strong>领域可能正处在一个推理能力的平台期，而记账方式把它掩盖了。</strong></li>
+      <li><strong>延迟差异远大于精度差异。</strong>32.68 s（MemoryOS）→ 2.59 s（Nemori）→ 1.47 s（MAGMA），跨越 22 倍；而 Overall 分只跨越 0.55–0.70。<strong>工程可用性目前是比精度更强的区分维度</strong>，但被论文叙事系统性低估。</li>
+      <li><strong>正式发表的比例在快速上升。</strong>2025 上半年这条线主要是 arXiv 技术报告（Zep、GraphRAG），2025 下半年进入 NeurIPS/EMNLP 主会（A-MEM、MemoryOS），2026 进入 ACL 主会长文（MAGMA）。这个方向正在从工程社区完成向学术主流的迁移。</li>
+    </ol>
+  </section>
+
+  <h2>9. 其他值得关注的近期工作</h2>
+
+  <section class="card">
+    <h4>MemEvolve: Meta-Evolution of Agent Memory Systems（2025-12，<strong>ICML 2026</strong>）</h4>
+    <p>不优化记忆内容而优化<strong>记忆系统的架构本身</strong>：把 12 个代表性记忆系统拆成 (encode, store, retrieve, manage) 的模块化设计空间（EvolveLab），再让 agent 元进化出适配任务的架构，对 SmolAgent / Flash-Searcher 最高提升 17.06%。若认可 §7.3.1 的判断（下一代是「学出来的策略」），这篇是那条路最完整的先行者。<br>
+    <a href="https://arxiv.org/abs/2512.18746">arXiv</a> | <a href="https://github.com/bingreeky/MemEvolve">Code</a></p>
+
+    <h4>MemRL: Self-Evolving Agents via Runtime Reinforcement Learning on Episodic Memory（2026-01，arXiv）</h4>
+    <p>用 RL 在<strong>情景记忆</strong>上做运行时进化，不更新权重即可持续改进；两阶段检索先过滤噪声再识别有价值策略；在 HLE / BigCodeBench / ALFWorld / LifelongAgentBench 四个基准上超过 SOTA。它是把 MAGMA 遍历策略学出来的最现成的技术底座。<br>
+    <a href="https://arxiv.org/abs/2601.03192">arXiv</a> | <a href="https://github.com/MemTensor/MemRL">Code</a></p>
+
+    <h4>Supersede: Diagnosing and Training the Memory-Update Gap in LLM Agents（2026-06，arXiv）</h4>
+    <p>把「事实被更新后 agent 记不住新值」<strong>隔离成一个可测量的 gap</strong>：LongMemEval knowledge-update 上从全上下文的 92% 掉到有界自维护记忆的 77%（gpt-5.4, p=0.0033），且<strong>给更大内存完全没有恢复</strong>（28%→28%）——证明这是策略问题不是容量问题；GRPO 微调 Qwen2.5-3B 把留出集准确率从 9.0% 拉到 16.7%。<strong>这是「记忆操作可训练」最干净的一次证明</strong>，直接支持 §7.3.1。<br>
+    <a href="https://arxiv.org/html/2606.27472v1">arXiv</a></p>
+
+    <h4>How Memory Management Impacts LLM Agents: An Empirical Study of Experience-Following Behavior（2026-07，<strong>ACL 2026 主会 Long</strong>）</h4>
+    <p>发现 agent 的「经验跟随」特性：检索到的记忆与当前输入越相似，输出就越相似——由此推出两个失效模式（错误传播、错配经验重放），并证明用<strong>未来任务的评测结果反过来作为已存经验的质量标签</strong>能改善长期表现。与 MAGMA 互补：MAGMA 管「怎么取」，这篇管「取到的东西质量如何」。<br>
+    <a href="https://aclanthology.org/2026.acl-long.27/">ACL Anthology</a></p>
+
+    <h4>H-MEM: Hierarchical Memory for High-Efficiency Long-Term Reasoning in LLM Agents（2026-03，<strong>EACL 2026 Long</strong>）</h4>
+    <p>按<strong>语义抽象程度</strong>分层组织记忆，高层记忆向量内嵌指向下层子记忆的位置索引编码，检索时逐层路由而<strong>不做全量相似度计算</strong>。与 MAGMA 是同一时期的另一种「结构化检索」答案：MAGMA 走横向（关系类型），H-MEM 走纵向（抽象层级），两者原则上可以叠加。<br>
+    <a href="https://aclanthology.org/2026.eacl-long.15/">ACL Anthology</a></p>
+
+    <h4>From Recall to Forgetting: Benchmarking Long-Term Memory for Personalized Agents (Memora)（2026-04，arXiv）</h4>
+    <p>跨数周对话、含记忆巩固与<strong>变异（mutation）</strong>的基准，提出 FAMA 指标<strong>惩罚对过期信息的依赖</strong>。结果显示记忆 agent 在「记住」上聚合 FAMA 119.45（LLM 仅 65.60–65.80），但在「推理」上只有 27.55（LLM 12.37–13.92）——<strong>记住容易、推理极难</strong>这个 gap 与本报告 §3.2 的发现同向。<br>
+    <a href="https://arxiv.org/abs/2604.20006">arXiv</a></p>
+
+    <h4>ForgetBench: Benchmarking Forgetting Dynamics of Long-Term Parametric Memory（2026-07，arXiv）</h4>
+    <p>换到<strong>参数化记忆</strong>一侧：系统评测知识编辑方法在连续更新下的保持力。AlphaEdit 在 Qwen-2.5 7B 上编辑成功率 0.92，但记忆半衰期只有 <strong>452 步</strong>；反过来偏稳定的 WISE 编辑成功率低于 0.12。这个「保持 ↔ 生效」的取舍，与外部记忆里的「压缩 ↔ 可判定性」取舍结构上完全同构。<br>
+    <a href="https://arxiv.org/html/2607.26455">arXiv</a></p>
+
+    <h4>Governing Evolving Memory in LLM Agents: the SSGM Framework（2026-03，arXiv）</h4>
+    <p>记忆治理与安全方向：提出 Stability / Validity / Efficiency / Safety 四维失效分类，主张把记忆演化与执行<strong>解耦</strong>，加校验门与时间衰减建模。核心论点「evolving memory 的错误是累积且持久的」直接指向 MAGMA 慢路径 LLM 推断因果边这一未设防的攻击面（§7.3.4）。<br>
+    <a href="https://arxiv.org/html/2603.11768v1">arXiv</a></p>
+
+    <h4>What to Keep, What to Forget: A Rate–Distortion View of Memory Compaction（2026-07，arXiv）</h4>
+    <p>用率失真理论给「记忆压缩到什么程度」一个形式化框架。与 §7.1.3 的「压缩时机」问题直接相关：它刻画了压缩<em>多少</em>，还没刻画<em>何时</em>压缩。<br>
+    <a href="https://arxiv.org/html/2607.08032v1">arXiv</a></p>
+  </section>
+
+  <footer>
+    <p><strong>本报告使用的一手来源。</strong>
+    核心工作：<a href="https://aclanthology.org/2026.acl-long.1709/">MAGMA @ ACL 2026</a> · <a href="https://aclanthology.org/2026.acl-long.1709.pdf">PDF</a> · <a href="https://arxiv.org/abs/2601.03236">arXiv 2601.03236</a> · <a href="https://github.com/FredJiang0324/MAGMA">Code</a>。
+    基准：<a href="https://aclanthology.org/2024.acl-long.747/">LoCoMo @ ACL 2024</a> · <a href="https://arxiv.org/abs/2410.10813">LongMemEval @ ICLR 2025</a>。
+    相关工作：<a href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/19909c36f51abc4856b4560aff3d36d6-Abstract-Conference.html">A-MEM @ NeurIPS 2025</a> · <a href="https://aclanthology.org/2025.emnlp-main.1318/">MemoryOS @ EMNLP 2025</a> · <a href="https://arxiv.org/abs/2501.13956">Zep</a> · <a href="https://arxiv.org/abs/2508.03341">Nemori</a> · <a href="https://arxiv.org/abs/2404.16130">GraphRAG</a>。
+    检索入口：<a href="https://github.com/Shichun-Liu/Agent-Memory-Paper-List">Agent-Memory-Paper-List</a> · <a href="https://sites.google.com/view/memagent-iclr26/">ICLR 2026 MemAgents Workshop</a>。</p>
+    <p>报告生成于 2026-08-05。所有性能数字均标注了论文表号；标注「本报告推算」的数值由论文报告值派生计算，计算方法在正文中给出，可自行复核。未验证 / 未找到的链接已明确标注。</p>
+  </footer>
+
+</div>
+<div class="tip" id="tip"></div>
+<script>
+(function(){
+  var root = document.documentElement, btn = document.getElementById('tglBtn');
+  btn.addEventListener('click', function(){
+    var d = root.getAttribute('data-theme') === 'dark';
+    root.setAttribute('data-theme', d ? 'light' : 'dark');
+    btn.textContent = d ? '☾ 深色' : '☀ 浅色';
+  });
+  var tip = document.getElementById('tip');
+  document.querySelectorAll('svg.chart rect.bar').forEach(function(el){
+    el.addEventListener('mousemove', function(e){
+      tip.textContent = el.getAttribute('data-t');
+      tip.style.opacity = 1;
+      var x = e.clientX + 14, y = e.clientY - 34;
+      if (x + tip.offsetWidth > window.innerWidth - 8) x = e.clientX - tip.offsetWidth - 14;
+      if (y < 8) y = e.clientY + 20;
+      tip.style.left = x + 'px'; tip.style.top = y + 'px';
+    });
+    el.addEventListener('mouseleave', function(){ tip.style.opacity = 0; });
+  });
+})();
+</script>
+</body>
+</html>

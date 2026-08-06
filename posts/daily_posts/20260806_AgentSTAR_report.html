@@ -1,0 +1,942 @@
+---
+layout: null
+title: "Agent-STAR：长视野工具智能体的强化学习配方"
+date: 2026-08-06
+excerpt: "从五个维度解析 Agent-STAR 的长视野工具使用强化学习方案，包括课程数据、奖励设计、训练算法、泛化表现与成本权衡。"
+permalink: /blog/2026/08/06/agent-star-long-horizon-tool-agents/
+blog_post: true
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent-STAR 深度解析 · 2026-08-06 · ML/AI 每日论文追踪</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --accent-soft: #cde2fb;
+    --good: #006300;
+    --crit: #d03b3b;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --accent-soft: #184f95;
+    --good: #0ca30c;
+    --crit: #e66767;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  header.hero {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 32px 34px;
+    margin-bottom: 34px;
+  }
+  .eyebrow {
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; margin: 0 0 10px;
+  }
+  h1 { font-size: 30px; line-height: 1.3; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .subtitle { font-size: 17px; color: var(--text-secondary); margin: 0 0 18px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    font-size: 12.5px; padding: 4px 11px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--text-secondary);
+    background: var(--page);
+  }
+  .chip.venue { border-color: var(--series-1); color: var(--series-1); font-weight: 600; }
+  .chip.warn { border-color: var(--series-2); color: var(--series-2); font-weight: 600; }
+  .lede {
+    border-left: 3px solid var(--series-1);
+    padding: 4px 0 4px 18px; margin: 20px 0 0;
+    color: var(--text-secondary); font-size: 15.5px;
+  }
+  h2 {
+    font-size: 22px; margin: 52px 0 16px; padding-bottom: 10px;
+    border-bottom: 1px solid var(--border); letter-spacing: -0.01em;
+  }
+  h3 { font-size: 18px; margin: 34px 0 12px; }
+  h3:first-child { margin-top: 0; }
+  h4 { font-size: 15.5px; margin: 24px 0 8px; color: var(--text-secondary); }
+  p { margin: 0 0 14px; }
+  section.card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 26px 30px; margin-bottom: 20px;
+  }
+  a { color: var(--series-1); text-decoration: none; border-bottom: 1px solid transparent; }
+  a:hover { border-bottom-color: var(--series-1); }
+  code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px; background: var(--page); padding: 1.5px 5px;
+    border-radius: 4px; border: 1px solid var(--border);
+  }
+  .formula {
+    background: var(--page); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 16px; margin: 12px 0; font-family: ui-monospace, Menlo, monospace;
+    font-size: 13.5px; overflow-x: auto; color: var(--text-primary);
+  }
+  .tblwrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0 20px; font-size: 14.5px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--grid); }
+  th { color: var(--muted); font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: .05em; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.best td { background: var(--accent-soft); font-weight: 600; }
+  :root[data-theme="dark"] tr.best td { background: rgba(57,135,229,.18); }
+  td.pos { color: var(--good); font-weight: 600; }
+  td.neg { color: var(--crit); font-weight: 600; }
+  ol, ul { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 8px; }
+  .callout {
+    border-left: 3px solid var(--series-2); background: var(--page);
+    padding: 14px 18px; border-radius: 0 8px 8px 0; margin: 18px 0;
+    font-size: 15px; color: var(--text-secondary);
+  }
+  .callout strong { color: var(--text-primary); }
+  .callout.key { border-left-color: var(--series-1); }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  button.tgl {
+    font: inherit; font-size: 13px; padding: 6px 14px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface-1);
+    color: var(--text-secondary); cursor: pointer;
+  }
+  button.tgl:hover { color: var(--text-primary); }
+
+  /* chart */
+  .figure { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 24px 26px; margin: 24px 0; }
+  .fig-title { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+  .fig-sub { font-size: 13.5px; color: var(--muted); margin: 0 0 18px; }
+  .legend { display: flex; gap: 20px; margin-bottom: 16px; font-size: 13.5px; color: var(--text-secondary); flex-wrap: wrap; }
+  .legend span.sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 7px; vertical-align: -1px; }
+  svg.chart { width: 100%; height: auto; display: block; }
+  svg.chart text { font-family: system-ui, sans-serif; }
+  svg.chart rect.bar { cursor: pointer; }
+  svg.chart rect.bar:hover { opacity: .82; }
+  .tip {
+    position: fixed; pointer-events: none; opacity: 0; transition: opacity .1s;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 12px; font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,.14);
+    z-index: 50; color: var(--text-primary); white-space: nowrap;
+  }
+  .flow {
+    background: var(--page); border: 1px solid var(--border); border-radius: 10px;
+    padding: 20px 22px; font-family: ui-monospace, Menlo, monospace;
+    font-size: 13px; line-height: 1.85; overflow-x: auto; color: var(--text-secondary);
+    white-space: pre;
+  }
+  footer { margin-top: 60px; padding-top: 22px; border-top: 1px solid var(--border); font-size: 13.5px; color: var(--muted); }
+  footer a { color: var(--muted); border-bottom: 1px solid var(--border); }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    h1 { font-size: 23px; }
+    .subtitle { font-size: 15px; }
+    section.card { padding: 20px 16px; }
+    header.hero { padding: 22px 18px; }
+    table { font-size: 12.5px; }
+    th, td { padding: 6px 7px; }
+    .figure { padding: 18px 14px; }
+    .flow { font-size: 11px; padding: 14px 12px; }
+    h2 { font-size: 19px; margin: 38px 0 14px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="toolbar">
+    <button class="tgl" onclick="const r=document.documentElement; r.setAttribute('data-theme', r.getAttribute('data-theme')==='dark'?'light':'dark'); this.textContent = r.getAttribute('data-theme')==='dark'?'☀ 浅色':'☾ 深色';">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">2026-08-06 · 周四 · 强化学习 / Agent / 具身智能</p>
+    <h1>RL 用于长视野工具智能体：Agent-STAR 的五轴解剖与一条被低估的反向趋势</h1>
+    <p class="subtitle">Demystifying Reinforcement Learning for Long-Horizon Tool-Using Agents: A Comprehensive Recipe</p>
+    <div class="meta">
+      <span class="chip venue">arXiv 2603.21972v1</span>
+      <span class="chip">2026-03-23</span>
+      <span class="chip">CUHK · IDEA Research · UM</span>
+      <span class="chip">TravelPlanner</span>
+      <span class="chip warn">venue 未确认</span>
+    </div>
+    <p class="lede"><strong>一句话定位：</strong>长视野工具智能体的 RL 配方不是一组固定超参，而是一个以模型容量为自变量的函数——1.5B 需要的东西恰恰是 7B 应当避免的。</p>
+  </header>
+
+  <section class="card">
+    <h3>阅前说明（坦诚性声明）</h3>
+    <ol>
+      <li><strong>venue 归属：</strong>核心论文 arXiv 页面的 Comments 字段<strong>仅注明代码地址，未声明任何会议接收</strong>。其 HTML 排版疑似使用 ICLR 会议模板，但我在 OpenReview 上<strong>未检索到对应 submission 页面</strong>，因此定位为<strong>高质量 arXiv 预印本</strong>。降级理由：该文完整开源了数据、SFT 轨迹与六个 checkpoint，可复现性显著优于同期同主题工作。</li>
+      <li><strong>去重索引不可用：</strong>本次为云端定时任务，用户桌面未连接，<code>ml-report-index.md</code> 无法访问，<strong>14 天去重检查未能执行</strong>。候选池 25 篇，<code>shuf -i 1-25 -n 3</code> → [3, 17, 15]，取 #3。<strong>重抽次数：0</strong>。</li>
+      <li><strong>数据来源边界：</strong>所有性能数字来自 arXiv HTML 全文 v1 的表 1–4 与附录表 8–9。<strong>Figure 5/6/7/8 为位图</strong>，涉及这些图的数值（如 5%/10% 工具失败率下的具体成功率、500-prompt 档位）<strong>无法提取</strong>，相应位置已逐处标注。</li>
+      <li><strong>统计显著性：</strong>我<strong>在全文中未找到任何标准差、置信区间或多 seed 说明</strong>。下文所有 pp 差值均为<strong>单次运行的点估计之差</strong>。</li>
+    </ol>
+  </section>
+
+  <h2>第一部分 · 链接验证表</h2>
+
+  <section class="card">
+    <p>以下链接均已实际访问确认可达（2026-08-06）。核实不到的项目明确标注「未找到」。</p>
+    <div class="tblwrap">
+    <table>
+      <tr>
+        <th>论文</th><th>会议 / OpenReview</th><th>arXiv</th><th>Code</th><th>数据集 / 权重</th>
+      </tr>
+      <tr class="best">
+        <td><strong>核心 · Agent-STAR</strong></td>
+        <td>未找到</td>
+        <td><a href="https://arxiv.org/abs/2603.21972">2603.21972v1</a> · <a href="https://arxiv.org/html/2603.21972v1">HTML</a></td>
+        <td><a href="https://github.com/WxxShirley/Agent-STAR">WxxShirley/Agent-STAR</a></td>
+        <td><a href="https://huggingface.co/datasets/xxwu/Agent-STAR-TravelDataset">TravelDataset</a> · <a href="https://huggingface.co/datasets/xxwu/Agent-STAR-TravelDatabase">TravelDatabase</a> · 6 checkpoints</td>
+      </tr>
+      <tr>
+        <td>TravelPlanner</td>
+        <td>ICML 2024 Spotlight · <a href="https://osu-nlp-group.github.io/TravelPlanner/">项目主页</a></td>
+        <td><a href="https://arxiv.org/abs/2402.01622">2402.01622v4</a></td>
+        <td>见项目主页</td>
+        <td>1,225 intent + ~4M 记录</td>
+      </tr>
+      <tr>
+        <td>Search-R1</td>
+        <td><a href="https://openreview.net/forum?id=Rwhi91ideu">OpenReview</a></td>
+        <td><a href="https://arxiv.org/abs/2503.09516">2503.09516v5</a></td>
+        <td><a href="https://github.com/PeterGriffinJin/Search-R1">PeterGriffinJin/Search-R1</a></td>
+        <td>checkpoint 已开源</td>
+      </tr>
+      <tr>
+        <td>DAPO</td>
+        <td>未找到独立会议页</td>
+        <td><a href="https://arxiv.org/abs/2503.14476">2503.14476v2</a></td>
+        <td>基于 verl 开源</td>
+        <td>数据集已开源</td>
+      </tr>
+      <tr>
+        <td>ARPO</td>
+        <td><strong>ICLR 2026 Poster</strong> · <a href="https://iclr.cc/virtual/2026/poster/10009306">iclr.cc</a> · <a href="https://openreview.net/forum?id=TX4k7BF6aO">OpenReview</a></td>
+        <td><a href="https://arxiv.org/abs/2507.19849">2507.19849</a></td>
+        <td><a href="https://github.com/RUC-NLPIR/ARPO">RUC-NLPIR/ARPO</a></td>
+        <td>已开源</td>
+      </tr>
+      <tr>
+        <td>Planner-R1</td>
+        <td><a href="https://openreview.net/forum?id=CmOaD42eAT">ICLR 2026 Under review</a></td>
+        <td><a href="https://arxiv.org/abs/2509.25779">2509.25779v2</a></td>
+        <td>未找到</td>
+        <td>未找到</td>
+      </tr>
+    </table>
+    </div>
+  </section>
+
+  <h2>第二部分 · 核心论文深度解析</h2>
+
+  <section class="card">
+    <h3>2.1 Motivation：一个两年没被攻克的 0.6%</h3>
+    <p>论文指向的不是笼统的「agent 很难训」，而是一组具体到刺眼的数字：</p>
+    <ul>
+      <li>TravelPlanner 上 <strong>GPT-4 的最终通过率是 0.6%</strong>（TravelPlanner 原文，ICML 2024）</li>
+      <li>两年后，<strong>Kimi-K2.5 这类顶级模型的成功率仍低于 15%</strong>（STAR 引言）</li>
+      <li>STAR 自己的起点：Qwen2.5-Instruct 1.5B <strong>0.0%</strong>、3B <strong>0.0%</strong>、7B <strong>0.1%</strong>（表 1，Base 行）</li>
+    </ul>
+    <div class="callout key">
+      <strong>关键含义：</strong>这个基准在两年内没有被「能力涌现」自然攻克。这与 MATH、GSM8K、甚至 SWE-bench 的历史轨迹形成对照——那些基准的 SOTA 都随基础模型迭代快速上升。TravelPlanner 的顽固性说明它考察的能力维度（多约束联合满足 + 长序列工具编排）<strong>没有被通用预训练 / 后训练顺带解决</strong>。
+    </div>
+
+    <h4>为什么值得解决（按说服力排序）</h4>
+    <ol>
+      <li><strong>它是「长视野」的干净切片。</strong>每条轨迹平均需要 <strong>9.2 次工具调用、10.3K token</strong>（附录表 8）。相比之下 Search-R1 类任务通常 1–3 次检索即收敛。9.2 次意味着任何 step-level 错误都会被后续步骤放大。</li>
+      <li><strong>它的奖励天然可分解。</strong>评估协议把约束拆成 commonsense 与 hard constraint 两维，每维又有 micro（比例）与 macro（0/1）两级——<strong>一个现成的四级奖励密度阶梯</strong>，无需人工设计 process reward model。这是 STAR 能做密度消融的前提。</li>
+      <li><strong>它是稀疏奖励的极端案例。</strong>base 成功率 0.0% 意味着纯 success 奖励下<strong>初始梯度全为零</strong>。</li>
+    </ol>
+
+    <h4>相对前驱的新颖之处：从单轴到五轴</h4>
+    <div class="tblwrap">
+    <table>
+      <tr><th>轴</th><th>变量</th><th>取值</th></tr>
+      <tr><td>奖励塑形</td><td>reward function</td><td>Sum / Macro / Success / Curriculum</td></tr>
+      <tr><td>模型规模</td><td>params</td><td>1.5B / 3B / 7B</td></tr>
+      <tr><td>数据组成</td><td>difficulty mix &amp; size</td><td>Easy / Medium / Hard / Mixed × 100 / 1K / 2K</td></tr>
+      <tr><td>算法选择</td><td>RL algorithm</td><td>GRPO / DAPO / ARPO</td></tr>
+      <tr><td>环境稳定性</td><td>tool failure rate</td><td>0% / 5% / 10%</td></tr>
+    </table>
+    </div>
+    <p>前驱的共同缺陷是<strong>单轴优化</strong>：Search-R1 只调奖励，DAPO 只调算法，Planner-R1 只调 reward shaping。4×3×4×3×3 的完整网格不可能跑完，STAR 的做法是逐轴消融（固定其余轴）——这既是它能完成的原因，也是它最大的方法论软肋（见 2.6 批判 ⑥）。</p>
+  </section>
+
+  <section class="card">
+    <h3>2.2 论文的故事线：一条排除法链条</h3>
+    <p>STAR 的论证不是「我们提出 X → X 有效」，而是一条被逼出来的排除法链条：</p>
+    <ol>
+      <li><strong>为什么不能直接 RL？</strong>base 成功率 0.0% → GRPO 组内所有样本奖励相同 → 优势归一化分母为 0 → 无梯度。<strong>必须有 SFT 冷启动。</strong>这一步是被逼出来的，不是设计选择。</li>
+      <li><strong>SFT 数据从哪来？</strong>人工标注 9.2 步轨迹成本过高 → 用 DeepSeek-V3.2-Exp-Thinking 做 ReAct → 拒绝采样只留 Success → <strong>5K query 筛出 1,198 条（保留率 24.0%）</strong>。这个 24% 本身就是信号：<strong>即使顶级教师在 TravelPlanner 上也有 76% 失败率</strong>。</li>
+      <li><strong>奖励该多密？</strong>base 成功率为 0 → 需要密集奖励 → 但密集奖励可能过拟合任务特定评分函数 → 设计 Sum / Macro / Success 三档密度 + Curriculum 过渡。<strong>隐含权衡是明说的：用 in-domain 收敛速度换 OOD 泛化。</strong></li>
+      <li><strong>观察到什么反常？</strong>Curriculum 在 1.5B（34.9）和 3B（49.9）都最优，在 7B <strong>掉到 57.0，落后 Sum 的 62.8 达 5.8pp</strong>。这推翻了「更聪明的奖励调度总是更好」的默认假设。作者由此推断：<strong>模型容量本身提供探索能力，容量足够时外部探索辅助反而是噪声。</strong></li>
+      <li><strong>这个推断能推广吗？</strong>表 4 在算法轴上验证：1.5B 上 ARPO(37.5) &gt; DAPO(36.9) &gt; GRPO(30.1)，到 7B 完全倒过来，GRPO(62.8) &gt; DAPO(58.4) ≈ ARPO(58.3)。<strong>两条独立的轴给出同向结论——这是全文论证最扎实的地方。</strong></li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <h3>2.3 方法论与机制解剖</h3>
+
+    <h4>形式化定义：评估分量直接充当奖励基元</h4>
+    <div class="formula">s_cs^micro   ∈ [0,1]   满足的 commonsense 检查项比例
+s_cs^macro   ∈ {0,1}   = 1 当且仅当 s_cs^micro = 1
+s_hard^micro ∈ [0,1]   满足的 hard constraint 检查项比例
+s_hard^macro ∈ {0,1}   = 1 当且仅当 s_hard^micro = 1
+s^success    ∈ {0,1}   = 1 当且仅当 s_cs^macro = 1 且 s_hard^macro = 1</div>
+    <div class="formula">r_sum        = s_cs^micro + s_cs^macro + s_hard^micro + s_hard^macro + s^success   值域 [0,5]  密集
+r_macro      = s_cs^macro + s_hard^macro + s^success                              值域 {0..3} 半稀疏
+r_success    = s^success                                                          值域 {0,1}  稀疏
+r_curriculum = 分阶段：前期 r_sum → 后期 r_success                                 密度递减</div>
+    <div class="callout">
+      <strong>一个论文未讨论的结构性性质：</strong>由于 macro 是 micro 的指示函数，<code>r_sum</code> 在 micro = 1 处<strong>不连续（跳变 +1）</strong>。这创造了一个「临门一脚」的强激励，也可能在优化面上造成阶跃。论文对此没有分析。
+    </div>
+
+    <h4>GRPO 目标（KL-free 变体）</h4>
+    <div class="formula">J_GRPO(θ) = E_{q~D, {H^(i)}~π_old} [ 1/Σ|H^(i)| · Σ_i Σ_j min( ρ_j^(i)·Â^(i),
+                                       clip(ρ_j^(i), 1-ε_low, 1+ε_high)·Â^(i) ) ]
+
+ρ_j^(i) : 重要性采样比        Â^(i) : 组内归一化优势
+关键改动：① 移除 KL 惩罚项   ② ε_high > ε_low（clip-high，借自 DAPO）</div>
+
+    <h4>STAR 三阶段流水线</h4>
+    <div class="flow">┌─────────────────────────────────────────────────────────────────┐
+│  Stage 1 · 数据合成                                              │
+│  原子旅行元素采样 → 10K+ query → 沙箱可行性校验                    │
+│  GPT-OSS-120B / DeepSeek-V3.2-Exp 反向翻译成自然语言 intent       │
+│  难度分级：easy / medium / hard（按约束数量与类型）                 │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │ 抽 5K query
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Stage 2 · SFT 冷启动                                            │
+│  DeepSeek-V3.2-Exp-Thinking 做 ReAct rollout                     │
+│  拒绝采样：仅保留 Success 轨迹 → 1,198 条（保留率 24.0%）           │
+│  轨迹统计：平均 10.3K token / 9.2 次工具调用（附录表 8）            │
+│  微调 Qwen2.5-Instruct {1.5B, 3B, 7B}                            │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │ 抽 1K query（easy:medium:hard = 4:3:3）
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Stage 3 · RL                                                    │
+│  GRPO（KL-free + clip-high），G = 8，5 epochs                     │
+│  奖励 ∈ {Sum, Macro, Success, Curriculum}                        │
+│  协议约束：格式错误 → reward = 0                                   │
+│  超长处理：排除出 loss，但保留用于组内优势归一化                     │
+│  上下文：训练 30K / 推理 32K                                       │
+└─────────────────────────────────────────────────────────────────┘</div>
+
+    <h4>关键机制表</h4>
+    <div class="tblwrap">
+    <table>
+      <tr><th>机制 / 维度</th><th>设计选择</th><th>动机</th><th>关键超参 / 数值</th></tr>
+      <tr><td>冷启动</td><td>教师蒸馏 + 拒绝采样</td><td>base 成功率 0.0%，RL 无梯度</td><td class="num">5K → 1,198（24.0%）</td></tr>
+      <tr><td>奖励密度</td><td>四档阶梯</td><td>密度与规模的交互是研究对象</td><td class="num">[0,5] / {0..3} / {0,1}</td></tr>
+      <tr><td>数据难度配比</td><td>Mixed 4:3:3</td><td>全 hard 奖励稀疏；全 easy 无挑战</td><td class="num">4:3:3</td></tr>
+      <tr><td>数据规模</td><td>1K prompts</td><td>in-domain 与 OOD 的折中点</td><td class="num">100 / 1K / 2K</td></tr>
+      <tr><td>RL 算法</td><td>GRPO + KL-free + clip-high</td><td>去掉 KL 释放探索空间</td><td class="num">G = 8，5 epochs</td></tr>
+      <tr><td>超长轨迹</td><td>排除 loss，保留归一化</td><td>避免长度惩罚污染梯度但保留信号</td><td class="num">30K / 32K</td></tr>
+      <tr><td>格式违规</td><td>硬置 reward = 0</td><td>强制 ReAct 协议合规</td><td class="num">—</td></tr>
+      <tr><td>环境噪声</td><td>随机注入工具失败</td><td>模拟真实 API 不稳定</td><td class="num">0% / 5% / 10%</td></tr>
+    </table>
+    </div>
+
+    <div class="callout">
+      <strong>两个未被验证的工程决策。</strong>其一，<strong>超长轨迹「排除 loss 但保留归一化」</strong>：若完全剔除，组内优势基线会被系统性抬高（失败样本往往更长）；保留它们参与归一化，等于让超长样本充当隐性负例——<strong>论文没有对这个选择做消融</strong>。其二，<strong>KL-free 的代价</strong>：没有 KL 锚定意味着策略可任意漂离 SFT 分布。表 2 的 7B 行（SFT OOD 41.9 → Sum RL OOD 36.7）很可能正是这个选择的后果，但论文把它归因于「奖励过密」，<strong>没有做 KL-on / KL-off 对照来分离两个因素</strong>。
+    </div>
+  </section>
+
+  <h2>第三部分 · 定量结果</h2>
+
+  <section class="card">
+    <h3>3.1 主结果矩阵（表 1，TravelPlanner 测试集 1,000 条，Success %）</h3>
+    <div class="tblwrap">
+    <table>
+      <tr><th>方法</th><th class="num">1.5B</th><th class="num">3B</th><th class="num">7B</th><th class="num">1.5B→7B 增益</th></tr>
+      <tr><td>Base（未训练）</td><td class="num">0.0</td><td class="num">0.0</td><td class="num">0.1</td><td class="num">—</td></tr>
+      <tr><td>SFT</td><td class="num">6.9</td><td class="num">12.2</td><td class="num">19.7</td><td class="num">+12.8pp</td></tr>
+      <tr class="best"><td>Sum（密集）</td><td class="num">33.1</td><td class="num">47.0</td><td class="num">62.8</td><td class="num">+29.7pp</td></tr>
+      <tr><td>Macro（半稀疏）</td><td class="num">30.1</td><td class="num">48.2</td><td class="num">58.9</td><td class="num">+28.8pp</td></tr>
+      <tr><td>Success（稀疏）</td><td class="num">33.8</td><td class="num">46.6</td><td class="num">60.9</td><td class="num">+27.1pp</td></tr>
+      <tr><td>Curriculum（阶梯）</td><td class="num">34.9</td><td class="num">49.9</td><td class="num">57.0</td><td class="num">+22.1pp</td></tr>
+      <tr><td><strong>该规模最优</strong></td><td class="num">Curriculum 34.9</td><td class="num">Curriculum 49.9</td><td class="num">Sum 62.8</td><td class="num">—</td></tr>
+    </table>
+    </div>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">图 1 · 奖励设计的规模依赖翻转</p>
+    <p class="fig-sub">TravelPlanner 测试集 Success（%）。Curriculum 在 1.5B / 3B 领先，在 7B 反被 Sum 反超 5.8pp。数据源：表 1。悬停查看数值。</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-1)"></span>Sum（密集奖励）</span>
+      <span><span class="sw" style="background:var(--series-2)"></span>Curriculum（阶梯奖励）</span>
+    </div>
+    <svg class="chart" viewBox="0 0 900 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="奖励设计随模型规模的性能翻转柱状图">
+      <g stroke="var(--grid)" stroke-width="1">
+        <line x1="70" y1="300" x2="870" y2="300" stroke="var(--baseline)"/>
+        <line x1="70" y1="261.4" x2="870" y2="261.4"/>
+        <line x1="70" y1="222.9" x2="870" y2="222.9"/>
+        <line x1="70" y1="184.3" x2="870" y2="184.3"/>
+        <line x1="70" y1="145.7" x2="870" y2="145.7"/>
+        <line x1="70" y1="107.1" x2="870" y2="107.1"/>
+        <line x1="70" y1="68.6" x2="870" y2="68.6"/>
+        <line x1="70" y1="30" x2="870" y2="30"/>
+      </g>
+      <g fill="var(--muted)" font-size="13" text-anchor="end">
+        <text x="60" y="305">0</text><text x="60" y="266">10</text><text x="60" y="227">20</text>
+        <text x="60" y="189">30</text><text x="60" y="150">40</text><text x="60" y="111">50</text>
+        <text x="60" y="73">60</text><text x="60" y="34">70</text>
+      </g>
+      <text x="24" y="170" fill="var(--muted)" font-size="13" text-anchor="middle" transform="rotate(-90 24 170)">Success (%)</text>
+
+      <rect class="bar" x="128" y="172.3" width="70" height="127.7" fill="var(--series-1)" rx="3" data-l="1.5B · Sum" data-v="33.1%"/>
+      <rect class="bar" x="208" y="165.4" width="70" height="134.6" fill="var(--series-2)" rx="3" data-l="1.5B · Curriculum" data-v="34.9% （+1.8pp）"/>
+      <rect class="bar" x="395" y="118.7" width="70" height="181.3" fill="var(--series-1)" rx="3" data-l="3B · Sum" data-v="47.0%"/>
+      <rect class="bar" x="475" y="107.6" width="70" height="192.4" fill="var(--series-2)" rx="3" data-l="3B · Curriculum" data-v="49.9% （+2.9pp）"/>
+      <rect class="bar" x="662" y="57.8" width="70" height="242.2" fill="var(--series-1)" rx="3" data-l="7B · Sum" data-v="62.8% （+5.8pp）"/>
+      <rect class="bar" x="742" y="80.2" width="70" height="219.8" fill="var(--series-2)" rx="3" data-l="7B · Curriculum" data-v="57.0%"/>
+
+      <g fill="var(--text-primary)" font-size="12.5" text-anchor="middle" font-weight="600">
+        <text x="163" y="165">33.1</text><text x="243" y="158">34.9</text>
+        <text x="430" y="111">47.0</text><text x="510" y="100">49.9</text>
+        <text x="697" y="50">62.8</text><text x="777" y="73">57.0</text>
+      </g>
+      <g fill="var(--text-secondary)" font-size="14" text-anchor="middle" font-weight="600">
+        <text x="203" y="326">1.5B</text><text x="470" y="326">3B</text><text x="737" y="326">7B</text>
+      </g>
+      <g font-size="12.5" text-anchor="middle">
+        <text x="203" y="346" fill="var(--series-2)">Curriculum 领先</text>
+        <text x="470" y="346" fill="var(--series-2)">Curriculum 领先</text>
+        <text x="737" y="346" fill="var(--series-1)">↺ 翻转：Sum 领先</text>
+      </g>
+    </svg>
+  </div>
+
+  <section class="card">
+    <h3>3.2 表 1 全貌（六指标 × 三规模 × 六方法）</h3>
+    <div class="tblwrap">
+    <table>
+      <tr><th>Scale</th><th>Method</th><th class="num">CS Micro</th><th class="num">CS Macro</th><th class="num">HC Micro</th><th class="num">HC Macro</th><th class="num">Success</th></tr>
+      <tr><td>1.5B</td><td>Base</td><td class="num">30.1</td><td class="num">0.0</td><td class="num">0.0</td><td class="num">0.0</td><td class="num">0.0</td></tr>
+      <tr><td>1.5B</td><td>SFT</td><td class="num">65.9</td><td class="num">15.4</td><td class="num">17.2</td><td class="num">12.1</td><td class="num">6.9</td></tr>
+      <tr><td>1.5B</td><td>Sum</td><td class="num">95.1</td><td class="num">71.6</td><td class="num">51.4</td><td class="num">33.4</td><td class="num">33.1</td></tr>
+      <tr><td>1.5B</td><td>Macro</td><td class="num">93.4</td><td class="num">68.4</td><td class="num">47.9</td><td class="num">31.6</td><td class="num">30.1</td></tr>
+      <tr><td>1.5B</td><td>Success</td><td class="num">93.9</td><td class="num">68.2</td><td class="num">51.0</td><td class="num">34.7</td><td class="num">33.8</td></tr>
+      <tr class="best"><td>1.5B</td><td>Curriculum</td><td class="num">93.9</td><td class="num">70.2</td><td class="num">51.0</td><td class="num">35.4</td><td class="num">34.9</td></tr>
+      <tr><td>3B</td><td>Base</td><td class="num">46.5</td><td class="num">0.0</td><td class="num">0.0</td><td class="num">0.0</td><td class="num">0.0</td></tr>
+      <tr><td>3B</td><td>SFT</td><td class="num">70.4</td><td class="num">24.6</td><td class="num">28.6</td><td class="num">20.0</td><td class="num">12.2</td></tr>
+      <tr><td>3B</td><td>Sum</td><td class="num">97.6</td><td class="num">82.5</td><td class="num">64.8</td><td class="num">47.6</td><td class="num">47.0</td></tr>
+      <tr><td>3B</td><td>Macro</td><td class="num">95.1</td><td class="num">79.6</td><td class="num">68.8</td><td class="num">52.3</td><td class="num">48.2</td></tr>
+      <tr><td>3B</td><td>Success</td><td class="num">90.6</td><td class="num">76.1</td><td class="num">62.6</td><td class="num">47.7</td><td class="num">46.6</td></tr>
+      <tr class="best"><td>3B</td><td>Curriculum</td><td class="num">95.3</td><td class="num">83.0</td><td class="num">67.6</td><td class="num">51.0</td><td class="num">49.9</td></tr>
+      <tr><td>7B</td><td>Base</td><td class="num">55.8</td><td class="num">0.1</td><td class="num">0.7</td><td class="num">0.7</td><td class="num">0.1</td></tr>
+      <tr><td>7B</td><td>SFT</td><td class="num">77.1</td><td class="num">33.1</td><td class="num">40.6</td><td class="num">31.3</td><td class="num">19.7</td></tr>
+      <tr class="best"><td>7B</td><td>Sum</td><td class="num">96.9</td><td class="num">87.4</td><td class="num">78.7</td><td class="num">66.5</td><td class="num">62.8</td></tr>
+      <tr><td>7B</td><td>Macro</td><td class="num">97.0</td><td class="num">89.8</td><td class="num">77.3</td><td class="num">60.0</td><td class="num">58.9</td></tr>
+      <tr><td>7B</td><td>Success</td><td class="num">91.4</td><td class="num">78.3</td><td class="num">73.4</td><td class="num">64.0</td><td class="num">60.9</td></tr>
+      <tr><td>7B</td><td>Curriculum</td><td class="num">96.1</td><td class="num">85.1</td><td class="num">76.6</td><td class="num">60.4</td><td class="num">57.0</td></tr>
+    </table>
+    </div>
+
+    <h4>三个非平凡观察</h4>
+    <ol>
+      <li><strong>CS Micro 早已饱和，Success 远未饱和。</strong>7B-Sum 的 CS Micro 是 96.9%，Success 只有 62.8%。瓶颈<strong>完全在 hard constraint 的 macro 级</strong>（66.5%）——剩余误差不是「常识性错误」，而是「预算 / 偏好类硬约束的最后一项没满足」。</li>
+      <li><strong>相变点在 3B 与 7B 之间。</strong>3B→7B 这一步，Curriculum 只涨 7.1pp（49.9→57.0），Sum 涨 15.8pp（47.0→62.8）——<strong>增益差 8.7pp，全表最剧烈的方向性翻转</strong>。</li>
+      <li><strong>in-domain 上 RL 是主角。</strong>7B：SFT 19.7 → RL 62.8，RL 贡献 +43.1pp，是 SFT 贡献（19.6pp）的 2.2 倍。<strong>这个结论下一节会被 OOD 数据狠狠打脸。</strong></li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <h3>3.3 OOD 结果矩阵（表 2，7 个知识密集型 QA 基准，%）</h3>
+    <p>工具环境替换为本地 Wikipedia 检索。这是一个<strong>工具形态相同、任务语义完全不同</strong>的迁移设定，考察「工具编排能力」而非「旅行知识」的可迁移性。</p>
+    <div class="tblwrap">
+    <table>
+      <tr><th>Scale</th><th>Method</th><th class="num">NQ</th><th class="num">TriviaQA</th><th class="num">PopQA</th><th class="num">HotpotQA</th><th class="num">2Wiki</th><th class="num">Musique</th><th class="num">Bamboogle</th><th class="num">Avg.</th></tr>
+      <tr><td>1.5B</td><td>Base</td><td class="num">7.1</td><td class="num">22.4</td><td class="num">9.9</td><td class="num">5.9</td><td class="num">4.3</td><td class="num">2.6</td><td class="num">8.0</td><td class="num">8.6</td></tr>
+      <tr><td>1.5B</td><td>SFT</td><td class="num">13.5</td><td class="num">21.4</td><td class="num">13.5</td><td class="num">11.6</td><td class="num">7.0</td><td class="num">1.2</td><td class="num">12.0</td><td class="num">11.5</td></tr>
+      <tr><td>1.5B</td><td>Search-R1</td><td class="num">39.4</td><td class="num">51.0</td><td class="num">39.7</td><td class="num">14.6</td><td class="num">24.4</td><td class="num">2.2</td><td class="num">4.0</td><td class="num">25.0</td></tr>
+      <tr><td>1.5B</td><td>Sum</td><td class="num">32.1</td><td class="num">44.5</td><td class="num">30.9</td><td class="num">26.0</td><td class="num">14.8</td><td class="num">5.3</td><td class="num">16.8</td><td class="num">24.3</td></tr>
+      <tr class="best"><td>1.5B</td><td>Macro</td><td class="num">29.6</td><td class="num">45.1</td><td class="num">28.8</td><td class="num">26.9</td><td class="num">19.4</td><td class="num">6.3</td><td class="num">23.2</td><td class="num">25.6</td></tr>
+      <tr><td>1.5B</td><td>Success</td><td class="num">24.8</td><td class="num">36.9</td><td class="num">21.3</td><td class="num">24.2</td><td class="num">17.7</td><td class="num">4.6</td><td class="num">23.2</td><td class="num">21.8</td></tr>
+      <tr><td>1.5B</td><td>Curriculum</td><td class="num">20.6</td><td class="num">28.5</td><td class="num">20.5</td><td class="num">16.0</td><td class="num">11.7</td><td class="num">3.5</td><td class="num">17.6</td><td class="num">16.9</td></tr>
+      <tr><td>3B</td><td>Base</td><td class="num">10.6</td><td class="num">28.8</td><td class="num">10.8</td><td class="num">14.9</td><td class="num">24.4</td><td class="num">2.0</td><td class="num">2.4</td><td class="num">13.4</td></tr>
+      <tr><td>3B</td><td>SFT</td><td class="num">35.1</td><td class="num">52.5</td><td class="num">31.3</td><td class="num">32.0</td><td class="num">24.4</td><td class="num">9.0</td><td class="num">30.4</td><td class="num">30.7</td></tr>
+      <tr><td>3B</td><td>Search-R1</td><td class="num">34.1</td><td class="num">54.5</td><td class="num">37.8</td><td class="num">32.4</td><td class="num">31.9</td><td class="num">10.3</td><td class="num">26.4</td><td class="num">32.5</td></tr>
+      <tr><td>3B</td><td>Sum</td><td class="num">38.2</td><td class="num">54.9</td><td class="num">34.3</td><td class="num">34.2</td><td class="num">23.3</td><td class="num">8.8</td><td class="num">27.2</td><td class="num">31.6</td></tr>
+      <tr><td>3B</td><td>Macro</td><td class="num">37.0</td><td class="num">54.5</td><td class="num">34.9</td><td class="num">37.9</td><td class="num">29.9</td><td class="num">11.6</td><td class="num">33.6</td><td class="num">34.2</td></tr>
+      <tr><td>3B</td><td>Success</td><td class="num">37.5</td><td class="num">54.1</td><td class="num">34.0</td><td class="num">33.7</td><td class="num">19.4</td><td class="num">10.3</td><td class="num">32.0</td><td class="num">31.6</td></tr>
+      <tr class="best"><td>3B</td><td>Curriculum</td><td class="num">41.0</td><td class="num">56.8</td><td class="num">36.2</td><td class="num">39.5</td><td class="num">27.7</td><td class="num">12.4</td><td class="num">32.0</td><td class="num">35.0</td></tr>
+      <tr><td>7B</td><td>Base</td><td class="num">13.4</td><td class="num">40.8</td><td class="num">14.0</td><td class="num">18.3</td><td class="num">25.0</td><td class="num">3.1</td><td class="num">12.0</td><td class="num">18.1</td></tr>
+      <tr><td>7B</td><td>SFT</td><td class="num">41.2</td><td class="num">59.7</td><td class="num">37.6</td><td class="num">47.0</td><td class="num">37.8</td><td class="num">16.3</td><td class="num">53.6</td><td class="num">41.9</td></tr>
+      <tr><td>7B</td><td>Search-R1</td><td class="num">39.3</td><td class="num">61.0</td><td class="num">39.7</td><td class="num">37.0</td><td class="num">41.4</td><td class="num">14.6</td><td class="num">36.8</td><td class="num">38.5</td></tr>
+      <tr><td>7B</td><td>Sum</td><td class="num">35.5</td><td class="num">54.5</td><td class="num">34.8</td><td class="num">44.8</td><td class="num">34.6</td><td class="num">15.4</td><td class="num">37.6</td><td class="num">36.7</td></tr>
+      <tr class="best"><td>7B</td><td>Macro</td><td class="num">42.2</td><td class="num">61.2</td><td class="num">39.6</td><td class="num">48.8</td><td class="num">38.3</td><td class="num">17.4</td><td class="num">52.8</td><td class="num">42.9</td></tr>
+      <tr><td>7B</td><td>Success</td><td class="num">38.7</td><td class="num">55.9</td><td class="num">35.2</td><td class="num">45.8</td><td class="num">38.4</td><td class="num">15.5</td><td class="num">41.6</td><td class="num">38.7</td></tr>
+      <tr><td>7B</td><td>Curriculum</td><td class="num">41.1</td><td class="num">58.7</td><td class="num">37.7</td><td class="num">48.4</td><td class="num">38.5</td><td class="num">17.4</td><td class="num">45.6</td><td class="num">41.1</td></tr>
+    </table>
+    </div>
+  </section>
+
+  <section class="card" style="border-color: var(--series-2); border-width: 2px;">
+    <h3>🔴 全文最有说服力的定量证据（由表 2 推导，论文未明说）</h3>
+    <p>把「RL 相对 SFT 的 OOD 净贡献」按规模列出来，与同规模 in-domain 净贡献并排：</p>
+    <div class="tblwrap">
+    <table>
+      <tr><th>规模</th><th class="num">SFT 的 OOD Avg</th><th class="num">最优 RL 的 OOD Avg</th><th class="num">RL 的 OOD 净贡献</th><th class="num">同规模 in-domain RL 净贡献</th></tr>
+      <tr><td>1.5B</td><td class="num">11.5</td><td class="num">25.6（Macro）</td><td class="num pos">+14.1pp</td><td class="num">+28.0pp（6.9→34.9）</td></tr>
+      <tr><td>3B</td><td class="num">30.7</td><td class="num">35.0（Curriculum）</td><td class="num pos">+4.3pp</td><td class="num">+37.7pp（12.2→49.9）</td></tr>
+      <tr><td>7B</td><td class="num">41.9</td><td class="num">42.9（Macro）</td><td class="num pos">+1.0pp</td><td class="num">+43.1pp（19.7→62.8）</td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>一条清晰的单调递减：+14.1 → +4.3 → +1.0。每增大一个规模档，RL 的 OOD 净贡献缩水约 3 倍。</strong>与此同时，in-domain 的 RL 净贡献却在单调递增：+28.0 → +37.7 → +43.1。
+    </div>
+    <p>两条趋势的剪刀差意味着：<strong>随着模型变大，RL 越来越像是在做「任务特定的过拟合」，而不是在教会模型可迁移的工具编排能力。</strong>外推到 7B 以上，OOD 净贡献会跌破 0——事实上在 7B 上，如果研究者选了论文为 1.5B/3B 推荐的 Curriculum 或最强 in-domain 的 Sum，OOD 已经是负收益：</p>
+    <ul>
+      <li>7B Sum：36.7 vs SFT 41.9 = <strong style="color:var(--crit)">−5.2pp</strong>（RL 让模型在 OOD 上比只做 SFT 更差）</li>
+      <li>7B Curriculum：41.1 vs SFT 41.9 = <strong style="color:var(--crit)">−0.8pp</strong></li>
+    </ul>
+    <p>论文的 Takeaway 2 只说了「过密的奖励有 alignment tax」，但数据显示的是更强的命题：<strong>在 7B 上，四种奖励里有两种让 RL 的 OOD 净收益为负，剩下两种的正收益不超过 +1.0pp</strong>。换句话说，<strong>STAR 在 7B 上的 OOD 竞争力几乎全部来自 SFT 阶段的 DeepSeek-V3.2 蒸馏，而非 RL</strong>。</p>
+    <p><strong>补充旁证：</strong>7B-SFT 的 OOD Avg（41.9）已经<strong>超过在 NQ+HotpotQA 上原生训练的 Search-R1（38.5）3.4pp</strong>。一个从未见过 QA 数据、只在旅行规划轨迹上蒸馏过的模型，OOD 打赢了 in-domain 训练的专用基线——<strong>这是蒸馏的胜利，不是 RL 的胜利</strong>。</p>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">图 2 · 剪刀差：RL 相对 SFT 的净贡献，in-domain vs OOD</p>
+    <p class="fig-sub">单位 pp（百分点）。in-domain 净贡献随规模递增，OOD 净贡献随规模趋零。数据源：表 1 与表 2 推导。悬停查看数值。</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-1)"></span>in-domain 净贡献（TravelPlanner Success）</span>
+      <span><span class="sw" style="background:var(--series-2)"></span>OOD 净贡献（7 QA 基准均分）</span>
+    </div>
+    <svg class="chart" viewBox="0 0 900 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="RL 净贡献的 in-domain 与 OOD 剪刀差柱状图">
+      <g stroke="var(--grid)" stroke-width="1">
+        <line x1="70" y1="300" x2="870" y2="300" stroke="var(--baseline)"/>
+        <line x1="70" y1="240" x2="870" y2="240"/>
+        <line x1="70" y1="180" x2="870" y2="180"/>
+        <line x1="70" y1="120" x2="870" y2="120"/>
+        <line x1="70" y1="60" x2="870" y2="60"/>
+      </g>
+      <g fill="var(--muted)" font-size="13" text-anchor="end">
+        <text x="60" y="305">0</text><text x="60" y="245">10</text><text x="60" y="185">20</text>
+        <text x="60" y="125">30</text><text x="60" y="65">40</text>
+      </g>
+      <text x="24" y="170" fill="var(--muted)" font-size="13" text-anchor="middle" transform="rotate(-90 24 170)">净贡献 (pp)</text>
+
+      <rect class="bar" x="128" y="132" width="70" height="168" fill="var(--series-1)" rx="3" data-l="1.5B · in-domain" data-v="+28.0pp（6.9 → 34.9）"/>
+      <rect class="bar" x="208" y="215.4" width="70" height="84.6" fill="var(--series-2)" rx="3" data-l="1.5B · OOD" data-v="+14.1pp（11.5 → 25.6）"/>
+      <rect class="bar" x="395" y="73.8" width="70" height="226.2" fill="var(--series-1)" rx="3" data-l="3B · in-domain" data-v="+37.7pp（12.2 → 49.9）"/>
+      <rect class="bar" x="475" y="274.2" width="70" height="25.8" fill="var(--series-2)" rx="3" data-l="3B · OOD" data-v="+4.3pp（30.7 → 35.0）"/>
+      <rect class="bar" x="662" y="41.4" width="70" height="258.6" fill="var(--series-1)" rx="3" data-l="7B · in-domain" data-v="+43.1pp（19.7 → 62.8）"/>
+      <rect class="bar" x="742" y="294" width="70" height="6" fill="var(--series-2)" rx="3" data-l="7B · OOD" data-v="+1.0pp（41.9 → 42.9）"/>
+
+      <g fill="var(--text-primary)" font-size="12.5" text-anchor="middle" font-weight="600">
+        <text x="163" y="124">+28.0</text><text x="243" y="208">+14.1</text>
+        <text x="430" y="66">+37.7</text><text x="510" y="267">+4.3</text>
+        <text x="697" y="34">+43.1</text><text x="777" y="287">+1.0</text>
+      </g>
+      <g fill="var(--text-secondary)" font-size="14" text-anchor="middle" font-weight="600">
+        <text x="203" y="326">1.5B</text><text x="470" y="326">3B</text><text x="737" y="326">7B</text>
+      </g>
+      <path d="M 250 222 Q 480 250 780 292" stroke="var(--series-2)" stroke-width="2" fill="none" stroke-dasharray="5 4" opacity=".7"/>
+      <text x="737" y="346" fill="var(--series-2)" font-size="12.5" text-anchor="middle">OOD 收益趋零 →</text>
+    </svg>
+  </div>
+
+  <section class="card">
+    <h3>3.4 数据难度组成消融（表 3，3B，Curriculum，1K prompts）</h3>
+    <div class="tblwrap">
+    <table>
+      <tr><th>配置</th><th class="num">CS Micro</th><th class="num">CS Macro</th><th class="num">HC Micro</th><th class="num">HC Macro</th><th class="num">Success</th><th class="num">vs Mixed</th></tr>
+      <tr><td>Easy-1K</td><td class="num">92.8</td><td class="num">79.7</td><td class="num">62.8</td><td class="num">46.9</td><td class="num">45.3</td><td class="num neg">−4.6pp</td></tr>
+      <tr><td>Medium-1K</td><td class="num">94.9</td><td class="num">69.2</td><td class="num">66.2</td><td class="num">49.0</td><td class="num">41.1</td><td class="num neg">−8.8pp</td></tr>
+      <tr><td>Hard-1K</td><td class="num">90.0</td><td class="num">48.4</td><td class="num">65.5</td><td class="num">47.2</td><td class="num">25.9</td><td class="num neg">−24.0pp</td></tr>
+      <tr class="best"><td>Mixed-1K (4:3:3)</td><td class="num">95.3</td><td class="num">83.0</td><td class="num">67.6</td><td class="num">51.0</td><td class="num">49.9</td><td class="num">—</td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>被论文一句带过、但值得单独拎出来的细节：</strong>Hard-1K 的崩溃<strong>不是全面崩溃</strong>。它的 HC Micro（65.5）与 HC Macro（47.2）与 Mixed（67.6 / 51.0）只差 2.1pp 与 3.8pp，但 <strong>CS Macro 从 83.0 暴跌到 48.4，掉了 34.6pp</strong>。也就是说：<strong>只用困难样本训练，模型学会了硬约束，却「忘了常识」。</strong>机制解释：hard 样本的奖励几乎全部来自 hard constraint 项，commonsense 项因过早饱和而失去梯度权重，策略在常识维度上发生漂移。这直接指出 <code>r_sum</code> 各分量未加权（系数全为 1）的隐患——<strong>论文从未讨论奖励分量的加权</strong>。
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>3.5 RL 算法消融与成本（表 4）</h3>
+    <div class="tblwrap">
+    <table>
+      <tr><th>Scale</th><th>算法</th><th class="num">Success</th><th class="num">GPU 小时</th><th class="num">每步耗时 (min)</th><th class="num">vs GRPO 性能</th><th class="num">vs GRPO 成本</th></tr>
+      <tr><td>1.5B</td><td>GRPO</td><td class="num">30.1</td><td class="num">164</td><td class="num">8.0</td><td class="num">—</td><td class="num">—</td></tr>
+      <tr><td>1.5B</td><td>DAPO</td><td class="num">36.9</td><td class="num">183</td><td class="num">8.2</td><td class="num pos">+6.8pp</td><td class="num">+11.6%</td></tr>
+      <tr class="best"><td>1.5B</td><td>ARPO</td><td class="num">37.5</td><td class="num">195</td><td class="num">9.5</td><td class="num pos">+7.4pp</td><td class="num">+18.9%</td></tr>
+      <tr class="best"><td>3B</td><td>GRPO</td><td class="num">48.2</td><td class="num">176</td><td class="num">8.6</td><td class="num">—</td><td class="num">—</td></tr>
+      <tr><td>3B</td><td>DAPO</td><td class="num">45.6</td><td class="num">184</td><td class="num">8.9</td><td class="num neg">−2.6pp</td><td class="num">+4.5%</td></tr>
+      <tr><td>3B</td><td>ARPO</td><td class="num">47.5</td><td class="num">273</td><td class="num">13.3</td><td class="num neg">−0.7pp</td><td class="num">+55.1%</td></tr>
+      <tr class="best"><td>7B</td><td>GRPO</td><td class="num">62.8</td><td class="num">368</td><td class="num">9.0</td><td class="num">—</td><td class="num">—</td></tr>
+      <tr><td>7B</td><td>DAPO</td><td class="num">58.4</td><td class="num">390</td><td class="num">9.5</td><td class="num neg">−4.4pp</td><td class="num">+6.0%</td></tr>
+      <tr><td>7B</td><td>ARPO</td><td class="num">58.3</td><td class="num">547</td><td class="num">13.3</td><td class="num neg">−4.5pp</td><td class="num">+48.6%</td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>相变高亮：</strong>ARPO 在 1.5B 上以 <strong>+18.9% 的成本换来 +7.4pp</strong>；到 7B 上以 <strong>+48.6% 的成本换来 −4.5pp</strong>。同一个算法，从「性价比极高」翻转为「花钱买性能下降」，跨度只有 4.7 倍参数量。
+    </div>
+    <p>实践含义：<strong>ARPO 这类熵驱动的自适应 rollout 方法，其收益来源是「补偿小模型的探索不足」，而不是「改进了信用分配本身」。</strong>ARPO 原文（ICLR 2026 Poster）宣称在 13 个基准上以一半工具预算取得更优结果，但其实验主要在 7B 及以下——<strong>STAR 的表 4 实际上给 ARPO 的适用边界画了一条线，而这条线正好落在 ARPO 自己的实验规模附近</strong>。这是一个跨论文相互印证 / 相互限制的有趣案例。</p>
+  </section>
+
+  <section class="card">
+    <h3>3.6 数据规模扫描与环境稳定性</h3>
+    <div class="tblwrap">
+    <table>
+      <tr><th>训练 prompt 数</th><th class="num">In-domain Success</th><th class="num">OOD Avg</th><th>说明</th></tr>
+      <tr><td>100</td><td class="num">37.5</td><td class="num">未提取到</td><td>—</td></tr>
+      <tr><td>500</td><td class="num">未提取到</td><td class="num">未提取到</td><td>仅在图 5 中，位图无法读数</td></tr>
+      <tr class="best"><td>1K</td><td class="num">49.9</td><td class="num">35.0</td><td>论文认定的 sweet spot</td></tr>
+      <tr><td>2K</td><td class="num">50.8</td><td class="num">32.2</td><td>in-domain 更高，OOD 更低</td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>这是全文最脆弱的证据。</strong>「1K 是甜点」这个 Takeaway 4，完全建立在 1K→2K 时 <strong>in-domain +0.9pp 而 OOD −2.8pp</strong> 这一组数字上。在<strong>没有任何标准差、没有多 seed</strong> 的情况下，+0.9pp 与 −2.8pp 都在典型 RL 训练方差范围内。这个 Takeaway 的置信度应显著低于 Takeaway 1 和 6（后两者效应量分别是 5.8pp 和 7.4pp/−4.5pp 的方向翻转，鲁棒得多）。
+    </div>
+    <h4>环境稳定性（图 6，仅 3B）</h4>
+    <p>论文文字描述：≤5% 工具失败率下「测试性能相对稳定，仅轻微波动」；10% 时「最终测试成功率显著下降，所有指标同步下滑」，训练曲线（图 6a）表现为收敛更慢、方差更大。</p>
+    <p><strong>⚠ 我无法读取图 6 的具体数值</strong>（该结果没有对应表格）。Takeaway 7 的量化强度<strong>无法核实</strong>。这也是论文自身的呈现缺陷：五轴中唯一一个只有图没有表的轴。</p>
+  </section>
+
+  <h2>第四部分 · 价值分析与局限性</h2>
+
+  <section class="card">
+    <h3>4.1 真正的贡献</h3>
+    <p>不是「我们训出了 TravelPlanner SOTA」（62.8% 这个数字会很快被超越），而是<strong>建立了「agentic RL 的设计选择是模型容量的函数」这个命题，并用两条独立轴（奖励密度、算法选择）给出同向的经验证据</strong>。</p>
+    <p>这个命题<strong>改变了论文的阅读方式</strong>：此后再看到任何 agentic RL 论文声称「方法 X 优于 Y」，读者的第一个问题应当是「在什么规模上？」STAR 把一个隐含的、几乎从不被报告的实验维度（模型规模）提升为一等公民。</p>
+
+    <h4>可脱离本文单独复用的设计（按可迁移性排序）</h4>
+    <ol>
+      <li><strong>四级奖励密度阶梯的构造法</strong>（micro/macro × 多维度）。任何<strong>评估协议本身可分解为多个二值检查项</strong>的任务都能照搬：micro = 通过率，macro = 全通过指示，按需组合密度。不依赖旅行规划的任何特性。<strong>这是本文最有复用价值的东西。</strong></li>
+      <li><strong>超长轨迹的「排除 loss / 保留归一化」处理</strong>。适用于任何 group-based RL + 长轨迹的组合。</li>
+      <li><strong>拒绝采样保留率作为任务难度的诊断指标</strong>。24.0% 提前预告了任务对强教师也很难，可作为「是否需要 SFT 冷启动」的量化判据。</li>
+      <li><strong>「算法收益 vs 规模」的对照表格式</strong>（表 4）。把 GPU 小时与性能并列，是 agentic RL 论文里少见的诚实做法，应当成为惯例。</li>
+    </ol>
+
+    <h4>对后续工作的启发</h4>
+    <ul>
+      <li><strong>「容量替代探索辅助」这个假说值得被独立检验。</strong>若成立，整个「为 LLM agent 设计更聪明的探索机制」的研究方向，其价值窗口就是有限的、随基础模型进步而关闭的。</li>
+      <li><strong>OOD 净收益随规模递减的趋势打开了一个新问题</strong>：agentic RL 到底是在「教能力」还是在「调对齐」？若是后者，当前所有以 in-domain 提升为卖点的工作都需要补一个 OOD 对照。</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h3>4.2 局限性 · 第一类：论文自述（Limitations 章节，原文四点）</h3>
+    <ol>
+      <li><strong>模拟环境</strong>：「While TravelPlanner is a challenging testbed, it remains simulated.」</li>
+      <li><strong>OOD 评估受限</strong>：「Our OOD evaluation is currently restricted to the knowledge-intensive QA task. This limits our conclusions to single-domain generalization.」</li>
+      <li><strong>更大模型行为未知</strong>：「Due to computational constraints, our study focuses on models up to 7B parameters.」</li>
+      <li><strong>任务特定分解与单因素分析</strong>：「we primarily isolated individual axes, leaving the complex, simultaneous interactions among all dimensions unexplored. Furthermore, our reward shaping relies on task-specific, trajectory-level formulations.」</li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <h3>4.3 局限性 · 第二类：补充批判（8 点独立观察）</h3>
+
+    <h4>① 无统计显著性报告，而多个 Takeaway 依赖 &lt;1pp 的差异 <span class="chip">实验设计问题</span></h4>
+    <p>全文未见任何 std / CI / seed 数。Takeaway 4（1K sweet spot）的全部证据是 1K→2K 的 in-domain <strong>+0.9pp</strong>；作为对照，Takeaway 1 的效应量是 <strong>5.8pp</strong>。<strong>用同一套无方差报告的实验去支撑效应量差 6.4 倍的两个结论，可信度必然是分层的，但论文把七个 Takeaway 平铺并列，未做置信度区分。</strong></p>
+
+    <h4>② 「7B 上 RL 的 OOD 净贡献仅 +1.0pp」这一关键负面结果被回避 <span class="chip">论证缺口</span></h4>
+    <p>数据链条：7B SFT OOD 41.9 → 最优 RL OOD 42.9（Macro）= +1.0pp；7B Sum 是 36.7 = <strong style="color:var(--crit)">−5.2pp</strong>。论文的 Takeaway 2 表述为「过密奖励带来 alignment tax」，这是一个<strong>弱化的、把责任归给单一奖励设计的表述</strong>。真实数据支持的是更强的命题：<strong>在 7B 上 RL 阶段对 OOD 的期望贡献接近于零，且有一半配置为负</strong>。论文用「Macro 提供最优平衡」的正面措辞覆盖了这个事实。</p>
+
+    <h4>③ 缺少与最直接竞品 Planner-R1 的 head-to-head <span class="chip">缺乏关键竞品对比</span></h4>
+    <p>Planner-R1 被 STAR 在相关工作中引用，且<strong>做的是同一个基准的同一件事</strong>，报告 <strong>56.9% final-pass rate，仅用 180 条训练 query，8B 模型</strong>。STAR 的 7B 最优是 62.8%，代价是 <strong>1,198 条教师蒸馏 SFT 轨迹 + 1K 条 RL query ≈ 2,198 条样本</strong>——<strong>样本量是 Planner-R1 的 12.2 倍，只换来 +5.9pp</strong>。STAR 的表 1、表 4 中<strong>没有任何一行是 Planner-R1</strong>；声称「significantly outperforming leading LLMs」时，比较对象是通用 LLM（Kimi-K2.5 等）而非同类专用方法。</p>
+    <p><em>诚实标注：Planner-R1 用 8B 而 STAR 用 7B，SFT 设定也不同，严格意义上不是同一实验条件——但正因如此才更需要受控的 head-to-head，而不是各自报数。</em></p>
+
+    <h4>④ 「Curriculum 在 1.5B 最优」与「Curriculum 在 1.5B 的 OOD 最差」构成配方内部矛盾 <span class="chip">论证缺口</span></h4>
+    <p>表 1：1.5B 上 Curriculum 的 Success 是 34.9（第一名）。表 2：同一个 1.5B-Curriculum 的 OOD Avg 是 <strong>16.9，全部四种奖励里的最后一名</strong>，比第一名 Macro（25.6）低 <strong>8.7pp</strong>，甚至低于 Sum（24.3）7.4pp。Takeaway 1 建议「小模型用 staged rewards」，Takeaway 2 建议「避免过密奖励以保 OOD」——<strong>这两条建议在 1.5B 上直接冲突，且论文没有给出取舍准则</strong>。一个只读 Takeaway 不读表 2 的从业者，会为 1.5B 选择 Curriculum，从而拿到全表最差的泛化性。</p>
+
+    <h4>⑤ KL-free 与「奖励过密」两个因素未被分离 <span class="chip">实验设计问题</span></h4>
+    <p>STAR 的 GRPO 变体同时做了两处改动（移除 KL、clip-high），两者都会放大策略漂移。7B 上 Sum 的 OOD 退化（−5.2pp vs SFT）被归因于奖励密度，但<strong>没有 KL-on / KL-off 的对照</strong>。缺乏这个对照，「alignment tax 由奖励密度引起」是一个<strong>未被隔离验证的因果主张</strong>。</p>
+
+    <h4>⑥ 五轴逐一消融，关键结论的实验条件与推荐配置不一致 <span class="chip">实验设计问题</span></h4>
+    <p>论文承认了单因素分析的局限，但低估了代价：<strong>表 3（数据难度）和附录表 9（数据规模）都只在 3B + Curriculum 下做</strong>。而按 Takeaway 1，Curriculum 恰恰<strong>不是</strong> 7B 的最优奖励。因此「Mixed 4:3:3」和「1K sweet spot」这两个结论<strong>是在一个已知对 7B 不最优的配置下得到的</strong>，其向 7B 的可迁移性缺乏任何证据。这不是抽象的「交互未探索」，而是具体的条件错配。</p>
+
+    <h4>⑦ 环境稳定性轴只有图、无表、单一模型规模、单一噪声形态 <span class="chip">可复现性风险</span></h4>
+    <p>五轴中唯一没有表格的一轴。仅在 3B 上测试，仅测「全局随机工具调用失败」一种噪声。真实 API 的失效形态包括超时、部分返回、脏数据、限流——<strong>随机失败是「无信息」，脏数据是「错误信息」，后者对策略的毒害更大</strong>。Takeaway 7 作为工程指导，外部效度非常有限。</p>
+
+    <h4>⑧ 教师模型性能未报告，无法判断 RL 是否超越了蒸馏上限 <span class="chip">论证缺口</span></h4>
+    <p>SFT 轨迹来自 DeepSeek-V3.2-Exp-Thinking，拒绝采样保留率 24.0%。但论文<strong>从未报告教师在 TravelPlanner 官方测试集上的成绩</strong>。7B-Sum 的 62.8% 究竟是「学生超越教师」还是「教师本来就更高」，<strong>读者无从判断</strong>。若教师本身能拿 60%+，STAR 的全部工作可以被重新描述为「把大模型能力压缩进 7B」，RL 的角色就从「能力创造」降级为「蒸馏效率优化」。</p>
+
+    <h4>⑨ 我自己分析的不完备之处</h4>
+    <ul>
+      <li>图 5/6/7/8 为位图，无法提取精确坐标，环境稳定性与数据规模扫描的部分数值缺失，已逐处标注。</li>
+      <li>未能核实 STAR 的测试划分与 Planner-R1 报数所用划分是否完全一致，因此第 ③ 点应视为<strong>基于各自公开报数的粗比较，非严格受控对比</strong>。</li>
+      <li>未运行代码，所有关于实现细节的判断均来自论文文字描述。</li>
+    </ul>
+  </section>
+
+  <h2>第五部分 · 相关工作回溯</h2>
+
+  <section class="card">
+    <h3>5.1 TravelPlanner — 2024.02（v4: 2024.10），ICML 2024 Spotlight</h3>
+    <p><strong>解决了什么问题。</strong>在 LLM agent 评估普遍依赖单步工具调用或短程 QA 的时期，TravelPlanner 构造了第一个<strong>同时要求长序列工具编排与多约束联合满足</strong>的真实感规划基准：1,225 条规划意图、近 400 万条沙箱记录、双维度评估协议。一句话：<strong>它把「LLM 能不能做真正的规划」这个模糊问题，变成了一个 0.6% 的数字。</strong></p>
+    <p><strong>遗留了什么缺口。</strong>这是一篇<strong>纯诊断</strong>论文。它证明了 0.6%，定性指出三类失败模式，但<strong>无意提供任何训练方法</strong>。留下的缺口极其明确：<strong>这个 0.6% 该怎么涨？</strong>更微妙的是，它设计的<strong>双维度四级评估协议本身是一个未被使用的资源</strong>——这套 micro/macro 分解在原文中只是评估工具，没人意识到它可以直接充当奖励函数的密度旋钮。</p>
+    <p><strong>核心工作如何回应。</strong>STAR 做了两件事：把 0.6% 推到 62.8%；<strong>把 TravelPlanner 的评估协议直接重用为奖励基元</strong>。五个奖励分量<strong>全部是 TravelPlanner 原生的评估分量</strong>——四档奖励密度阶梯不是设计出来的，是<strong>从基准的评估协议里「读」出来的</strong>。</p>
+    <p><strong>关键设计的传递。</strong>从「评估协议」到「奖励函数」的直接转译——一次<strong>功能重定义</strong>而非技术改进：同一组公式，2024 年是打分表，2026 年是训练信号。这条路径也解释了为什么 STAR 的奖励塑形「是 task-specific 的」。</p>
+  </section>
+
+  <section class="card">
+    <h3>5.2 Search-R1 — 2025.03（v5: 2025.08）</h3>
+    <p><strong>解决了什么问题。</strong>把 R1 式纯 RL 训练<strong>首次系统性扩展到「推理与工具调用交错」场景</strong>。两个关键技术选择：<strong>retrieved token masking</strong>（检索回的 token 不参与 policy gradient，避免学会复述）与<strong>纯 outcome-based reward</strong>。7 个 QA 基准上 Qwen2.5-7B 相对提升 41%，3B 提升 20%。</p>
+    <p><strong>遗留了什么缺口。</strong>两个，都致命于长视野场景：<strong>(1) 单工具、短视野</strong>——典型轨迹 1–3 次调用，outcome reward 能工作的前提是 base 初始成功率显著大于 0（QA 上 Qwen2.5-7B base 有 18.1%）；在 TravelPlanner 上同样的 base 只有 <strong>0.1%</strong>，纯 outcome reward 直接退化为零梯度。<strong>(2) 奖励密度这一维度从未被审视</strong>——因为 outcome reward 在它的设定下够用了。</p>
+    <p><strong>核心工作如何回应。</strong>STAR 的整条奖励密度轴本质上是<strong>对 Search-R1 隐含前提的正面攻击</strong>：outcome reward 的可用性取决于初始成功率，而初始成功率取决于任务视野长度。表 1 的 Success 列在三规模上是 33.8 / 46.6 / 60.9——<strong>它能工作，但必须先有 SFT 冷启动把成功率从 0.0% 抬到 6.9%–19.7%</strong>。这是对「纯 RL 无需 SFT」这一 R1 叙事的一个具体边界条件。同时 STAR 把 Search-R1 当作 OOD 基线，但如第三部分所指出，<strong>7B-SFT 单独就已经赢了，胜利归功于蒸馏而非 RL</strong>。</p>
+    <p><strong>关键设计的传递。</strong>「outcome reward 作为默认起点」被继承，但被降级为<strong>四个选项之一</strong>——从「方法」到「设计维度」的抽象层级提升。</p>
+  </section>
+
+  <section class="card">
+    <h3>5.3 DAPO — 2025.03（v2: 2025.05），ByteDance Seed</h3>
+    <p><strong>解决了什么问题。</strong>在 o1 / R1 技术细节被隐藏的背景下完整开源了一套大规模 RL 系统，Qwen2.5-32B base 在 AIME 2024 拿到 50 分，<strong>超过此前 SOTA DeepSeek-R1-Zero-Qwen-32B 的 47 分，且只用 50% 训练步数</strong>。四项核心技术：<strong>Clip-Higher</strong>（解耦裁剪边界，防熵坍缩）、<strong>Dynamic Sampling</strong>（过滤零梯度样本）、<strong>Token-Level Policy Gradient Loss</strong>、<strong>Overlong Reward Shaping</strong>。</p>
+    <p><strong>遗留了什么缺口。</strong>四项技术<strong>全部为单轮长 CoT 数学推理设计</strong>。迁到多轮工具交互时每项前提都需重检：Clip-Higher 防的是熵坍缩，但<strong>多轮 agentic 场景的熵还来自工具返回的外部随机性</strong>，多给的探索空间可能被环境噪声吃掉；Overlong Reward Shaping 的软惩罚在 9.2 步轨迹上如何分配到各步，DAPO 没有答案。最关键：<strong>DAPO 的验证全部在 32B 上，从未回答「这套技术在 1.5B 上是否同样有效、在 7B 上是否已经多余」</strong>。</p>
+    <p><strong>核心工作如何回应。</strong>两层。<strong>表层</strong>：DAPO 作为算法轴选项进表 4，得到「1.5B 上 +6.8pp，7B 上 −4.4pp」的规模依赖结论。<strong>深层</strong>：STAR 的 GRPO 基线<strong>本身就吸收了 DAPO 的两项技术</strong>（KL-free 与 clip-high 写进默认配置）——DAPO 在 STAR 里同时扮演<strong>对照组</strong>和<strong>基础设施</strong>两个角色。</p>
+    <p><strong>关键设计的传递。</strong><code>Clip-Higher</code> → STAR 默认配置（无条件继承）；<code>Overlong Reward Shaping</code> → 「排除 loss / 保留归一化」（形态改变）；<code>Dynamic Sampling</code> → 被 STAR 通过「数据难度均衡」在<strong>数据层</strong>而非算法层实现。第三条最有意思：<strong>同一个问题（零梯度样本浪费），DAPO 在算法里解决，STAR 在数据配比里解决。</strong></p>
+  </section>
+
+  <section class="card">
+    <h3>5.4 ARPO — 2025.07，ICLR 2026 Poster</h3>
+    <p><strong>解决了什么问题。</strong>最接近 STAR 问题域的前驱。关键观察是一个具体经验现象：<strong>LLM 在工具调用返回之后，紧接着的 token 熵会显著升高</strong>——工具返回是不确定性的注入点。据此设计 <strong>entropy-based adaptive rollout</strong>（高熵步动态增加 step-level 采样）配合 <strong>advantage attribution estimation</strong>。结果：13 个基准更优，且<strong>只用现有方法一半的工具调用预算</strong>。</p>
+    <p><strong>遗留了什么缺口。</strong>整个设计<strong>建立在「探索不足是主要瓶颈」这个假设上</strong>。这个假设在它自己的实验规模（主要 7B 及以下）里成立，但 ARPO <strong>没有把模型规模作为自变量来检验这个假设的边界</strong>，隐含地把「更聪明的探索」当成单调有益的东西。</p>
+    <p><strong>核心工作如何回应。</strong>表 4 给出直接反例：1.5B <strong>+7.4pp</strong>（+18.9% 成本）→ 3B −0.7pp（+55.1% 成本）→ 7B <strong>−4.5pp</strong>（+48.6% 成本）。<strong>ARPO 的收益在 1.5B→3B 之间就已翻转为负。</strong>STAR 由此提出 Takeaway 6：「对复杂探索机制的需求，与模型能力成反比。」这是一个<strong>对抗性而非继承性</strong>的回应——STAR 不是在 ARPO 基础上改进，而是<strong>给 ARPO 的适用范围划了一条上界，而这条上界恰好落在 ARPO 自身实验规模的内部</strong>。</p>
+    <p><strong>关键设计的传递。</strong>技术迁移形态：<strong>从「显式的步级探索调度」→「隐式的容量驱动探索」</strong>。</p>
+  </section>
+
+  <section class="card">
+    <h3>5.5 Planner-R1 — 2025.09（v2: 2025.10），ICLR 2026 Under review</h3>
+    <p><strong>解决了什么问题。</strong>与 STAR <strong>最直接对撞</strong>的工作：同一个基准、同一个主张。结果：<strong>56.9% final-pass rate，仅用 180 条训练 query</strong>；8B 模型达到与 32B 相当的性能，<strong>计算效率高 3.5 倍、显存效率高 1.5 倍</strong>；相对 GPT-5 的 21.2% 基线提升 2.7 倍；在 Multi-IF、NaturalPlan、τ-Bench 等 OOD 任务上「大体维持或超过基线」。</p>
+    <p><strong>遗留了什么缺口。</strong>(1) <strong>单一规模的验证</strong>——只有 8B 与 32B 两个采样点，无法刻画趋势形状；(2) <strong>代码未公开</strong>（我未检索到公开仓库），可复现性存疑；(3) 主张「reward shaping 是主要杠杆」，但<strong>没有把 RL 算法选择作为对照轴</strong>，无法排除「收益其实来自算法而非奖励」。</p>
+    <p><strong>核心工作如何回应。</strong>STAR 用三个采样点把 Planner-R1 的两点观察扩展为一条曲线，并在奖励轴之外补上算法轴、数据轴、环境轴——是 Planner-R1 的严格超集式验证。<strong>但也正因如此，STAR 不与 Planner-R1 做 head-to-head 是一个严重缺失</strong>：按公开报数，Planner-R1 用 180 条 query 拿 56.9%，STAR 用 ≈2,198 条样本拿 62.8%。<strong>若 Planner-R1 的样本效率属实，STAR 的「comprehensive recipe」在数据效率维度上是被同期工作压制的</strong>——而这个维度恰是 STAR 自己 Takeaway 4 所主张的核心价值。</p>
+    <p><strong>关键设计的传递。</strong>「dense process-level reward 对小模型更有效」被 STAR 完整复现并精细化。迁移形态：<strong>从「两点对比的定性结论」→「三点曲线上的相变定位」</strong>。</p>
+  </section>
+
+  <h2>第六部分 · 技术演进脉络</h2>
+
+  <section class="card">
+    <div class="flow">                    2023 · ReAct [推理与行动交错，prompt 驱动，无学习信号]
+                              │
+                              │  缺口：agent 只会"被提示"，不会"被训练"
+                              ▼
+              2024.02 · TravelPlanner (ICML'24 Spotlight)
+              [长视野 + 多约束基准 | GPT-4 = 0.6% | 双维四级评估协议]
+                              │
+                              │  缺口：诊断出了 0.6%，但没给出训练路径
+                              │  伏笔：评估协议本身可当奖励函数用（无人使用）
+                              ▼
+        ┌─────────────────────┴──────────────────────┬────────────────────┐
+        │                                            │                    │
+   2025.03 · Search-R1                        2025.03 · DAPO       2025.07 · ARPO (ICLR'26)
+   [RL + 检索交错]                             [大规模 RL 系统]      [熵驱动自适应 rollout]
+   [outcome reward]                            [Clip-Higher]        [advantage attribution]
+   [token masking]                             [Dynamic Sampling]   [半个工具预算]
+   [7B +41% / 3B +20%]                         [AIME24: 50 vs 47]
+        │                                       [50% 训练步数]              │
+        │                                            │                    │
+   缺口：单工具短视野                          缺口：单轮长 CoT      缺口：假设"探索不足"
+   outcome reward 依赖                         32B 单点验证         恒为瓶颈；未测规模
+   初始成功率 >> 0                             未测小模型                  │
+        │                                            │                    │
+        │                        2025.09 · Planner-R1 (ICLR'26 under review)
+        │                        [TravelPlanner 上的 reward shaping]
+        │                        [56.9% @ 180 queries | 8B ≈ 32B]
+        │                        [3.5× compute / 1.5× memory 效率]
+        │                              │
+        │                        缺口：仅 8B/32B 两点；代码未公开
+        │                              未做算法轴对照
+        └──────────────────┬───────────┴────────────────────┘
+                           │  各自补全一个维度，但都是单轴
+                           ▼
+      ═══════════════════════════════════════════════════════════
+       2026.03 · Agent-STAR  [汇聚点]
+       五轴受控消融：奖励 × 规模 × 数据 × 算法 × 环境
+       核心命题：设计选择是模型容量的函数，不是常量
+       · 奖励轴翻转点：3B→7B（Curriculum → Sum，差 5.8pp）
+       · 算法轴翻转点：1.5B→3B（ARPO +7.4pp → −0.7pp）
+       · 7B SOTA: 62.8%（vs GPT-4 0.6% / Kimi-K2.5 &lt;15%）
+       ⚠ 未测轴：OOD 净增益随规模趋零（+14.1 → +4.3 → +1.0pp）
+      ═══════════════════════════════════════════════════════════</div>
+
+    <h4>演进的内在逻辑</h4>
+    <p><strong>推动力</strong>可以概括为一句话——<strong>从「让 agent 会做」到「让 agent 学会做」再到「知道该怎么教」</strong>。</p>
+    <ul>
+      <li><strong>阶段一（2023–2024.02）：能力展示与能力证伪。</strong>ReAct 证明 prompt 能让 LLM 用工具；TravelPlanner 用 0.6% 证明这条路走不到长视野。<strong>转折信号：0.6% 太低，低到无法用「提示工程再努努力」来解释。</strong></li>
+      <li><strong>阶段二（2025.03–2025.07）：RL 机器的搭建。</strong>Search-R1 解决「RL 怎么和工具交错」，DAPO 解决「怎么规模化且不坍缩」，ARPO 解决「多轮场景的信用分配」。三者是<strong>并行的、互不引用的基础设施建设</strong>。<strong>共同盲区：所有人都在优化「方法」，没有人把「模型规模」当作实验变量。</strong></li>
+      <li><strong>阶段三（2025.09–2026.03）：配方学与边界勘定。</strong>Planner-R1 第一次问「多大的模型配多密的奖励」，STAR 扩展到五个轴。<strong>关键转折：研究对象从「算法」变成了「算法与容量的交互」。</strong></li>
+    </ul>
+
+    <h4>社区关注点的三次转移</h4>
+    <ol>
+      <li><strong>准确率 → 数据效率</strong>：Search-R1 报相对提升，Planner-R1 报「180 条 query」，STAR 报「1K sweet spot」。<strong>样本预算从背景信息升格为一等指标。</strong></li>
+      <li><strong>性能 → 性能/成本比</strong>：STAR 表 4 把 GPU 小时与 Success 并列；ARPO 的「半个工具预算」是同一趋势的早期信号。</li>
+      <li><strong>in-domain → 泛化税</strong>：这一转移<strong>尚未完成</strong>。STAR 是第一批系统报告 OOD 退化的工作，但如第三部分所示，它自己的数据支持一个比它承认的更强的结论。<strong>这是脉络的下一个转折点，目前还没有论文站上去。</strong></li>
+    </ol>
+
+    <div class="callout">
+      <strong>一个反向的观察。</strong>这条演进线上有一个<strong>隐含的、未被检验的共识</strong>——所有工作都默认「更好的 RL = 更好的 agent」。而 STAR 的表 2 提供了第一份反证材料：<strong>在 7B 上，RL 阶段对 OOD 的净贡献是 +1.0pp，而 SFT 蒸馏阶段的贡献是 +23.8pp（18.1 → 41.9）</strong>。如果这个比例在更大规模上继续恶化，整条演进线的价值主张需要被重新论证。
+    </div>
+  </section>
+
+  <h2>第七部分 · 相关工作表格对标</h2>
+
+  <section class="card">
+    <div class="tblwrap">
+    <table>
+      <tr><th>工作</th><th>年月</th><th>会议 / 出版</th><th>核心贡献</th><th>关键指标</th><th>与核心工作的关系</th></tr>
+      <tr><td>ReAct</td><td>2022.10</td><td>ICLR 2023</td><td>推理-行动交错范式</td><td>—</td><td>范式源头（仅在脉络中提及）</td></tr>
+      <tr><td>TravelPlanner</td><td>2024.02</td><td><strong>ICML 2024 Spotlight</strong></td><td>长视野多约束基准 + 双维四级评估协议</td><td>GPT-4 = <strong>0.6%</strong>；1,225 intent</td><td><strong>问题来源</strong>；评估协议被重用为奖励基元</td></tr>
+      <tr><td>Search-R1</td><td>2025.03</td><td>arXiv（有 OpenReview）</td><td>RL + 检索交错；token masking</td><td>7B <strong>+41%</strong> / 3B <strong>+20%</strong></td><td><strong>技术来源 + OOD 基线</strong></td></tr>
+      <tr><td>DAPO</td><td>2025.03</td><td>arXiv（ByteDance Seed）</td><td>四项大规模 RL 技术</td><td>AIME24 <strong>50</strong> vs 47，<strong>50% 步数</strong></td><td><strong>基础设施 + 对照组</strong></td></tr>
+      <tr><td>ARPO</td><td>2025.07</td><td><strong>ICLR 2026 Poster</strong></td><td>熵驱动自适应 rollout + 优势归因</td><td>13 基准更优，<strong>半个工具预算</strong></td><td><strong>被 STAR 划定适用上界</strong>：1.5B +7.4pp → 7B −4.5pp</td></tr>
+      <tr><td>Planner-R1</td><td>2025.09</td><td>ICLR 2026 Under review</td><td>TravelPlanner 上的 reward shaping</td><td><strong>56.9% @ 180 queries</strong>；8B ≈ 32B</td><td><strong>最直接竞品，但 STAR 未做 head-to-head</strong></td></tr>
+      <tr class="best"><td><strong>Agent-STAR</strong></td><td><strong>2026.03</strong></td><td><strong>arXiv 预印本</strong></td><td><strong>五轴受控消融；scale-dependent 配方</strong></td><td><strong>7B = 62.8%</strong>；ARPO 收益翻转</td><td><strong>汇聚点</strong></td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>表格读法：</strong>从上到下，「关键指标」一列的性质在变化——从「任务分数」（0.6%）到「相对提升」（+41%）到「效率比」（半个预算、50% 步数、180 queries），再到 STAR 的「翻转点」（+7.4pp → −4.5pp）。<strong>指标语言本身记录了这个子领域的成熟过程。</strong>
+    </div>
+  </section>
+
+  <h2>第八部分 · 开放挑战与研究机会</h2>
+
+  <section class="card">
+    <h3>8.1 理论层面</h3>
+
+    <h4>① RL 的 OOD 净贡献是否随模型容量单调趋零？交点在哪？</h4>
+    <p>可直接执行的实验：<strong>在 1.5B / 3B / 7B / 14B / 32B 五个规模上，固定 SFT 数据与 RL 数据，只测「最优 RL 配置的 OOD 均分 − SFT 的 OOD 均分」</strong>。STAR 的三点已给出 +14.1 / +4.3 / +1.0，<strong>外推预测 14B 处为负</strong>。若交点确实在 10B 量级，工业界当前在 30B+ 模型上做 agentic RL 的 OOD 代价需要被定价。<strong>高价值、低门槛</strong>——复用 STAR 的开源 pipeline 即可，只需扩展两个规模档。</p>
+
+    <h4>② 奖励分量的加权是否比奖励密度更重要？</h4>
+    <p>STAR 的 <code>r_sum</code> 五个分量系数全为 1。表 3 的 Hard-1K 显示，数据分布偏移时 CS Macro 崩塌 34.6pp 而 HC 分量几乎不动——<strong>暗示各分量的有效梯度权重是被数据分布而非奖励系数决定的</strong>。具体实验：<strong>固定 Mixed-1K，扫描 <code>r = α·s_cs^micro + β·s_cs^macro + γ·s_hard^micro + δ·s_hard^macro + ε·s^success</code> 的系数单纯形，看 Success 响应面是否存在优于 (1,1,1,1,1) 的点，以及最优点是否随规模移动。</strong>这能把「奖励密度」这个一维旋钮拆成五维，检验 Takeaway 1 是不是降维投影下的伪相变。</p>
+
+    <h4>③ 「容量替代探索」的机制解释缺失</h4>
+    <p>STAR 给出了现象，没给出机制。可操作检验：<strong>测量 1.5B / 3B / 7B 在 rollout 时的组内轨迹多样性（如工具调用序列的编辑距离方差）</strong>。若假说成立，7B 的 GRPO 组内多样性应<strong>已接近或超过</strong> 1.5B 的 ARPO 组内多样性。这是一个不需要新训练的直接测量。</p>
+  </section>
+
+  <section class="card">
+    <h3>8.2 工程与应用层</h3>
+
+    <h4>④ Planner-R1 vs Agent-STAR 的受控 head-to-head</h4>
+    <p>全领域最明确的实验空白。<strong>建议设定：相同 base（Qwen2.5-7B）、相同 GPU 预算、相同测试划分，横轴为总监督样本预算（180 / 500 / 1K / 2198），纵轴为 Success 与 OOD 均分。</strong>两条曲线的交点位置将直接回答「reward shaping 的样本效率优势能撑到多大预算」。目前双方各自报数（56.9% @ 180 vs 62.8% @ 2198），<strong>无法判断是方法差异还是预算差异</strong>。</p>
+
+    <h4>⑤ 环境噪声的形态学基准</h4>
+    <p>STAR 只测了「随机全局失败」。真实工具失效至少四种形态，毒性不同：</p>
+    <div class="tblwrap">
+    <table>
+      <tr><th>噪声形态</th><th>语义</th><th>预期毒性</th></tr>
+      <tr><td>随机失败（STAR 已测）</td><td>无信息</td><td>低——模型可学会重试</td></tr>
+      <tr><td>超时 / 限流</td><td>无信息 + 时序耦合</td><td>中——影响规划节奏</td></tr>
+      <tr><td>部分返回（截断）</td><td><strong>不完整信息</strong></td><td>中高——模型不知道自己不知道</td></tr>
+      <tr><td>脏数据（错误但格式正确）</td><td><strong>错误信息</strong></td><td>高——直接污染约束校验</td></tr>
+    </table>
+    </div>
+    <p><strong>具体机会：构造可配置的噪声注入层，对四种形态各扫 0/5/10/20%，产出一张 4×4 的鲁棒性矩阵。</strong>这类「环境侧基准」目前完全空白，且门槛很低——STAR 的沙箱已开源。</p>
+
+    <h4>⑥ 在线 / 流式设定下的配方是否变化？</h4>
+    <p>现有全部工作都是离线固定数据集的设定。<strong>但真实 agent 部署是流式的——任务持续到来，难度分布随时间漂移。</strong>具体问题：<strong>当难度分布随时间漂移时，「Mixed 4:3:3」静态配比是否仍最优？还是需要一个自适应难度采样器（如按当前策略成功率反向加权）？</strong>可在 STAR 框架里直接实例化：把 1K prompts 拆成 10 个 batch 按不同难度序送入，对比静态混合与自适应采样。</p>
+
+    <h4>⑦ 教师上限的量化</h4>
+    <p>接批判第 ⑧ 点。<strong>具体实验：报告 DeepSeek-V3.2-Exp-Thinking 在 TravelPlanner 官方测试集上的 Success</strong>，计算「蒸馏效率比」= 62.8% / 教师成绩。若比值 &gt; 1，RL 确实创造了教师没有的能力；若 &lt; 1，整个 pipeline 应被重新定位为压缩而非训练。<strong>成本极低，但对结论解释的影响极大。</strong></p>
+  </section>
+
+  <section class="card">
+    <h3>8.3 新兴方向</h3>
+
+    <h4>⑧ 多模态长视野工具编排的奖励分解</h4>
+    <p>STAR 的四级密度阶梯依赖「评估协议可分解为二值检查项」这个前提。<strong>在多模态 agent（GUI 操作、具身导航）里，成功判定往往是连续的或需要 VLM 裁判——micro/macro 的分解怎么定义？</strong>具体问题：<strong>当 macro 指示函数由一个有噪声的 VLM judge 给出时，指示函数的跳变会被 judge 噪声抹平，<code>r_sum</code> 的「临门一脚」激励是否失效？</strong>这是把 STAR 方法论迁到具身/GUI 领域必须先回答的问题。</p>
+
+    <h4>⑨ 「配方随规模变化」是否也适用于 SFT 阶段？</h4>
+    <p>STAR 只在 RL 阶段做了规模消融，SFT 阶段（1,198 条轨迹）对三个规模<strong>完全相同</strong>。但表 1 显示 SFT 后的起点差异巨大（6.9 / 12.2 / 19.7）。<strong>具体机会：对 1.5B 是否应该用更多但更简单的 SFT 轨迹，对 7B 是否应该用更少但更难的？</strong>即把「数据难度配比」轴从 RL 阶段前移到 SFT 阶段。</p>
+
+    <h4>⑩ 长视野 agent 的遗忘与安全边界</h4>
+    <p>KL-free 训练意味着策略可任意漂离 SFT 分布。<strong>在 in-domain 提升 43.1pp 的同时，模型损失了什么？</strong>STAR 只测了 QA 类 OOD。<strong>具体机会：在 STAR 的 checkpoint 上跑安全性 / 指令遵循 / 拒答一致性评测（如 Multi-IF、有害指令拒绝率），量化 agentic RL 的「对齐漂移」。</strong>六个 checkpoint 已全部开源，这是一个可以在一天内完成的实验，且<strong>目前没有任何 agentic RL 论文报告过这类数据</strong>。</p>
+  </section>
+
+  <h2>第九部分 · 其他值得关注的近期工作</h2>
+
+  <section class="card">
+    <p><em>以下为本期候选池中未展开的工作。<strong>未深读，评价基于摘要与检索信息，请以原文为准。</strong></em></p>
+
+    <h4>Agentic Reinforced Policy Optimization (ARPO) — 2025.07，ICLR 2026 Poster</h4>
+    <p>本报告的相关工作之一，但作为独立方法仍值得单读：「工具返回后 token 熵升高」这个观察本身就是可复用的诊断信号，与 STAR 的批判并不冲突——ARPO 在小模型上的 +7.4pp 是真实的。<br>
+    <a href="https://arxiv.org/abs/2507.19849">arXiv</a> | <a href="https://github.com/RUC-NLPIR/ARPO">Code</a> | <a href="https://iclr.cc/virtual/2026/poster/10009306">ICLR 页</a></p>
+
+    <h4>A Practitioner's Guide to Multi-turn Agentic Reinforcement Learning — 2025.10，NeurIPS 2025</h4>
+    <p>与 STAR 同属「配方类」实证研究，但侧重多轮交互的一般设定而非单一基准。<strong>与 STAR 对读可检验 scale-dependence 结论的跨任务稳健性</strong>——这正是 STAR 自己承认的 OOD 评估局限。<br>
+    <a href="https://arxiv.org/abs/2510.01132">arXiv</a> | <a href="https://neurips.cc/virtual/2025/127960">NeurIPS 页</a></p>
+
+    <h4>Rethinking Agentic Reinforcement Learning In Large Language Models — 2026.04，arXiv</h4>
+    <p>从标题看是对 agentic RL 基本假设的系统性质疑，与本报告推导出的「RL 的 OOD 净贡献趋零」可能形成呼应。<strong>值得优先核实其是否报告了 OOD 对照数据。</strong><br>
+    <a href="https://arxiv.org/abs/2604.27859">arXiv</a></p>
+
+    <h4>From Reasoning to Agentic: Credit Assignment in RL for LLMs — 2026.04，arXiv</h4>
+    <p>信用分配是 9.2 步长轨迹的核心难题，而 STAR 的整条奖励轴其实是在用「密度」绕开「分配」。这篇正面处理分配问题，是 STAR 的补集。<br>
+    <a href="https://arxiv.org/abs/2604.09459">arXiv</a> | <a href="https://huggingface.co/papers/2604.09459">HF Papers</a></p>
+
+    <h4>RL for LLM-based Multi-Agent Systems through Orchestration Traces — 2026.05，arXiv</h4>
+    <p>把 STAR 的单 agent 长视野问题扩展到多 agent 编排。<strong>若 scale-dependence 在单 agent 上成立，多 agent 场景下「每个 agent 该多大」就成了一个新的设计维度。</strong><br>
+    <a href="https://arxiv.org/abs/2605.02801">arXiv</a></p>
+
+    <h4>Benchmarking and Improving GUI Agents in High-Dynamic Environments — 2026.04，arXiv</h4>
+    <p>直接对应本报告 8.2 第 ⑤ 点提出的「环境噪声形态学」空白，只是场景在 GUI 而非工具 API。<strong>是那个研究机会的一个已有落点，值得先看它做到了哪一步。</strong><br>
+    <a href="https://arxiv.org/html/2604.25380">arXiv</a></p>
+
+    <h4>Finetuning VLA Models Requires Fewer Layers Than You Think — 2026.06，arXiv</h4>
+    <p>具身方向。与 STAR 共享同一种论证结构——「大家默认要做的事其实不必做」。<strong>两篇一起读，能看出 2026 年这一批实证研究共同的「减法」倾向。</strong><br>
+    <a href="https://arxiv.org/abs/2606.20246">arXiv</a></p>
+
+    <h4>Planner-R1: Reward Shaping Enables Efficient Agentic RL with Smaller LLMs — 2025.09</h4>
+    <p>已在第五部分展开，此处重列因为它是<strong>验证 STAR 结论最直接的对照材料</strong>，其 180-query 的样本效率主张若成立，影响远超 TravelPlanner 一个基准。<br>
+    <a href="https://arxiv.org/abs/2509.25779">arXiv</a> | <a href="https://openreview.net/forum?id=CmOaD42eAT">OpenReview</a></p>
+  </section>
+
+  <footer>
+    <p><strong>索引未更新：</strong>本次为云端定时任务，用户桌面端未连接，<code>ml-report-index.md</code> 无法访问与追加。本期条目需手动补录：<code>2026-08-06 | RL/Agent/具身 | Demystifying RL for Long-Horizon Tool-Using Agents (Agent-STAR) | arXiv 2603.21972 | agentic RL 的最优配置是模型容量的函数；但 7B 上 RL 对 OOD 的净贡献仅 +1.0pp</code></p>
+    <p><strong>候选池与抽样：</strong>25 篇候选，<code>shuf -i 1-25 -n 3</code> → [3, 17, 15]，取 #3。重抽 0 次。</p>
+    <p><strong>数据溯源：</strong>表 1–4 与附录表 8–9 数据来自 <a href="https://arxiv.org/html/2603.21972v1">arXiv:2603.21972v1 HTML 全文</a>。图 5–8 为位图，相关数值已标注为未提取。</p>
+    <p><strong>生成时间：</strong>2026-08-06 · ML/AI 每日深度论文追踪 · 所有链接于当日验证可达</p>
+  </footer>
+
+</div>
+<div class="tip" id="tip"></div>
+<script>
+(function(){
+  var tip = document.getElementById('tip');
+  document.querySelectorAll('svg.chart rect.bar').forEach(function(el){
+    el.addEventListener('mousemove', function(e){
+      tip.innerHTML = '<strong>' + el.getAttribute('data-l') + '</strong> &nbsp; ' + el.getAttribute('data-v');
+      tip.style.opacity = 1;
+      var x = e.clientX + 14, y = e.clientY - 12;
+      if (x + 260 > window.innerWidth) x = e.clientX - 250;
+      tip.style.left = x + 'px';
+      tip.style.top = y + 'px';
+    });
+    el.addEventListener('mouseleave', function(){ tip.style.opacity = 0; });
+  });
+})();
+</script>
+</body>
+</html>

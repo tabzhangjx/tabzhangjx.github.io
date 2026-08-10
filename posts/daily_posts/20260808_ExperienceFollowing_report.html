@@ -1,0 +1,806 @@
+---
+layout: null
+title: "Experience-Following：记忆如何成为 Agent 的行为模仿源"
+date: 2026-08-08
+excerpt: "重新审视 LLM Agent 的记忆管理：历史经验不只是知识库，还会塑造后续行为，并可能通过经验跟随产生持续放大的性能偏差。"
+permalink: /blog/2026/08/08/experience-following-memory-management/
+blog_post: true
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Memory 每日追踪 · 2026-08-08 · Experience-Following (ACL 2026)</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --accent-soft: #cde2fb;
+    --good: #006300;
+    --crit: #d03b3b;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --accent-soft: #184f95;
+    --good: #0ca30c;
+    --crit: #e66767;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  header.hero {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 32px 34px;
+    margin-bottom: 34px;
+  }
+  .eyebrow {
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; margin: 0 0 10px;
+  }
+  h1 { font-size: 30px; line-height: 1.3; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .subtitle { font-size: 17px; color: var(--text-secondary); margin: 0 0 18px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    font-size: 12.5px; padding: 4px 11px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--text-secondary);
+    background: var(--page);
+  }
+  .chip.venue { border-color: var(--series-1); color: var(--series-1); font-weight: 600; }
+  .lede {
+    border-left: 3px solid var(--series-1);
+    padding: 4px 0 4px 18px; margin: 20px 0 0;
+    color: var(--text-secondary); font-size: 15.5px;
+  }
+  h2 {
+    font-size: 22px; margin: 52px 0 16px; padding-bottom: 10px;
+    border-bottom: 1px solid var(--border); letter-spacing: -0.01em;
+  }
+  h3 { font-size: 18px; margin: 34px 0 12px; }
+  h3:first-child { margin-top: 0; }
+  h4 { font-size: 15.5px; margin: 24px 0 8px; color: var(--text-secondary); }
+  p { margin: 0 0 14px; }
+  section.card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 26px 30px; margin-bottom: 20px;
+  }
+  a { color: var(--series-1); text-decoration: none; border-bottom: 1px solid transparent; }
+  a:hover { border-bottom-color: var(--series-1); }
+  code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px; background: var(--page); padding: 1.5px 5px;
+    border-radius: 4px; border: 1px solid var(--border);
+  }
+  .formula {
+    background: var(--page); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 16px; margin: 12px 0; font-family: ui-monospace, Menlo, monospace;
+    font-size: 13.5px; overflow-x: auto; color: var(--text-primary);
+    white-space: pre;
+  }
+  .tw { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0 20px; font-size: 14.5px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: .05em; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--accent-soft); font-weight: 600; }
+  :root[data-theme="dark"] tr.best td { background: rgba(57,135,229,.18); }
+  .pos { color: var(--good); }
+  .neg { color: var(--crit); }
+  ol, ul { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 8px; }
+  .callout {
+    border-left: 3px solid var(--series-2); background: var(--page);
+    padding: 14px 18px; border-radius: 0 8px 8px 0; margin: 18px 0;
+    font-size: 15px; color: var(--text-secondary);
+  }
+  .callout strong { color: var(--text-primary); }
+  .callout.hi { border-left-color: var(--series-1); }
+  .quote { border-left: 3px solid var(--baseline); padding: 2px 0 2px 16px; margin: 12px 0;
+    color: var(--text-secondary); font-size: 14.5px; font-style: italic; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  button.tgl {
+    font: inherit; font-size: 13px; padding: 6px 14px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface-1);
+    color: var(--text-secondary); cursor: pointer;
+  }
+  button.tgl:hover { color: var(--text-primary); }
+  .figure { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 24px 26px; margin: 24px 0; }
+  .fig-title { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+  .fig-sub { font-size: 13.5px; color: var(--muted); margin: 0 0 18px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-bottom: 16px; font-size: 13.5px; color: var(--text-secondary); }
+  .legend span.sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 7px; vertical-align: -1px; }
+  svg.chart { width: 100%; height: auto; display: block; }
+  svg.chart text { font-family: system-ui, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  svg.chart rect.bar { cursor: crosshair; }
+  svg.chart rect.bar:hover { stroke: var(--text-primary); stroke-width: 1.2; }
+  .tip {
+    position: fixed; pointer-events: none; opacity: 0; transition: opacity .1s;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 12px; font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,.14);
+    z-index: 50; color: var(--text-primary); white-space: nowrap;
+  }
+  .flow {
+    background: var(--page); border: 1px solid var(--border); border-radius: 10px;
+    padding: 20px 22px; font-family: ui-monospace, Menlo, monospace;
+    font-size: 12.5px; line-height: 1.8; overflow-x: auto; color: var(--text-secondary);
+    white-space: pre;
+  }
+  footer { margin-top: 60px; padding-top: 22px; border-top: 1px solid var(--border); font-size: 13.5px; color: var(--muted); }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    h1 { font-size: 23px; }
+    h2 { font-size: 19px; }
+    section.card { padding: 20px 16px; }
+    .figure { padding: 18px 14px; }
+    table { font-size: 12.5px; }
+    th, td { padding: 7px 7px; }
+    .flow { font-size: 10.5px; padding: 14px 12px; }
+    .formula { font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="toolbar">
+    <button class="tgl" id="tglBtn">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ACL 2026 · Agent Memory · 每日文献追踪</p>
+    <h1>记忆不是知识库，而是行为的模仿源</h1>
+    <p class="subtitle">How Memory Management Impacts LLM Agents: An Empirical Study of Experience-Following Behavior</p>
+    <div class="meta">
+      <span class="chip venue">ACL 2026 Long · pp. 623–645</span>
+      <span class="chip">2026-08-08</span>
+      <span class="chip">Xiong et al. · Harvard / MSU / UGA</span>
+      <span class="chip">arXiv 2505.16067v2</span>
+      <span class="chip">核心议题：记忆准入与淘汰</span>
+    </div>
+    <p class="lede">Agent 的记忆库不是一个越大越好的知识仓库，而是一条<strong>带正反馈的输出复制通道</strong>——检索到的经验有多像当前任务，Agent 的输出就有多像那条经验，于是记忆质量的误差会沿着这条通道被无限放大。四个智能体上，不加筛选地写入记忆，全部劣于一条都不新增。</p>
+  </header>
+
+  <section class="card">
+    <h3>当日检索情况说明</h3>
+    <p>本期检索覆盖 ACL Anthology 2026、arXiv cs.CL/cs.AI（2601–2607 段）、NeurIPS 2024/2025 proceedings、AAAI 2024 proceedings、ICLR 2026 MemAgents workshop 页面，以及 <code>Shichun-Liu/Agent-Memory-Paper-List</code>，累计筛查 20+ 篇候选，包括 CMI-Mem (2607.20553)、Filesystem-Based Memory (2607.26637)、GateMem (2606.18829)、Memory Beyond Recall (2606.09483)、Governed Shared Memory (2606.24535)、EvolveMem (2605.13941)、From Recall to Forgetting (2604.20006) 等。</p>
+    <p><strong>选题决策（无人值守下自行判断）：</strong></p>
+    <ol>
+      <li>按任务给定的优先级（顶会主会长文 &gt; Findings/Workshop &gt; arXiv），选定 <strong>ACL 2026 Volume 1: Long Papers, pp. 623–645</strong> 这篇实证研究。它是本次检索中<strong>唯一一篇 ACL 2026 主会长文且未被首期报告覆盖</strong>的候选。</li>
+      <li>排除 <code>2607.08032</code>（rate–distortion 视角的记忆压缩，含七轴分类表与四层应用对比表）——从任务描述中的示例判断，该文极可能已在此前报告中详述。</li>
+      <li>排除 CMI-Mem 作为核心工作：其一它是 arXiv 预印本（优先级低于 ACL 主会），其二它与首期已覆盖的 Memory-R1 / AgeMem 同属「RL 训练记忆策略」子方向，不利于覆盖面轮换。它被放入第 6 节。</li>
+      <li><strong>坦诚说明：</strong>核心工作的 arXiv v1 提交于 2025-05-22，正式发表于 ACL 2026。按「发表或更新在最近 12 个月内」的口径，其<em>发表</em>符合要求，但 preprint 首次公开已有约 15 个月——在 24 个月硬约束内，但读者应知悉。</li>
+      <li><strong>可核实性说明：</strong>本报告所有数值均通过对 <code>arxiv.org/html/2505.16067v2</code> 的<strong>两轮独立抽取交叉验证</strong>得到（Table 1 / Table 2 全表两次抽取一致）。过程中我曾对 CMI-Mem 做过一次抽取，返回了一组看似完整的实验表格，但第二轮严格核验显示该页面正文在 Section 3.3 处截断、实验表并不存在——那组数字是抽取器编造的，已全部丢弃。此处记录以说明本报告的数据纪律。</li>
+    </ol>
+  </section>
+
+  <h2>1. 核心工作深度解析</h2>
+
+  <section class="card">
+    <h3>1.1 摘要与核心定位</h3>
+    <p><strong>原文摘要译述（非概括）。</strong>本文研究记忆管理决策如何影响 LLM Agent 的长期行为。作者聚焦于记忆的<strong>添加</strong>与<strong>删除</strong>这两个最基本的操作，识别出一个「经验跟随（experience-following）」性质：<em>任务输入与被检索记忆记录中的输入之间的高相似度，往往导致高度相似的 Agent 输出</em>。研究由此记录了两个关键问题：<strong>误差传播（error propagation）</strong>——过去的错误会持续累积；以及<strong>错位经验重放（misaligned experience replay）</strong>——即使是正确的执行轨迹也可能价值有限。作者论证必须对存入记忆的质量加以调控，并提出用<strong>未来任务的评估结果</strong>作为记录保留与否的质量指标。</p>
+    <div class="callout hi">
+      <strong>一句话核心创新：</strong>记忆不是知识库，而是<strong>行为的模仿源</strong>；因此记忆管理的第一性问题不是「存多少」，而是「存进去的东西会被复制多少次」。
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>1.2 Motivation 与问题论证</h3>
+    <p><strong>指向的具体痛点。</strong>绝大多数 Agent 记忆系统（Generative Agents 的 memory stream、ExpeL 的 experience pool、MemoryBank 的遗忘曲线、A-MEM 的 Zettelkasten 链接）都隐含同一个假设：<strong>记忆库的扩张单调有益</strong>。这些系统把工程重心放在「如何组织」和「如何检索」，却几乎没有系统性地问过「持续写入本身是否会伤害 Agent」。论文把这个空白明确为其研究问题：</p>
+    <p class="quote">“How do the evolving dynamics of the memory bank, driven by continuous memory operations, influence long-term agent execution?”</p>
+    <p><strong>痛点如何被量化。</strong>论文的量化方式是把「不加筛选地写入」直接与「完全不写入」对撞。这是全文最锋利的一刀（数据来自论文 Table 1，倍数与差值为本报告计算）：</p>
+    <div class="tw">
+    <table>
+      <tr><th>智能体</th><th class="num">Fixed（不新增）</th><th class="num">Add all（全量写入）</th><th class="num">记忆规模倍数</th><th class="num">性能差</th></tr>
+      <tr class="best"><td>RegAgent (SR↑)</td><td class="num">67.53</td><td class="num">55.48</td><td class="num">41.0×</td><td class="num neg">−12.05 pp</td></tr>
+      <tr><td>EHRAgent (ACC↑)</td><td class="num">16.75</td><td class="num">13.05</td><td class="num">24.1×</td><td class="num neg">−3.70 pp</td></tr>
+      <tr><td>AgentDriver (SR↑)</td><td class="num">40.11</td><td class="num">32.32</td><td class="num">11.8×</td><td class="num neg">−7.79 pp</td></tr>
+      <tr><td>CIC-IoT (ACC↑)</td><td class="num">71.50</td><td class="num">59.90</td><td class="num">21.0×</td><td class="num neg">−11.60 pp</td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>四个智能体，四战四败。</strong>把记忆库扩大一到两个数量级，性能一致地低于一条记录都不新增的固定基线，最大跌幅 12.05 pp（RegAgent，相对下降 17.8%）。这就是论文的问题论证——它不需要任何理论，只需要这一行对比：<strong>当前 Agent 记忆实践的默认配置（写入一切）是一个负收益操作。</strong>
+    </div>
+    <p><strong>与前驱工作相比的新颖之处。</strong>此前记忆研究的批评角度是「检索不准」（→ 更好的索引与 embedding）或「结构不够」（→ 图/链接/分层）。本文的角度是<strong>写入策略本身</strong>，且把它放在<strong>长时序演化</strong>下考察（数千次执行的滚动曲线，而非单次 QA 准确率）。这是前驱工作系统性缺席的维度：A-MEM、Mem0、MemoryBank 都在单轮或数十轮的评测尺度上报告收益，无一在数千次执行的尺度上检验记忆库的<strong>自污染动力学</strong>。</p>
+    <p><strong>为什么值得解决。</strong>（a）<strong>应用价值</strong>——所有生产级 Agent（客服、驾驶、临床助手）都在做持续写入，本文说明这是默认亏损的；（b）<strong>安全意义</strong>——经验跟随正是 AgentPoison 一类记忆投毒攻击有效的机理，本文把攻击面转述为一个<strong>常态运行下自发出现的</strong>退化机制，即「不需要攻击者，Agent 自己就会给自己投毒」；（c）<strong>理论意义</strong>——它把记忆管理从工程调参问题重述为一个带反馈的控制问题。</p>
+  </section>
+
+  <section class="card">
+    <h3>1.3 论文的故事线（论证结构）</h3>
+    <p>论文的推进不是「提出方法—验证方法」，而是<strong>观察 → 归因 → 对策 → 压力测试</strong>四步，每一步都由上一步的失败逼出来：</p>
+    <div class="flow">步骤 1  观察：Add-all 全面劣于 Fixed（Table 1）
+        ↓ 追问：多存反而更差，坏在哪个环节？
+步骤 2  机理归因：发现 experience-following
+        —— 输入相似度与输出相似度近乎完美相关（Fig. 3，RegAgent Pearson r ≈ 1）
+        ↓ 由此推出两个必然推论：
+            (a) 误差传播：一条错误记录被检索一次，就复制一次错误
+            (b) 错位重放：一条正确但语境不匹配的记录，同样被高保真复制
+        ↓ 追问：既然复制是高保真的，唯一的控制点是「允许什么进入被复制池」
+步骤 3  对策：把「环境反馈 / 轨迹评估器」接进记忆的写入与删除闸门
+        —— 写入端：π(q,e) ∈ {0,1} 由评估器决定
+        —— 删除端：φ_per（频率判据）与 φ_hist（历史效用判据）
+        ↓ 追问：这个闸门在非平稳条件下还成立吗？
+步骤 4  压力测试：任务分布漂移 + 记忆容量约束下重跑（Fig. 7）</div>
+    <p><strong>关键转折点</strong>在步骤 2 → 3 的推理：作者观察到<strong>输出相似度几乎是输入相似度的恒等函数</strong>，由此推断——如果 Agent 对检索内容的复制是高保真且不可调的，那么在推理端做任何加固（更好的 prompt、更强的 reader）都是治标；<strong>唯一有杠杆的位置是记忆库的准入闸门</strong>。这一推断是全文所有实验设计的隐含前提，也是全文最脆弱的一环（详见 §1.7 批判①），因为「近乎完美相关」这个关键前提只在<strong>合成任务 RegAgent</strong> 上被量化过。</p>
+  </section>
+
+  <section class="card">
+    <h3>1.4 方法论与机制解剖</h3>
+    <p>论文不提出新架构，它形式化的是<strong>记忆管理的策略空间</strong>。工作流见 Fig. 1（“Illustration of the memory management workflow after each agent execution.”）：每次执行后，(query, execution) 对经由添加策略决定是否入库，同时删除策略扫描存量记录。</p>
+
+    <h4>添加策略 π(q, e) ∈ {0, 1}</h4>
+    <div class="tw">
+    <table>
+      <tr><th>策略</th><th>定义</th><th>记忆规模后果</th></tr>
+      <tr><td>Fixed（基线）</td><td>π<sub>fixed</sub>(q,e) = 0，永不新增</td><td>恒定 100 / 180 / 50 条</td></tr>
+      <tr><td>Add-all</td><td>π<sub>all</sub>(q,e) = 1，全量写入</td><td>增长 12–41×</td></tr>
+      <tr><td>Coarse（自动评估器）</td><td>π<sub>automatic</sub>(q,e)，由 C1/C2/C3 判定</td><td>增长 6–35×</td></tr>
+      <tr class="best"><td>Strict（人工 / oracle）</td><td>π<sub>human</sub>(q,e)，理想评估</td><td>增长 6–29×</td></tr>
+    </table>
+    </div>
+    <p><strong>评估器 C1/C2/C3 的具体构造</strong>（理解全部结果的关键；论文对两类智能体用了两套完全不同的东西）：</p>
+    <div class="tw">
+    <table>
+      <tr><th></th><th>RegAgent（合成回归）</th><th>EHRAgent / AgentDriver / CIC-IoT（真实任务）</th></tr>
+      <tr><td>C1</td><td>误差阈值 ≤ 1.6</td><td>GPT-4o-mini 作为评估器</td></tr>
+      <tr><td>C2</td><td>误差阈值 ≤ 1.4</td><td>GPT-4.1-mini 作为评估器</td></tr>
+      <tr><td>C3</td><td>误差阈值 ≤ 1.2</td><td>GPT-4.1-mini，在 <strong>300 条</strong>正确判定数据上微调</td></tr>
+    </table>
+    </div>
+    <p>即：在 RegAgent 上 C1→C3 是<strong>阈值收紧</strong>（一个连续可控的旋钮），在真实任务上 C1→C3 是<strong>评估器能力升级</strong>（三个离散的不同模型）。这两条轴被放进同一张表的同一列组里，是论文一个未被讨论的方法论跳跃（见 §1.7 批判⑤）。</p>
+
+    <h4>删除策略：两个判据的形式化</h4>
+    <p><strong>周期性删除</strong>（频率信号）：</p>
+    <div class="formula">φ_per(q_i, e_i, t, t′) = 1[ fr_t(q_i, e_i) − fr_t′(q_i, e_i) ≤ α ]</div>
+    <p>其中 <code>fr_t(q_i, e_i)</code> 是记录在时刻 t 的累计检索次数。语义：在窗口 [t′, t] 内几乎没被检索到的记录，删。</p>
+    <p><strong>历史效用删除</strong>（效用信号）：</p>
+    <div class="formula">φ_hist(q_i, e_i, t) = δ(q_i, e_i, t)   if fr_t(q_i, e_i) &gt; n
+                     = 0                otherwise
+
+δ(q_i, e_i, t) = 1[ (1 / fr_t) · Σ_{m=1..fr_t} Φ(q_m, e_m) ≤ β ]</div>
+    <p>其中 Φ 是效用评估器。语义：一条记录被检索了足够多次（&gt; n）之后，如果它<strong>参与过的那些下游执行的平均质量</strong>低于 β，删。<strong>Combined</strong> = 两者取并集。</p>
+    <p>三个判据的信息定位对照——这是理解 §1.5 结果的钥匙：</p>
+    <div class="tw">
+    <table>
+      <tr><th>判据</th><th>使用的信号</th><th>是否看下游结果</th><th>直觉隐患</th></tr>
+      <tr><td>φ_per</td><td>检索频率</td><td>✗</td><td>冷门 ≠ 有害；罕见但关键的长尾记录会被误删</td></tr>
+      <tr class="best"><td>φ_hist</td><td>被检索时的下游效用均值</td><td>✓</td><td>需先被检索 n 次才可判定，<strong>有害记录必须先造成 n 次伤害</strong></td></tr>
+      <tr><td>Combined</td><td>两者并集</td><td>部分</td><td>继承 φ_per 的误删风险</td></tr>
+    </table>
+    </div>
+  </section>
+
+  <h2>1.5 实验设计与定量结果</h2>
+
+  <section class="card">
+    <h3>评测台</h3>
+    <div class="tw">
+    <table>
+      <tr><th>智能体</th><th>领域</th><th>指标</th><th>来源</th></tr>
+      <tr><td>RegAgent</td><td>合成线性回归</td><td>SR (Success Rate)</td><td>本文构造</td></tr>
+      <tr><td>EHRAgent</td><td>电子病历问答</td><td>ACC</td><td>Shi et al. 2024</td></tr>
+      <tr><td>AgentDriver</td><td>自动驾驶决策</td><td>SR</td><td>Mao et al. 2024</td></tr>
+      <tr><td>CIC-IoT Agent</td><td>IoT 入侵检测</td><td>ACC</td><td>Neto et al. 2023</td></tr>
+    </table>
+    </div>
+    <p>主 LLM：GPT-4o-mini；附录 B.2 的消融另用 GPT-4o、GPT-4.1-mini、DeepSeek-V3。检索：文本编码器 embedding 上的余弦相似度取 Top-K。</p>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">图 1 · 六种添加策略 × 四个基准（论文 Table 1 全矩阵）</p>
+    <p class="fig-sub">纵轴为各智能体自身指标 SR / ACC（%，0–100）。红色虚线 = 该智能体的 Fixed（零写入）基线。悬停查看数值与对应记忆规模。</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--baseline)"></span>Fixed（不新增）</span>
+      <span><span class="sw" style="background:var(--series-2)"></span>Add all（全量写入）</span>
+      <span><span class="sw" style="background:var(--series-1);opacity:.35"></span>Coarse C1</span>
+      <span><span class="sw" style="background:var(--series-1);opacity:.55"></span>Coarse C2</span>
+      <span><span class="sw" style="background:var(--series-1);opacity:.75"></span>Coarse C3</span>
+      <span><span class="sw" style="background:var(--series-1)"></span>Strict（oracle）</span>
+    </div>
+    <svg class="chart" viewBox="0 0 900 382" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="六种添加策略在四个基准上的性能对比">
+      <line x1="64" y1="300.0" x2="884" y2="300.0" stroke="var(--grid)" stroke-width="1"/>
+      <text x="54" y="304.0" text-anchor="end" font-size="12" fill="var(--muted)">0</text>
+      <line x1="64" y1="246.0" x2="884" y2="246.0" stroke="var(--grid)" stroke-width="1"/>
+      <text x="54" y="250.0" text-anchor="end" font-size="12" fill="var(--muted)">20</text>
+      <line x1="64" y1="192.0" x2="884" y2="192.0" stroke="var(--grid)" stroke-width="1"/>
+      <text x="54" y="196.0" text-anchor="end" font-size="12" fill="var(--muted)">40</text>
+      <line x1="64" y1="138.0" x2="884" y2="138.0" stroke="var(--grid)" stroke-width="1"/>
+      <text x="54" y="142.0" text-anchor="end" font-size="12" fill="var(--muted)">60</text>
+      <line x1="64" y1="84.0" x2="884" y2="84.0" stroke="var(--grid)" stroke-width="1"/>
+      <text x="54" y="88.0" text-anchor="end" font-size="12" fill="var(--muted)">80</text>
+      <line x1="64" y1="30.0" x2="884" y2="30.0" stroke="var(--grid)" stroke-width="1"/>
+      <text x="54" y="34.0" text-anchor="end" font-size="12" fill="var(--muted)">100</text>
+      <line x1="64" y1="300" x2="884" y2="300" stroke="var(--baseline)" stroke-width="1.5"/>
+      <text x="166.5" y="324" text-anchor="middle" font-size="13" fill="var(--text-secondary)">RegAgent (SR)</text>
+      <rect class="bar" x="88.0" y="117.7" width="22" height="182.3" rx="2" fill="var(--baseline)" fill-opacity="1" data-t="RegAgent (SR) · Fixed（不新增）｜67.53（记忆 100 条）"/>
+      <rect class="bar" x="115.0" y="150.2" width="22" height="149.8" rx="2" fill="var(--series-2)" fill-opacity="1" data-t="RegAgent (SR) · Add all（全量写入）｜55.48（记忆 4100 条）"/>
+      <rect class="bar" x="142.0" y="129.4" width="22" height="170.6" rx="2" fill="var(--series-1)" fill-opacity="0.35" data-t="RegAgent (SR) · Coarse C1｜63.18（记忆 3511 条）"/>
+      <rect class="bar" x="169.0" y="122.4" width="22" height="177.6" rx="2" fill="var(--series-1)" fill-opacity="0.55" data-t="RegAgent (SR) · Coarse C2｜65.78（记忆 3347 条）"/>
+      <rect class="bar" x="196.0" y="118.2" width="22" height="181.8" rx="2" fill="var(--series-1)" fill-opacity="0.75" data-t="RegAgent (SR) · Coarse C3｜67.35（记忆 3139 条）"/>
+      <rect class="bar" x="223.0" y="108.4" width="22" height="191.6" rx="2" fill="var(--series-1)" fill-opacity="1.0" data-t="RegAgent (SR) · Strict（oracle）｜70.95（记忆 2938 条）"/>
+      <line x1="84.0" y1="117.7" x2="249.0" y2="117.7" stroke="var(--crit)" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.8"/>
+      <text x="371.5" y="324" text-anchor="middle" font-size="13" fill="var(--text-secondary)">EHRAgent (ACC)</text>
+      <rect class="bar" x="293.0" y="254.8" width="22" height="45.2" rx="2" fill="var(--baseline)" fill-opacity="1" data-t="EHRAgent (ACC) · Fixed（不新增）｜16.75（记忆 100 条）"/>
+      <rect class="bar" x="320.0" y="264.8" width="22" height="35.2" rx="2" fill="var(--series-2)" fill-opacity="1" data-t="EHRAgent (ACC) · Add all（全量写入）｜13.05（记忆 2411 条）"/>
+      <rect class="bar" x="347.0" y="229.3" width="22" height="70.7" rx="2" fill="var(--series-1)" fill-opacity="0.35" data-t="EHRAgent (ACC) · Coarse C1｜26.19（记忆 1447 条）"/>
+      <rect class="bar" x="374.0" y="213.0" width="22" height="87.0" rx="2" fill="var(--series-1)" fill-opacity="0.55" data-t="EHRAgent (ACC) · Coarse C2｜32.21（记忆 1467 条）"/>
+      <rect class="bar" x="401.0" y="206.4" width="22" height="93.6" rx="2" fill="var(--series-1)" fill-opacity="0.75" data-t="EHRAgent (ACC) · Coarse C3｜34.66（记忆 1094 条）"/>
+      <rect class="bar" x="428.0" y="196.1" width="22" height="103.9" rx="2" fill="var(--series-1)" fill-opacity="1.0" data-t="EHRAgent (ACC) · Strict（oracle）｜38.50（记忆 1012 条）"/>
+      <line x1="289.0" y1="254.8" x2="454.0" y2="254.8" stroke="var(--crit)" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.8"/>
+      <text x="576.5" y="324" text-anchor="middle" font-size="13" fill="var(--text-secondary)">AgentDriver (SR)</text>
+      <rect class="bar" x="498.0" y="191.7" width="22" height="108.3" rx="2" fill="var(--baseline)" fill-opacity="1" data-t="AgentDriver (SR) · Fixed（不新增）｜40.11（记忆 180 条）"/>
+      <rect class="bar" x="525.0" y="212.7" width="22" height="87.3" rx="2" fill="var(--series-2)" fill-opacity="1" data-t="AgentDriver (SR) · Add all（全量写入）｜32.32（记忆 2125 条）"/>
+      <rect class="bar" x="552.0" y="200.3" width="22" height="99.7" rx="2" fill="var(--series-1)" fill-opacity="0.35" data-t="AgentDriver (SR) · Coarse C1｜36.92（记忆 1161 条）"/>
+      <rect class="bar" x="579.0" y="192.0" width="22" height="108.0" rx="2" fill="var(--series-1)" fill-opacity="0.55" data-t="AgentDriver (SR) · Coarse C2｜40.01（记忆 1119 条）"/>
+      <rect class="bar" x="606.0" y="172.1" width="22" height="127.9" rx="2" fill="var(--series-1)" fill-opacity="0.75" data-t="AgentDriver (SR) · Coarse C3｜47.37（记忆 1285 条）"/>
+      <rect class="bar" x="633.0" y="162.3" width="22" height="137.7" rx="2" fill="var(--series-1)" fill-opacity="1.0" data-t="AgentDriver (SR) · Strict（oracle）｜51.00（记忆 1178 条）"/>
+      <line x1="494.0" y1="191.7" x2="659.0" y2="191.7" stroke="var(--crit)" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.8"/>
+      <text x="781.5" y="324" text-anchor="middle" font-size="13" fill="var(--text-secondary)">CIC-IoT (ACC)</text>
+      <rect class="bar" x="703.0" y="107.0" width="22" height="193.0" rx="2" fill="var(--baseline)" fill-opacity="1" data-t="CIC-IoT (ACC) · Fixed（不新增）｜71.50（记忆 50 条）"/>
+      <rect class="bar" x="730.0" y="138.3" width="22" height="161.7" rx="2" fill="var(--series-2)" fill-opacity="1" data-t="CIC-IoT (ACC) · Add all（全量写入）｜59.90（记忆 1050 条）"/>
+      <rect class="bar" x="757.0" y="100.2" width="22" height="199.8" rx="2" fill="var(--series-1)" fill-opacity="0.35" data-t="CIC-IoT (ACC) · Coarse C1｜74.00（记忆 1030 条）"/>
+      <rect class="bar" x="784.0" y="114.2" width="22" height="185.8" rx="2" fill="var(--series-1)" fill-opacity="0.55" data-t="CIC-IoT (ACC) · Coarse C2｜68.80（记忆 936 条）"/>
+      <rect class="bar" x="811.0" y="85.3" width="22" height="214.7" rx="2" fill="var(--series-1)" fill-opacity="0.75" data-t="CIC-IoT (ACC) · Coarse C3｜79.50（记忆 952 条）"/>
+      <rect class="bar" x="838.0" y="69.4" width="22" height="230.6" rx="2" fill="var(--series-1)" fill-opacity="1.0" data-t="CIC-IoT (ACC) · Strict（oracle）｜85.40（记忆 904 条）"/>
+      <line x1="699.0" y1="107.0" x2="864.0" y2="107.0" stroke="var(--crit)" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.8"/>
+    </svg>
+  </div>
+
+  <section class="card">
+    <h3>主结果矩阵（论文 Table 1）</h3>
+    <p>数值为论文原值；<code>Δ</code> 与 <code>相对提升%</code> 为本报告基于原值计算。</p>
+    <div class="tw">
+    <table>
+      <tr><th>添加策略</th><th class="num">RegAgent SR↑</th><th class="num">Mem↓</th><th class="num">EHRAgent ACC↑</th><th class="num">Mem↓</th><th class="num">AgentDriver SR↑</th><th class="num">Mem↓</th><th class="num">CIC-IoT ACC↑</th><th class="num">Mem↓</th></tr>
+      <tr><td>Fixed（基线）</td><td class="num">67.53</td><td class="num">100</td><td class="num">16.75</td><td class="num">100</td><td class="num">40.11</td><td class="num">180</td><td class="num">71.50</td><td class="num">50</td></tr>
+      <tr><td>Add all</td><td class="num">55.48</td><td class="num">4100</td><td class="num">13.05</td><td class="num">2411</td><td class="num">32.32</td><td class="num">2125</td><td class="num">59.90</td><td class="num">1050</td></tr>
+      <tr><td>Coarse C1</td><td class="num">63.18</td><td class="num">3511</td><td class="num">26.19</td><td class="num">1447</td><td class="num">36.92</td><td class="num">1161</td><td class="num">74.00</td><td class="num">1030</td></tr>
+      <tr><td>Coarse C2</td><td class="num">65.78</td><td class="num">3347</td><td class="num">32.21</td><td class="num">1467</td><td class="num">40.01</td><td class="num">1119</td><td class="num">68.80</td><td class="num">936</td></tr>
+      <tr><td>Coarse C3</td><td class="num">67.35</td><td class="num">3139</td><td class="num">34.66</td><td class="num">1094</td><td class="num">47.37</td><td class="num">1285</td><td class="num">79.50</td><td class="num">952</td></tr>
+      <tr class="best"><td>Strict</td><td class="num">70.95</td><td class="num">2938</td><td class="num">38.50</td><td class="num">1012</td><td class="num">51.00</td><td class="num">1178</td><td class="num">85.40</td><td class="num">904</td></tr>
+    </table>
+    </div>
+
+    <h4>相对 Add-all 的改进幅度（本报告计算）</h4>
+    <div class="tw">
+    <table>
+      <tr><th>添加策略</th><th class="num">RegAgent</th><th class="num">EHRAgent</th><th class="num">AgentDriver</th><th class="num">CIC-IoT</th><th class="num">四基准平均 pp</th></tr>
+      <tr><td>Fixed</td><td class="num pos">+12.05 (+21.7%)</td><td class="num pos">+3.70 (+28.4%)</td><td class="num pos">+7.79 (+24.1%)</td><td class="num pos">+11.60 (+19.4%)</td><td class="num">+8.79</td></tr>
+      <tr><td>Coarse C1</td><td class="num pos">+7.70 (+13.9%)</td><td class="num pos">+13.14 (+100.7%)</td><td class="num pos">+4.60 (+14.2%)</td><td class="num pos">+14.10 (+23.5%)</td><td class="num">+9.89</td></tr>
+      <tr><td>Coarse C2</td><td class="num pos">+10.30 (+18.6%)</td><td class="num pos">+19.16 (+146.8%)</td><td class="num pos">+7.69 (+23.8%)</td><td class="num pos">+8.90 (+14.9%)</td><td class="num">+11.51</td></tr>
+      <tr><td>Coarse C3</td><td class="num pos">+11.87 (+21.4%)</td><td class="num pos">+21.61 (+165.6%)</td><td class="num pos">+15.05 (+46.6%)</td><td class="num pos">+19.60 (+32.7%)</td><td class="num">+17.03</td></tr>
+      <tr class="best"><td>Strict</td><td class="num">+15.47 (+27.9%)</td><td class="num">+25.45 (+195.0%)</td><td class="num">+18.68 (+57.8%)</td><td class="num">+25.50 (+42.6%)</td><td class="num">+21.28</td></tr>
+    </table>
+    </div>
+
+    <h4>相对 Fixed 基线的边际收益（本报告计算 · 「多存的记忆到底换来了什么」）</h4>
+    <div class="tw">
+    <table>
+      <tr><th>添加策略</th><th class="num">RegAgent Δpp / 记忆倍数</th><th class="num">EHRAgent</th><th class="num">AgentDriver</th><th class="num">CIC-IoT</th></tr>
+      <tr><td>Add all</td><td class="num neg">−12.05 / 41.0×</td><td class="num neg">−3.70 / 24.1×</td><td class="num neg">−7.79 / 11.8×</td><td class="num neg">−11.60 / 21.0×</td></tr>
+      <tr><td>Coarse C1</td><td class="num neg">−4.35 / 35.1×</td><td class="num pos">+9.44 / 14.5×</td><td class="num neg">−3.19 / 6.5×</td><td class="num pos">+2.50 / 20.6×</td></tr>
+      <tr><td>Coarse C2</td><td class="num neg">−1.75 / 33.5×</td><td class="num pos">+15.46 / 14.7×</td><td class="num neg">−0.10 / 6.2×</td><td class="num neg">−2.70 / 18.7×</td></tr>
+      <tr><td>Coarse C3</td><td class="num neg"><strong>−0.18 / 31.4×</strong></td><td class="num pos">+17.91 / 10.9×</td><td class="num pos">+7.26 / 7.1×</td><td class="num pos">+8.00 / 19.0×</td></tr>
+      <tr class="best"><td>Strict</td><td class="num">+3.42 / 29.4×</td><td class="num">+21.75 / 10.1×</td><td class="num">+10.89 / 6.5×</td><td class="num">+13.90 / 18.1×</td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>记忆的边际价值在不同任务上相差一个数量级。</strong>EHRAgent 上，strict 写入把准确率从 16.75 抬到 38.50（相对 +129.9%），10 倍记忆换来 21.75 pp；而 RegAgent 上 29.4 倍记忆只换来 3.42 pp，且 Coarse C3（3139 条记录、误差阈值 ≤1.2 的相当严格筛选）跑出 67.35，<strong>比一条都不新增的 67.53 还低 0.18 pp</strong>。在 RegAgent 上，写入策略必须严格到 oracle 级别才能翻本；任何可自动化的筛选都在做无用功。
+    </div>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">图 2 · 删除策略的净效应（Strict 分支，相对同分支 No-del）</p>
+    <p class="fig-sub">纵轴为性能变化（百分点）。蓝色为改善、橙色为退化。悬停查看该配置同时带来的记忆规模变化。</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-1)"></span>性能改善（+pp）</span>
+      <span><span class="sw" style="background:var(--series-2)"></span>性能退化（−pp）</span>
+      <span style="color:var(--muted)">每组自左至右：Period（频率）· History（效用）· Combined（并集）</span>
+    </div>
+    <svg class="chart" viewBox="0 0 900 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="三种删除策略在四个基准上的净效应">
+      <line x1="64" y1="230.0" x2="884" y2="230.0" stroke="var(--grid)" stroke-width="1"/>
+      <text x="54" y="234.0" text-anchor="end" font-size="12" fill="var(--muted)">-5</text>
+      <line x1="64" y1="180.0" x2="884" y2="180.0" stroke="var(--grid)" stroke-width="1"/>
+      <text x="54" y="184.0" text-anchor="end" font-size="12" fill="var(--muted)">-2.5</text>
+      <line x1="64" y1="130.0" x2="884" y2="130.0" stroke="var(--grid)" stroke-width="1"/>
+      <text x="54" y="134.0" text-anchor="end" font-size="12" fill="var(--muted)">+0</text>
+      <line x1="64" y1="80.0" x2="884" y2="80.0" stroke="var(--grid)" stroke-width="1"/>
+      <text x="54" y="84.0" text-anchor="end" font-size="12" fill="var(--muted)">+2.5</text>
+      <line x1="64" y1="30.0" x2="884" y2="30.0" stroke="var(--grid)" stroke-width="1"/>
+      <text x="54" y="34.0" text-anchor="end" font-size="12" fill="var(--muted)">+5</text>
+      <line x1="64" y1="130.0" x2="884" y2="130.0" stroke="var(--baseline)" stroke-width="1.5"/>
+      <text x="166.5" y="266" text-anchor="middle" font-size="13" fill="var(--text-secondary)">RegAgent (SR)</text>
+      <rect class="bar" x="105.5" y="130.0" width="34" height="66.0" rx="2" fill="var(--series-2)" data-t="RegAgent (SR) · Strict + Period（频率信号）｜-3.30 pp（记忆 -67.7%）"/>
+      <text x="122.5" y="211.0" text-anchor="middle" font-size="11" fill="var(--muted)">-3.30</text>
+      <rect class="bar" x="149.5" y="130.0" width="34" height="23.0" rx="2" fill="var(--series-2)" data-t="RegAgent (SR) · Strict + History（效用信号）｜-1.15 pp（记忆 -22.2%）"/>
+      <text x="166.5" y="168.0" text-anchor="middle" font-size="11" fill="var(--muted)">-1.15</text>
+      <rect class="bar" x="193.5" y="130.0" width="34" height="87.4" rx="2" fill="var(--series-2)" data-t="RegAgent (SR) · Strict + Combined（并集）｜-4.37 pp（记忆 -69.7%）"/>
+      <text x="210.5" y="232.4" text-anchor="middle" font-size="11" fill="var(--muted)">-4.37</text>
+      <text x="371.5" y="266" text-anchor="middle" font-size="13" fill="var(--text-secondary)">EHRAgent (ACC)</text>
+      <rect class="bar" x="310.5" y="130.0" width="34" height="1.6" rx="2" fill="var(--series-2)" data-t="EHRAgent (ACC) · Strict + Period（频率信号）｜-0.08 pp（记忆 -70.2%）"/>
+      <text x="327.5" y="146.6" text-anchor="middle" font-size="11" fill="var(--muted)">-0.08</text>
+      <rect class="bar" x="354.5" y="62.2" width="34" height="67.8" rx="2" fill="var(--series-1)" data-t="EHRAgent (ACC) · Strict + History（效用信号）｜+3.39 pp（记忆 -22.5%）"/>
+      <text x="371.5" y="56.2" text-anchor="middle" font-size="11" fill="var(--muted)">+3.39</text>
+      <rect class="bar" x="398.5" y="56.6" width="34" height="73.4" rx="2" fill="var(--series-1)" data-t="EHRAgent (ACC) · Strict + Combined（并集）｜+3.67 pp（记忆 -75.5%）"/>
+      <text x="415.5" y="50.6" text-anchor="middle" font-size="11" fill="var(--muted)">+3.67</text>
+      <text x="576.5" y="266" text-anchor="middle" font-size="13" fill="var(--text-secondary)">AgentDriver (SR)</text>
+      <rect class="bar" x="515.5" y="130.0" width="34" height="1.2" rx="2" fill="var(--series-2)" data-t="AgentDriver (SR) · Strict + Period（频率信号）｜-0.06 pp（记忆 -60.4%）"/>
+      <text x="532.5" y="146.2" text-anchor="middle" font-size="11" fill="var(--muted)">-0.06</text>
+      <rect class="bar" x="559.5" y="113.8" width="34" height="16.2" rx="2" fill="var(--series-1)" data-t="AgentDriver (SR) · Strict + History（效用信号）｜+0.81 pp（记忆 -28.2%）"/>
+      <text x="576.5" y="107.8" text-anchor="middle" font-size="11" fill="var(--muted)">+0.81</text>
+      <rect class="bar" x="603.5" y="130.0" width="34" height="20.6" rx="2" fill="var(--series-2)" data-t="AgentDriver (SR) · Strict + Combined（并集）｜-1.03 pp（记忆 -72.6%）"/>
+      <text x="620.5" y="165.6" text-anchor="middle" font-size="11" fill="var(--muted)">-1.03</text>
+      <text x="781.5" y="266" text-anchor="middle" font-size="13" fill="var(--text-secondary)">CIC-IoT (ACC)</text>
+      <rect class="bar" x="720.5" y="130.0" width="34" height="92.0" rx="2" fill="var(--series-2)" data-t="CIC-IoT (ACC) · Strict + Period（频率信号）｜-4.60 pp（记忆 -65.7%）"/>
+      <text x="737.5" y="237.0" text-anchor="middle" font-size="11" fill="var(--muted)">-4.60</text>
+      <rect class="bar" x="764.5" y="46.0" width="34" height="84.0" rx="2" fill="var(--series-1)" data-t="CIC-IoT (ACC) · Strict + History（效用信号）｜+4.20 pp（记忆 -12.8%）"/>
+      <text x="781.5" y="40.0" text-anchor="middle" font-size="11" fill="var(--muted)">+4.20</text>
+      <rect class="bar" x="808.5" y="128.0" width="34" height="2.0" rx="2" fill="var(--series-1)" data-t="CIC-IoT (ACC) · Strict + Combined（并集）｜+0.10 pp（记忆 -79.2%）"/>
+      <text x="825.5" y="122.0" text-anchor="middle" font-size="11" fill="var(--muted)">+0.10</text>
+      <text x="54" y="22" text-anchor="end" font-size="11" fill="var(--muted)">pp</text>
+    </svg>
+  </div>
+
+  <section class="card">
+    <h3>删除策略结果（论文 Table 2）</h3>
+    <div class="tw">
+    <table>
+      <tr><th>策略组合</th><th class="num">RegAgent SR↑</th><th class="num">Mem↓</th><th class="num">EHRAgent ACC↑</th><th class="num">Mem↓</th><th class="num">AgentDriver SR↑</th><th class="num">Mem↓</th><th class="num">CIC-IoT ACC↑</th><th class="num">Mem↓</th></tr>
+      <tr><td>Coarse C1 – No del</td><td class="num">63.18</td><td class="num">3511</td><td class="num">25.91</td><td class="num">1447</td><td class="num">36.92</td><td class="num">1161</td><td class="num">74.00</td><td class="num">1030</td></tr>
+      <tr><td>Coarse C1 – Period</td><td class="num">60.88</td><td class="num">1012</td><td class="num">26.65</td><td class="num">338</td><td class="num">36.38</td><td class="num">426</td><td class="num">78.10</td><td class="num">355</td></tr>
+      <tr><td>Coarse C1 – History</td><td class="num">62.10</td><td class="num">3205</td><td class="num">33.55</td><td class="num">1004</td><td class="num">34.00</td><td class="num">1019</td><td class="num">73.70</td><td class="num">952</td></tr>
+      <tr><td>Coarse C1 – Combined</td><td class="num">59.32</td><td class="num">951</td><td class="num">31.47</td><td class="num">279</td><td class="num">35.62</td><td class="num">372</td><td class="num">68.80</td><td class="num">352</td></tr>
+      <tr><td>Strict – No del</td><td class="num">70.95</td><td class="num">2938</td><td class="num">38.67</td><td class="num">1012</td><td class="num">51.00</td><td class="num">1178</td><td class="num">85.40</td><td class="num">904</td></tr>
+      <tr><td>Strict – Period</td><td class="num">67.65</td><td class="num">949</td><td class="num">38.59</td><td class="num">302</td><td class="num">50.94</td><td class="num">467</td><td class="num">80.80</td><td class="num">310</td></tr>
+      <tr class="best"><td>Strict – History</td><td class="num">69.80</td><td class="num">2286</td><td class="num">42.06</td><td class="num">784</td><td class="num">51.81</td><td class="num">846</td><td class="num">89.60</td><td class="num">788</td></tr>
+      <tr><td>Strict – Combined</td><td class="num">66.58</td><td class="num">890</td><td class="num">42.34</td><td class="num">248</td><td class="num">49.97</td><td class="num">323</td><td class="num">85.50</td><td class="num">188</td></tr>
+    </table>
+    </div>
+
+    <h4>删除操作的净效应（本报告计算，Δ 相对同分支 No-del）</h4>
+    <div class="tw">
+    <table>
+      <tr><th>组合</th><th class="num">RegAgent</th><th class="num">EHRAgent</th><th class="num">AgentDriver</th><th class="num">CIC-IoT</th><th class="num">改善基准数</th></tr>
+      <tr><td>C1 – Period</td><td class="num neg">−2.30（记忆 −71.2%）</td><td class="num pos">+0.74（−76.6%）</td><td class="num neg">−0.54（−63.3%）</td><td class="num pos">+4.10（−65.5%）</td><td class="num">2 / 4</td></tr>
+      <tr><td>C1 – History</td><td class="num neg">−1.08（−8.7%）</td><td class="num pos">+7.64（−30.6%）</td><td class="num neg">−2.92（−12.2%）</td><td class="num neg">−0.30（−7.6%）</td><td class="num">1 / 4</td></tr>
+      <tr><td>C1 – Combined</td><td class="num neg">−3.86（−72.9%）</td><td class="num pos">+5.56（−80.7%）</td><td class="num neg">−1.30（−68.0%）</td><td class="num neg">−5.20（−65.8%）</td><td class="num">1 / 4</td></tr>
+      <tr><td>S – Period</td><td class="num neg">−3.30（−67.7%）</td><td class="num neg">−0.08（−70.2%）</td><td class="num neg">−0.06（−60.4%）</td><td class="num neg">−4.60（−65.7%）</td><td class="num neg"><strong>0 / 4</strong></td></tr>
+      <tr class="best"><td>S – History</td><td class="num">−1.15（−22.2%）</td><td class="num">+3.39（−22.5%）</td><td class="num">+0.81（−28.2%）</td><td class="num">+4.20（−12.8%）</td><td class="num">3 / 4</td></tr>
+      <tr><td>S – Combined</td><td class="num neg">−4.37（−69.7%）</td><td class="num pos">+3.67（−75.5%）</td><td class="num neg">−1.03（−72.6%）</td><td class="num pos">+0.10（−79.2%）</td><td class="num">2 / 4</td></tr>
+    </table>
+    </div>
+    <p><strong>三条规律：</strong></p>
+    <ol>
+      <li><strong>纯频率信号（φ_per）在 strict 分支上 0/4 命中</strong>——四个基准无一改善，RegAgent −3.30、CIC-IoT −4.60。这直接印证论文的核心主张：<strong>检索频率不是效用的代理变量</strong>。冷门记录被删的同时，长尾但关键的记录一起被删。</li>
+      <li><strong>效用信号（φ_hist）在 strict 分支上 3/4 命中</strong>，且是唯一在 AgentDriver 上取得正收益的删除方式（+0.81 pp）。写入端与删除端使用<strong>同一个评估器</strong>时，两个闸门才形成一致的质量场。</li>
+      <li><strong>Combined 是记忆预算的交易，不是性能的交易：</strong>strict + combined 平均削减记忆 74.3%，性能变化区间 −4.37 ~ +3.67 pp。若目标是「1/4 记忆预算下保住性能」，这是当前配置里最优的一档；若目标是纯性能，S–History 更好。</li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <h3>时序动态与相变现象</h3>
+    <div class="callout hi">
+      <strong>⚡ 全文最有说服力的定性证据：</strong>在 AgentDriver 上，用 Agent 自己（经严格筛选）的执行轨迹作为示例，在<strong>约 2000 次执行后反超了用 ground-truth 的 error-free 变体</strong>。
+    </div>
+    <p class="quote">“for AgentDriver with strict selective addition, despite lagging initially, it gradually approaches the ground-truth baseline and even surprisingly surpasses its performance after roughly 2000 executions.” — 论文 Section 3.4</p>
+    <p>这个交叉点的分量在于：它把「记忆质量」这个看似单调的量拆成了两个分量——<strong>记录本身的正确性</strong> 与 <strong>记录与 Agent 自身行为分布的匹配度</strong>。ground-truth 在前者上永远占优，但在后者上是<strong>离策略（off-policy）</strong>的；而经筛选的自生成轨迹在正确性上略逊，却是<strong>在策略（on-policy）</strong>的。当记忆库积累到足够规模（~2000 次执行）时，第二个分量压过第一个分量。论文用 “surprisingly” 一词带过、未作解释——但这个现象与在线策略蒸馏（on-policy distillation）文献中的一致发现互相印证：<strong>模仿一个与自己分布接近的略差示范，常优于模仿一个分布很远的完美示范。</strong></p>
+    <p>另外两条时序发现：</p>
+    <ul>
+      <li><strong>Fig. 2：</strong>strict 评估器与部分 coarse 评估器（4.1-mini FT）在 EHRAgent / AgentDriver 上表现出「consistent self-improvement over time」的曲线；add-all 与弱 coarse 则 “flat or declining”。即，记忆的自改进能力不是 Agent 的属性，而是<strong>写入闸门质量的属性</strong>。</li>
+      <li><strong>Fig. 6：</strong>对被删除 vs. 被保留记录的绝对误差做 KDE，被保留记录的误差分布明显更低——说明 φ_hist 确实在按质量分层，而非随机剪枝。</li>
+    </ul>
+    <h4>鲁棒性压力测试</h4>
+    <p><strong>任务分布漂移（Fig. 7）：</strong>论文报告 “the performance gap relative to the no-shift variant remains small”，且在 AgentDriver 上 strict addition <strong>单独就超过了 no-shift 变体</strong>。后一点值得警惕：漂移后反而更好，通常提示 no-shift 基线本身存在过拟合到旧分布的记忆污染，而非策略对漂移有真正的免疫力。</p>
+    <p><strong>容量约束：</strong>选择性保留高质量记录可在固定容量下维持接近无约束设置的性能——这与 Table 2 中 strict+combined 在 CIC-IoT 上以 188 条记录（−79.2%）取得 85.50（+0.10 pp）互相印证。</p>
+  </section>
+
+  <section class="card">
+    <h3>1.6 价值分析</h3>
+    <p><strong>真正的贡献不是「做了实验」，而是重新定义了记忆管理的目标函数。</strong></p>
+    <ol>
+      <li><strong>把「记忆库」重新定义为反馈回路的一部分。</strong>在此之前，记忆的评价指标是检索指标（recall@k、命中率）。本文说明这是错的：一条记录的价值不取决于它能否被检索到，而取决于<strong>它被检索到之后会被复制成什么</strong>。评价对象从「记录 ↔ 查询」的匹配度，转移到「记录 → 未来执行质量」的因果影响。</li>
+      <li><strong>给出了「未来任务评估作为质量标签」的可复用范式。</strong>φ_hist 的形式 <code>1[ mean Φ(q,e) ≤ β ]</code> 完全不依赖本文的任何具体设定——它只要求系统能在记录被使用后拿到一个下游效用信号。可直接搬到 RAG 文档库剪枝、few-shot 示例池维护、工具调用样例库治理。</li>
+      <li><strong>证明了轻量评估器足以逼近 oracle。</strong>C3（GPT-4.1-mini 在<strong>仅 300 条</strong>判定数据上微调）在四个基准上把与 strict 的差距压到 3.60 / 3.84 / 3.63 / 5.90 pp。300 条标注是任何团队都负担得起的数字——这是本文最具工程可操作性的结论。</li>
+    </ol>
+    <p><strong>可脱离本文单独复用的设计原则：</strong></p>
+    <ul>
+      <li><strong>准入优于治理</strong>（Table 1 的量级 ≫ Table 2：添加策略跨度达 25.50 pp，删除策略跨度仅 ~7 pp）。先把写入闸门修好，再谈删除策略。</li>
+      <li><strong>写入闸门与删除闸门应共用同一评估器</strong>（strict+history 3/4 命中 vs. coarse+history 1/4 命中）。</li>
+      <li><strong>频率不可作为效用的代理</strong>（strict+period 0/4）。</li>
+    </ul>
+    <p><strong>对后续工作的启发：</strong>本文实际上为 Memory-R1 / Mem-α / CMI-Mem 这条「用 RL 学习记忆管理策略」的路线提供了<strong>奖励函数的正当性论证</strong>——如果下游任务评估是记忆质量的正确标签（本文的实证结论），那么用下游 QA 准确率作 RL 奖励就不是权宜之计而是原则性选择。反过来，CMI-Mem 对「QA 奖励依赖采样查询」的批评，恰好是对本文 Φ 评估器同一个弱点的攻击。</p>
+  </section>
+
+  <section class="card">
+    <h3>1.7 局限性</h3>
+    <h4>论文自述的限制（原文引用）</h4>
+    <p class="quote">“this study focuses on two fundamental operations—memory addition and memory deletion—while omitting more complex and less generalizable mechanisms such as structural transformation, merging, summarization, and reflection.”</p>
+    <p class="quote">“Our findings are primarily based on extensive empirical analyses, which, although comprehensive, do not provide formal theoretical proofs. Given the inherent complexity of agentic systems, deriving such guarantees is often infeasible.”</p>
+
+    <h4>补充批判（本报告的独立观察）</h4>
+    <p><strong>①【指标有效性】全文最核心的概念只有一个近似的相关性数字，且只在合成任务上。</strong>论文对 experience-following 的唯一量化表述是 RegAgent 上的 “near-perfect correlation (Pearson r ≈ 1)”（Fig. 3 左）。三个真实任务的输入-输出相似度关系仅以散点图呈现，<strong>未给出任何 r 值</strong>。这与论文定位不一致：一篇以「揭示某个性质」为第一贡献的实证研究，其性质在 3/4 的评测环境中未被量化。合成回归任务的输出是一个数字，输入输出相似度天然高度耦合；把该环境下的 r ≈ 1 外推到自由文本的驾驶决策上，缺乏支撑。</p>
+    <p><strong>②【论证缺口】误差传播与错位重放这两个「关键挑战」从头到尾没有被单独测量。</strong>论文把两者列为 Contribution 2，但全文没有任何「误差传播率」或「错位重放率」指标。它们的证据是 Fig. 4 中 error-free 变体与常规变体的性能差。这个差值同时包含三种效应：真正的误差传播、示例质量的一般性收益、以及 on/off-policy 分布匹配。既然论文自己的数据证明第三种效应能大到反转符号，用同一个 gap 去论证第一种效应就不成立——<strong>AgentDriver 上 2000 次之后 gap 变负，按论文的论证逻辑将得出「误差传播为负」的荒谬结论。</strong></p>
+    <p><strong>③【实验设计】没有误差棒、没有多种子，而两张表对同一配置报出了不同的数字。</strong>论文全文未报告任何标准差、置信区间或随机种子数量。具体地：Table 1 的 <code>Coarse C1 / EHRAgent</code> 为 <strong>26.19</strong>（Mem 1447），Table 2 的 <code>Coarse C1 – No del / EHRAgent</code> 为 <strong>25.91</strong>（Mem <strong>同为 1447</strong>）；Table 1 的 <code>Strict / EHRAgent</code> 为 <strong>38.50</strong>（Mem 1012），Table 2 的 <code>Strict – No del / EHRAgent</code> 为 <strong>38.67</strong>（Mem <strong>同为 1012</strong>）。记忆规模完全相同说明这是同一配置，但准确率差 <strong>0.28 pp / 0.17 pp</strong>。这给出了一个可观测的运行间波动下界（≈ 0.2–0.3 pp）。据此重审 Table 2：<strong>AgentDriver 上 S–History 的 +0.81 pp、S–Period 的 −0.06 pp、EHRAgent 上 S–Period 的 −0.08 pp、CIC-IoT 上 S–Combined 的 +0.10 pp，全部落在噪声带内或紧邻噪声带</strong>。论文对删除策略的若干细粒度结论因此不可判定。</p>
+    <p><strong>④【缺乏关键竞品对比】没有对比任何一个已发表的记忆系统。</strong>经核实，论文未与 A-MEM、Mem0、MemGPT、MemoryBank、Reflexion 中的任何一个做对比，全部对比都在自家添加/删除策略变体之间。这留下一个未被排除的替代假设：<strong>A-MEM 的链接结构或 MemoryBank 的遗忘曲线，是否本来就能在不引入外部评估器的情况下缓解 add-all 的退化？</strong>论文的主张是「必须调控写入质量」，但它证明的其实只是「在朴素 append-only 架构下必须调控写入质量」。这动摇的是主结论的适用范围，而不只是覆盖面。</p>
+    <p><strong>⑤【论证缺口】C1→C3 在不同智能体上是两种不同性质的变量，却被并列解读。</strong>RegAgent 的 C1/C2/C3 = 误差阈值 1.6 / 1.4 / 1.2（同一机制的连续收紧）；其余三个 = GPT-4o-mini / GPT-4.1-mini / GPT-4.1-mini-FT（三个不同模型）。论文由 C1→C3 的单调改善推出「评估器质量越高越好」，但在 RegAgent 上这说的是「阈值越严越好」，在其余三个上说的是「模型越强越好」——<strong>唯一同时支持两种读法的证据点是 CIC-IoT 的 C2 (68.80) 低于 C1 (74.00)，恰恰打破了单调性</strong>，且论文未讨论这个反例。</p>
+    <p><strong>⑥【失手的子任务】RegAgent 上，所有可自动化的策略都无法超越「什么都不存」。</strong>Fixed = 67.53（100 条）；Coarse C1/C2/C3 = 63.18 / 65.78 / 67.35（3139–3511 条）。唯一击败零写入基线的是 oracle 级 strict（70.95，+3.42 pp），代价是 29.4× 记忆。这提示存在一类任务，其经验的可迁移性太低，以致记忆积累的信噪比永远为负——论文没有刻画这类任务的边界条件，而这恰恰是从业者最需要的判据（「我的任务该不该上记忆」）。</p>
+    <p><strong>⑦【实验设计】Combined 删除在两个基准上出现非单调的相互作用，未被讨论。</strong>CIC-IoT 的 Coarse C1 分支：No-del 74.00 → Period <strong>78.10</strong>（+4.10）→ Combined <strong>68.80</strong>（−5.20）。Period 单独用是四个 coarse 配置里最好的，History 单独用是 73.70（−0.30，几乎中性），两者取并集却比 Period 低 <strong>9.30 pp</strong>、比 No-del 低 5.20 pp。两个各自无害的判据合并后产生显著负收益，说明两者的删除集合存在破坏性交叠（很可能是「低频但高效用」的长尾记录被 Period 删掉，而 History 又删掉了另一批），论文未给出任何分析。</p>
+    <p><strong>⑧【指标有效性】φ_hist 的判定条件内建了「必须先造成 n 次伤害」的延迟。</strong>按定义，一条记录只有在被检索超过 n 次之后才可能被 δ 判定删除。这意味着<strong>每一条有害记录在被清除前，必然已经通过经验跟随通道向下游注入了至少 n 次错误</strong>。在数千次执行的场景中这是可接受的摊销，但在高风险低频场景（临床、驾驶）里，该机制在设计上就无法阻止首次伤害。论文把 φ_hist 呈现为最优删除判据（strict 分支 3/4 命中），却未讨论其固有响应延迟——一个真正「预防性」的删除判据需要在<strong>零次检索</strong>时就能判断，而这正好回到添加闸门的问题：论文自己的数据所支持的结论其实更强——<strong>删除是补救，准入才是治理。</strong></p>
+    <p><strong>⑨【可复现性】主实验全部基于闭源模型。</strong>主 LLM 为 GPT-4o-mini，附录扩展也以 GPT 系列为主（仅 DeepSeek-V3 一个非 OpenAI 模型）。经验跟随的强度很可能与模型的 in-context 模仿倾向直接相关，而这一倾向在不同后训练配方下差异极大。论文未在任何开源权重模型（Qwen、Llama）上验证 r ≈ 1，因此无法排除「经验跟随是 GPT-4o-mini 的特性」这一解释。</p>
+    <p><strong>⑩【本报告自身的不完备】</strong>我未能获取论文附录 B.2 的完整内容（跨模型消融的具体数值）与 Fig. 3/4/6/7 的坐标轴数值，因此第 ①③ 条批判中「未给出 r 值」的判断，严格说是「在正文与图注中未给出」；若附录含有这些数字，相应批判力度应下调。此外我未运行其官方代码库复现任何数值。</p>
+  </section>
+
+  <h2>2. 相关工作回溯</h2>
+
+  <section class="card">
+    <h3>2.1 Generative Agents: Interactive Simulacra of Human Behavior — Park et al., UIST 2023</h3>
+    <p><strong>解决了什么问题。</strong>此前不存在一个能让 LLM Agent 在数天模拟时间尺度上保持行为可信的架构。本文提出 <strong>memory stream</strong>（对经历的完整自然语言流水记录）+ <strong>检索打分 = recency + importance + relevance</strong> 的三分量加权 + <strong>reflection</strong>（把低层记忆合成为高层推断）+ planning。核心贡献是首次把「长期记忆」作为可运行的 Agent 组件落地。</p>
+    <p><strong>遗留了什么问题。</strong>memory stream 是<strong>只追加、永不评估</strong>的。三分量打分决定的是「检索什么」，完全没有触及「是否应该写入」和「是否应该删除」。importance 分量由 LLM 自评「这段记忆有多重要」，评的是<strong>记忆自身的显著性</strong>，而不是<strong>它对未来执行的贡献</strong>——一段生动但错误的经历会拿到高 importance 分。它打开的研究空间是：<strong>记忆库的价值函数应当是前瞻的，而不是回顾的。</strong></p>
+    <p><strong>核心工作如何回应。</strong>核心工作恰在这个缺口上给出答案：φ_hist 判据用<strong>该记录被检索之后下游执行的平均质量</strong>替换了 importance 自评。这是一次显式的价值函数反转——从「这条记忆看起来重要吗」到「这条记忆用起来有用吗」。两者的关系是<strong>对抗性继承</strong>：保留了检索范式（余弦相似度 Top-K），但推翻了准入哲学。</p>
+    <p><strong>关键设计的传递。</strong>relevance 分量（embedding 相似度）在核心工作中被完整保留为检索机制，并且——这是一个反讽——正是这个被保留的分量制造了 experience-following：检索越相似，输出越相似，误差的复制保真度越高。<strong>核心工作揭示的问题，其机理来源正是 Generative Agents 的检索设计本身。</strong></p>
+  </section>
+
+  <section class="card">
+    <h3>2.2 MemoryBank: Enhancing LLMs with Long-Term Memory — Zhong et al., AAAI 2024</h3>
+    <p><strong>解决了什么问题。</strong>LLM 缺乏长期记忆机制，在陪伴、心理咨询这类持续交互场景中断裂。MemoryBank 提出存储 + 检索 + 一套<strong>受艾宾浩斯遗忘曲线启发的记忆更新规则</strong>：记忆强度按「经过的时间」与「记忆的相对显著性」衰减或强化；同时维护用户人格摘要。落地形态是 SiliconFriend。</p>
+    <p><strong>遗留了什么问题。</strong>它是第一个把「遗忘」当作一等公民的 Agent 记忆系统，但遗忘信号是<strong>时间与访问频率</strong>——一条记忆被反复提及就被强化，长久不提就衰减。这个规则完全不看内容的正确性，也不看下游后果。于是一条被频繁检索的错误记录，在艾宾浩斯规则下会被越用越强化。它留下的缺口是：<strong>基于使用频率的遗忘与基于效用的遗忘，哪一个才是正确的遗忘信号？</strong></p>
+    <p><strong>核心工作如何回应。</strong>核心工作把这个问题做成了一个可判决的对照实验：φ_per（频率信号，MemoryBank 血统）vs. φ_hist（效用信号）。判决结果是——<strong>strict 分支下 φ_per 的命中率是 0/4，φ_hist 是 3/4</strong>。这是本报告认为整条演进线上信息量最大的单点结论：频率类遗忘曲线在有质量闸门的前提下，四个基准上无一改善，RegAgent 上还退化 3.30 pp。核心工作以实验方式<strong>证伪</strong>了这一支路作为独立机制的有效性（其残余价值仅在记忆预算削减上，−60~−70%）。</p>
+    <p><strong>关键设计的传递。</strong>φ_per 的形式 <code>fr_t − fr_t′ ≤ α</code> 就是艾宾浩斯规则的极简线性化版本。核心工作保留了这个机制，但把它降级为 Combined 判据中的<strong>记忆预算旋钮</strong>，而非质量旋钮。</p>
+  </section>
+
+  <section class="card">
+    <h3>2.3 ExpeL: LLM Agents Are Experiential Learners — Zhao et al., AAAI 2024</h3>
+    <p><strong>解决了什么问题。</strong>在 GPT-4/Claude 权重不可得的前提下，如何让 Agent 适应自定义决策任务？ExpeL 的方案是零参数更新的经验学习：自主在训练任务上收集<strong>经验池</strong>，通过 compare/abstract 操作从中<strong>抽取自然语言 insights</strong>（跨任务规则），推理时同时检索成功轨迹（kNN）与 insight 列表注入 prompt。评测于 HotpotQA / ALFWorld / WebShop / FEVER。</p>
+    <p><strong>遗留了什么问题。</strong>ExpeL 的核心主张是「随着经验积累，性能持续提升」（摘要原文即 “consistent enhancement in its performance as it accumulates experiences”，且<strong>未给出任何数字</strong>）。这个主张建立在训练阶段收集、评测阶段冻结的两段式设定上——经验池不会在部署中被自身产出的轨迹污染。遗留的问题是：<strong>当经验池在部署中持续被 Agent 自己的输出填充时，「积累即改善」还成立吗？</strong></p>
+    <p><strong>核心工作如何回应。</strong>核心工作把这个隐含假设变成被检验的命题，并给出否定答案：add-all 就是「无筛选地持续积累经验」，结果在 4/4 基准上劣于零积累，平均 −8.79 pp。同时它给出了假设成立的条件——Fig. 2 显示只有 strict 与强 coarse 评估器下才出现「consistent self-improvement over time」的曲线。两者关系是<strong>条件化</strong>：不是推翻「经验积累有效」，而是把它从一条无条件断言，修正为以写入闸门质量为前件的条件断言。</p>
+    <p><strong>关键设计的传递。</strong>ExpeL 的 kNN 轨迹检索被核心工作原样继承，而 insight 抽取（compare/abstract）恰好属于核心工作自述限制中明确排除的 “summarization / reflection” 类机制。这构成一个悬而未决的交叉点：<strong>ExpeL 的 insight 抽象层是否本身就是一个隐式的质量闸门</strong>（因为抽象过程会过滤掉个别错误轨迹的噪声）？核心工作的实验设计无法回答，这是第 4 节标注的关键空白之一。</p>
+  </section>
+
+  <section class="card">
+    <h3>2.4 AgentPoison: Red-teaming LLM Agents via Poisoning Memory or Knowledge Bases — Chen et al., NeurIPS 2024</h3>
+    <p><strong>解决了什么问题。</strong>它指出 Agent 从<strong>未经验证</strong>的长期记忆 / RAG 知识库中检索，是一个此前未被审视的攻击面。机制是把<strong>触发词生成建模为约束优化问题</strong>：让带触发的实例被映射到检索器 embedding 空间中一块<strong>唯一且紧致的区域</strong>，从而触发查询高概率召回恶意示范，而正常查询行为不变；全程<strong>无需训练或微调任何模型</strong>。攻击对象包括 RAG 自动驾驶 Agent、知识密集型 QA Agent 与医疗 EHRAgent——<strong>与核心工作的评测台高度重合</strong>，且 Zhen Xiang 同为两篇作者。摘要报告：平均攻击成功率 <strong>&gt;80%</strong>，对正常性能影响 <strong>&lt;1%</strong>，投毒比例 <strong>&lt;0.1%</strong>。</p>
+    <p><strong>遗留了什么问题。</strong>AgentPoison 证明了「一条被注入的记录能高保真地劫持下游行为」，但把这个性质完全放在<strong>对抗设定</strong>下叙述：需要一个攻击者，需要优化过的触发词。遗留的问题是：<strong>这条劫持通道在没有攻击者的情况下会发生什么？</strong>如果 &lt;0.1% 的恶意记录就能达成 &gt;80% 的行为改写，那么一个自然运行的 Agent 写入的、比例远高于 0.1% 的自身错误轨迹，其累计效应是什么？</p>
+    <p><strong>核心工作如何回应。</strong>核心工作正是这个问题的答案，并且把结论去对抗化：<strong>Agent 不需要被攻击就会自我投毒</strong>。它给出的机理（输入相似 → 输出相似）与 AgentPoison 的攻击机理（把触发实例挤进检索空间的紧致区域）是<strong>同一个性质的两种利用方式</strong>——前者是被动的、由任务分布自然产生的相似性，后者是主动优化出来的相似性。add-all 结果（RegAgent −12.05 pp）可以理解为一次由 Agent 自己实施的、投毒率接近 100% 的低效攻击。</p>
+    <p><strong>关键设计的传递。</strong>AgentPoison 的防御讨论指向「检索层的异常检测」，核心工作则把防线前移到<strong>写入层的效用评估</strong>。两者组合出一个清晰的设计原则：记忆库的安全性不能只靠检索时过滤，因为经验跟随的复制保真度太高——<strong>必须在记录进入被检索池之前就完成质量判定</strong>。这也是批判⑧的直接来源：在对抗设定下，n 次伤害就是 n 次成功攻击。</p>
+  </section>
+
+  <section class="card">
+    <h3>2.5 A-MEM: Agentic Memory for LLM Agents — Xu et al., NeurIPS 2025</h3>
+    <p><em>（首期报告已详述，此处仅作演进线上的定位）</em></p>
+    <p><strong>解决了什么问题。</strong>既有 Agent 记忆只做基础存取、操作与结构固定，缺乏组织性与跨任务适应性。A-MEM 提出 Zettelkasten 式 agentic memory：每条新记忆生成结构化笔记（上下文描述、关键词、标签）；系统<strong>分析历史笔记自动建立链接</strong>；并通过<strong>记忆演化</strong>让新笔记触发对旧笔记上下文与属性的更新。</p>
+    <p><strong>遗留了什么问题。</strong>A-MEM 的全部智能都用在<strong>已入库记忆的组织</strong>上。写入闸门依然是全通的：任何一次交互都会生成一条笔记。遗留的问题是：<strong>结构化组织能否补偿写入质量的缺失？</strong>更尖锐地说，如果一条错误记录被自动链接到十条正确记录上，链接结构是稀释了错误还是放大了错误的可达性？</p>
+    <p><strong>核心工作如何回应。</strong>核心工作<strong>没有直接回答</strong>——经核实，它未与 A-MEM 做任何对比（批判④）。间接回应是量级论证：添加策略在四个基准上的性能跨度达 25.50 pp（CIC-IoT，59.90 → 85.40），删除策略跨度仅约 7 pp。若「组织」维度的收益量级与「删除」相当，则不足以补偿写入端的损失。<strong>但这是本报告的推断，不是论文的实验结论。</strong></p>
+    <p><strong>关键设计的传递。</strong>A-MEM 的「记忆演化」（新记录改写旧记录）恰落在核心工作自述限制排除的 structural transformation 范畴内。演进线在这里出现真正的分叉：<strong>A-MEM 走「让记忆库自组织到更好的状态」，核心工作走「不让坏东西进来」</strong>。两条路在 2026 年的 CMI-Mem 中才第一次被同一个策略同时处理（多槽位架构 + 信息增益准入）。</p>
+  </section>
+
+  <h2>3. 技术演进脉络</h2>
+
+  <section class="card">
+    <h3>3.1 演进树（非线性）</h3>
+    <div class="flow">2023.04  Generative Agents [memory stream · recency+importance+relevance · reflection]
+         └─ 贡献：记忆成为可运行组件
+         └─ 缺口：只追加、importance 是回顾式自评
+                │
+     ┌──────────┼───────────────────────────┬─────────────────────────┐
+     ↓          ↓                           ↓                         ↓
+ 2023.05     2023.08                     2024.07                   2025.02
+ MemoryBank  ExpeL                       AgentPoison               A-MEM
+ [艾宾浩斯遗忘] [经验池+insight抽取]       [检索通道可被劫持]        [Zettelkasten链接+演化]
+ 补「遗忘」维度 补「抽象」维度              补「安全」维度            补「组织」维度
+ 信号=时间/频率 假设=积累即改善           <0.1%投毒 → >80% ASR      写入闸门仍全通
+     │          │                           │                         │
+     └──────────┴───────────┬───────────────┴─────────────────────────┘
+                            ↓
+                   四条支路共有的空白：
+        没有一条把「未来任务的执行结果」接回记忆的准入 / 淘汰决策
+                            ↓
+   ═══════════════════════════════════════════════════════════════
+    2026.08  [核心工作] Experience-Following  (ACL 2026 Long)
+    · 揭示机理：输入相似 → 输出相似（复制保真度 ≈ 1）
+    · 判决实验：add-all 在 4/4 基准劣于零写入（平均 −8.79 pp）
+    · 给出闸门：Φ 评估器接入 π(写入) 与 φ_hist(删除)
+    · 判决遗忘信号：频率 0/4 命中  vs  效用 3/4 命中
+   ═══════════════════════════════════════════════════════════════
+                            ↓
+                把「闸门」从规则升级为可学习策略
+                            ↓
+     ┌──────────────────────┼──────────────────────┐
+     ↓                      ↓                      ↓
+ 2025.08 Memory-R1      2025.09 Mem-α          2026.01 AgeMem
+ [LTM 操作 RL]          [core/epi/sem + RL]    [统一单策略]
+     └──────────────────────┼──────────────────────┘
+                            ↓
+                    2026.07  CMI-Mem
+      [把奖励从「下游 QA 对不对」换成「条件互信息 I(C;m|M)」]
+      —— 直接攻击核心工作 Φ 评估器的同一个弱点：
+          价值判定依赖于采样出来的查询与特定 reader</div>
+  </section>
+
+  <section class="card">
+    <h3>3.2 演进的内在逻辑</h3>
+    <p>这条线的推动力可以概括为<strong>记忆价值信号的四次内化</strong>：</p>
+    <div class="tw">
+    <table>
+      <tr><th>阶段</th><th>时期</th><th>价值信号来自哪里</th><th>代表工作</th><th>本质局限</th></tr>
+      <tr><td>一、显著性</td><td>2023</td><td>LLM 对记忆自身的自评（importance）、时间衰减</td><td>Generative Agents, MemoryBank</td><td>回顾式；与下游后果无因果联系</td></tr>
+      <tr><td>二、结构</td><td>2024–2025</td><td>记忆之间的关系（链接、抽象、演化）</td><td>ExpeL, A-MEM</td><td>组织已入库内容；不解决准入</td></tr>
+      <tr class="best"><td>三、后果</td><td>2026（核心工作）</td><td><strong>未来任务的执行评估 Φ</strong></td><td>Experience-Following</td><td>依赖外部评估器；需先被检索 n 次</td></tr>
+      <tr><td>四、内蕴信息</td><td>2026</td><td><strong>相对已有记忆的条件互信息 I(C;m|M)</strong></td><td>CMI-Mem</td><td>高斯近似；估计开销随记忆规模增长</td></tr>
+    </table>
+    </div>
+    <p><strong>阶段间的关键转折：</strong></p>
+    <ul>
+      <li><strong>一 → 二：</strong>认识到单条记忆的孤立价值不可判定，转而依赖关系结构。</li>
+      <li><strong>二 → 三：</strong>认识到结构无法补偿源头污染。转折点正是核心工作的 add-all 实验——它以四战四败的方式说明，在写入闸门缺失时，下游一切精巧设计都在处理一个已经被污染的分布。<strong>信号从「记忆看起来怎么样」变成「记忆用出来怎么样」。</strong></li>
+      <li><strong>三 → 四：</strong>认识到「用出来怎么样」这个信号本身也是有偏的——它取决于恰好采样到了哪些下游查询、以及用哪个 reader 去回答。CMI-Mem 把信号完全内移到记忆库自身：候选记录的价值 = 它相对当前记忆状态所携带的<strong>边际信息量</strong>，不需要任何查询、不需要任何 reader。</li>
+    </ul>
+    <div class="callout hi">
+      <strong>一句话概括这条线：</strong>从「这段记忆重要吗」→「这些记忆之间有什么关系」→「这段记忆用起来有用吗」→「这段记忆相对我已经知道的东西，还剩多少新信息」。
+    </div>
+    <p>值得注意的是，第四阶段并不能取代第三阶段。CMI-Mem 自己的消融结论是 CMI 与 QA 奖励<strong>互补</strong>（CMI 单独缺少结果锚点）——这恰好是对核心工作的一个回向确认：<strong>下游任务评估依然是不可或缺的锚，只是不该是唯一的信号。</strong></p>
+  </section>
+
+  <h2>4. 开放挑战与研究机会</h2>
+
+  <section class="card">
+    <h3>4.1 理论层面</h3>
+    <p><strong>(T1) 经验跟随强度的模型依赖性度量 —— 高价值、低门槛。</strong>核心工作只在 GPT-4o-mini 上、只在 RegAgent 上给出 r ≈ 1。<strong>具体可做的事</strong>：定义复制保真度系数 κ = ∂(输出相似度)/∂(输入相似度) 的局部斜率，在 Qwen3 / Llama / DeepSeek / GPT / Claude 五族模型 × 四个基准上测出 κ 矩阵。假设：κ 与模型的 in-context 模仿倾向正相关，因而与后训练中 SFT:RL 的配比相关。若成立，<strong>κ 就是「这个模型该不该上长期记忆」的一个可预先测量的判据</strong>（对应批判⑥⑨）。</p>
+    <p><strong>(T2) 记忆信噪比的临界条件。</strong>RegAgent 结果暗示存在一个临界评估器精度 p*，低于它记忆积累的期望收益为负。<strong>具体可做的事</strong>：在论文自己提供的可控合成环境 RegAgent 里，把评估器的假阳性率作为连续自变量扫描，测出 SR(p) 曲线与零写入基线的交点。论文自述限制②说「理论保证不可行」，但它自己也承认合成环境是理论研究的立足点（“particularly through controlled experimentation in our synthetic RegAgent environment”）——这个实验它已具备全部条件却没有做。</p>
+    <p><strong>(T3) 准入信号与淘汰信号的统一目标函数。</strong>当前 π（写入）与 φ_hist（删除）用同一个 Φ，但目标不同：写入端要预测「这条记录未来会不会有用」，删除端要估计「这条记录过去有没有用」。<strong>具体可做的事</strong>：把两者写成同一个序贯决策问题的两个动作，用 φ_hist 累积的后验作为 π 的在线校准信号（本质上是 contextual bandit）。这直接回应批判⑧的「n 次伤害」延迟——<strong>用已删除记录的后验统计去收紧未来的准入阈值，把补救转化为预防。</strong></p>
+  </section>
+
+  <section class="card">
+    <h3>4.2 工程与应用层</h3>
+    <div class="callout">
+      <strong>(E1) 与已发表记忆系统的 head-to-head 判决实验 —— 本条是当前最关键的空白。</strong>核心工作主张「必须调控写入质量」，A-MEM / Mem0 主张「必须组织记忆结构」，MemoryBank 主张「必须遗忘」。三者从未在同一评测台上对撞过。<strong>具体需求（不是「探索方向」）：</strong>在核心工作的四个智能体上跑一个 2×2×2 因子实验（{全通, strict 准入} × {扁平, A-MEM 链接} × {无遗忘, 艾宾浩斯}），报告主效应与交互效应。<strong>判决点</strong>：如果链接结构的主效应显著小于准入闸门的主效应（本报告推断前者 ~7 pp 量级、后者 ~25 pp 量级），那么整个「记忆架构」研究支线的优先级需要重排。这是一个 8 个 cell、可在现有开源代码上完成的实验，却是全领域最有价值的未做实验。
+    </div>
+    <p><strong>(E2) 记忆管理评测必须报告运行间方差。</strong>批判③的证据是：同一配置在两张表里差 0.17–0.28 pp，而多个被论文讨论的效应就落在这个区间内。<strong>具体需求</strong>：领域应约定最低标准——至少 3 个种子、报告标准差；长时序滚动评测还应报告置信带而非单条曲线。目前包括核心工作、Mem-α、CMI-Mem 在内的主要工作<strong>都没有做到这一点</strong>。</p>
+    <p><strong>(E3) 低频高风险场景的零延迟准入判据。</strong>φ_hist 的 n 次延迟在临床/驾驶场景不可接受。<strong>具体可做的事</strong>：设计一个只用<strong>写入时刻可得信息</strong>的准入判据，并用 EHRAgent / AgentDriver 环境评测「首次伤害率」（首条有害记录被清除前造成的错误执行数）。CMI-Mem 的 I(C;m|M) 恰是一个零检索即可计算的候选信号——<strong>把 CMI 用作准入判据、把 Φ 用作淘汰判据，是一个两篇论文都没做但组合显然的实验。</strong></p>
+    <p><strong>(E4) 多模态与多智能体的经验跟随。</strong>共享记忆的多智能体系统（GateMem、Governed Shared Memory）中，一条记录会被多个 principal 检索。若经验跟随成立，则<strong>一条错误记录的传播扇出从 1 变成 N</strong>。GateMem 提供了治理评测台，核心工作提供了机理——两者未曾对话。</p>
+  </section>
+
+  <section class="card">
+    <h3>4.3 新兴方向</h3>
+    <p><strong>(N1) 可逆删除 / 记忆的软淘汰。</strong>当前所有删除都是硬删除，而批判⑦显示 Combined 删除会产生 −9.30 pp 的破坏性交叠。<strong>具体可做的事</strong>：把删除替换为「降权到冷存储 + 可召回」，用 Table 2 的同一组配置对比硬删除与软淘汰，看破坏性交叠是否消失。这会直接检验一个假设：Period 删掉的是「低频但高效用的长尾」。</p>
+    <p><strong>(N2) 把经验跟随从 bug 变成 feature。</strong>论文全篇把 experience-following 当作风险来源。但 Fig. 4 的 2000 次交叉点提示了相反用法：<strong>如果 Agent 会高保真复制与自己分布接近的示范，那么记忆库就是一个天然的在策略蒸馏缓冲区</strong>。<strong>具体可做的事</strong>：显式构造「on-policy 但经过质量筛选」的记忆库，与「off-policy 完美示范」库对比，在多个模型规模上定位交叉点位置，判断这是普适现象还是 AgentDriver 特有。</p>
+    <p><strong>(N3) 评估器的自举与漂移。</strong>C3 只用 300 条标注就逼近 oracle 到 3.6–5.9 pp。但在长期部署中，评估器本身会遭遇分布漂移。<strong>具体可做的事</strong>：让 Φ 与记忆库共同演化（用被保留记录的实际下游表现在线微调 Φ），测量评估器精度随时间的轨迹——这是「记忆治理系统自身也需要被治理」的问题，目前完全空白。</p>
+  </section>
+
+  <h2>5. 相关工作表格对标</h2>
+
+  <section class="card">
+    <div class="tw">
+    <table>
+      <tr><th>工作</th><th>发表年月</th><th>会议/出版</th><th>核心贡献</th><th>主要指标 / 头条数字</th><th>与核心工作的关系</th></tr>
+      <tr><td>Generative Agents</td><td>2023-04 / UIST 2023</td><td>UIST 2023</td><td>memory stream + recency/importance/relevance 检索 + reflection</td><td>摘要无数值结果</td><td><strong>机理来源</strong>：其相似度检索正是 experience-following 的传导通道；importance 自评被 Φ 取代</td></tr>
+      <tr><td>MemoryBank</td><td>2023-05 / AAAI 2024</td><td>AAAI 2024, 38(17):19724–19731</td><td>艾宾浩斯遗忘曲线驱动的记忆更新</td><td>摘要无数值结果</td><td><strong>被判决方</strong>：频率类信号在 strict 分支 0/4 命中，最差 −4.60 pp</td></tr>
+      <tr><td>ExpeL</td><td>2023-08 / AAAI 2024</td><td>AAAI 2024, 38(17):19632–19642</td><td>经验池 + insight 抽取，零参数更新</td><td>摘要无数值结果</td><td><strong>被条件化</strong>：「积累即改善」被 add-all 的 4/4 失败推翻，改写为以闸门质量为前件</td></tr>
+      <tr><td>AgentPoison</td><td>2024-07</td><td>NeurIPS 2024</td><td>触发词约束优化，劫持记忆检索</td><td>ASR &gt;80%，正常影响 &lt;1%，投毒率 &lt;0.1%</td><td><strong>同机理的对抗版</strong>：核心工作证明无需攻击者也会自我投毒；评测台重合</td></tr>
+      <tr><td>A-MEM</td><td>2025-02 / NeurIPS 2025</td><td>NeurIPS 2025, pp.17577–17604</td><td>Zettelkasten 笔记链接 + 记忆演化</td><td>摘要称 “six foundation models”，无百分比</td><td><strong>未对比</strong>（批判④）：走「组织」路线，与「准入」路线正交且未被判决</td></tr>
+      <tr class="best"><td><strong>[核心] Experience-Following</strong></td><td><strong>2025-05 / ACL 2026</strong></td><td><strong>ACL 2026 Long, pp.623–645</strong></td><td><strong>揭示经验跟随；证明无筛选写入负收益；用未来任务评估驱动准入与淘汰</strong></td><td><strong>Add-all vs Fixed：4/4 劣于零写入，平均 −8.79 pp；Strict vs Add-all 平均 +21.28 pp；C3 仅需 300 条标注</strong></td><td>—</td></tr>
+      <tr><td>Mem-α</td><td>2025-09</td><td>arXiv 预印本（未见 venue）</td><td>RL 训练记忆管理工具调用；core/episodic/semantic 三槽</td><td>训练 ≤30k token，泛化 &gt;400k token（<strong>13×</strong>）</td><td><strong>下游继承</strong>：把「下游 QA 评估作为质量标签」直接用作 RL 奖励</td></tr>
+      <tr><td>CMI-Mem</td><td>2026-07</td><td>arXiv 预印本（未见 venue）</td><td>条件互信息内在奖励 + QA 奖励混合，残差投影估计 CMI</td><td>摘要无百分比；三个基准</td><td><strong>回向批判</strong>：攻击 Φ「依赖采样查询与特定 reader」的弱点；其消融称 CMI 与 QA 互补</td></tr>
+    </table>
+    </div>
+  </section>
+
+  <h2>6. 其他值得关注的近期工作</h2>
+
+  <section class="card">
+    <h4>CMI-Mem: Toward Generalizable Long-Term Memory Management via CMI-Augmented Reinforcement Learning（2026-07-15，arXiv 预印本）</h4>
+    <p>本期最值得单独立项追踪的一篇。它把「记忆价值」从依赖采样 QA 的外在信号，换成条件互信息 I(C_t; m_t^new | M_{t-1}^local) 这一内在信号，并用高斯假设下的偏相关 + 残差正交投影给出可计算估计。<strong>为什么值得看</strong>：这是第一次有工作把「这条记忆相对我已知内容还剩多少新信息」写成一个可微、无需 reader 的奖励项。<br>
+    <a href="https://arxiv.org/abs/2607.20553">arXiv</a> ｜ <a href="https://github.com/Wyb0627/CMIMem">Code</a><br>
+    <span class="neg">⚠️ 坦诚说明：其 arXiv HTML 页面正文在 Section 3.3 处截断，我<strong>未能核实其任何实验数值</strong>，因此本报告不引用其性能数字。</span></p>
+
+    <h4>GateMem: Benchmarking Memory Governance in Multi-Principal Shared-Memory Agents（2026-06，arXiv 预印本）</h4>
+    <p>把「谁能写、谁能读、谁能删」作为一等评测维度，针对多主体共享记忆场景。<strong>为什么值得看</strong>：核心工作只处理单 Agent 的自我污染；一旦记忆共享，错误的传播扇出乘以 N，GateMem 提供了唯一的评测台。<br>
+    <a href="https://arxiv.org/abs/2606.18829">arXiv</a></p>
+
+    <h4>What to Keep, What to Forget: A Rate–Distortion View of Memory Compaction in LLMs and Agents（2026-07-09，arXiv 预印本）</h4>
+    <p>把 KV cache 驱逐、prompt 剪枝、架构状态界定、Agent 记忆整合统一为同一个率失真问题，给出层无关的理论下界与七轴分类法。<strong>为什么值得看</strong>：它的核心批评「每一层决定保留什么的信号都是注意力幅度或时近性，且以同样的方式失败」与本期核心工作的「频率不是效用代理」是同一论断在不同抽象层的表述。<br>
+    <a href="https://arxiv.org/abs/2607.08032">arXiv</a>（疑似此前报告已覆盖，故未选为核心工作）</p>
+
+    <h4>Filesystem-Based Memory for LLM Agents: Organization, Evolution, and Sustainability（2026-07，arXiv 预印本）</h4>
+    <p>用文件系统语义（目录、路径、权限）承载 Agent 记忆的组织与演化。<strong>为什么值得看</strong>：为 A-MEM 的「链接」路线提供了一个工程上更成熟的替代结构，且天然带有可审计性。<br>
+    <a href="https://arxiv.org/abs/2607.26637">arXiv</a></p>
+
+    <h4>Memory Beyond Recall: A Dual-Process Cognitive Memory System for Self-Evolving LLM Agents（2026-06，arXiv 预印本）</h4>
+    <p>双过程（快/慢）认知记忆架构。<strong>为什么值得看</strong>：它把「何时该直接复用记忆、何时该重新推理」做成显式路由——这正好是本期核心工作 experience-following 的天然对策（复制保真度过高时应切换到慢通道）。<br>
+    <a href="https://arxiv.org/abs/2606.09483">arXiv</a></p>
+
+    <h4>From Recall to Forgetting: Benchmarking Long-Term Memory for Personalized Agents（2026-04，arXiv 预印本）</h4>
+    <p>把「遗忘」作为独立评测轴的个性化 Agent 长期记忆基准。<strong>为什么值得看</strong>：本期核心工作的删除实验缺一个标准评测台，这篇提供了候选。<br>
+    <a href="https://arxiv.org/abs/2604.20006">arXiv</a></p>
+
+    <h4>Mem-α: Learning Memory Construction via Reinforcement Learning（2025-09-30，arXiv 预印本）</h4>
+    <p>core / episodic / semantic 三槽架构 + 以完整交互历史上的下游 QA 准确率为奖励的 RL。<strong>为什么值得看</strong>：它是本期核心工作结论的最直接工程化——「用未来任务评估作质量标签」被直接实例化为奖励函数；并报告在 ≤30k token 上训练、可泛化到 &gt;400k token（13× 训练长度）。<br>
+    <a href="https://arxiv.org/abs/2509.25911">arXiv</a> ｜ <a href="https://github.com/wangyu-ustc/Mem-alpha">Code</a> ｜ <a href="https://huggingface.co/YuWangX/Memalpha-4B">Model</a> ｜ <a href="https://huggingface.co/datasets/YuWangX/Memalpha">Dataset</a></p>
+  </section>
+
+  <h2>附录 · 链接清单（全部经实际访问核实）</h2>
+
+  <section class="card">
+    <div class="tw">
+    <table>
+      <tr><th>工作</th><th>会议 / Proceedings</th><th>arXiv</th><th>代码</th><th>数据 / 模型</th></tr>
+      <tr class="best"><td><strong>[核心] Experience-Following</strong></td><td><a href="https://aclanthology.org/2026.acl-long.27/">ACL 2026 Long, pp.623–645</a> ✅ ｜ <a href="https://aclanthology.org/2026.acl-long.27.pdf">PDF</a> ✅ ｜ DOI 10.18653/v1/2026.acl-long.27</td><td><a href="https://arxiv.org/abs/2505.16067">2505.16067</a> v2 ✅ ｜ <a href="https://arxiv.org/html/2505.16067v2">HTML v2</a> ✅</td><td><a href="https://github.com/yuplin2333/agent_memory_manage">yuplin2333/agent_memory_manage</a></td><td>数据与实验代码同仓库（论文脚注 1）</td></tr>
+      <tr><td>Generative Agents</td><td>ACM DL 10.1145/3586183.3606763 ❌（403，未能加载）；venue 经 <a href="https://hci.stanford.edu/publications/paper.php?id=482">Stanford HCI</a> ✅ 确认为 UIST 2023</td><td><a href="https://arxiv.org/abs/2304.03442">2304.03442</a> v2 ✅</td><td><a href="https://github.com/joonspk-research/generative_agents">joonspk-research/generative_agents</a> ✅</td><td>未找到</td></tr>
+      <tr><td>MemoryBank</td><td><a href="https://ojs.aaai.org/index.php/AAAI/article/view/29946">AAAI 2024 38(17):19724–19731</a> ✅</td><td><a href="https://arxiv.org/abs/2305.10250">2305.10250</a> v3 ✅</td><td><a href="https://github.com/zhongwanjun/MemoryBank-SiliconFriend">zhongwanjun/MemoryBank-SiliconFriend</a> ✅</td><td>仓库内 <code>eval_data/cn</code>、<code>eval_data/en</code></td></tr>
+      <tr><td>ExpeL</td><td><a href="https://ojs.aaai.org/index.php/AAAI/article/view/29936">AAAI 2024 38(17):19632–19642</a> ✅</td><td><a href="https://arxiv.org/abs/2308.10144">2308.10144</a> v3 ✅</td><td><a href="https://github.com/LeapLabTHU/ExpeL">LeapLabTHU/ExpeL</a> ✅ ｜ <a href="https://andrewzh112.github.io/expel/">Project</a> ✅</td><td>HotpotQA / ALFWorld / WebShop / FEVER（无独立页）</td></tr>
+      <tr><td>AgentPoison</td><td>NeurIPS 2024 官方 proceedings PDF ✅；<a href="https://openreview.net/forum?id=Y841BRW9rY">OpenReview</a> ❌（bot 拦截）</td><td><a href="https://arxiv.org/abs/2407.12784">2407.12784</a> v1 ✅</td><td><a href="https://github.com/AI-secure/AgentPoison">AI-secure/AgentPoison</a> ✅</td><td>未找到</td></tr>
+      <tr><td>A-MEM</td><td>NeurIPS 2025 Main Track, pp.17577–17604 ✅</td><td><a href="https://arxiv.org/abs/2502.12110">2502.12110</a> v11 ✅</td><td>原始 <code>WujiangXu/A-mem</code> ❌（未能加载）；镜像 <a href="https://github.com/agiresearch/A-mem">agiresearch/A-mem</a> ✅</td><td>未找到</td></tr>
+      <tr><td>Mem-α</td><td>未找到（arXiv 预印本，无 venue 字段）</td><td><a href="https://arxiv.org/abs/2509.25911">2509.25911</a> v1 ✅</td><td><a href="https://github.com/wangyu-ustc/Mem-alpha">wangyu-ustc/Mem-alpha</a> ✅</td><td><a href="https://huggingface.co/YuWangX/Memalpha-4B">Memalpha-4B</a> ｜ <a href="https://huggingface.co/datasets/YuWangX/Memalpha">Memalpha</a> ｜ <a href="https://huggingface.co/datasets/ai-hyz/MemoryAgentBench">MemoryAgentBench</a></td></tr>
+      <tr><td>CMI-Mem</td><td>未找到（arXiv 预印本，Comments 字段为空）</td><td><a href="https://arxiv.org/abs/2607.20553">2607.20553</a> v1 ✅</td><td><a href="https://github.com/Wyb0627/CMIMem">Wyb0627/CMIMem</a> ✅</td><td>ModelScope <code>wyb0627/CMIMem-4B</code>（未加载核实）</td></tr>
+    </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>数据来源声明</h3>
+    <ul>
+      <li>本报告 §1.5 的所有绝对数值来自论文 <strong>Table 1</strong>（添加策略）与 <strong>Table 2</strong>（删除策略），经对 <code>arxiv.org/html/2505.16067v2</code> 的两轮独立抽取交叉验证一致。</li>
+      <li>所有 <code>Δ</code>、<code>相对提升%</code>、<code>记忆倍数</code>、<code>命中数 x/4</code> 均为<strong>本报告基于论文原值计算</strong>，非论文原文报告。</li>
+      <li>图表相关结论（Fig. 2/3/4/6/7）来自论文图注原文与正文叙述，未从图像中读取坐标值。</li>
+      <li>论文自述限制、贡献列表、图注均为原文逐字引用。</li>
+      <li>未复现任何实验；未获取论文附录 B.2 的数值内容。</li>
+    </ul>
+  </section>
+
+  <footer>
+    Agent Memory 每日文献追踪 · 生成于 2026-08-08 ·
+    核心工作：<a href="https://aclanthology.org/2026.acl-long.27/">How Memory Management Impacts LLM Agents: An Empirical Study of Experience-Following Behavior</a>（ACL 2026 Long, pp. 623–645）
+  </footer>
+
+</div>
+<div class="tip" id="tip"></div>
+<script>
+(function(){
+  var r=document.documentElement, b=document.getElementById('tglBtn');
+  b.addEventListener('click',function(){
+    var d=r.getAttribute('data-theme')==='dark';
+    r.setAttribute('data-theme', d?'light':'dark');
+    b.textContent = d?'☾ 深色':'☀ 浅色';
+  });
+  var tip=document.getElementById('tip');
+  document.querySelectorAll('svg.chart rect.bar').forEach(function(el){
+    el.addEventListener('mousemove',function(e){
+      tip.textContent=el.getAttribute('data-t');
+      tip.style.opacity=1;
+      var x=e.clientX+14, y=e.clientY-38;
+      if(x+tip.offsetWidth>window.innerWidth-8){x=e.clientX-tip.offsetWidth-14;}
+      if(y<8){y=e.clientY+22;}
+      tip.style.left=x+'px'; tip.style.top=y+'px';
+    });
+    el.addEventListener('mouseleave',function(){tip.style.opacity=0;});
+  });
+})();
+</script>
+</body>
+</html>

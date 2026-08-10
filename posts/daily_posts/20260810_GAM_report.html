@@ -1,0 +1,1007 @@
+---
+layout: null
+title: "GAM：用语义边界触发 Agent 记忆巩固"
+date: 2026-08-10
+excerpt: "深入解析 GAM 如何把记忆写入时机作为核心设计变量，通过语义边界触发编码与巩固，构建分层图式 Agent 记忆。"
+permalink: /blog/2026/08/10/gam-semantic-boundary-memory-consolidation/
+blog_post: true
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GAM：语义边界触发的记忆巩固 · Agent Memory 每日追踪 · 2026-08-10</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --accent-soft: #cde2fb;
+    --good: #006300;
+    --crit: #d03b3b;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --accent-soft: #184f95;
+    --good: #0ca30c;
+    --crit: #e66767;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  header.hero {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 32px 34px;
+    margin-bottom: 34px;
+  }
+  .eyebrow {
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; margin: 0 0 10px;
+  }
+  h1 { font-size: 30px; line-height: 1.3; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .subtitle { font-size: 17px; color: var(--text-secondary); margin: 0 0 18px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    font-size: 12.5px; padding: 4px 11px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--text-secondary);
+    background: var(--page);
+  }
+  .chip.venue { border-color: var(--series-1); color: var(--series-1); font-weight: 600; }
+  .chip.warn { border-color: var(--series-2); color: var(--series-2); font-weight: 600; }
+  .lede {
+    border-left: 3px solid var(--series-1);
+    padding: 4px 0 4px 18px; margin: 20px 0 0;
+    color: var(--text-secondary); font-size: 15.5px;
+  }
+  h2 {
+    font-size: 22px; margin: 52px 0 16px; padding-bottom: 10px;
+    border-bottom: 1px solid var(--border); letter-spacing: -0.01em;
+  }
+  h3 { font-size: 18px; margin: 34px 0 12px; }
+  h3:first-child { margin-top: 0; }
+  h4 { font-size: 15.5px; margin: 24px 0 8px; color: var(--text-secondary); }
+  p { margin: 0 0 14px; }
+  section.card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 26px 30px; margin-bottom: 20px;
+  }
+  a { color: var(--series-1); text-decoration: none; border-bottom: 1px solid transparent; }
+  a:hover { border-bottom-color: var(--series-1); }
+  code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px; background: var(--page); padding: 1.5px 5px;
+    border-radius: 4px; border: 1px solid var(--border);
+  }
+  .formula {
+    background: var(--page); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 16px; margin: 12px 0; font-family: ui-monospace, Menlo, monospace;
+    font-size: 13.5px; overflow-x: auto; color: var(--text-primary);
+  }
+  .tbl-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0 20px; font-size: 14.5px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--grid); }
+  th { color: var(--muted); font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: .05em; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.best td { background: var(--accent-soft); font-weight: 600; }
+  :root[data-theme="dark"] tr.best td { background: rgba(57,135,229,.18); }
+  .up { color: var(--good); font-variant-numeric: tabular-nums; }
+  .dn { color: var(--crit); font-variant-numeric: tabular-nums; }
+  ol, ul { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 8px; }
+  .callout {
+    border-left: 3px solid var(--series-2); background: var(--page);
+    padding: 14px 18px; border-radius: 0 8px 8px 0; margin: 18px 0;
+    font-size: 15px; color: var(--text-secondary);
+  }
+  .callout strong { color: var(--text-primary); }
+  .callout.hl { border-left-width: 5px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  button.tgl {
+    font: inherit; font-size: 13px; padding: 6px 14px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface-1);
+    color: var(--text-secondary); cursor: pointer;
+  }
+  button.tgl:hover { color: var(--text-primary); }
+  .figure { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 24px 26px; margin: 24px 0; }
+  .fig-title { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+  .fig-sub { font-size: 13.5px; color: var(--muted); margin: 0 0 18px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 16px; font-size: 13.5px; color: var(--text-secondary); }
+  .legend span.sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 7px; vertical-align: -1px; }
+  svg.chart { width: 100%; height: auto; display: block; }
+  svg.chart text { font-family: system-ui, -apple-system, "PingFang SC", sans-serif; }
+  svg.chart rect.bar { cursor: pointer; }
+  svg.chart rect.bar:hover { opacity: .82; }
+  .tip {
+    position: fixed; pointer-events: none; opacity: 0; transition: opacity .1s;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 12px; font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,.14);
+    z-index: 50; color: var(--text-primary); white-space: nowrap;
+  }
+  .flow {
+    background: var(--page); border: 1px solid var(--border); border-radius: 10px;
+    padding: 20px 22px; font-family: ui-monospace, Menlo, monospace;
+    font-size: 12.5px; line-height: 1.85; overflow-x: auto; color: var(--text-secondary);
+    white-space: pre;
+  }
+  footer { margin-top: 60px; padding-top: 22px; border-top: 1px solid var(--border); font-size: 13.5px; color: var(--muted); }
+  .toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+  .toc li { margin: 0; }
+  .toc a { font-size: 13px; padding: 4px 11px; border-radius: 999px; border: 1px solid var(--border); display: inline-block; color: var(--text-secondary); }
+  .toc a:hover { border-color: var(--series-1); color: var(--series-1); }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    h1 { font-size: 23px; }
+    h2 { font-size: 19px; margin-top: 40px; }
+    section.card { padding: 20px 18px; }
+    .figure { padding: 18px 14px; }
+    table { font-size: 12.5px; }
+    th, td { padding: 7px 8px; }
+    .flow { font-size: 10.5px; padding: 14px 12px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="toolbar">
+    <button class="tgl" id="themeBtn">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">Agent Memory 每日文献追踪 · Vol. 2026-08-10</p>
+    <h1>GAM：把「什么时候写入记忆」变成第一性设计变量</h1>
+    <p class="subtitle">Hierarchical Graph-based Agentic Memory for LLM Agents — 语义边界触发的 encoding–consolidation 解耦</p>
+    <div class="meta">
+      <span class="chip venue">ACL 2026 Main · Long</span>
+      <span class="chip">arXiv 2604.12285（2026-04）</span>
+      <span class="chip">出版 2026-07</span>
+      <span class="chip">记忆架构 / 巩固机制</span>
+      <span class="chip warn">代码未公开</span>
+    </div>
+    <p class="lede">记忆的瓶颈不在「存什么」或「怎么检索」，而在「什么时候允许写入长期存储」。GAM 把写入时机本身做成一个由语义边界触发的状态机——消融数据显示，这道闸门的价值是检索优化的 <strong>3.68 倍</strong>。</p>
+  </header>
+
+  <section class="card">
+    <ul class="toc">
+      <li><a href="#s0">0 · 检索说明</a></li>
+      <li><a href="#s1">1 · 链接清单</a></li>
+      <li><a href="#s2">2 · 核心工作深度解析</a></li>
+      <li><a href="#s3">3 · 相关工作回溯</a></li>
+      <li><a href="#s4">4 · 演进脉络</a></li>
+      <li><a href="#s5">5 · 开放挑战</a></li>
+      <li><a href="#s6">6 · 表格对标</a></li>
+      <li><a href="#s7">7 · 其他近期工作</a></li>
+      <li><a href="#s8">8 · TL;DR</a></li>
+    </ul>
+  </section>
+
+  <h2 id="s0">0. 当日检索情况说明</h2>
+  <section class="card">
+    <p>本期检索覆盖 ACL Anthology 2026（Main + Findings）、EACL 2026、IJCAI 2025 proceedings、arXiv cs.CL/cs.AI 2604–2607 月份、ICLR 2026 MemAgents workshop 页面，以及两份社区论文列表，累计浏览候选 <strong>24 篇</strong>。</p>
+    <ol>
+      <li>按会议优先级，<strong>ACL 2026 主会长文 &gt; arXiv 预印本</strong>。主会检出两篇强候选：GAM（<code>2026.acl-long.1600</code>）与 <em>How Memory Management Impacts LLM Agents</em>（<code>2026.acl-long.27</code>）。</li>
+      <li>主动<strong>排除</strong> <code>2607.08032</code>（率失真视角的记忆压缩，7 轴分类法 / 四层对比）与 AgeMem <code>2601.01885</code> 系工作——其标志性元素（7 轴分类表、奖励函数分量表、优势广播、PDDL 17.31 vs 18.39）均已在既往报告中详述，属点名回避范围。</li>
+      <li>子方向轮换：首期为 <strong>RL 训练记忆策略</strong>，本期切换到 <strong>记忆架构与巩固机制</strong>，并在末节补充记忆安全、评测基准两条线。</li>
+      <li>选定 GAM 的理由：ACL 2026 主会长文，含 4 backbone × 7 方法 × 4 任务 × 2 指标的完整主结果矩阵、四路消融、三组超参敏感性、效率与长程扩展表——足以支撑定量优先的深度分析。</li>
+    </ol>
+    <div class="callout">
+      <strong>已知缺口（坦诚声明）：</strong>GAM 论文正文与 ACL Anthology 页面<strong>均未给出代码仓库地址</strong>，因此所有实现细节无法交叉核实；置信阈值 <code>τ</code> 的数值论文本身也未公开。LongDialQA 无独立发布页，论文引 Kim et al., 2024（即 DialSim）。
+    </div>
+  </section>
+
+  <h2 id="s1">1. 链接清单</h2>
+  <section class="card">
+    <h3>1.1 核心工作</h3>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>项目</th><th>链接</th><th>状态</th></tr>
+      <tr><td>ACL Anthology</td><td><a href="https://aclanthology.org/2026.acl-long.1600/">2026.acl-long.1600</a></td><td>✅ 已验证</td></tr>
+      <tr><td>PDF</td><td><a href="https://aclanthology.org/2026.acl-long.1600.pdf">aclanthology.org/2026.acl-long.1600.pdf</a></td><td>✅</td></tr>
+      <tr><td>DOI</td><td><code>10.18653/v1/2026.acl-long.1600</code></td><td>✅</td></tr>
+      <tr><td>arXiv</td><td><a href="https://arxiv.org/abs/2604.12285">abs/2604.12285</a> · <a href="https://arxiv.org/html/2604.12285v1">HTML v1</a></td><td>✅ 已验证</td></tr>
+      <tr><td>代码仓库</td><td>—</td><td>❌ <strong>未找到</strong></td></tr>
+      <tr><td>LoCoMo</td><td><a href="https://aclanthology.org/2024.acl-long.747/">ACL 2024</a> · <a href="https://github.com/snap-research/locomo">GitHub</a> · <a href="https://snap-research.github.io/locomo/">项目页</a></td><td>✅</td></tr>
+      <tr><td>LongDialQA</td><td>无独立发布页；论文引 Kim et al., 2024 → <a href="https://arxiv.org/abs/2406.13144">DialSim (arXiv 2406.13144)</a></td><td>⚠️ 部分</td></tr>
+      <tr><td>MovieChat-1K</td><td>论文附录 Table 8 使用，未给链接</td><td>⚠️</td></tr>
+    </table>
+    </div>
+    <p style="font-size:14.5px;color:var(--text-secondary)"><strong>书目</strong>：Zhaofen Wu, Hanrong Zhang, Fulin Lin, Wujiang Xu, Xinran Xu, Yankai Chen, Henry Peng Zou, Shaowen Chen, Weizhi Zhang, Xue Liu, Philip S. Yu, Hongwei Wang. <em>GAM: Hierarchical Graph-based Agentic Memory for LLM Agents</em>. ACL 2026 (Vol. 1: Long Papers), July 2026.<br><strong>单位</strong>：浙江大学（国际联合学院）、University of Illinois Chicago、Rutgers University、MBZUAI、McGill University。</p>
+
+    <h3>1.2 回溯的相关工作</h3>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>工作</th><th>正式出版</th><th>arXiv</th><th>代码</th></tr>
+      <tr><td>MemoryBank</td><td><a href="https://ojs.aaai.org/index.php/AAAI/article/view/29946">AAAI 2024</a></td><td><a href="https://arxiv.org/abs/2305.10250">2305.10250</a> (2023-05)</td><td>未验证</td></tr>
+      <tr><td>MemGPT</td><td>未找到会议出版页</td><td><a href="https://arxiv.org/abs/2310.08560">2310.08560</a> (2023-10)</td><td><a href="https://research.memgpt.ai/">项目页</a></td></tr>
+      <tr><td>A-MEM</td><td><a href="https://neurips.cc/virtual/2025/poster/119020">NeurIPS 2025</a></td><td><a href="https://arxiv.org/abs/2502.12110">2502.12110</a> (2025-02)</td><td><a href="https://github.com/WujiangXu/A-mem">GitHub</a></td></tr>
+      <tr><td>AriGraph</td><td><a href="https://www.ijcai.org/proceedings/2025/2">IJCAI 2025</a> · <a href="https://www.ijcai.org/proceedings/2025/0002.pdf">PDF</a></td><td><a href="https://arxiv.org/abs/2407.04363">2407.04363</a> (v1 2024-07 / v3 2025-05)</td><td><a href="https://github.com/AIRI-Institute/AriGraph">GitHub</a></td></tr>
+      <tr><td>MemoryOS</td><td><a href="https://aclanthology.org/2025.emnlp-main.1318.pdf">EMNLP 2025 Main (Oral)</a></td><td><a href="https://arxiv.org/abs/2506.06326">2506.06326</a> (2025-05)</td><td><a href="https://github.com/BAI-LAB/MemoryOS">GitHub</a></td></tr>
+      <tr><td>Mem0</td><td>未找到会议出版页</td><td><a href="https://arxiv.org/abs/2504.19413">2504.19413</a> (2025-04)</td><td><a href="https://github.com/mem0ai/mem0">GitHub</a></td></tr>
+    </table>
+    </div>
+  </section>
+
+  <h2 id="s2">2. 核心工作深度解析</h2>
+
+  <section class="card">
+    <h3>2.1 摘要与核心定位</h3>
+    <p>摘要的关键句：<em>“To sustain coherent long-term interactions, LLM agents must navigate the tension between acquiring new information and retaining prior knowledge.”</em>——为维持连贯的长期交互，agent 必须在「获取新信息」与「保留既有知识」这对张力之间导航。GAM 的做法是<strong>把记忆编码（encoding）与记忆巩固（consolidation）解耦</strong>：正在进行的对话被隔离在<strong>事件推进图</strong>（EPG）内，只有检测到语义漂移时才整合进<strong>主题联想网络</strong>（TAN），并配套图引导的多因子检索（MFR）。</p>
+    <div class="callout hl">
+      <strong>一句话核心创新：</strong>长期记忆的写入不应该是一个连续过程，而应该是一个<strong>由语义完整性事件触发的离散过程</strong>——写入时机（when-to-write）本身就是记忆系统的第一性设计变量，其重要性超过存什么（what）和怎么取（how）。
+    </div>
+    <p>这个定位与已覆盖过的 AgeMem 系工作形成有趣的对照：AgeMem 把记忆操作内化为策略的动作空间（<em>学会</em>怎么写），GAM 则主张即使不学，只要把「什么时候允许写」这个闸门装对，就能拿到大部分收益。两者构成「学习 vs. 架构」的正交路线。</p>
+  </section>
+
+  <section class="card">
+    <h3>2.2 Motivation 与问题论证</h3>
+    <p>论文指向的痛点是<strong>记忆污染（Memory Contamination）</strong>，被拆成两个可观察的失败模式（Figure 1 上半部分）：</p>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>失败模式</th><th>论文原文</th><th>机制解释</th></tr>
+      <tr><td><strong>Memory Loss</strong></td><td>“established nodes become structurally isolated and forgotten due to weak connectivity”</td><td>新节点持续涌入后旧节点的相对连接度被稀释，在基于连通性/相似度的检索里再也浮不上来——不是被删除，而是<strong>结构性失联</strong></td></tr>
+      <tr><td><strong>Semantic Drift</strong></td><td>“distinct topics are erroneously conflated, thereby distorting the agent's thematic consistency”</td><td>未完成的、噪声化的片段被直接合并进长期节点，本应区分的主题被错误缝合</td></tr>
+    </table>
+    </div>
+    <p>成因被归结为流式系统的<strong>开闸策略（open-gate policy）</strong>：<em>“Newly acquired and noisy information is directly appended or merged into the long-term store.”</em></p>
+    <div class="callout">
+      <strong>痛点是怎么被量化的？——这是必须诚实指出的弱点。</strong>论文引言部分<strong>并未给出量化证据</strong>，两个失败模式是通过 Figure 1 示意图与定性描述引入的。真正的量化是<strong>事后</strong>在消融实验里给出的（<code>w/o EPG</code>）。论文的论证结构是「先假设机制 → 用消融反证机制存在」，而非「先测量现象 → 再设计机制」。这决定了它的说服力上限。
+    </div>
+    <p><strong>新颖之处在于归因层次。</strong>此前工作对同一现象的归因分散在别处：A-MEM 归因为缺乏关联结构；MemoryOS 归因为缺乏容量分层；Mem0 归因为抽取质量；AriGraph/Zep 归因为结构与时序表达力。GAM 说：以上都在优化「写什么」和「怎么组织」，<strong>没人管「什么时候写」</strong>——这是一个真正未被占据的设计维度。</p>
+  </section>
+
+  <section class="card">
+    <h3>2.3 论文的故事线（论证结构）</h3>
+    <div class="flow">观察 A：流式记忆（MemGPT / MemoryOS / Mem0 / A-MEM）更新快，但缺乏 write isolation
+         → 每轮对话都可能触发长期层写入 → 污染
+
+观察 B：结构化记忆（GraphRAG / StructRAG / LightRAG / G-Memory）稳定，但索引构建昂贵
+         → 无法跟上"流动的叙事" → "fragmented discourse representations"
+
+观察 C：已有的"结构动态性"尝试也不解决这个矛盾：
+         - AriGraph 依赖文本游戏中的【离散状态转移】，自然对话的边界是模糊的
+         - Zep 优化检索基础设施，不触碰 encoding–consolidation 的认知冲突
+                              ↓
+关键推断：A 与 B 的对立不是"要快还是要稳"的取舍，而是
+          【把两件事塞进了同一个写通道】造成的伪对立
+                              ↓
+解法假设：给短期叙事一个独立的、可丢弃的缓冲区（EPG），
+          只在"叙事单元语义完整"时才向全局层提交
+                              ↓
+剩余问题：什么算"语义完整"？→ 不用规则（固定窗口/固定轮数/session），
+          而用 LLM 作为 neural proxy 做语义边界检测 b_t
+                              ↓
+副产物：存储分层（TAN 全局 + S_arch 归档）→ 检索也须分层（锚定→下钻→重排）→ MFR</div>
+    <div class="callout hl">
+      <strong>全文最漂亮的一次问题转写</strong>在「观察 C → 关键推断」：作者观察到 AriGraph 之所以能在文本游戏中工作，是因为游戏<strong>自带</strong>离散状态转移信号；由此推断，对话场景缺的不是图结构，而是<strong>缺一个等价的状态转移信号</strong>。GAM 的全部工作可以理解为：把文本游戏里免费拿到的离散边界，在自然对话里用 LLM 造出来。
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>2.4 方法论与机制解剖</h3>
+    <h4>2.4.1 双层图与状态机</h4>
+    <div class="formula">G_event = (V_event, E_event)   局部层：原子交互单元为节点，边编码时序与因果流
+G_topic = (V_topic, E_topic)   全局层：高层语义簇为节点，边由 LLM 打分量化的语义相关性
+S_arch                         归档集合：consolidation 后封存的历史 EPG 快照
+E_cross                        跨层索引边：topic 节点 ←→ S_arch 中的 EPG 快照</div>
+    <p>论文对 <code>E_cross</code> 的定位：<em>“These associations act as an index that connects topic nodes in the global graph to the archived snapshots of event graphs within S_arch.”</em>——<strong>主题层负责导航，归档层负责证据</strong>，这是防止摘要化丢失细节的关键。</p>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>状态</th><th>触发条件</th><th>动作</th><th>保护目标</th></tr>
+      <tr><td><strong>Episodic Buffering</strong></td><td><code>b_t = 0</code>（默认）</td><td><code>V_event ← V_event ∪ {e_t}</code>；<code>E_event ← E_event ∪ E_temp</code></td><td>隔离瞬时噪声，<strong>全局层零写入</strong></td></tr>
+      <tr><td><strong>Semantic Consolidation</strong></td><td><code>b_t = 1</code></td><td>生成 <code>v_new = {c_sum, c_raw}</code>；更新 <code>V_topic / E_topic</code>；EPG 归入 <code>S_arch</code> 并建 <code>E_cross</code></td><td>只在语义完整时提交，保证 TAN 信噪比</td></tr>
+    </table>
+    </div>
+    <h4>2.4.2 语义边界检测器</h4>
+    <div class="formula">b_t = 𝟙( Δ( G_event^(t) , G_topic^(t) ) &gt; ε )</div>
+    <p><code>Δ(·,·)</code> 由 LLM 作为 “neural proxy” 评估当前事件图与全局主题网络的语义偏离度。<strong>工程上的关键权衡</strong>：该检测器<strong>不是每轮调用</strong>，而由稀疏维护事件（session 结束、缓冲区溢出）触发——把昂贵的 LLM 调用摊薄到整个 session。</p>
+    <h4>2.4.3 双粒度节点与 coarse-to-fine 建边</h4>
+    <div class="formula">v_new = { c_sum , c_raw }
+        └ LLM 生成的摘要，支撑主题级推理
+              └ 保留的原始文本，支撑细粒度证据
+
+Step 1 (coarse)：向量相似度召回 top-5 topic 候选
+Step 2 (fine)  ：LLM 打语义相关性分，分数 &gt; τ 时建立 E_topic 边</div>
+    <div class="callout"><strong>⚠️ 论文未公开 τ 的数值</strong>，仅说明“New edges are established when this confidence score exceeds a semantic threshold τ”。由于无代码仓库，此项无法核实。</div>
+    <h4>2.4.4 图引导多因子检索（MFR）</h4>
+    <div class="formula">Stage 1 语义锚定与扩展
+  V_anchor = V_top ∪ { v ∈ V_topic | ∃ u ∈ V_top , (u,v) ∈ E_topic }
+
+Stage 2 结构下钻（访问归档证据）
+  C = ⋃_{u ∈ V_anchor} { v ∈ V(G') | G' ∈ S_arch , (u,G') ∈ E_cross }
+
+Stage 3 多因子重排（乘性门控）
+  Score(v,q) = P_sem(v|q) · ∏_{k ∈ K} β_k^{ 𝟙_k(v,q) } ,  K = { time , conf , role }</div>
+    <p>指数形式的门控意味着：某因子命中就乘 <code>β_k</code>，不命中乘 1（<code>β⁰ = 1</code>）——<strong>乘性、可组合、无需归一化</strong>的重排设计。</p>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>因子</th><th>符号</th><th class="num">取值</th><th>语义</th></tr>
+      <tr><td>时间近因</td><td><code>β_time</code></td><td class="num">1.4</td><td>命中时间相关线索则加权</td></tr>
+      <tr><td>角色中心</td><td><code>β_role</code></td><td class="num">1.4</td><td>多方对话中匹配说话人身份</td></tr>
+      <tr><td>置信度</td><td><code>β_conf</code></td><td class="num">1.2</td><td>边/节点置信度高则加权</td></tr>
+    </table>
+    </div>
+    <p><code>β_time</code> 与 <code>β_role</code> 相等而 <code>β_conf</code> 明显更低，暗示作者认为「谁说的」与「什么时候说的」是同等重要的检索线索，系统自身置信度只是次要修正。这在多方对话下合理，但在单人长程对话里 role 因子几乎不提供信息（见 §2.7 批判 3）。</p>
+    <h4>2.4.5 关键超参与实现</h4>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>项目</th><th class="num">取值</th><th>来源</th></tr>
+      <tr><td>Episodic buffer 上限</td><td class="num">2,048 tokens</td><td>实现细节</td></tr>
+      <tr class="best"><td>检索深度 k</td><td class="num">10</td><td>敏感性分析 Fig. 6</td></tr>
+      <tr><td>巩固候选召回</td><td class="num">top-5</td><td>方法节</td></tr>
+      <tr><td>嵌入模型</td><td class="num">all-MiniLM-L6-v2</td><td>实验设置</td></tr>
+      <tr><td>重排模型</td><td class="num">ms-marco-MiniLM-L-6-v2</td><td>实验设置</td></tr>
+      <tr><td>β_time / β_role / β_conf</td><td class="num">1.4 / 1.4 / 1.2</td><td>Fig. 5</td></tr>
+      <tr><td>语义阈值 τ</td><td class="num">未公开</td><td>—</td></tr>
+      <tr><td>边界检测器开销</td><td class="num">0.63 s · 932.36 in / 6.15 out tok</td><td>附录 C.1</td></tr>
+    </table>
+    </div>
+    <h4>2.4.6 整体流程</h4>
+    <div class="flow">对话流 e_1, e_2, ... e_t
+   │
+   ├─[Episodic Buffering State]───────────────────────────┐
+   │   append e_t → G_event                               │  全局层
+   │   temporal/causal edge → E_event                     │  ZERO WRITE
+   │   buffer ≤ 2048 tokens                               │  （写隔离）
+   │                                                      │
+   └─ 稀疏维护事件（session end / buffer overflow）触发 ──→ 边界检测 b_t
+                                                          │
+                     b_t = 0 ← 继续缓冲 ───────────────────┤
+                                                          │ b_t = 1
+                                                          ▼
+      [Semantic Consolidation State]
+         ① 摘要 G_event → v_new = {c_sum, c_raw}
+         ② coarse: 向量召回 top-5 topic 候选
+         ③ fine  : LLM 打分 &gt; τ → 建 E_topic 边
+         ④ G_event 封存入 S_arch，建 E_cross 索引
+         ⑤ 清空缓冲，回到 Buffering State
+
+检索（query q）：
+   V_top ─(E_topic 一跳扩展)→ V_anchor ─(E_cross 下钻)→ C ─(乘性多因子重排)→ top-10</div>
+  </section>
+
+  <section class="card">
+    <h3>2.5 实验设计与定量结果</h3>
+    <h4>2.5.1 设置</h4>
+    <ul>
+      <li><strong>基准</strong>：LoCoMo（Maharana et al., 2024，取前四类推理任务）；LongDialQA（Kim et al., 2024，改编自三部美剧剧本的多方对话，3 个子集）。</li>
+      <li><strong>Backbone</strong>：Llama-3.2-3B-Instruct、Qwen2.5-7B-Instruct、Qwen2.5-14B-Instruct、GPT-4o-mini（<strong>全部 off-the-shelf，不微调</strong>）。</li>
+      <li><strong>基线</strong>：MemoryBank、ReadAgent（启发式）；MemGPT、MemoryOS、Mem0（统一流式）；A-Mem（自反思）；AriGraph（附录 B.3）。</li>
+      <li><strong>指标</strong>：F1（实体捕获）、BLEU-1（词面准确度）。</li>
+    </ul>
+    <div class="callout"><strong>指标层面的先天局限：</strong>LoCoMo 社区主流用 LLM-as-a-Judge（Mem0 原论文报的就是 J 指标），GAM 全程只用 F1/BLEU-1。这使 GAM 的数字与社区已有结果<strong>不可直接比较</strong>，且可能系统性偏向 GAM（见 §2.7 批判 5）。</div>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">图 1 · LoCoMo 平均 F1：GAM vs 最强基线 Mem0（跨四个 backbone）</p>
+    <p class="fig-sub">数据来源：GAM 论文 Table 1。柱顶百分比为 GAM 相对 Mem0 的相对增益。悬停查看具体数值。</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-1)"></span>Mem0（最强基线）</span>
+      <span><span class="sw" style="background:var(--series-2)"></span>GAM</span>
+    </div>
+    <svg class="chart" id="chart1" viewBox="0 0 900 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="LoCoMo 平均 F1 分组柱状图">
+      <!-- gridlines -->
+      <g stroke="var(--grid)" stroke-width="1">
+        <line x1="70" y1="300" x2="880" y2="300"/>
+        <line x1="70" y1="240" x2="880" y2="240"/>
+        <line x1="70" y1="180" x2="880" y2="180"/>
+        <line x1="70" y1="120" x2="880" y2="120"/>
+        <line x1="70" y1="60"  x2="880" y2="60"/>
+      </g>
+      <g fill="var(--muted)" font-size="12" text-anchor="end">
+        <text x="58" y="304">0</text>
+        <text x="58" y="244">10</text>
+        <text x="58" y="184">20</text>
+        <text x="58" y="124">30</text>
+        <text x="58" y="64">40</text>
+      </g>
+      <text x="20" y="175" fill="var(--muted)" font-size="12" transform="rotate(-90 20 175)" text-anchor="middle">Avg F1</text>
+
+      <!-- Llama-3.2-3B -->
+      <rect class="bar" x="110" y="119.3" width="60" height="180.7" rx="3" fill="var(--series-1)" data-t="Mem0 · Llama-3.2-3B ｜ Avg F1 30.11"/>
+      <rect class="bar" x="174" y="82.4"  width="60" height="217.6" rx="3" fill="var(--series-2)" data-t="GAM · Llama-3.2-3B ｜ Avg F1 36.27（+6.16, +20.5%）"/>
+      <text x="172" y="70" fill="var(--good)" font-size="13" font-weight="600" text-anchor="middle">+20.5%</text>
+      <text x="172" y="325" fill="var(--text-secondary)" font-size="13" text-anchor="middle">Llama-3.2-3B</text>
+
+      <!-- Qwen2.5-7B -->
+      <rect class="bar" x="310" y="87.7" width="60" height="212.3" rx="3" fill="var(--series-1)" data-t="Mem0 · Qwen2.5-7B ｜ Avg F1 35.38"/>
+      <rect class="bar" x="374" y="60.0" width="60" height="240.0" rx="3" fill="var(--series-2)" data-t="GAM · Qwen2.5-7B ｜ Avg F1 40.00（+4.62, +13.1%）"/>
+      <text x="372" y="48" fill="var(--good)" font-size="13" font-weight="600" text-anchor="middle">+13.1%</text>
+      <text x="372" y="325" fill="var(--text-secondary)" font-size="13" text-anchor="middle">Qwen2.5-7B</text>
+
+      <!-- Qwen2.5-14B -->
+      <rect class="bar" x="510" y="76.3" width="60" height="223.7" rx="3" fill="var(--series-1)" data-t="Mem0 · Qwen2.5-14B ｜ Avg F1 37.29"/>
+      <rect class="bar" x="574" y="57.7" width="60" height="242.3" rx="3" fill="var(--series-2)" data-t="GAM · Qwen2.5-14B ｜ Avg F1 40.38（+3.09, +8.3%）"/>
+      <text x="572" y="46" fill="var(--good)" font-size="13" font-weight="600" text-anchor="middle">+8.3%</text>
+      <text x="572" y="325" fill="var(--text-secondary)" font-size="13" text-anchor="middle">Qwen2.5-14B</text>
+
+      <!-- GPT-4o-mini -->
+      <rect class="bar" x="710" y="57.8" width="60" height="242.2" rx="3" fill="var(--series-1)" data-t="Mem0 · GPT-4o-mini ｜ Avg F1 40.37"/>
+      <rect class="bar" x="774" y="41.2" width="60" height="258.8" rx="3" fill="var(--series-2)" data-t="GAM · GPT-4o-mini ｜ Avg F1 43.14（+2.77, +6.9%）"/>
+      <text x="772" y="30" fill="var(--good)" font-size="13" font-weight="600" text-anchor="middle">+6.9%</text>
+      <text x="772" y="325" fill="var(--text-secondary)" font-size="13" text-anchor="middle">GPT-4o-mini</text>
+
+      <text x="475" y="360" fill="var(--muted)" font-size="12.5" text-anchor="middle">Backbone 能力递增 →　相对增益单调收窄 20.5% → 6.9%（跨度 2.97×）</text>
+    </svg>
+    <div class="tip" id="tip1"></div>
+  </div>
+
+  <section class="card">
+    <h4>2.5.2 主结果 — LoCoMo（论文 Table 1，完整 4 backbone × 7 方法矩阵）</h4>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>Backbone · 指标</th><th class="num">ReadAgent</th><th class="num">MemoryBank</th><th class="num">MemGPT</th><th class="num">A-Mem</th><th class="num">MemoryOS</th><th class="num">Mem0</th><th class="num">GAM</th><th class="num">Δ / 相对%</th></tr>
+      <tr class="best"><td>Llama-3.2-3B · F1</td><td class="num">4.36</td><td class="num">6.23</td><td class="num">6.12</td><td class="num">21.12</td><td class="num">20.03</td><td class="num">30.11</td><td class="num">36.27</td><td class="num">+6.16 / +20.5%</td></tr>
+      <tr><td>Llama-3.2-3B · B-1</td><td class="num">3.86</td><td class="num">5.30</td><td class="num">5.11</td><td class="num">16.73</td><td class="num">14.02</td><td class="num">21.28</td><td class="num"><strong>30.02</strong></td><td class="num">+8.74 / +41.1%</td></tr>
+      <tr class="best"><td>Qwen2.5-7B · F1</td><td class="num">4.82</td><td class="num">5.88</td><td class="num">5.91</td><td class="num">24.20</td><td class="num">28.86</td><td class="num">35.38</td><td class="num">40.00</td><td class="num">+4.62 / +13.1%</td></tr>
+      <tr><td>Qwen2.5-7B · B-1</td><td class="num">3.92</td><td class="num">5.03</td><td class="num">5.25</td><td class="num">19.49</td><td class="num">22.25</td><td class="num">28.67</td><td class="num"><strong>32.99</strong></td><td class="num">+4.32 / +15.1%</td></tr>
+      <tr class="best"><td>Qwen2.5-14B · F1</td><td class="num">4.27</td><td class="num">4.57</td><td class="num">8.98</td><td class="num">27.14</td><td class="num">24.11</td><td class="num">37.29</td><td class="num">40.38</td><td class="num">+3.09 / +8.3%</td></tr>
+      <tr><td>Qwen2.5-14B · B-1</td><td class="num">3.82</td><td class="num">4.17</td><td class="num">7.59</td><td class="num">21.76</td><td class="num">18.20</td><td class="num">30.66</td><td class="num"><strong>33.55</strong></td><td class="num">+2.89 / +9.4%</td></tr>
+      <tr class="best"><td>GPT-4o-mini · F1</td><td class="num">9.18</td><td class="num">6.71</td><td class="num">25.59</td><td class="num">32.41</td><td class="num">36.27</td><td class="num">40.37</td><td class="num">43.14</td><td class="num">+2.77 / +6.9%</td></tr>
+      <tr><td>GPT-4o-mini · B-1</td><td class="num">7.03</td><td class="num">5.71</td><td class="num">19.73</td><td class="num">26.45</td><td class="num">28.87</td><td class="num">31.45</td><td class="num"><strong>36.48</strong></td><td class="num">+5.03 / +16.0%</td></tr>
+    </table>
+    </div>
+
+    <h4>分任务细节（F1，节选自 Table 1）</h4>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>Backbone</th><th>方法</th><th class="num">Multi-Hop</th><th class="num">Temporal</th><th class="num">Open-Domain</th><th class="num">Single-Hop</th></tr>
+      <tr><td>Llama-3.2-3B</td><td>Mem0</td><td class="num">27.51</td><td class="num">30.08</td><td class="num"><strong>21.33</strong></td><td class="num">41.52</td></tr>
+      <tr class="best"><td>Llama-3.2-3B</td><td>GAM</td><td class="num">28.74</td><td class="num">46.12</td><td class="num">21.18</td><td class="num">49.02</td></tr>
+      <tr><td>Qwen2.5-7B</td><td>Mem0</td><td class="num">32.86</td><td class="num">41.22</td><td class="num">18.24</td><td class="num">49.21</td></tr>
+      <tr class="best"><td>Qwen2.5-7B</td><td>GAM</td><td class="num">35.32</td><td class="num">48.97</td><td class="num">21.14</td><td class="num">54.58</td></tr>
+      <tr><td>Qwen2.5-14B</td><td>Mem0</td><td class="num">31.45</td><td class="num">50.20</td><td class="num">17.66</td><td class="num">49.85</td></tr>
+      <tr class="best"><td>Qwen2.5-14B</td><td>GAM</td><td class="num">33.32</td><td class="num">50.25</td><td class="num">20.40</td><td class="num">57.55</td></tr>
+      <tr><td>GPT-4o-mini</td><td>Mem0</td><td class="num">32.78</td><td class="num"><strong>56.42</strong></td><td class="num">20.45</td><td class="num">51.81</td></tr>
+      <tr class="best"><td>GPT-4o-mini</td><td>GAM</td><td class="num">35.88</td><td class="num">51.96</td><td class="num">28.12</td><td class="num">56.58</td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>三处 GAM 并非最优的单元格（论文正文未突出讨论，本报告显式标出）：</strong>
+      <ul style="margin-top:10px">
+        <li>GPT-4o-mini / Temporal：GAM 51.96 vs Mem0 <strong>56.42</strong>，落后 <span class="dn">−4.46 F1（−7.9%）</span>；BLEU-1 42.26 vs 45.89，落后 −3.63。</li>
+        <li>Llama-3.2-3B / Open-Domain：GAM 21.18 vs Mem0 <strong>21.33</strong>，落后 <span class="dn">−0.15</span>（统计上等同）。</li>
+        <li>Qwen2.5-14B / Temporal：仅 <span class="up">+0.05 F1</span>；且 BLEU-1 上 GAM 39.33 <strong>低于</strong> Mem0 39.85。</li>
+      </ul>
+      即：<strong>在四个 backbone 的 Temporal 任务上，GAM 只在两个弱 backbone 上取得实质领先（+16.04 / +7.75），在两个强 backbone 上打平或落后。</strong>
+    </div>
+
+    <h4>2.5.3 主结果 — LongDialQA（论文 Table 2）</h4>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>Backbone · F1</th><th class="num">ReadAgent</th><th class="num">MemoryBank</th><th class="num">MemGPT</th><th class="num">A-Mem</th><th class="num">MemoryOS</th><th class="num">Mem0</th><th class="num">GAM</th><th class="num">Δ vs Mem0</th></tr>
+      <tr class="best"><td>Llama-3.2-3B</td><td class="num">3.97</td><td class="num">3.93</td><td class="num">3.90</td><td class="num">4.11</td><td class="num">5.85</td><td class="num">6.85</td><td class="num">7.36</td><td class="num">+0.51 / +7.4%</td></tr>
+      <tr class="best"><td>Qwen2.5-7B</td><td class="num">6.41</td><td class="num">7.22</td><td class="num">4.94</td><td class="num">5.49</td><td class="num">6.76</td><td class="num">10.27</td><td class="num">12.55</td><td class="num">+2.28 / +22.2%</td></tr>
+      <tr class="best"><td>Qwen2.5-14B</td><td class="num">8.71</td><td class="num">9.86</td><td class="num">5.83</td><td class="num">8.53</td><td class="num">9.07</td><td class="num">11.48</td><td class="num">11.86</td><td class="num">+0.38 / +3.3%</td></tr>
+      <tr class="best"><td>GPT-4o-mini</td><td class="num">4.50</td><td class="num">5.95</td><td class="num">3.87</td><td class="num">6.49</td><td class="num">10.61</td><td class="num">10.90</td><td class="num">11.18</td><td class="num">+0.28 / +2.6%</td></tr>
+    </table>
+    </div>
+    <p><strong>子集分解（Qwen2.5-7B，Table 5）</strong>：The Big Bang Theory <strong>18.73</strong>（1.00×）｜ The Office 11.60（0.62×）｜ Friends <strong>7.32</strong>（0.39×）。</p>
+    <div class="callout">
+      BBT 与 Friends 之间 <strong>2.56 倍</strong>的性能差距是最值得追问的数据点之一：同一架构、同一 backbone、同一指标，仅换剧集就产生 11.41 F1 的落差。论文将多方场景的成功归因于 role-centric 因子，但这个归因<strong>无法解释为什么 Friends 最差</strong>——Friends 恰恰是六人固定主演、角色密度最高的一部。若 role 因子真是关键，Friends 应当受益最多。
+    </div>
+  </section>
+
+  <section class="card">
+    <h4>2.5.4 消融研究（论文 Table 3 / Table 6，Qwen2.5-7B，LoCoMo）</h4>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>变体</th><th>移除组件</th><th class="num">Multi-Hop</th><th class="num">Temporal</th><th class="num">Open-Dom</th><th class="num">Single-Hop</th><th class="num">Avg F1</th><th class="num">Avg B-1</th><th class="num">ΔF1</th><th class="num">相对降幅</th></tr>
+      <tr class="best"><td>GAM (Full)</td><td>—</td><td class="num">35.32</td><td class="num">48.97</td><td class="num">21.14</td><td class="num">54.58</td><td class="num">40.00</td><td class="num">32.99</td><td class="num">—</td><td class="num">—</td></tr>
+      <tr><td>w/o MFR</td><td>多因子重排</td><td class="num">33.73</td><td class="num">46.12</td><td class="num">16.30</td><td class="num">47.61</td><td class="num">35.94</td><td class="num">29.28</td><td class="num dn">−4.06</td><td class="num dn">−10.2%</td></tr>
+      <tr><td>w/o TAN</td><td>主题联想网络</td><td class="num">31.80</td><td class="num">39.74</td><td class="num">16.28</td><td class="num">52.46</td><td class="num">35.07</td><td class="num">29.00</td><td class="num dn">−4.93</td><td class="num dn">−12.3%</td></tr>
+      <tr><td>w/o SSM</td><td>状态切换机制</td><td class="num">30.32</td><td class="num">39.53</td><td class="num">16.73</td><td class="num">43.72</td><td class="num">32.58</td><td class="num">26.13</td><td class="num dn">−7.42</td><td class="num dn">−18.6%</td></tr>
+      <tr><td><strong>w/o EPG</strong></td><td><strong>事件推进图（写隔离）</strong></td><td class="num">25.35</td><td class="num">33.61</td><td class="num">14.59</td><td class="num">26.68</td><td class="num"><strong>25.06</strong></td><td class="num">20.76</td><td class="num dn"><strong>−14.94</strong></td><td class="num dn"><strong>−37.4%</strong></td></tr>
+    </table>
+    </div>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">图 2 · 组件重要性：各消融变体相对 GAM 完整版的 Avg F1 降幅</p>
+    <p class="fig-sub">数据来源：GAM 论文 Table 3 / Table 6（Qwen2.5-7B, LoCoMo）。虚线为 GAM 相对最强基线 Mem0 的总增益（4.62 F1）。悬停查看具体数值。</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-2)"></span>移除该组件的 Avg F1 降幅</span>
+      <span><span class="sw" style="background:var(--baseline)"></span>参照：GAM 相对 Mem0 的总增益 4.62</span>
+    </div>
+    <svg class="chart" id="chart2" viewBox="0 0 900 270" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="消融降幅水平柱状图">
+      <g stroke="var(--grid)" stroke-width="1">
+        <line x1="140" y1="25" x2="140" y2="225"/>
+        <line x1="365" y1="25" x2="365" y2="225"/>
+        <line x1="590" y1="25" x2="590" y2="225"/>
+        <line x1="815" y1="25" x2="815" y2="225"/>
+      </g>
+      <g fill="var(--muted)" font-size="12" text-anchor="middle">
+        <text x="140" y="245">0</text>
+        <text x="365" y="245">5</text>
+        <text x="590" y="245">10</text>
+        <text x="815" y="245">15</text>
+        <text x="477" y="264">Avg F1 降幅（分）</text>
+      </g>
+      <line x1="348" y1="25" x2="348" y2="225" stroke="var(--baseline)" stroke-width="2" stroke-dasharray="6 5"/>
+      <text x="352" y="20" fill="var(--muted)" font-size="11.5">Mem0 总增益 4.62</text>
+
+      <g fill="var(--text-secondary)" font-size="13.5" text-anchor="end">
+        <text x="128" y="50">w/o EPG</text>
+        <text x="128" y="100">w/o SSM</text>
+        <text x="128" y="150">w/o TAN</text>
+        <text x="128" y="200">w/o MFR</text>
+      </g>
+
+      <rect class="bar" x="140" y="30" width="672.3" height="28" rx="3" fill="var(--series-2)" data-t="w/o EPG（写隔离）｜40.00 → 25.06，ΔF1 −14.94（−37.4%）"/>
+      <rect class="bar" x="140" y="80" width="333.9" height="28" rx="3" fill="var(--series-2)" opacity=".82" data-t="w/o SSM（状态切换）｜40.00 → 32.58，ΔF1 −7.42（−18.6%）"/>
+      <rect class="bar" x="140" y="130" width="221.9" height="28" rx="3" fill="var(--series-2)" opacity=".64" data-t="w/o TAN（主题网络）｜40.00 → 35.07，ΔF1 −4.93（−12.3%）"/>
+      <rect class="bar" x="140" y="180" width="182.7" height="28" rx="3" fill="var(--series-2)" opacity=".46" data-t="w/o MFR（多因子重排）｜40.00 → 35.94，ΔF1 −4.06（−10.2%）"/>
+
+      <g font-size="13" font-weight="600" fill="var(--text-primary)">
+        <text x="822" y="50">−14.94</text>
+        <text x="484" y="100">−7.42</text>
+        <text x="372" y="150">−4.93</text>
+        <text x="333" y="200">−4.06</text>
+      </g>
+    </svg>
+    <div class="tip" id="tip2"></div>
+  </div>
+
+  <section class="card">
+    <h4>消融的多层级读法</h4>
+    <ol>
+      <li><strong>组件重要性排序：EPG ≫ SSM &gt; TAN &gt; MFR。</strong>写隔离的贡献是检索优化的 <strong>3.68 倍</strong>（14.94 / 4.06）。这直接支持核心主张——问题在写通道，不在读通道。</li>
+      <li><strong>四项单独降幅之和 = 31.35 F1</strong>，而 GAM 相对 Mem0 的总增益只有 4.62 F1。降幅之和远大于总增益，说明四个组件<strong>高度非可加、存在强耦合</strong>（去掉 EPG 后 SSM 无缓冲可切、<code>E_cross</code> 无归档可指）。这意味着 <strong>GAM 不是一个可以拆开局部采用的方案</strong>，工程复用成本高于论文暗示的水平。</li>
+      <li><strong>Single-Hop 对 EPG 的敏感度异常高</strong>：w/o EPG 时从 54.58 崩到 26.68（<span class="dn">−51.1%</span>），而 w/o TAN 时仅 54.58 → 52.46（−3.9%）。说明<strong>简单事实召回几乎完全依赖归档原始证据（<code>c_raw</code> / <code>S_arch</code>），不依赖主题层</strong>——为「按查询类型走不同检索路径」提供了实证依据。</li>
+    </ol>
+    <div class="callout hl">
+      <strong>🔴 相变式高亮 —— 全文最有说服力的定性证据：</strong><code>w/o EPG</code> 的 <strong>25.06</strong> Avg F1 落在 A-Mem（<strong>24.20</strong>）与 MemoryOS（28.86）之间，而<strong>不是</strong>落在 Mem0（35.38）附近。
+      <p style="margin-top:10px">也就是说：<strong>一旦拆掉写隔离，一个拥有完整分层图、语义触发巩固、双粒度节点与三因子重排的系统，会退化到 2025 年初 A-Mem 的水平</strong>——所有结构性设计的收益被「开闸写入」一次性吞掉。这是对「记忆污染是主导瓶颈」这一命题最强的实证：<strong>结构不是护城河，闸门才是。</strong>反过来说，这也是对整条图记忆技术路线的一次冷水——没有写隔离，GraphRAG 式的精致结构在长程对话里带不来它承诺的收益。</p>
+    </div>
+  </section>
+
+  <section class="card">
+    <h4>2.5.5 超参与设计敏感性</h4>
+    <h4>(a) 主题切分策略（Fig. 3）—— 又一处不连续</h4>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>切分策略</th><th class="num">Avg F1</th><th class="num">与 GAM 差距</th></tr>
+      <tr><td>固定窗口 256 tokens</td><td class="num">34.23</td><td class="num dn">−5.77</td></tr>
+      <tr><td>固定窗口 512 tokens</td><td class="num">35.48</td><td class="num dn">−4.52</td></tr>
+      <tr><td>固定轮数 k=3</td><td class="num">35.61</td><td class="num dn">−4.39</td></tr>
+      <tr><td>固定轮数 k=5</td><td class="num">36.18</td><td class="num dn">−3.82</td></tr>
+      <tr><td>Session 边界</td><td class="num">36.59</td><td class="num dn">−3.41</td></tr>
+      <tr class="best"><td>GAM（语义事件触发）</td><td class="num">40.00</td><td class="num">—</td></tr>
+    </table>
+    </div>
+    <div class="callout hl">
+      <strong>第二个准相变现象：</strong>五种启发式切分全部挤在 <strong>34.23–36.59</strong> 这个 2.36 分宽的带内，无论怎么调粒度都翻不出去；GAM 一步跨到 40.00。<strong>性能不是切分粒度的平滑函数</strong>——粒度参数的搜索是徒劳的，只有换成语义对齐的边界才能突破天花板。它同时反驳了常见工程直觉「只要 session 划得够细就接近语义切分」：session 边界（36.59）离语义边界（40.00）还差 3.41 分，约等于 GAM 全部相对 Mem0 增益（4.62）的 <strong>74%</strong>。
+    </div>
+
+    <h4>(b) 切分噪声鲁棒性（Fig. 4）</h4>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>条件</th><th class="num">Avg F1</th></tr>
+      <tr class="best"><td>GAM，无噪声</td><td class="num">40.00</td></tr>
+      <tr><td>GAM，注入 40% 边界噪声（η=0.4）</td><td class="num">38.60</td></tr>
+      <tr><td>Session 基线（无噪声）</td><td class="num">36.59</td></tr>
+      <tr><td>固定窗口基线（无噪声）</td><td class="num">34.23</td></tr>
+    </table>
+    </div>
+    <p><strong>GAM 在 40% 边界被打乱时仍有 38.60，高于所有启发式基线的无噪声成绩</strong>，降幅仅 −1.40（−3.5%）。说明多因子重排与跨层索引对边界错误有显著下游补偿能力——这是被论文低调处理但工程价值很高的结论。</p>
+
+    <h4>(c) 检索规模 k（Fig. 6）—— 倒 U 型</h4>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>k</th><th class="num">5</th><th class="num">10</th><th class="num">15</th><th class="num">20</th><th class="num">40</th></tr>
+      <tr class="best"><td>Avg F1</td><td class="num">38.92</td><td class="num">40.00</td><td class="num">39.84</td><td class="num">39.45</td><td class="num">37.28</td></tr>
+    </table>
+    </div>
+    <p>峰值在 k=10；k=40（37.28）<strong>低于 k=5</strong>（38.92），比峰值低 2.72（−6.8%）。典型的检索稀释：多召回的低相关节点挤占了有效证据的注意力预算。k=40 的 37.28 仍高于 Mem0 的 35.38，说明 GAM 下限尚可。</p>
+
+    <h4>(d) 调制因子敏感性（Fig. 5）</h4>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>因子</th><th>扫描区间</th><th class="num">峰值位置</th><th class="num">峰值 F1</th><th>行为</th></tr>
+      <tr><td>β_role</td><td>1.0–2.0</td><td class="num">1.4</td><td class="num">40.00</td><td>单峰</td></tr>
+      <tr><td>β_time</td><td>1.0–2.0</td><td class="num">1.4</td><td class="num">40.00</td><td>单峰</td></tr>
+      <tr><td>β_conf</td><td>1.0–2.0</td><td class="num">1.2</td><td class="num">40.00</td><td><strong>平坦（全区间 39.8–40.0）</strong></td></tr>
+    </table>
+    </div>
+    <p><strong>β_conf 在整个区间内波动 ≤ 0.2 F1（≤0.5% 相对变化）</strong>，实际上是一个近乎无效的因子。把它设为 1.0（关闭）也几乎不损失性能。</p>
+  </section>
+
+  <section class="card">
+    <h4>2.5.6 效率与扩展性</h4>
+    <h4>(a) 单查询效率（Table 4，LoCoMo，Qwen2.5-7B）</h4>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>方法</th><th class="num">Tokens/Query</th><th class="num">时延 (s)</th><th class="num">Avg F1</th><th class="num">Token 效率 (F1/Ktok)</th></tr>
+      <tr><td>A-Mem</td><td class="num">4221.12</td><td class="num">2.21</td><td class="num">24.20</td><td class="num">5.73</td></tr>
+      <tr><td>MemoryOS</td><td class="num">3400.41</td><td class="num dn">154.22</td><td class="num">28.86</td><td class="num">8.49</td></tr>
+      <tr><td>Mem0</td><td class="num">1533.94</td><td class="num up">0.51</td><td class="num">35.38</td><td class="num">23.06</td></tr>
+      <tr class="best"><td>GAM</td><td class="num">1370.18</td><td class="num">0.80</td><td class="num">40.00</td><td class="num">29.19</td></tr>
+    </table>
+    </div>
+    <ul>
+      <li>Token：GAM 比 Mem0 少 <strong>10.7%</strong>；Token 效率 29.19 vs 23.06（<span class="up">+26.6%</span>），vs A-Mem 5.73（<strong>5.09 倍</strong>）。</li>
+      <li>时延：GAM 0.80 s vs Mem0 0.51 s，<span class="dn">+56.9%</span>。论文称 “13% F1 improvement over Mem0 at comparable latency”——<strong>“comparable latency” 是偏宽松的表述</strong>，0.80 s 相对 0.51 s 是 1.57 倍。</li>
+      <li>MemoryOS 的 154.22 s/query 是数量级外的离群值（比 GAM 慢 <strong>193 倍</strong>）。</li>
+      <li>边界检测器开销（附录 C.1）：<strong>0.63 s/session，932.36 in / 6.15 out token</strong>。输入/输出比 <strong>151.6 : 1</strong>——「读长写短」的判别式调用，这解释了为何必须做成稀疏触发：若每轮调用，仅此一项就会把 token 预算推到 A-Mem 量级。</li>
+    </ul>
+
+    <h4>(b) 长程扩展（Table 10）</h4>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th class="num">Sessions</th><th class="num">事件节点</th><th class="num">主题节点</th><th class="num">边数</th><th class="num">Tokens/Query</th><th class="num">时延 (s)</th></tr>
+      <tr><td class="num">3</td><td class="num">81</td><td class="num">8</td><td class="num">371</td><td class="num">1604</td><td class="num">0.65</td></tr>
+      <tr><td class="num">15</td><td class="num">363</td><td class="num">43</td><td class="num">1791</td><td class="num">1864</td><td class="num">4.16</td></tr>
+      <tr><td class="num">27</td><td class="num">657</td><td class="num">84</td><td class="num">3307</td><td class="num">1836</td><td class="num">4.71</td></tr>
+    </table>
+    </div>
+    <ul>
+      <li>节点/边随 session 数近似<strong>线性</strong>增长（事件节点 ≈ 24.3/session，边 ≈ 122/session），<strong>未出现图爆炸</strong>。</li>
+      <li>Token/query 从 1604 → 1836，仅 <span class="up">+14.5%</span>，而 session 数增长 <strong>9 倍</strong>——GAM 最强的可扩展性证据：<strong>上下文成本几乎与历史长度脱钩</strong>。</li>
+      <li><strong>但时延不是</strong>：3 → 15 sessions 时延 <span class="dn">×6.4</span>（0.65 → 4.16 s）；15 → 27 仅 ×1.13。曲线先陡后平，形状可疑。</li>
+    </ul>
+    <div class="callout">
+      <strong>⚠️ 内部一致性问题：</strong>Table 4 报 GAM 时延 <strong>0.80 s</strong>，Table 10 在 15/27 sessions 下为 <strong>4.16 / 4.71 s</strong>——相差 <strong>5.2–5.9 倍</strong>。LoCoMo 的对话通常跨数十 session，Table 4 的工作点因此难以对应真实部署条件。论文未解释两表口径差异（可能 Table 4 只计检索、Table 10 含图维护），<strong>由于无代码仓库无法核实</strong>。此外 Table 10 <strong>未给出对应的 Avg F1</strong>（原表该列为空），因此<strong>无法判断长程下性能是否衰减</strong>——这是扩展性论证最大的空缺。
+    </div>
+
+    <h4>(c) 与 AriGraph 的补充对比（Table 7，Qwen2.5-7B）</h4>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>任务</th><th class="num">AriGraph</th><th class="num">GAM (Table 1, F1)</th><th class="num">倍数</th></tr>
+      <tr class="best"><td>Temporal</td><td class="num">5.51</td><td class="num">48.97</td><td class="num">8.89×</td></tr>
+      <tr><td>Multi-Hop</td><td class="num">12.30</td><td class="num">35.32</td><td class="num">2.87×</td></tr>
+      <tr><td>Single-Hop</td><td class="num">24.44</td><td class="num">54.58</td><td class="num">2.23×</td></tr>
+      <tr><td>Open-Domain</td><td class="num">15.10</td><td class="num">21.14</td><td class="num">1.40×</td></tr>
+    </table>
+    </div>
+    <p style="font-size:14px;color:var(--muted)">说明：论文将 AriGraph 放在附录 B.3 而非主表，因其面向文本游戏、迁移到开放域对话属 out-of-domain 使用。本报告在提取该表时发现 Multi-Hop 一行的 GAM 数值与 Table 1 存在对不齐的可能（25.77 恰为 GAM Multi-Hop 的 BLEU-1），故统一采用 Table 1 的 F1 口径，并标注该不确定性。</p>
+
+    <h4>(d) 代理多模态实验（Table 8，MovieChat-1K + dense video captions）</h4>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>方法</th><th class="num">Accuracy</th><th class="num">F1</th><th class="num">BLEU-1</th></tr>
+      <tr><td>直接输入 caption（baseline）</td><td class="num">47.35</td><td class="num">42.35</td><td class="num">45.31</td></tr>
+      <tr class="best"><td>GAM</td><td class="num">55.51</td><td class="num">48.95</td><td class="num">51.63</td></tr>
+      <tr><td>提升</td><td class="num up">+8.16 (+17.2%)</td><td class="num up">+6.60 (+15.6%)</td><td class="num up">+6.32 (+13.9%)</td></tr>
+    </table>
+    </div>
+    <p>这是把视频转成 dense caption 后走文本记忆的<strong>代理</strong>实验，论文明确不主张 native multimodal。价值在于证明「语义边界触发」这一机制<strong>不依赖对话这一特定模态</strong>——视频叙事的场景切换同样构成有效边界信号。</p>
+  </section>
+
+  <section class="card">
+    <h3>2.6 价值分析</h3>
+    <p><strong>真正的贡献不是「提出了一个图记忆系统」，而是三件事：</strong></p>
+    <ol>
+      <li><strong>把「写入时机」确立为独立的设计维度并给出了它的量纲。</strong>在 GAM 之前，设计空间大致是 {表示结构、更新算子、检索策略、（近期）学习信号}。GAM 加进第四个正交轴：<strong>write gating / consolidation timing</strong>。<code>w/o EPG</code> 的 −37.4% 与切分策略实验里 34–37 带的天花板共同给出了这个轴的收益量级——它比检索优化（−10.2%）重要 3.7 倍。这个结论<strong>独立于 GAM 的具体实现</strong>而成立。</li>
+      <li><strong>给出了「离散边界信号」在无边界域中的构造方法。</strong>AriGraph 的成功依赖游戏环境免费提供状态转移；GAM 证明用一个稀疏调用、读长写短（932 in / 6.15 out token）的 LLM 判别器就能在自然对话中合成该信号，且<strong>对 40% 边界噪声鲁棒</strong>。这套机制可低成本迁移到任何「叙事流」场景——代码 agent 的任务分段、客服工单的意图切换、视频的场景切换（Table 8 已示范）。</li>
+      <li><strong>双粒度节点 + 跨层索引是对「摘要即有损」的干净解法。</strong>消融支持它：Single-Hop 在 w/o TAN 时几乎不掉（−3.9%），在 w/o EPG 时崩塌（−51.1%），证明摘要层和证据层确实承担了不同的查询类型。</li>
+    </ol>
+    <h4>可脱离本文单独复用的设计件</h4>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>可复用件</th><th>复用形式</th><th>支撑证据</th></tr>
+      <tr class="best"><td>写隔离缓冲区</td><td>任何 append-only 长期存储前加一层可丢弃 staging buffer</td><td>w/o EPG −37.4%</td></tr>
+      <tr><td>稀疏触发的 LLM 判别器</td><td>用维护事件而非每轮触发昂贵判断</td><td>0.63 s + 932 token / session</td></tr>
+      <tr><td>乘性门控重排 <code>∏ β_k^𝟙_k</code></td><td>无需归一化、可增量加因子的重排范式</td><td>Fig. 5 单峰、可独立调参</td></tr>
+      <tr><td>双粒度节点</td><td>摘要导航 + 原文取证，抗摘要信息损失</td><td>Single-Hop 对 S_arch 的强依赖</td></tr>
+      <tr><td>coarse-to-fine 建边</td><td>向量召回 top-5 → LLM 打分，把 LLM 调用压到 O(5)</td><td>仅巩固时调用</td></tr>
+    </table>
+    </div>
+    <div class="callout hl">
+      <strong>对后续工作的启发：</strong>如果「写入时机」是一个独立且高收益的维度，那么它应当是<strong>可学习的</strong>。GAM 用固定阈值 ε 和 LLM 提示做边界检测——这恰好是 AgeMem / Memory-R1 那条 RL 路线可以直接接管的接口：把 <code>b_t</code> 变成策略的一个动作。<strong>GAM 与 RL 记忆路线不是竞争关系，而是 GAM 定义了那条路线最该优化的动作。</strong>
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>2.7 局限性</h3>
+    <h4>(A) 论文自述的限制</h4>
+    <p>Limitations 节只谈了<strong>模态</strong>一件事：<em>“the current instantiation of GAM is limited to text modality... Consequently, the model cannot perform fine-grained reasoning over visual or auditory inputs... We leave this extension to future work and do not claim native multimodal reasoning in the current system.”</em></p>
+    <p>可归纳为：(1) 仅文本模态；(2) 无法对视觉/听觉输入做细粒度推理；(3) 明确<strong>不主张</strong> native multimodal（对 Table 8 代理实验作了自我限定，这一点是诚实的）。</p>
+    <div class="callout"><strong>值得注意的是论文自述限制的选择性：</strong>它挑了一个最容易被「未来工作」化解的限制，而对下面几项更实质的问题——无代码、τ 未公开、指标单一、时延口径不一致、强 backbone 下增益收窄——<strong>只字未提</strong>。</div>
+
+    <h4>(B) 补充批判（本报告独立观察，7 点）</h4>
+
+    <p><strong>批判 1 — 增益随 backbone 能力单调收窄，论文未讨论，这威胁到方法的长期价值。</strong></p>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>Backbone</th><th class="num">GAM Avg F1</th><th class="num">次优</th><th class="num">相对增益</th></tr>
+      <tr><td>Llama-3.2-3B</td><td class="num">36.27</td><td class="num">30.11</td><td class="num">+20.5%</td></tr>
+      <tr><td>Qwen2.5-7B</td><td class="num">40.00</td><td class="num">35.38</td><td class="num">+13.1%</td></tr>
+      <tr><td>Qwen2.5-14B</td><td class="num">40.38</td><td class="num">37.29</td><td class="num">+8.3%</td></tr>
+      <tr><td>GPT-4o-mini</td><td class="num">43.14</td><td class="num">40.37</td><td class="num dn">+6.9%</td></tr>
+    </table>
+    </div>
+    <p><strong>单调递减，从 20.5% 收窄到 6.9%，跨度 2.97 倍。</strong>这与论文「架构性缓解记忆污染」的框架不一致：如果污染是<strong>架构层面的结构性缺陷</strong>，它不应该被 backbone 能力显著补偿；而数据显示它<strong>明显被补偿了</strong>。更合理的解释是：GAM 的一部分收益来自<strong>代替弱模型完成语义组织</strong>，而非消除一个模型无关的结构缺陷。论文缺失更强 backbone（GPT-4o / Claude / Qwen-72B 级）的外推点，因此<strong>无法排除「收益在前沿模型上趋近于零」</strong>。这是本文最重要的未验证风险。</p>
+
+    <p><strong>批判 2 — Temporal 任务上的失手模式暴露了主题层的表达缺陷。</strong>四个 backbone 上 GAM vs Mem0 分别为 <span class="up">+16.04</span> / <span class="up">+7.75</span> / <span class="up">+0.05</span> / <span class="dn">−4.46</span>（BLEU-1 上后两者为 −0.52 和 −3.63）。这不是随机波动，而是与 backbone 能力<strong>反向相关</strong>的系统性模式。结构上的解释：GAM 的时间信息只体现为重排阶段的乘性 boost <code>β_time = 1.4</code>，<strong>主题联想网络本身没有时间轴</strong>——<code>E_topic</code> 是语义相关性打分建的边，不携带时序语义。相比之下 Mem0/Zep 会显式维护事实的时间属性与失效关系。这与论文声称的 “fuses temporal, confidence, and role-centric signals” 存在落差：<strong>时间是被加权的，不是被建模的。</strong></p>
+
+    <p><strong>批判 3 — β_role = 1.4 的设定在单人对话上是无依据的，而主结果的绝大部分来自单人对话。</strong>LoCoMo 是双人长程对话，role 因子的判别力极低（先验 50%，仅 1 bit）；论文却在 LoCoMo 上把 β_role 调到与 β_time 相同的 1.4 并报告为单峰最优。一个只提供 1 bit 信息的因子却与时间因子同权重，<strong>要么说明 Fig. 5 的扫描是在噪声上找峰值，要么说明 role 因子实际在编码别的东西</strong>（如说话人风格的词面特征，从而与 F1/BLEU-1 这类词面指标耦合）。论文没有做「LoCoMo 上关闭 β_role」的单独消融，歧义无法排除。</p>
+
+    <p><strong>批判 4 — β_conf 是一个装饰性因子，敏感性数据自己承认了这一点。</strong>Fig. 5 显示 β_conf 在 [1.0, 2.0] 全区间 F1 稳定在 39.8–40.0，波动 <strong>≤0.2（≤0.5% 相对变化）</strong>；作为对照 β_role 与 β_time 呈明显单峰。把 β_conf = 1.0（关闭）代入，性能损失在测量噪声内。<strong>论文仍将其作为「三因子」之一列入方法贡献并给出 1.2 这个精确取值，这在呈现上夸大了组件数量。</strong>诚实的写法应是「两个有效因子 + 一个中性因子」。</p>
+
+    <p><strong>批判 5 — 指标选择使 GAM 与社区主流结果不可比，且可能系统性偏向 GAM。</strong>GAM 全程用 F1 + BLEU-1，而 LoCoMo 主流报告（含 Mem0 原论文的 +26% 相对提升、−91% p95 时延）用 <strong>LLM-as-a-Judge</strong>，两者不可换算。这带来两个问题：（i）<strong>可比性</strong>——读者无法把 43.14 F1 放进社区已有排行中定位；（ii）<strong>偏向性</strong>——GAM 的 <code>c_raw</code> 原文保留机制天然有利于<strong>词面重叠指标</strong>，检索回原始文本片段会直接抬高 F1/BLEU-1，而摘要式方法（Mem0 抽取的是改写后的事实）在词面指标上先天吃亏。<strong>GAM 相对 Mem0 的部分增益可能来自「是否保留原文」这一表示选择，而非「何时写入」这一核心主张。</strong>论文未提供 judge-based 或语义等价指标来隔离这个混淆因素，这是实验设计层面最需要补的一块。</p>
+
+    <p><strong>批判 6 — 时延报告的内部不一致，且「comparable latency」的表述不成立。</strong>Table 4 报 0.80 s/query，Table 10 在 15/27 sessions 下报 4.16 / 4.71 s，<strong>相差 5.2–5.9 倍</strong>。即便采用最有利的 0.80 s，相对 Mem0 的 0.51 s 也是 <span class="dn">+56.9%</span>，称其为 “comparable latency” 与数据不符。由于论文未公开代码，两表口径差异无法核实，只能标注为待澄清项。</p>
+
+    <p><strong>批判 7 — 缺少两类关键竞品对比，使核心主张的验证不完整。</strong></p>
+    <ul>
+      <li><strong>缺 RL 记忆基线。</strong>GAM 主张「架构层面的写门控足以缓解污染」，其天然对手是「学习层面的写策略」（Memory-R1 / MemAct / AgeMem）。论文基线里<strong>没有任何一个 RL 训练的记忆方法</strong>，「架构 vs. 学习」这条最有信息量的对比完全缺席。考虑到两条路线优化的是同一个决策变量，这个空白比缺少某个 RAG 基线严重得多。</li>
+      <li><strong>缺同结构消融式对手。</strong>要证明收益来自「语义触发」而非「分层图」，最干净的对照是「分层图 + session 触发」——这个配置<strong>已经在 Fig. 3 里存在</strong>（session-based, 36.59），但被呈现为切分消融而非主表命名基线。若并列，读者会立刻看到：<strong>GAM 相对 Mem0 的 4.62 分增益里，3.41 分（74%）来自语义边界，只有 1.21 分（26%）来自分层图结构本身。</strong>这个分解对论文有利，但被埋在图里而不是摆在台面上。</li>
+    </ul>
+
+    <div class="callout"><strong>本报告自身的不完备之处（坦诚声明）：</strong>本分析基于 arXiv HTML 版（2604.12285v1）与 ACL Anthology 页面提取的表格数据。由于无代码仓库且 PDF 直接下载在当前环境受限，Table 6 / 7 / 8 / 10 的部分数值系通过页面解析获得，其中 Table 7 的 Multi-Hop 一行存在口径歧义（已标注）。τ 的取值、Table 10 缺失的 F1 列、以及 Table 4 与 Table 10 的时延口径差异，均无法独立核实。</div>
+  </section>
+
+  <h2 id="s3">3. 相关工作回溯（6 篇，构成问题传递链）</h2>
+
+  <section class="card">
+    <h3>3.1 MemoryBank — AAAI 2024（arXiv 2305.10250, 2023-05）</h3>
+    <p><strong>解决了什么问题</strong>：第一批把「长期记忆」作为独立系统组件而非上下文技巧来处理的工作之一。引入基于<strong>艾宾浩斯遗忘曲线</strong>的时间衰减，让记忆强度随时间与重访频率演化。核心贡献一句话：<strong>把遗忘从一个缺陷重新定义为一个可设计的机制。</strong></p>
+    <p><strong>遗留了什么问题</strong>：衰减是<strong>纯时间函数</strong>，与内容语义完全解耦——一条被反复提及的琐事会比一条只说过一次的关键承诺存活更久。存储扁平、记忆间无关系结构，因此「记忆丢失」表现为条目被衰减掉，而非 GAM 刻画的<strong>结构性失联</strong>。它打开的空间是：<strong>遗忘/保留的判据应当来自语义与结构，而不是时钟。</strong></p>
+    <p><strong>核心工作如何回应</strong>：GAM 是这条线的彻底反转——它<strong>不做衰减</strong>。立场是：入口处就把噪声挡住，下游就不需要靠遗忘来救场。主结果中 MemoryBank 的 Avg F1 只有 4.57–6.71，是全表最弱之一。</p>
+    <p><strong>关键设计的传递</strong>：「记忆强度随事件更新」在 GAM 中以变形存在——<code>β_time = 1.4</code> 就是一个极简化的、只作用于检索期而非存储期的衰减代理。<strong>GAM 把衰减从写侧搬到了读侧。</strong></p>
+  </section>
+
+  <section class="card">
+    <h3>3.2 MemGPT — arXiv 2310.08560（2023-10）</h3>
+    <p><strong>解决了什么问题</strong>：用操作系统的虚拟内存隐喻，把有限上下文窗口做成「主存 + 外存」的分页系统。核心贡献一句话：<strong>把上下文窗口的物理限制转化为一个可被 agent 自己管理的资源。</strong></p>
+    <p><strong>遗留了什么问题</strong>：分页解决的是<strong>容量</strong>，不是<strong>语义组织</strong>。换页由容量压力驱动（页满就换），写入外存的内容不经任何质量筛选——这正是 GAM 批评的 open-gate policy 的原型。它打开的空间是：<strong>容量管理 ≠ 记忆管理。</strong></p>
+    <p><strong>核心工作如何回应</strong>：GAM 的 EPG 表面像 MemGPT 的「主存」，但触发语义完全不同：MemGPT 换页由 <strong>buffer overflow</strong> 触发，GAM 巩固由 <strong><code>b_t = 1</code>（语义边界）</strong>触发；overflow 在 GAM 里只是<strong>次要</strong>触发条件之一。这个替换正是 GAM 的全部主张。数据上 MemGPT 在 LoCoMo（Qwen-7B）Avg F1 为 5.91，GAM 为 40.00（<strong>6.77 倍</strong>）——这个对比对 MemGPT 不公平（它不是为对话记忆设计的），但足以说明容量隐喻与语义组织之间的鸿沟。</p>
+    <p><strong>关键设计的传递</strong>：<strong>分层 + 溢出触发</strong>这套骨架被完整继承（2048-token buffer、overflow 作为维护事件之一），只是被降级为「兜底触发器」。</p>
+  </section>
+
+  <section class="card">
+    <h3>3.3 A-MEM — NeurIPS 2025（arXiv 2502.12110, 2025-02）</h3>
+    <p><strong>解决了什么问题</strong>：Zettelkasten 卡片盒方法的 agentic 实现——每条新记忆自动生成结构化属性、与已有记忆建立链接，并<strong>反向更新</strong>被链接记忆的上下文表示。核心贡献一句话：<strong>让记忆网络自组织，无需预定义 schema。</strong></p>
+    <p><strong>遗留了什么问题</strong>：这正是 GAM 点名的对象。A-MEM 的链接与演化在<strong>每条新记忆到达时</strong>触发，且直接作用于全局记忆网络——<strong>没有写隔离</strong>。于是每一条未完成的、含噪的对话片段都有权改写全局结构，Memory Loss 与 Semantic Drift 正是这个机制的直接产物。它打开的空间是：<strong>自组织的对象必须是「语义完整的单元」，而不是「每一条到达的片段」。</strong></p>
+    <div class="callout hl"><strong>核心工作如何回应：</strong>GAM 保留 A-MEM 的核心直觉（记忆应自组织成关联网络），但把自组织的<strong>粒度</strong>从「单条记忆」提升到「叙事单元」，把<strong>时机</strong>从「到达即触发」改成「语义完整才触发」。最直接的证据是消融：<strong><code>w/o EPG</code> 的 25.06 与 A-Mem 的 24.20 几乎重合</strong>——去掉写隔离后 GAM 就退化成一个 A-MEM。这是全篇对 A-MEM 最精确的定量批注：<strong>A-MEM 与 GAM 的差距，几乎全部等于写隔离的价值。</strong></div>
+    <p><strong>关键设计的传递</strong>：coarse-to-fine 建边是 A-MEM 链接生成机制的直系后代，改动在于从「每条触发」降频到「每次巩固触发」，把 LLM 调用量从 O(轮数) 压到 O(主题数)。</p>
+  </section>
+
+  <section class="card">
+    <h3>3.4 AriGraph — IJCAI 2025（arXiv 2407.04363, v1 2024-07 / v3 2025-05）</h3>
+    <p><strong>解决了什么问题</strong>：为 agent 构建<strong>语义记忆 + 情景记忆一体</strong>的知识图谱世界模型，在环境探索中增量更新。核心贡献一句话：<strong>证明了结构化图记忆可以支撑长时程的规划与多跳推理，而不只是检索。</strong></p>
+    <p><strong>遗留了什么问题</strong>：GAM 的批评很精准——AriGraph <em>“tailored for text-based games with discrete state transitions, which are rarely present in the ambiguous boundaries of natural conversation.”</em> 文本游戏的每个动作天然构成一次离散状态转移，图更新的时机是<strong>环境免费提供</strong>的。搬到自然对话后这个信号消失。附录 Table 7 是实证：AriGraph 在 Temporal 上只有 <strong>5.51 F1</strong>（GAM 48.97，8.89 倍），基本等同失效。它打开的空间是：<strong>结构化图记忆的可行性依赖于一个外部的「何时更新」信号；在没有该信号的域里，必须自己造一个。</strong></p>
+    <p><strong>核心工作如何回应</strong>：GAM 的答案就是「自己造」——<code>b_t = 𝟙(Δ(G_event, G_topic) &gt; ε)</code> 正是 AriGraph 在游戏里免费得到的离散状态转移的<strong>合成替代品</strong>。而 Fig. 4 的噪声鲁棒性（40% 噪声下仍 38.60）进一步说明：这个合成信号不需要精确，只需要<strong>大致对齐语义</strong>。</p>
+    <p><strong>关键设计的传递</strong>：语义/情景<strong>双层记忆</strong>的划分被完整继承并重命名——AriGraph semantic ↔ GAM <code>G_topic</code>，AriGraph episodic ↔ GAM <code>G_event</code> + <code>S_arch</code>。GAM 的创新不在这个划分，而在<strong>两层之间的转移由什么触发</strong>。</p>
+  </section>
+
+  <section class="card">
+    <h3>3.5 MemoryOS — EMNLP 2025 Main (Oral)（arXiv 2506.06326, 2025-05）</h3>
+    <p><strong>解决了什么问题</strong>：把 OS 隐喻做实，建立 STM / MTM / LPM 三级存储 + 四模块架构，用类似换页的 heat 机制在层间迁移。原论文报告 LoCoMo（GPT-4o-mini）上 F1 提升 <strong>49.11%</strong>、BLEU-1 提升 <strong>46.18%</strong>。核心贡献一句话：<strong>把「记忆分层」从隐喻落实为可运行的调度系统。</strong></p>
+    <p><strong>遗留了什么问题</strong>：分层有了，但<strong>层间迁移的触发仍是启发式的</strong>——由访问热度与容量压力驱动，而非语义完整性。代价在效率表里显露无遗：<strong>154.22 s/query</strong>，比 GAM 慢 <strong>193 倍</strong>、比 Mem0 慢 <strong>302 倍</strong>——多级调度的编排开销吞掉了架构收益。它打开的空间是：<strong>层数不是关键变量，触发信号才是；且分层调度的工程开销必须被显式预算。</strong></p>
+    <p><strong>核心工作如何回应</strong>：GAM 做了两件针对性的事——把三级压回<strong>两级</strong>（TAN + EPG/S_arch）减少调度面；把触发信号从 heat 换成语义边界。结果既超过 MemoryOS 的效果（40.00 vs 28.86，<span class="up">+38.6%</span>），又把时延压回 0.80 s。<strong>这条对比是「分层的收益来自语义对齐而非层数」这一命题最直接的证据。</strong></p>
+  </section>
+
+  <section class="card">
+    <h3>3.6 Mem0 — arXiv 2504.19413（2025-04）</h3>
+    <p><strong>解决了什么问题</strong>：面向生产的记忆层——动态抽取显著事实，用 LLM 驱动的 ADD / UPDATE / DELETE 维护紧凑事实库。原论文报告 LoCoMo 上相对 OpenAI 记忆方案 <strong>+26%</strong>（LLM-as-a-Judge）、<strong>p95 时延低 91%</strong>、<strong>token 成本降 90%+</strong>。核心贡献一句话：<strong>证明了轻量抽取式记忆在成本/效果比上可以压过重型架构。</strong></p>
+    <p><strong>遗留了什么问题</strong>：Mem0 是 GAM 主表里最强的基线，但更新是<strong>逐条、即时、直接作用于全局事实库</strong>的——教科书式的 open-gate。抽取器面对一段尚未讲完的叙事时只能基于片段做决策，错误一旦写入就需后续 UPDATE/DELETE 纠正。此外抽取式表示丢弃原文，细粒度证据不可回溯。它打开的空间是：<strong>在保持轻量的前提下，能否给写入加一道语义闸门？</strong></p>
+    <p><strong>核心工作如何回应</strong>：GAM 的回答是「能，而且几乎不加成本」——1370.18 tok/query <strong>低于</strong> Mem0 的 1533.94（−10.7%），Avg F1 高 4.62（+13.1%），代价只是 +0.29 s 时延和一个稀疏的边界检测器。双粒度节点直接补上 Mem0 丢弃原文的缺口。</p>
+    <div class="callout"><strong>但也要指出反向的证据：</strong>Mem0 在 <strong>Temporal</strong> 上在两个强 backbone 下反超 GAM（GPT-4o-mini 56.42 vs 51.96），说明<strong>显式的事实级时间维护</strong>在时序推理上仍优于 GAM 的重排式时间加权。<strong>这两条路线在时间维度上尚未分出胜负，而这恰恰是长期记忆最核心的能力之一。</strong></div>
+    <p><strong>关键设计的传递</strong>：Mem0 的「紧凑摘要以控 token」被继承为 <code>c_sum</code>；GAM 的改动是在其旁边并置 <code>c_raw</code>，用 <code>E_cross</code> 按需取用——即<strong>用索引换存储，而不用摘要换 token</strong>。</p>
+  </section>
+
+  <h2 id="s4">4. 技术演进脉络</h2>
+  <section class="card">
+    <h3>4.1 演进树（非线性，多维汇聚）</h3>
+    <div class="flow">2023-05  MemoryBank [时间衰减 · 扁平存储]
+             │  遗忘 = 时钟函数，与语义解耦
+             ▼
+2023-10  MemGPT [虚拟内存分页 · 容量驱动]
+             │  换页 = f(容量压力)，写入不筛选 → open-gate 原型
+             │
+             ├──────────────┬───────────────┬───────────────┐
+             ▼              ▼               ▼               ▼
+2024-07 AriGraph      2025-02 A-MEM    2025-04 Mem0   2025-05 MemoryOS
+ [语义+情景双层KG]     [Zettelkasten     [抽取式事实库   [STM/MTM/LPM
+ [离散状态转移触发]     链接 · 自组织]     · 生产级轻量]    三级 · heat换页]
+       │                   │                │                │
+ ⚠依赖环境提供边界     ⚠每条到达即改写全局  ⚠逐条即时写入     ⚠触发=热度而非语义
+ ⚠对话域失效(Temp 5.51) ⚠Loss+Drift直接产物 ⚠丢弃原文证据     ⚠154 s/query 开销
+       │                   │                │                │
+       │  各自补全一个维度：结构表达力 / 关联自组织 / 成本效率 / 分层调度
+       │                   │                │                │
+       └───────────┬───────┴────────────────┴────────────────┘
+                   │
+             共同的未解项：【写入时机 when-to-write 无人处理】
+                   ▼
+2026-04/07  ★ GAM [双层图 · 语义边界触发 · 写隔离 · 双粒度节点 · 乘性重排]
+             ACL 2026 Main Long
+             ├─ 从 AriGraph  继承：语义/情景双层划分
+             ├─ 从 A-MEM     继承：coarse-to-fine 建边（降频至巩固期）
+             ├─ 从 MemGPT    继承：缓冲区 + overflow（降级为兜底触发）
+             ├─ 从 Mem0      继承：紧凑摘要（并置 c_raw 补证据）
+             └─ 从 MemoryOS  继承：稀疏维护事件（换掉 heat 判据）
+                   │
+                   │ 实证：写隔离 &gt; 检索优化 ×3.68；语义边界 &gt; 最优启发式 +3.41
+                   ▼
+             留给下一步：b_t 应当是可学习的
+                   ↘
+          （与 Memory-R1 / MemAct / AgeMem 的 RL 路线在此交汇）</div>
+
+    <h3>4.2 演进的内在逻辑</h3>
+    <p>这条线背后的推动力，是<strong>「记忆系统的控制变量」逐级上移</strong>：</p>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>阶段</th><th>被优化的变量</th><th>代表工作</th><th>触发信号来源</th></tr>
+      <tr><td>一 · 存多久</td><td>保留时长</td><td>MemoryBank</td><td>时钟</td></tr>
+      <tr><td>二 · 存哪儿</td><td>容量层级</td><td>MemGPT → MemoryOS</td><td>容量压力 / 访问热度</td></tr>
+      <tr><td>三 · 存成什么</td><td>表示结构</td><td>AriGraph、A-MEM、Mem0</td><td>内容到达</td></tr>
+      <tr class="best"><td>四 · 什么时候存</td><td><strong>写入时机</strong></td><td><strong>GAM</strong></td><td><strong>语义完整性</strong></td></tr>
+      <tr><td>五 · 要不要存（学出来）</td><td>写入策略</td><td>Memory-R1 / MemAct / AgeMem</td><td>任务回报</td></tr>
+    </table>
+    </div>
+    <p><strong>转折一（阶段二 → 三）</strong>：社区意识到「容量管理 ≠ 记忆管理」。MemGPT 之后所有工作都开始在<strong>表示</strong>上做文章（图、卡片、事实三元组），触发信号却统一退化为「内容一到就写」。这是 open-gate 时代，也是记忆污染问题被批量制造出来的时期。</p>
+    <p><strong>转折二（阶段三 → 四）</strong>：GAM 指出表示的军备竞赛已经边际收益递减——<code>w/o EPG</code> 说得很清楚，<strong>再精致的表示在开闸写入下都会退回 A-MEM 水平</strong>。控制变量必须从「写什么」上移到「何时写」。</p>
+    <div class="callout hl">
+      <strong>阶段四与阶段五是接口关系而非竞争关系。</strong>GAM 用固定阈值 ε + LLM 提示实现 <code>b_t</code>，RL 路线则把记忆操作变成可学动作。GAM 的贡献恰恰是<strong>证明了 <code>b_t</code> 这个动作值得学</strong>——它的收益量级（−37.4%）远大于检索优化（−10.2%）。一句话概括五个阶段：<strong>从「按时钟遗忘」→「按容量搬运」→「按内容组织」→「按语义门控」→「按回报学习」。前四步都在把触发信号从系统外部（时钟、容量）搬向任务内部（语义），第五步则是把它彻底交给学习。</strong>
+    </div>
+  </section>
+
+  <h2 id="s5">5. 开放挑战与研究机会</h2>
+  <section class="card">
+    <h3>5.1 理论层面</h3>
+    <ol>
+      <li><strong>写入时机的信息论刻画（高价值 · 中门槛）。</strong>GAM 用不透明的 LLM 判别器给出 <code>b_t</code>，但没回答「最优边界是什么」。<strong>可操作切入</strong>：把巩固建模为<strong>最优停止问题</strong>——在事件流上每轮选择「继续缓冲」或「提交」，目标是最大化提交后主题节点对未来查询分布的互信息 <code>I(v_new ; Q_future)</code> 减去写入代价。这能给出 <code>b_t</code> 的可计算上界，也能解释 Fig. 3 中「启发式全部卡在 34–37 带」是否为信息论必然。<strong>门槛低在于</strong>：LoCoMo 已有查询标注，可直接近似 <code>Q_future</code>。</li>
+      <li><strong>写隔离收益随模型能力衰减的定量律（高价值 · 低门槛）。</strong>批判 1 观察到 20.5% → 6.9% 的单调收窄。用 4–6 个能力梯度的 backbone（3B / 7B / 14B / 32B / 72B / 前沿闭源）复跑 GAM vs Mem0，拟合「增益 ~ 能力」曲线并外推零点，可直接回答<strong>「记忆架构在前沿模型上还值不值得做」</strong>这个全社区私下都在问但没人公开测的问题。<strong>这是当前最高性价比的一个实验</strong>：不需要新方法，只需要一张表。</li>
+      <li><strong>摘要-证据双粒度的最优配比（中价值 · 低门槛）。</strong><code>{c_sum, c_raw}</code> 把存储成本翻倍以换证据可回溯。消融显示 Single-Hop 高度依赖 <code>c_raw</code>（−51.1%），多跳/时序更依赖 <code>c_sum</code>。缺一个刻画：<strong>给定存储预算下 <code>c_raw</code> 保留比例 ρ 与各类查询准确率的 trade-off 曲线</strong>。这可直接与率失真那条压缩线接上——双粒度本质上是一个双码率方案。</li>
+    </ol>
+
+    <h3>5.2 工程与应用层</h3>
+    <ol start="4">
+      <li><strong>判决「架构 vs. 学习」需要 head-to-head 实验 —— 这是下一步最关键的空白。</strong>GAM（架构门控）与 AgeMem/Memory-R1/MemAct（学习门控）优化的是同一个决策变量，却从未在同一基准、同一 backbone、同一指标下比过。<strong>具体设计</strong>：固定 Qwen2.5-7B 与 LoCoMo，跑四个配置——(i) Mem0（开闸基线）、(ii) GAM（架构门控）、(iii) RL 门控 + 扁平存储、(iv) RL 门控 + GAM 分层存储。配置 (iv) 检验两者是否<strong>可加</strong>：若 (iv) ≈ max((ii),(iii))，说明二者优化同一自由度，社区应择一；若 (iv) 显著更高，说明架构提供了 RL 无法自行发现的归纳偏置。<strong>这个实验的信息量远超再发三个新记忆架构。</strong></li>
+      <li><strong>把 <code>b_t</code> 变成可学动作（高价值 · 中门槛）。</strong>边界检测器是一个二分类器，天然可用 GRPO/DPO 类方法在下游 QA 回报上微调。<strong>关键设计问题是奖励延迟</strong>——巩固决策的回报要在数十轮后兑现。可行替代：用 §5.1.1 的互信息代理作为<strong>过程奖励</strong>绕开延迟。（这与 AttriMem「用 token 级归因构造局部奖励」的思路同构，值得交叉验证。）</li>
+      <li><strong>补上时序建模而非时序加权（高价值 · 低门槛）。</strong>批判 2 显示 GAM 在强 backbone 的 Temporal 上落后 Mem0 最多 4.46 F1。<strong>具体方案</strong>：给 <code>E_topic</code> 加 bi-temporal 标注边（事件发生时间 + 记录时间，即 Zep 与 Governed Shared Memory 的 temporal supersession 做法），并在 Stage 2 下钻时支持时间区间过滤，而不是把时间塞进 Stage 3 的乘性 boost。可直接在 LoCoMo Temporal 子集上验证是否消除该失手。</li>
+      <li><strong>Benchmark 的三处缺口。</strong>(a) LongDialQA 上所有方法绝对分都在 <strong>3.87–12.55 F1</strong> 区间，接近噪声底，方法间差异（GPT-4o-mini 上仅 +0.28）<strong>不足以支撑结论</strong>；(b) 缺<strong>长程性能衰减曲线</strong>——GAM 的 Table 10 给了成本却把 F1 列留空，这正是最该报的数；(c) 词面指标与 judge 指标的<strong>双轨报告</strong>应成为规范，否则 <code>c_raw</code> 类设计会系统性「刷分」。EvoMemBench 与 Memora 各补了一角，但尚无一个基准同时覆盖。</li>
+    </ol>
+
+    <h3>5.3 新兴方向</h3>
+    <ol start="8">
+      <li><strong>可逆巩固 / 回滚（中价值 · 中门槛）。</strong>GAM 的巩固是单向的：<code>v_new</code> 一旦进入 TAN 就不可撤销。但边界检测有 ~40% 的容错空间（Fig. 4），意味着<strong>错误巩固一定会发生</strong>。缺一个机制：当后续证据表明某次巩固切错主题时，把 <code>v_new</code> 拆回 <code>S_arch</code> 并重新巩固。这需要给 <code>E_cross</code> 加版本语义——技术上与 §5.2.6 的 bi-temporal 边是同一套基础设施。</li>
+      <li><strong>多智能体共享记忆下的写门控。</strong>GAM 的写隔离是单 agent 的。共享记忆中写门控还要回答「谁有权提交」以及「提交后如何传播」——正是 Governed Shared Memory 刻画的 provenance collapse / stale propagation。<strong>把 <code>b_t</code> 从「语义完整性判据」扩展为「语义完整性 + 来源权威性」的联合判据</strong>，是一个自然且未被占据的组合。</li>
+      <li><strong>写门控与记忆投毒防御的交叉。</strong>写隔离缓冲区在安全视角下就是一个<strong>隔离区（quarantine）</strong>：攻击者注入的内容在被提交到长期层之前，先在 EPG 里停留一个语义单元。这为投毒防御提供了天然检查点——<code>b_t</code> 触发时同时做来源绑定校验。当前的记忆安全工作（TMA-NM）在写时做 origin binding，GAM 在写时做语义门控，<strong>两者的触发点完全重合但从未被合并讨论</strong>。这是一个明显的空白。</li>
+      <li><strong>native 多模态边界信号。</strong>论文自述限制指向多模态，但更有意思的问题不是「记忆节点能否多模态」，而是<strong>「边界信号能否多模态」</strong>——视觉场景切换、语音的话轮/情绪转折，都是比文本主题漂移更强的边界指示器。Table 8 的 MovieChat-1K 代理实验（+8.16 accuracy）已暗示这条路可行。</li>
+    </ol>
+  </section>
+
+  <h2 id="s6">6. 相关工作表格对标</h2>
+  <section class="card">
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>工作</th><th>发表年月</th><th>会议/出版</th><th>核心贡献</th><th>主要指标（来源）</th><th>与 GAM 的关系</th></tr>
+      <tr><td><strong>MemoryBank</strong></td><td>2023-05 / 2024-02</td><td>AAAI 2024</td><td>艾宾浩斯遗忘曲线驱动的记忆衰减</td><td class="num">LoCoMo Avg F1 4.57–6.71（Table 1）</td><td><strong>问题来源</strong>：遗忘判据与语义解耦；GAM 反转为「入口拦截」</td></tr>
+      <tr><td><strong>MemGPT</strong></td><td>2023-10</td><td>arXiv</td><td>虚拟内存分页 + 自主换页函数调用</td><td class="num">LoCoMo Avg F1 5.91–25.59（Table 1）</td><td><strong>技术来源</strong>：缓冲区 + overflow 触发被降级为兜底触发器</td></tr>
+      <tr><td><strong>AriGraph</strong></td><td>2024-07 / 2025-08</td><td><strong>IJCAI 2025</strong></td><td>语义+情景一体的 KG 世界模型</td><td class="num">Temporal 5.51 / Single-Hop 24.44（Table 7）</td><td><strong>问题+技术来源</strong>：双层划分被继承；其「依赖环境提供离散边界」的缺陷正是 GAM 要合成的信号</td></tr>
+      <tr><td><strong>A-MEM</strong></td><td>2025-02</td><td><strong>NeurIPS 2025</strong></td><td>Zettelkasten 式自组织链接 + 记忆演化</td><td class="num">LoCoMo Avg F1 21.12–32.41（Table 1）</td><td><strong>最直接的对手</strong>：w/o EPG=25.06 ≈ A-Mem=24.20，量化了写隔离的全部价值</td></tr>
+      <tr><td><strong>Mem0</strong></td><td>2025-04</td><td>arXiv</td><td>生产级抽取式事实库 + ADD/UPDATE/DELETE</td><td class="num">LoCoMo Avg F1 30.11–40.37（Table 1）；原文 +26% J</td><td><strong>最强基线</strong>：GAM 全面领先但 Temporal 在强 backbone 下反被超</td></tr>
+      <tr><td><strong>MemoryOS</strong></td><td>2025-05</td><td><strong>EMNLP 2025 Main (Oral)</strong></td><td>STM/MTM/LPM 三级存储 + heat 换页</td><td class="num">Avg F1 20.03–36.27；154.22 s/query（Table 1/4）</td><td><strong>反面教材</strong>：证明「层数不是关键变量、触发信号才是」</td></tr>
+      <tr class="best"><td><strong>★ GAM</strong></td><td>2026-04 / <strong>2026-07</strong></td><td><strong>ACL 2026 Main, Long</strong></td><td>语义边界触发的 encoding–consolidation 解耦</td><td class="num">Avg F1 36.27 / 40.00 / 40.38 / 43.14；1370 tok/q</td><td>—</td></tr>
+    </table>
+    </div>
+    <p><strong>表格读出的三条趋势：</strong></p>
+    <ol>
+      <li><strong>绝对性能阶梯</strong>（Qwen2.5-7B, LoCoMo Avg F1）：MemoryBank 5.88 → MemGPT 5.91 → A-Mem 24.20 → MemoryOS 28.86 → Mem0 35.38 → GAM 40.00。三年间 <strong>6.8 倍</strong>，但最近三档增幅在收窄（+19.3% → +22.7% → +13.1%），暗示这条路线正在逼近当前指标下的天花板。</li>
+      <li><strong>成本方向反转</strong>：早期工作（A-Mem 4221 tok/q）用更多上下文换性能，2025 年后（Mem0 1534、GAM 1370）转为<strong>同时降本增效</strong>。记忆研究已从「能不能记住」进入「以什么代价记住」的阶段。</li>
+      <li><strong>会议接纳度上升</strong>：AriGraph→IJCAI 2025、A-MEM→NeurIPS 2025、MemoryOS→EMNLP 2025 Oral、GAM→ACL 2026 Main Long。Agent Memory 已从 workshop 话题变成主会话题，这也意味着<strong>评审标准会迅速抬高</strong>——单纯的架构组合会越来越难过主会。</li>
+    </ol>
+  </section>
+
+  <h2 id="s7">7. 其他值得关注的近期工作</h2>
+  <section class="card">
+    <h4>Filesystem-Based Memory for LLM Agents: Organization, Evolution, and Sustainability<span style="color:var(--muted);font-weight:400"> — 2026-07-29, arXiv（59 页 / 12 图 / 18 表）</span></h4>
+    <p>对「agent 用 markdown 文件系统当长期记忆」这一<strong>实际部署形态</strong>的首个系统性研究，结论相当逆耳：组织良好的存储在材料多时可<strong>把检索成本减半</strong>，但<strong>多数 agent 无法随记忆增长维持组织结构</strong>，且更好的组织<strong>并不稳定地带来更好的答案</strong>。最有意思的一条：<strong>工具选择对记忆结构的影响与换底座模型相当</strong>。与 GAM 形成对照——GAM 假设结构化组织有价值，这篇质疑这个假设在真实 agent 手里能否维持。<br><a href="https://arxiv.org/abs/2607.26637">arXiv</a> ｜ Code: 未找到</p>
+
+    <h4>AttriMem: Attribution-Guided Process Feedback for Agent Memory Learning<span style="color:var(--muted);font-weight:400"> — 2026-07-23, arXiv</span></h4>
+    <p>用 <strong>token 级贡献度归因</strong>构造局部奖励，补在 outcome reward 之上训练记忆构建策略，报告在长程对话 QA 上优于检索式、启发式与其他 RL 方法并改善优化稳定性。这是对「轨迹级优势广播无法区分冗余/无效/有害操作」这一老问题的正面回应，也正是 §5.2.5 提到的过程奖励思路的现成实例。<br><a href="https://arxiv.org/abs/2607.21106">arXiv</a> ｜ Code: 未找到</p>
+
+    <h4>What to Keep, What to Forget: A Rate–Distortion View of Memory Compaction<span style="color:var(--muted);font-weight:400"> — 2026-07-09, arXiv</span></h4>
+    <p>把 KV cache 管理到 agent 长期存储统一成<strong>同一个率失真决策</strong>，给出七轴分类法。核心发现对 GAM 很有杀伤力：<strong>注意力幅度、近因等选择信号会系统性失败，因为它们在查询到达之前就丢弃了信息</strong>——这恰是 GAM 的 <code>β_time</code> 式重排无法规避的问题。（注：已在既往报告中详述，此处仅作交叉引证。）<br><a href="https://arxiv.org/abs/2607.08032">arXiv</a></p>
+
+    <h4>Governed Shared Memory for Multi-Agent LLM Systems<span style="color:var(--muted);font-weight:400"> — 2026-06-23, arXiv</span></h4>
+    <p>刻画多 agent 共享记忆的四种失败模式——<strong>未授权泄露、陈旧传播、矛盾持存、来源坍塌</strong>，给出 scoped retrieval / temporal supersession / provenance tracking / policy-governed propagation 四个系统原语，在生产多租户服务 MemClaw 上验证（深度 4 推导链 100% 写者身份正确、跨 fleet 零泄露）。<strong>temporal supersession 正是 §5.2.6 建议 GAM 补上的那块。</strong><br><a href="https://arxiv.org/abs/2606.24535">arXiv</a> ｜ Code: 未找到</p>
+
+    <h4>Securing LLM-Agent Long-Term Memory Against Poisoning (TMA-NM)<span style="color:var(--muted);font-weight:400"> — 2026-06-23, arXiv</span></h4>
+    <p>证明依赖内容分析或推导追踪的现有防御会被三种 LLM 特有的「攻击洗白」通道绕过（agent 摘要、可信工具回显、伪造佐证），并形式化证明<strong>写时来源绑定是必要的</strong>。八个前沿模型上现有防御攻击成功率最高 <strong>68%</strong>，TMA-NM 降到 <strong>0%</strong>。与 GAM 的写门控在触发点上完全重合（见 §5.3.10）。<br><a href="https://arxiv.org/abs/2606.24322">arXiv</a></p>
+
+    <h4>EvoMemBench: Benchmarking Agent Memory from a Self-Evolving Perspective<span style="color:var(--muted);font-weight:400"> — 2026-06-15 (v2), arXiv</span></h4>
+    <p>沿「记忆范围 × 记忆内容」两维统一评测 15 种记忆方法。五条结论都很扎手：<strong>长上下文基线依然有竞争力</strong>；收益主要出现在 <strong>16–32K 的受限预算</strong>下；不同域需要不同记忆类型；<strong>知识修订比知识保持难得多</strong>；跨环境迁移只在结构对齐时成功。对 GAM 而言第二条尤其值得警惕——它暗示记忆架构的收益窗口可能随上下文窗口扩张而关闭。<br><a href="https://arxiv.org/abs/2605.18421">arXiv</a></p>
+
+    <h4>Memora: From Recall to Forgetting — Benchmarking Long-Term Memory for Personalized Agents<span style="color:var(--muted);font-weight:400"> — 2026-04-21, arXiv</span></h4>
+    <p>覆盖周/月/季三档时间跨度、10 个 persona，要求跨 <strong>5–28 个历史 session</strong> 做记忆整合、处理 <strong>2–15 次知识更新</strong>，提出 <strong>FAMA</strong>（Forgetting-Aware Memory Accuracy）显式惩罚使用已失效记忆。关键发现：<strong>所有系统从周到季单调退化</strong>；推理任务平均分<strong>低于 28/100</strong>；引入遗忘惩罚后分数下降 <strong>5–43 分</strong>。正好补上 GAM Table 10 缺失的「长程性能衰减」那一列。<br><a href="https://arxiv.org/abs/2604.20006">arXiv</a></p>
+
+    <h4>How Memory Management Impacts LLM Agents: An Empirical Study of Experience-Following Behavior<span style="color:var(--muted);font-weight:400"> — ACL 2026 Main, Long</span></h4>
+    <p>实证刻画 agent 的 <strong>experience-following</strong> 属性：任务输入与被检索记忆输入越相似，输出就越相似——由此导出两个失败模式，<strong>错误传播</strong>与<strong>错位经验重放</strong>。提出用「未来任务的评估结果」作为已存记忆的质量信号。与 GAM 互补：GAM 管「何时写」，这篇管「写进去的东西质量如何被事后判定」。<br><a href="https://aclanthology.org/2026.acl-long.27/">ACL Anthology</a></p>
+
+    <h4>H-MEM: Hierarchical Memory for High-Efficiency Long-Term Reasoning in LLM Agents<span style="color:var(--muted);font-weight:400"> — EACL 2026, Long</span></h4>
+    <p>按语义抽象度分层组织记忆，每个记忆向量内嵌<strong>位置索引编码</strong>指向下层子记忆，实现逐层检索而无需穷举相似度计算；在 LoCoMo 五类任务上超过五个基线。与 GAM 的分层动机相近但手段正交（索引编码 vs. 语义边界触发），值得做组合实验。<br><a href="https://aclanthology.org/2026.eacl-long.15/">ACL Anthology</a></p>
+
+    <h4>Preference-Aware Memory Update for Long-Term LLM Agents (PAMU)<span style="color:var(--muted);font-weight:400"> — ACL 2026 Findings</span></h4>
+    <p>用滑动窗口均值 + 指数移动平均融合，动态刻画用户偏好的即时波动与长期趋势，在 LoCoMo 五类场景上对五个基线均有提升。它填的是 GAM 不处理的一块：<strong>记忆内容随用户偏好演化</strong>，而非随叙事结构演化。<br><a href="https://aclanthology.org/2026.findings-acl.38/">ACL Anthology</a></p>
+  </section>
+
+  <h2 id="s8">8. 一页速览（TL;DR）</h2>
+  <section class="card">
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>维度</th><th>结论</th></tr>
+      <tr class="best"><td><strong>核心工作</strong></td><td>GAM (ACL 2026 Main Long) — 语义边界触发的记忆巩固</td></tr>
+      <tr><td><strong>一句话</strong></td><td>写入时机是记忆系统被忽视的第一性变量，其收益是检索优化的 <strong>3.68 倍</strong></td></tr>
+      <tr><td><strong>最强证据</strong></td><td><code>w/o EPG</code> → 25.06 Avg F1，落回 A-Mem (24.20) 水平：拆掉写隔离，全部结构性设计归零</td></tr>
+      <tr><td><strong>第二强证据</strong></td><td>五种启发式切分全部卡在 34.23–36.59 带内，语义触发一步到 40.00：性能非切分粒度的平滑函数</td></tr>
+      <tr><td><strong>最好的数</strong></td><td>1370 tok/query（比 Mem0 少 10.7%）+ 40.00 Avg F1（比 Mem0 高 13.1%）；27 sessions 下 token 仅增 14.5%</td></tr>
+      <tr><td><strong>最大的坑</strong></td><td>增益随 backbone 能力单调收窄 20.5% → 6.9%，缺前沿模型外推点</td></tr>
+      <tr><td><strong>第二大坑</strong></td><td>只报 F1/BLEU-1；<code>c_raw</code> 保留原文天然有利于词面指标，混淆未被隔离</td></tr>
+      <tr><td><strong>失手处</strong></td><td>GPT-4o-mini / Temporal：51.96 vs Mem0 56.42（−7.9%）——时间被加权而非被建模</td></tr>
+      <tr><td><strong>最该做的下一个实验</strong></td><td>GAM（架构门控）vs AgeMem/Memory-R1（学习门控）的 head-to-head + 组合实验</td></tr>
+      <tr><td><strong>可复用件</strong></td><td>写隔离缓冲区、稀疏触发 LLM 判别器、乘性门控重排、双粒度节点</td></tr>
+    </table>
+    </div>
+  </section>
+
+  <footer>
+    <p>报告生成于 2026-08-10 · Agent Memory 每日文献追踪。所有性能数字均标注了来源表号（GAM 论文 Table 1/3/4/5/6/7/8/10 与 Fig. 3/4/5/6），通过 <a href="https://arxiv.org/html/2604.12285v1">arXiv HTML 版 2604.12285v1</a> 与 <a href="https://aclanthology.org/2026.acl-long.1600/">ACL Anthology 页面</a>提取。</p>
+    <p>论文未公开代码仓库，故 τ 取值、Table 4 与 Table 10 时延口径差异、Table 7 Multi-Hop 行的指标口径均无法独立核实，已在正文相应位置标注。</p>
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  var root = document.documentElement;
+  var btn = document.getElementById('themeBtn');
+  btn.addEventListener('click', function () {
+    var dark = root.getAttribute('data-theme') === 'dark';
+    root.setAttribute('data-theme', dark ? 'light' : 'dark');
+    btn.textContent = dark ? '☾ 深色' : '☀ 浅色';
+  });
+
+  function wire(svgId, tipId) {
+    var svg = document.getElementById(svgId);
+    var tip = document.getElementById(tipId);
+    if (!svg || !tip) return;
+    svg.querySelectorAll('rect.bar').forEach(function (el) {
+      el.addEventListener('mousemove', function (e) {
+        tip.textContent = el.getAttribute('data-t');
+        tip.style.opacity = '1';
+        var x = e.clientX + 14, y = e.clientY - 12;
+        var w = tip.offsetWidth || 200;
+        if (x + w > window.innerWidth - 12) x = e.clientX - w - 14;
+        tip.style.left = x + 'px';
+        tip.style.top = y + 'px';
+      });
+      el.addEventListener('mouseleave', function () { tip.style.opacity = '0'; });
+    });
+  }
+  wire('chart1', 'tip1');
+  wire('chart2', 'tip2');
+})();
+</script>
+</body>
+</html>

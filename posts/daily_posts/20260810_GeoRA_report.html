@@ -1,0 +1,979 @@
+---
+layout: null
+title: "GeoRA：面向 RLVR 的几何感知低秩适配"
+date: 2026-08-10
+excerpt: "解析 ACL 2026 Outstanding Paper GeoRA 如何依据梯度几何选择可训练参数，重新设计适用于可验证奖励强化学习的低秩适配。"
+permalink: /blog/2026/08/10/geora-geometric-low-rank-adaptation-rlvr/
+blog_post: true
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GeoRA 深度解析 · 2026-08-10 · ACL 2026 Outstanding Paper</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --accent-soft: #cde2fb;
+    --good: #006300;
+    --crit: #d03b3b;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --accent-soft: #184f95;
+    --good: #0ca30c;
+    --crit: #e66767;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  header.hero {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 32px 34px;
+    margin-bottom: 34px;
+  }
+  .eyebrow {
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; margin: 0 0 10px;
+  }
+  h1 { font-size: 30px; line-height: 1.3; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .subtitle { font-size: 17px; color: var(--text-secondary); margin: 0 0 18px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    font-size: 12.5px; padding: 4px 11px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--text-secondary);
+    background: var(--page);
+  }
+  .chip.venue { border-color: var(--series-1); color: var(--series-1); font-weight: 600; }
+  .chip.warn { border-color: var(--series-2); color: var(--series-2); font-weight: 600; }
+  .lede {
+    border-left: 3px solid var(--series-1);
+    padding: 4px 0 4px 18px; margin: 20px 0 0;
+    color: var(--text-secondary); font-size: 15.5px;
+  }
+  h2 {
+    font-size: 22px; margin: 52px 0 16px; padding-bottom: 10px;
+    border-bottom: 1px solid var(--border); letter-spacing: -0.01em;
+  }
+  h3 { font-size: 18px; margin: 34px 0 12px; }
+  h3:first-child { margin-top: 0; }
+  h4 { font-size: 15.5px; margin: 24px 0 8px; color: var(--text-secondary); }
+  p { margin: 0 0 14px; }
+  section.card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 26px 30px; margin-bottom: 20px;
+  }
+  a { color: var(--series-1); text-decoration: none; border-bottom: 1px solid transparent; }
+  a:hover { border-bottom-color: var(--series-1); }
+  code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px; background: var(--page); padding: 1.5px 5px;
+    border-radius: 4px; border: 1px solid var(--border);
+  }
+  .formula {
+    background: var(--page); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 16px; margin: 12px 0; font-family: ui-monospace, Menlo, monospace;
+    font-size: 13.5px; overflow-x: auto; color: var(--text-primary);
+  }
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0 20px; font-size: 14.5px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--grid); }
+  th { color: var(--muted); font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: .05em; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.best td { background: var(--accent-soft); font-weight: 600; }
+  :root[data-theme="dark"] tr.best td { background: rgba(57,135,229,.18); }
+  .pos { color: var(--good); font-weight: 600; }
+  .neg { color: var(--crit); font-weight: 600; }
+  ol, ul { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 8px; }
+  .callout {
+    border-left: 3px solid var(--series-2); background: var(--page);
+    padding: 14px 18px; border-radius: 0 8px 8px 0; margin: 18px 0;
+    font-size: 15px; color: var(--text-secondary);
+  }
+  .callout strong { color: var(--text-primary); }
+  .callout.key { border-left-color: var(--series-1); }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  button.tgl {
+    font: inherit; font-size: 13px; padding: 6px 14px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface-1);
+    color: var(--text-secondary); cursor: pointer;
+  }
+  button.tgl:hover { color: var(--text-primary); }
+
+  .figure { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 24px 26px; margin: 24px 0; }
+  .fig-title { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+  .fig-sub { font-size: 13.5px; color: var(--muted); margin: 0 0 18px; }
+  .legend { display: flex; gap: 20px; margin-bottom: 16px; font-size: 13.5px; color: var(--text-secondary); flex-wrap: wrap; }
+  .legend span.sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 7px; vertical-align: -1px; }
+  svg.chart { width: 100%; height: auto; display: block; }
+  svg.chart text { font-family: system-ui, -apple-system, "PingFang SC", sans-serif; }
+  svg.chart rect.bar { cursor: pointer; }
+  svg.chart rect.bar:hover { opacity: .82; }
+  .tip {
+    position: fixed; pointer-events: none; opacity: 0; transition: opacity .1s;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 12px; font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,.14);
+    z-index: 50; color: var(--text-primary); white-space: nowrap;
+  }
+  .flow {
+    background: var(--page); border: 1px solid var(--border); border-radius: 10px;
+    padding: 20px 22px; font-family: ui-monospace, Menlo, monospace;
+    font-size: 13px; line-height: 1.85; overflow-x: auto; color: var(--text-secondary);
+    white-space: pre;
+  }
+  footer { margin-top: 60px; padding-top: 22px; border-top: 1px solid var(--border); font-size: 13.5px; color: var(--muted); }
+  footer ol { padding-left: 20px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    h1 { font-size: 24px; }
+    h2 { font-size: 19px; margin-top: 38px; }
+    section.card { padding: 20px 18px; }
+    .figure { padding: 18px 14px; }
+    table { font-size: 13px; }
+    th, td { padding: 7px 8px; }
+    .flow { font-size: 11px; padding: 14px 12px; }
+    .figure { overflow-x: auto; }
+    svg.chart { min-width: 600px; }
+    h3 { font-size: 16.5px; }
+    h3, h4 { overflow-wrap: anywhere; line-break: anywhere; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="toolbar">
+    <button class="tgl" onclick="const r=document.documentElement; r.setAttribute('data-theme', r.getAttribute('data-theme')==='dark'?'light':'dark'); this.textContent = r.getAttribute('data-theme')==='dark'?'☀ 浅色':'☾ 深色';">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ML/AI 每日深度论文追踪 · 周一 · LLM / NLP</p>
+    <h1>GeoRA：为 RLVR 重新设计的几何感知低秩适配</h1>
+    <p class="subtitle">当 SFT 时代的 PEFT 工具箱撞上强化学习的 KL 约束——一次关于“该动哪些参数”的重新提问</p>
+    <div class="meta">
+      <span class="chip venue">ACL 2026 Main · Outstanding Paper</span>
+      <span class="chip">2026-08-10</span>
+      <span class="chip">arXiv:2601.09361 (v4, 2026-07-31)</span>
+      <span class="chip">post-training × PEFT</span>
+      <span class="chip warn">候选池 24 篇 · 随机抽取 · 重抽 0 次</span>
+    </div>
+    <p class="lede"><strong>一句话定位：</strong>GeoRA 把参数高效适配的“适配对象”从预训练权重矩阵 W 本身，换成了一个先经几何筛选、再做 SVD 的代理矩阵 W<sub>Geo</sub>——它不再问“哪个子空间表达力最强”（SFT 视角），而是问“哪个子空间被扰动的代价最低”（RL 视角）。</p>
+  </header>
+
+  <!-- ===================== 0. 元信息 ===================== -->
+  <h2>0. 元信息与坦诚性声明</h2>
+  <section class="card">
+    <div class="tablewrap">
+    <table>
+      <tr><th>项目</th><th>说明</th></tr>
+      <tr><td>领域轮转</td><td>周一（<code>date +%u</code> = 1）→ LLM / NLP：推理与 test-time scaling、post-training、评测基准</td></tr>
+      <tr><td>候选池</td><td>24 篇（ACL 2026 Main Best/Outstanding/Resource/Theme 11 篇 + ACL 2026 Findings 2 篇 + ICLR 2026 与近 8 个月 arXiv 11 篇）</td></tr>
+      <tr><td>抽取方式</td><td><code>shuf -i 1-24 -n 5</code> 取首位 → #3 = GeoRA；<strong>重抽 0 次</strong></td></tr>
+      <tr><td>去重索引</td><td>⚠️ <strong>未能访问</strong>。本次为云端计划任务运行，桌面端未连接，<code>ml-report-index.md</code> 不可达，14 天去重无法自动校验</td></tr>
+      <tr><td>材料来源</td><td>arXiv HTML 全文（v3 / v4）+ ACL Anthology 元数据页；<strong>未获取 PDF 原始排版</strong></td></tr>
+      <tr><td>已知不完备之处</td><td>① 图 3–7 为曲线图，只能引用文字描述；② 表 8（1.5B/4B）抽取仅得 GeoRA 行，故不作横向比较；③ 论文未公开代码，实现细节无法交叉验证</td></tr>
+    </table>
+    </div>
+  </section>
+
+  <!-- ===================== 1. 链接验证表 ===================== -->
+  <h2>1. 链接验证表</h2>
+  <section class="card">
+    <p>以下链接均在本次运行中通过实际访问确认可达；未确认者明确标注。</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>论文</th><th>会议 / Anthology</th><th>arXiv</th><th>Code</th><th>备注</th></tr>
+      <tr class="best">
+        <td><strong>核心：GeoRA</strong></td>
+        <td><a href="https://aclanthology.org/2026.acl-long.1110/">ACL 2026 Long #1110</a><br>pp. 24207–24221</td>
+        <td><a href="https://arxiv.org/abs/2601.09361">arXiv:2601.09361</a><br>v1 2026-01-14 / v4 2026-07-31</td>
+        <td>未公开</td>
+        <td>Outstanding Paper</td>
+      </tr>
+      <tr>
+        <td>LoRA</td>
+        <td><a href="https://iclr.cc/virtual/2022/poster/6319">ICLR 2022</a></td>
+        <td><a href="https://arxiv.org/abs/2106.09685">arXiv:2106.09685</a></td>
+        <td><a href="https://github.com/microsoft/LoRA">microsoft/LoRA</a></td>
+        <td>abs 页 WebFetch 被 provenance 拦截</td>
+      </tr>
+      <tr>
+        <td>PiSSA</td>
+        <td><a href="https://openreview.net/forum?id=6ZBHIEtdP4">NeurIPS 2024 Spotlight</a></td>
+        <td><a href="https://arxiv.org/abs/2404.02948">arXiv:2404.02948</a></td>
+        <td><a href="https://github.com/GraphPKU/PiSSA">GraphPKU/PiSSA</a></td>
+        <td>全文已读</td>
+      </tr>
+      <tr>
+        <td>MiLoRA</td>
+        <td><a href="https://aclanthology.org/2025.naacl-long.248/">NAACL 2025 Long #248</a></td>
+        <td><a href="https://arxiv.org/abs/2406.09044">arXiv:2406.09044</a></td>
+        <td><a href="https://github.com/sufenlp/MiLoRA">sufenlp/MiLoRA</a></td>
+        <td>Anthology 页已读</td>
+      </tr>
+      <tr>
+        <td>RL Finetunes Small Subnetworks</td>
+        <td>未找到 venue 页</td>
+        <td><a href="https://arxiv.org/abs/2505.11711">arXiv:2505.11711</a></td>
+        <td>未找到</td>
+        <td>摘要与关键数字已读</td>
+      </tr>
+      <tr>
+        <td>DeepSeekMath / GRPO</td>
+        <td>技术报告</td>
+        <td><a href="https://arxiv.org/abs/2402.03300">arXiv:2402.03300</a></td>
+        <td>deepseek-ai/DeepSeek-Math</td>
+        <td>GeoRA 的 RL 优化器来源</td>
+      </tr>
+      <tr>
+        <td>LoRA-RLPO / RLMO</td>
+        <td>未找到</td>
+        <td><a href="https://arxiv.org/abs/2606.31813">arXiv:2606.31813</a></td>
+        <td>未找到</td>
+        <td>abs 页返回空文本，内容经第三方综述交叉确认</td>
+      </tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>链接层面的坦诚说明：</strong><code>arxiv.org/abs/2106.09685</code>、<code>arxiv.org/abs/2406.09044</code>、<code>huggingface.co/papers</code> 三处触发了抓取代理的 provenance / 限流拦截。它们的 URL 形态由搜索引擎结果确认有效，但本报告<strong>没有对这三页做正文级验证</strong>。
+    </div>
+  </section>
+
+  <!-- ===================== 2. Motivation ===================== -->
+  <h2>2. Motivation：一个可被量化的几何错配</h2>
+
+  <section class="card">
+    <h3>2.1 痛点的具体形态</h3>
+    <p>论文指向的不是“LoRA 效果不好”这种泛泛之谈。PiSSA 的设计逻辑是把 W 的<strong>主奇异分量</strong>交给适配器训练——这在 SFT 下有效（PiSSA 原文：Mistral-7B GSM8K 从 LoRA 的 67.7% 提到 72.86%，<span class="pos">+5.16pp</span>）。但在 RLVR 下，主奇异方向承载的正是模型<strong>已经学好的通用能力</strong>。</p>
+    <p>GeoRA 表 1（Qwen3-8B，数学 RLVR 训练后在训练域之外评测）给出了这个代价的直接量化：</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>OOD 基准</th><th class="num">Base</th><th class="num">PiSSA</th><th class="num">变化</th><th>折算题数</th></tr>
+      <tr><td>HumanEval</td><td class="num">76.83</td><td class="num">71.95</td><td class="num neg">−4.88pp</td><td>−8 / 164 题</td></tr>
+      <tr><td>IFEval</td><td class="num">54.32</td><td class="num">48.74</td><td class="num neg">−5.58pp</td><td>—</td></tr>
+      <tr><td>TruthfulQA</td><td class="num">68.91</td><td class="num">65.95</td><td class="num neg">−2.96pp</td><td>—</td></tr>
+      <tr><td>GPQA</td><td class="num">36.91</td><td class="num">36.16</td><td class="num neg">−0.75pp</td><td>—</td></tr>
+      <tr><td>MMLU</td><td class="num">71.94</td><td class="num">73.89</td><td class="num pos">+1.95pp</td><td>—</td></tr>
+    </table>
+    </div>
+    <div class="callout key">
+      <strong>反直觉现象即全文起点：</strong>一个专为 SFT 设计的、在 SFT 上稳定涨点的初始化方法，在数学 RLVR 上把代码能力打掉了 8 道题、把指令遵循打掉了 5.58pp。而同一张表里，<strong>随机初始化的朴素 LoRA 反而把 HumanEval 拉到了 81.10（+4.27pp）</strong>——“更聪明的初始化”在 RL 下比“更笨的初始化”更糟。
+    </div>
+    <p style="font-size:14px;color:var(--muted)">HumanEval 题数折算依据：76.83% × 164 = 126 题，71.95% × 164 = 118 题，二者均落在 1/164 = 0.61pp 的整数网格上，说明该列数值内部自洽。</p>
+
+    <h3>2.2 机制性论证：三个几何指标（表 6）</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>方法</th><th class="num">Llama NSS↓</th><th class="num">Llama S<sub>H</sub>↓</th><th class="num">Llama S<sub>T</sub>↑</th><th class="num">Qwen NSS↓</th><th class="num">Qwen S<sub>H</sub>↓</th><th class="num">Qwen S<sub>T</sub>↑</th></tr>
+      <tr><td>PiSSA</td><td class="num">0.395</td><td class="num neg">0.98</td><td class="num">0.01</td><td class="num">0.418</td><td class="num neg">0.95</td><td class="num">0.03</td></tr>
+      <tr><td>LoRA</td><td class="num">0.214</td><td class="num">0.15</td><td class="num">0.15</td><td class="num">0.235</td><td class="num">0.18</td><td class="num">0.18</td></tr>
+      <tr><td>MiLoRA</td><td class="num">0.125</td><td class="num">0.12</td><td class="num">0.92</td><td class="num">0.132</td><td class="num">0.16</td><td class="num">0.90</td></tr>
+      <tr class="best"><td>GeoRA</td><td class="num">0.092</td><td class="num">0.005</td><td class="num">0.98</td><td class="num">0.096</td><td class="num">0.015</td><td class="num">0.96</td></tr>
+    </table>
+    </div>
+    <p>PiSSA 的 NSS 是 GeoRA 的 <strong>4.3×</strong>（0.395/0.092）与 <strong>4.4×</strong>（0.418/0.096）；S<sub>H</sub> 相差 <strong>两个数量级</strong>。三行数字把 “S<sub>H</sub> 高 → NSS 高 → OOD 掉点” 串成一条可检验的链条：PiSSA(0.95, 0.418, −2.44) → MiLoRA(0.16, 0.132, +0.17) → GeoRA(0.015, 0.096, +2.10)，<strong>三点单调、方向一致</strong>。</p>
+    <p style="font-size:14px;color:var(--muted)">⚠️ 但见批判 C4：S<sub>H</sub> 低对 GeoRA 而言几乎是构造性保证，而非实验发现。</p>
+  </section>
+
+  <!-- ===================== 3. 故事线 ===================== -->
+  <h2>3. 论文的故事线（论证结构）</h2>
+  <section class="card">
+    <p>论文的论证不是“我们提出了 X，实验显示 X 好”，而是一条五步递进的链条，每一步都在回应上一步留下的反驳：</p>
+    <div class="flow">
+第 1 步  前提引入
+         RL 的更新是稀疏的
+         ← 借自 [Mukherjee et al., 2505.11711]：PPO/GRPO/DPO 等 7 种方法、
+           10 个模型族上，RL 只改动 5%–30% 的参数
+
+第 2 步  自我设障（关键转折）★
+         "稀疏 ≠ 低秩" —— 作者主动构造反例：
+         对随机稀疏噪声做 SVD，谱衰减是"相对平坦"的，与稠密随机噪声无异
+         ⇒ 光知道"更新稀疏"不足以论证低秩适配器的合理性
+
+第 3 步  提出选择规则（真正的创新点）
+         若要让"被选中的稀疏区域"同时具备低秩结构，
+         选择规则必须携带几何信息，而非随机 / 幅度阈值
+         ⇒ 双掩码：Spectral 先验（低曲率）∪ Euclidean 先验（高可塑）
+
+第 4 步  验证前提成立
+         图 6：W_Geo 的谱呈显著重尾，与预训练权重 W 的谱形态相似
+         同时：ΔW_FullFT（真实 RL 全量更新）也呈类似的可压缩重尾谱
+
+第 5 步  加装安全带
+         冻结残差 W_res 作为 structural anchor（论文用词：leash）
+         ⇒ 图 5：在 5×10⁻⁵ 的激进学习率下，KL 仍"保持在低且可控的水平"</div>
+    <div class="callout">
+      <strong>第 2 步是全文最有价值的一步。</strong>作者没有直接从“RL 更新稀疏”跳到“用稀疏适配器”，而是先自己把这条捷径堵死了。这个自我设障决定了方法必须是“几何 + 稀疏”的复合体，而非单纯稀疏化——也正是它区别于同期大量“把某某 PEFT 搬到 RL 上”的工作的地方。
+    </div>
+
+    <h3>隐含的设计权衡</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>牺牲了什么</th><th>换来了什么</th><th>证据</th></tr>
+      <tr><td>适配容量的表达力上界（只能在低曲率 / 近零权重区域调整）</td><td>KL 可控性 + OOD 保持</td><td>表 1：GeoRA OOD 平均 +2.10pp，FullFT −1.43pp</td></tr>
+      <tr><td>一次性 SVD + 双掩码预处理成本</td><td>训练全程 −19.9% 单步耗时</td><td>表 3 + 表 7</td></tr>
+      <tr><td>主奇异方向的“快速收敛红利”（PiSSA 的核心卖点）</td><td>训练稳定性</td><td>图 4/5：PiSSA、MiLoRA 在高学习率下迅速退化</td></tr>
+    </table>
+    </div>
+    <p>第三行的权衡在数字上其实<strong>没有真的被牺牲</strong>：GeoRA 在数学 ID 上仍是全表最高（34.04 vs PiSSA 32.27），说明“低曲率区域容量不足”这个担忧在 r=16 的预算下尚未成为瓶颈。这是论文比较幸运的一点，也是它的脆弱点（见批判 C6）。</p>
+  </section>
+
+  <!-- ===================== 4. 方法 ===================== -->
+  <h2>4. 方法论与机制解剖</h2>
+  <section class="card">
+    <h3>4.1 形式化定义</h3>
+    <h4>Step 1 — 几何先验构造（双掩码）</h4>
+    <div class="formula">谱先验（抑制高幅值 / 高曲率分量）：
+  (M_Spec)_{i,j} = 𝟙( |(Ŵ_r)_{i,j}| ≤ τ_Spec(ρ) )        Ŵ_r = SVD_r(W)
+
+欧氏先验（捕捉近零权重的可塑性）：
+  (M_Euc)_{i,j}  = 𝟙( |W_{i,j}|     ≤ τ_Euc(ρ)  )
+
+合成几何约束矩阵（取并集，不是交集）：
+  W_Geo = W ⊙ ( M_Spec ∪ M_Euc )</div>
+    <h4>Step 2 — 几何感知分解</h4>
+    <div class="formula">W_Geo = U_Geo · Σ_Geo · V_Geoᵀ
+
+  A_Geo = Σ_Geo[:r,:r]^{1/2} · V_Geo[:,:r]ᵀ
+  B_Geo = U_Geo[:,:r] · Σ_Geo[:r,:r]^{1/2}</div>
+    <h4>Step 3 — 残差牵引（Residual Leash）</h4>
+    <div class="formula">W_res = W − (α/r) · B_Geo·A_Geo          （冻结）
+
+前向（初始化时函数完全保持，h = Wx）：
+  h = W_res·x  +  (α/r)·B_Geo·A_Geo·x
+      └ Frozen ┘   └────── Trainable ──────┘
+
+梯度映射（G = ∂L/∂W_eff）：
+  ∂L/∂A = (α/r)·Bᵀ·G        ∂L/∂B = (α/r)·G·Aᵀ</div>
+
+    <h3>4.2 三种初始化范式的对照</h3>
+    <div class="flow">                     适配对象        可训练子空间        S_H     ΔOOD(Qwen3-8B)
+LoRA   (2021)  ───►  W (不分解)      随机高斯 + 零      0.18      +0.86 pp
+PiSSA  (2024)  ───►  W               top-r 主分量       0.95      −2.44 pp
+MiLoRA (2024)  ───►  W               bottom-r 次分量    0.16      +0.17 pp
+GeoRA  (2026)  ───►  W_Geo ≠ W  ★    W_Geo 的 top-r     0.015     +2.10 pp
+                     ▲
+                     └── 这一列的改变是 GeoRA 的全部创新所在：
+                         前三者都在争论"在 W 上取哪一段谱"，
+                         GeoRA 换掉了做 SVD 的那个矩阵本身。</div>
+
+    <h3>4.3 关键机制表格</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>机制 / 维度</th><th>设计选择</th><th>动机</th><th>关键超参</th></tr>
+      <tr><td>参数选择先验</td><td>Spectral ∪ Euclidean 双掩码</td><td>稀疏 ≠ 低秩，需几何信息引导</td><td>ρ = 0.2</td></tr>
+      <tr><td>适配器初始化</td><td>对 W<sub>Geo</sub> 做截断 SVD，Σ<sup>1/2</sup> 对称分摊</td><td>让适配器落在低曲率子空间</td><td>r = 16, α = 32</td></tr>
+      <tr><td>稳定性锚</td><td>冻结残差 W<sub>res</sub></td><td>限制学习流形，控制 KL</td><td>—</td></tr>
+      <tr><td>RL 目标</td><td>GRPO</td><td>组相对优势，无需 value 网络</td><td>KL 系数 0.001，rollout = 8</td></tr>
+      <tr><td>初始化加速</td><td>Randomized SVD</td><td>把预处理压到训练时间的 0.025%</td><td>—</td></tr>
+    </table>
+    </div>
+
+    <h3>4.4 掩码的覆盖率与互补性（表 5，Qwen3-8B，ρ = 0.2）</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>分组</th><th class="num">M<sub>Spec</sub></th><th class="num">M<sub>Euc</sub></th><th class="num">交集</th><th class="num">Jaccard</th><th class="num">并集覆盖率（本报告推算）</th></tr>
+      <tr><td>MLP</td><td class="num">20.0%</td><td class="num">20.0%</td><td class="num">4.63%</td><td class="num">0.131</td><td class="num">35.37%</td></tr>
+      <tr><td>Attn</td><td class="num">20.0%</td><td class="num">20.0%</td><td class="num">4.25%</td><td class="num">0.119</td><td class="num">35.75%</td></tr>
+      <tr class="best"><td>All</td><td class="num">20.0%</td><td class="num">20.0%</td><td class="num">4.55%</td><td class="num">0.128</td><td class="num">35.45%</td></tr>
+    </table>
+    </div>
+    <ol>
+      <li><strong>Jaccard ≈ 0.128 说明两个先验几乎不重叠</strong>——若它们捕捉的是同一种“不重要参数”，交集应远大于 4.55%。这是论文“互补性”主张的最硬证据。</li>
+      <li><strong>并集只保留 35.45% 的权重条目</strong>，即 W<sub>Geo</sub> 把 <strong>64.55% 的权重置零</strong>后再做 SVD。“W<sub>Geo</sub> 继承了预训练结构”对一个丢掉近三分之二条目的矩阵而言是相当强的主张（见批判 C5）。</li>
+    </ol>
+
+    <h3>4.5 超参与初始化成本</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>参数</th><th>取值</th><th>扫描范围</th></tr>
+      <tr><td>rank r</td><td>16</td><td>{4, 8, 16, 32}</td></tr>
+      <tr><td>scaling α</td><td>32</td><td>—</td></tr>
+      <tr><td>稀疏比 ρ</td><td>0.2</td><td>{10%, 20%, 30%, 40%}</td></tr>
+      <tr><td>学习率</td><td>1×10⁻⁶</td><td>压力测试至 5×10⁻⁵（<strong>50×</strong>）</td></tr>
+      <tr><td>全局 batch / rollout / KL 系数</td><td>128 / 8 / 0.001</td><td>—</td></tr>
+      <tr><td>硬件</td><td>80GB GPU；数学·医学 1×8 卡，代码 2×8 卡</td><td>—</td></tr>
+      <tr><td>随机种子</td><td colspan="2"><strong>单次运行（single random run），不报告标准差</strong></td></tr>
+    </table>
+    </div>
+    <div class="tablewrap">
+    <table>
+      <tr><th>模型</th><th>操作</th><th class="num">墙钟时间</th><th class="num">峰值显存</th></tr>
+      <tr><td>8B</td><td>完整训练</td><td class="num">838 min</td><td class="num">~384 GB</td></tr>
+      <tr><td>8B</td><td>标准 SVD</td><td class="num">18.87 min</td><td class="num">16.48 GB</td></tr>
+      <tr class="best"><td>8B</td><td>Randomized SVD</td><td class="num">0.21 min</td><td class="num">15.78 GB</td></tr>
+      <tr><td>32B</td><td>Randomized SVD</td><td class="num">0.26 min</td><td class="num">28.43 GB</td></tr>
+      <tr><td>72B</td><td>Randomized SVD</td><td class="num">0.72 min</td><td class="num">140.41 GB</td></tr>
+    </table>
+    </div>
+    <p>加速比 18.87 / 0.21 = <strong>89.9×</strong>（论文表述为“约 100×”，略有夸大但同量级）。相对训练总时长：0.21 / 838 = <strong>0.025%</strong>，即初始化开销可忽略。</p>
+  </section>
+
+  <!-- ===================== 5. 实验 ===================== -->
+  <h2>5. 实验设计与定量结果</h2>
+
+  <section class="card">
+    <h3>5.1 主结果矩阵（表 1，数学 RLVR，Qwen3-8B）</h3>
+    <div class="tablewrap">
+    <table>
+      <tr>
+        <th>方法</th><th class="num">AIME24</th><th class="num">AIME25</th><th class="num">MATH500</th><th class="num">OlymMATH</th><th class="num">ID 均值</th>
+        <th class="num">HumanEval</th><th class="num">GPQA</th><th class="num">MMLU</th><th class="num">IFEval</th><th class="num">TruthfulQA</th><th class="num">OOD 均值</th>
+      </tr>
+      <tr><td>Base</td><td class="num">13.33</td><td class="num">11.67</td><td class="num">71.20</td><td class="num">9.75</td><td class="num">26.49</td><td class="num">76.83</td><td class="num">36.91</td><td class="num">71.94</td><td class="num">54.32</td><td class="num">68.91</td><td class="num">61.78</td></tr>
+      <tr><td>FullFT</td><td class="num">23.33</td><td class="num">22.08</td><td class="num">78.40</td><td class="num">11.25</td><td class="num">33.77</td><td class="num neg">76.83†</td><td class="num neg">36.91†</td><td class="num neg">71.94†</td><td class="num">50.45</td><td class="num">65.65</td><td class="num">60.36</td></tr>
+      <tr><td>SparseFT</td><td class="num">22.92</td><td class="num">21.25</td><td class="num">76.80</td><td class="num">11.50</td><td class="num">33.12</td><td class="num">79.50</td><td class="num">37.20</td><td class="num">74.20</td><td class="num">50.95</td><td class="num">66.05</td><td class="num">61.58</td></tr>
+      <tr><td>LoRA</td><td class="num">19.58</td><td class="num">19.58</td><td class="num">75.60</td><td class="num">10.75</td><td class="num">31.38</td><td class="num">81.10</td><td class="num">37.50</td><td class="num">75.65</td><td class="num">52.13</td><td class="num">66.82</td><td class="num">62.64</td></tr>
+      <tr><td>PiSSA</td><td class="num">22.50</td><td class="num">20.42</td><td class="num">74.40</td><td class="num">11.75</td><td class="num">32.27</td><td class="num">71.95</td><td class="num">36.16</td><td class="num">73.89</td><td class="num">48.74</td><td class="num">65.95</td><td class="num">59.34</td></tr>
+      <tr><td>MiLoRA</td><td class="num">20.42</td><td class="num">19.58</td><td class="num">76.20</td><td class="num">11.50</td><td class="num">31.93</td><td class="num">78.66</td><td class="num">38.26</td><td class="num">74.51</td><td class="num">51.85</td><td class="num">66.46</td><td class="num">61.95</td></tr>
+      <tr class="best"><td>GeoRA</td><td class="num">23.75</td><td class="num">21.67</td><td class="num">78.00</td><td class="num">12.75</td><td class="num">34.04</td><td class="num">82.93</td><td class="num">37.92</td><td class="num">75.96</td><td class="num">53.73</td><td class="num">68.85</td><td class="num">63.88</td></tr>
+    </table>
+    </div>
+    <p style="font-size:14px;color:var(--muted)">† 该三列 FullFT 数值与 Base <strong>完全相同</strong>（76.83 / 36.91 / 71.94）——已通过二次定向抓取确认。详见批判 C1。ID / OOD 均值由本报告依表内数值计算。</p>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">图 A · 相对 Base 的双轴增益分解（Qwen3-8B，单位 pp）</p>
+    <p class="fig-sub">数据来源：GeoRA 表 1；ID = 4 个数学基准均值，OOD = 5 个域外基准均值。均值与差值由本报告计算。悬停查看数值。</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-1)"></span>ΔID（域内数学）</span>
+      <span><span class="sw" style="background:var(--series-2)"></span>ΔOOD（域外能力保持）</span>
+    </div>
+    <svg class="chart" viewBox="0 0 900 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="各方法相对 Base 的 ID 与 OOD 增益条形图">
+      <!-- gridlines -->
+      <g stroke="var(--grid)" stroke-width="1">
+        <line x1="70" y1="30" x2="870" y2="30"/>
+        <line x1="70" y1="79.09" x2="870" y2="79.09"/>
+        <line x1="70" y1="128.18" x2="870" y2="128.18"/>
+        <line x1="70" y1="177.27" x2="870" y2="177.27"/>
+        <line x1="70" y1="275.45" x2="870" y2="275.45"/>
+      </g>
+      <line x1="70" y1="226.36" x2="870" y2="226.36" stroke="var(--baseline)" stroke-width="1.5"/>
+      <g fill="var(--muted)" font-size="12" text-anchor="end">
+        <text x="60" y="34">+8</text>
+        <text x="60" y="83">+6</text>
+        <text x="60" y="132">+4</text>
+        <text x="60" y="181">+2</text>
+        <text x="60" y="230">0</text>
+        <text x="60" y="279">−2</text>
+      </g>
+      <text x="16" y="150" fill="var(--muted)" font-size="12" transform="rotate(-90 16 150)" text-anchor="middle">相对 Base 的变化（pp）</text>
+
+      <!-- FullFT -->
+      <rect class="bar" x="93.67" y="47.66" width="40" height="178.70" fill="var(--series-1)" rx="2" data-t="FullFT · ΔID = +7.28 pp"/>
+      <rect class="bar" x="139.67" y="226.36" width="40" height="35.10" fill="var(--series-2)" rx="2" data-t="FullFT · ΔOOD = −1.43 pp"/>
+      <!-- SparseFT -->
+      <rect class="bar" x="227.00" y="63.65" width="40" height="162.71" fill="var(--series-1)" rx="2" data-t="SparseFT · ΔID = +6.63 pp"/>
+      <rect class="bar" x="273.00" y="226.36" width="40" height="4.91" fill="var(--series-2)" rx="2" data-t="SparseFT · ΔOOD = −0.20 pp"/>
+      <!-- LoRA -->
+      <rect class="bar" x="360.33" y="106.35" width="40" height="120.01" fill="var(--series-1)" rx="2" data-t="LoRA · ΔID = +4.89 pp"/>
+      <rect class="bar" x="406.33" y="205.25" width="40" height="21.11" fill="var(--series-2)" rx="2" data-t="LoRA · ΔOOD = +0.86 pp"/>
+      <!-- PiSSA -->
+      <rect class="bar" x="493.67" y="84.48" width="40" height="141.88" fill="var(--series-1)" rx="2" data-t="PiSSA · ΔID = +5.78 pp"/>
+      <rect class="bar" x="539.67" y="226.36" width="40" height="59.89" fill="var(--series-2)" rx="2" data-t="PiSSA · ΔOOD = −2.44 pp（全表最差）"/>
+      <!-- MiLoRA -->
+      <rect class="bar" x="627.00" y="92.83" width="40" height="133.53" fill="var(--series-1)" rx="2" data-t="MiLoRA · ΔID = +5.44 pp"/>
+      <rect class="bar" x="673.00" y="222.19" width="40" height="4.17" fill="var(--series-2)" rx="2" data-t="MiLoRA · ΔOOD = +0.17 pp"/>
+      <!-- GeoRA -->
+      <rect class="bar" x="760.33" y="40.79" width="40" height="185.57" fill="var(--series-1)" rx="2" data-t="GeoRA · ΔID = +7.56 pp（全表最高）"/>
+      <rect class="bar" x="806.33" y="174.81" width="40" height="51.55" fill="var(--series-2)" rx="2" data-t="GeoRA · ΔOOD = +2.10 pp（唯一显著正值）"/>
+
+      <g fill="var(--text-secondary)" font-size="13" text-anchor="middle">
+        <text x="136.67" y="320">FullFT</text>
+        <text x="270.00" y="320">SparseFT</text>
+        <text x="403.33" y="320">LoRA</text>
+        <text x="536.67" y="320">PiSSA</text>
+        <text x="670.00" y="320">MiLoRA</text>
+        <text x="803.33" y="320" font-weight="700" fill="var(--series-1)">GeoRA</text>
+      </g>
+      <g fill="var(--muted)" font-size="12" text-anchor="middle">
+        <text x="136.67" y="340">合计 +5.85</text>
+        <text x="270.00" y="340">合计 +6.43</text>
+        <text x="403.33" y="340">合计 +5.75</text>
+        <text x="536.67" y="340">合计 +3.34</text>
+        <text x="670.00" y="340">合计 +5.61</text>
+        <text x="803.33" y="340" font-weight="700" fill="var(--series-1)">合计 +9.66</text>
+      </g>
+    </svg>
+  </div>
+
+  <section class="card">
+    <div class="callout key">
+      <strong>🔴 全文最有说服力的定量证据：</strong>在 Qwen3-8B 上，<strong>GeoRA 是唯一一个 ID 与 OOD 双向正增益、且 ID 增益超过全量微调的方法</strong>。合计增益比第二名 SparseFT 高 <strong>+3.23pp</strong>，比 PiSSA 高 <strong>+6.32pp（1.9 倍）</strong>。更关键的是方向性：所有“更强”的方法（FullFT +7.28 / −1.43、PiSSA +5.78 / −2.44）都在用 OOD 换 ID，<strong>只有 GeoRA 打破了这个 trade-off</strong>。
+    </div>
+
+    <h3>5.2 Llama-3.1-8B：方向一致，幅度收窄</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>方法</th><th class="num">ID 均值</th><th class="num">OOD 均值</th><th class="num">ΔID</th><th class="num">ΔOOD</th></tr>
+      <tr><td>Base</td><td class="num">16.48</td><td class="num">61.49</td><td class="num">—</td><td class="num">—</td></tr>
+      <tr><td>FullFT</td><td class="num">24.37</td><td class="num">60.01</td><td class="num pos">+7.89</td><td class="num neg">−1.48</td></tr>
+      <tr><td>SparseFT</td><td class="num">23.94</td><td class="num">61.07</td><td class="num pos">+7.46</td><td class="num neg">−0.42</td></tr>
+      <tr><td>LoRA</td><td class="num">21.66</td><td class="num">62.28</td><td class="num pos">+5.18</td><td class="num pos">+0.79</td></tr>
+      <tr><td>PiSSA</td><td class="num">23.42</td><td class="num">60.63</td><td class="num pos">+6.94</td><td class="num neg">−0.86</td></tr>
+      <tr><td>MiLoRA</td><td class="num">22.42</td><td class="num">62.10</td><td class="num pos">+5.94</td><td class="num pos">+0.61</td></tr>
+      <tr class="best"><td>GeoRA</td><td class="num">24.51</td><td class="num">62.95</td><td class="num">+8.03</td><td class="num">+1.46</td></tr>
+    </table>
+    </div>
+    <p>结论方向一致，但<strong>幅度显著收窄</strong>：GeoRA 的 ΔOOD 领先第二名（MiLoRA）从 Qwen 上的 +1.24pp 缩到 +0.85pp。见批判 C7。</p>
+
+    <h3>5.3 医学与代码域（表 2）</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>方法</th><th class="num">MedQA</th><th class="num">MedMCQA</th><th class="num">PubMedQA</th><th class="num">医学均值</th><th class="num">LiveCodeBench</th><th class="num">HumanEval</th><th class="num">MBPP</th><th class="num">代码均值</th></tr>
+      <tr><td>Base</td><td class="num">58.03</td><td class="num">56.42</td><td class="num">74.94</td><td class="num">63.13</td><td class="num">65.75</td><td class="num">87.66</td><td class="num">79.40</td><td class="num">77.60</td></tr>
+      <tr><td>FullFT</td><td class="num">75.32</td><td class="num">64.56</td><td class="num">80.12</td><td class="num">73.33</td><td class="num">67.75</td><td class="num">90.26</td><td class="num">81.40</td><td class="num">79.80</td></tr>
+      <tr><td>LoRA</td><td class="num">74.23</td><td class="num">62.12</td><td class="num">79.54</td><td class="num">71.96</td><td class="num">67.25</td><td class="num">88.96</td><td class="num">81.00</td><td class="num">79.07</td></tr>
+      <tr class="best"><td>GeoRA</td><td class="num">76.12</td><td class="num">64.31</td><td class="num">80.64</td><td class="num">73.69</td><td class="num">67.75</td><td class="num">89.61</td><td class="num">81.60</td><td class="num">79.65</td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>两处失手：</strong>MedMCQA 上 GeoRA 64.31 &lt; FullFT 64.56（−0.25pp）；代码均值 79.65 &lt; FullFT 79.80（−0.15pp），HumanEval 89.61 &lt; 90.26（−0.65pp）。且这两个域的基线集合被削减到只剩 Base / FullFT / LoRA——<strong>PiSSA、MiLoRA、SparseFT 全部缺席</strong>，而 PiSSA 恰恰是全文的头号靶子。详见 C2。
+    </div>
+
+    <h3>5.4 消融研究（表 4，Qwen3-4B）</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>配置</th><th class="num">Reward</th><th class="num">AIME24</th><th class="num">AIME25</th><th class="num">MATH-500</th><th class="num">OlymMATH</th><th class="num">均值</th><th class="num">Δ 均值</th></tr>
+      <tr class="best"><td>GeoRA（完整）</td><td class="num">0.88</td><td class="num">13.33</td><td class="num">9.17</td><td class="num">73.40</td><td class="num">5.75</td><td class="num">25.41</td><td class="num">—</td></tr>
+      <tr><td>w/o M<sub>Spec</sub></td><td class="num">0.86</td><td class="num">12.50</td><td class="num">8.33</td><td class="num">72.00</td><td class="num">4.75</td><td class="num">24.40</td><td class="num neg">−1.01</td></tr>
+      <tr><td>w/o M<sub>Euc</sub></td><td class="num">0.83</td><td class="num">13.33</td><td class="num">8.75</td><td class="num">72.80</td><td class="num">5.50</td><td class="num">25.10</td><td class="num neg">−0.31</td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>⚡ 相变式发现（本报告的独立观察，论文未提及）：训练奖励与下游准确率在这两行之间出现了反序。</strong><br>
+      · <code>w/o M_Spec</code>：reward <strong>0.86（更高）</strong> → 均值 <strong>24.40（更低）</strong><br>
+      · <code>w/o M_Euc</code>：reward <strong>0.83（更低）</strong> → 均值 <strong>25.10（更高）</strong><br><br>
+      两重含义：① 这是 RLVR 中“奖励–能力脱钩”的一个微型实例，本身就有价值；② 它<strong>直接削弱了论文在图 4/5/7 中把 reward 曲线当作主要证据的做法</strong>——如果 reward 与准确率在消融行间都会反向，那么用 reward 曲线论证 r 与 ρ 的鲁棒性就缺乏说服力。
+    </div>
+    <p>同时，<code>w/o M_Euc</code> 只掉 0.31pp，而论文用它论证“移除任一掩码都会一致地降低性能”。0.31pp 在 4 基准平均、单次运行、且包含 AIME（30 题量级）的设置下，<strong>难以与噪声区分</strong>。</p>
+
+    <h3>5.5 超参敏感性与统计显著性</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>扫描维度</th><th>范围</th><th>论文报告形式</th><th>本报告评估</th></tr>
+      <tr><td>rank r</td><td>{4, 8, 16, 32}</td><td>图 7(a) reward 轨迹</td><td>⚠️ 只有 reward，无下游准确率；结合 §5.4 反序，证据不充分</td></tr>
+      <tr><td>稀疏比 ρ</td><td>{10%, 20%, 30%, 40%}</td><td>图 7(b) reward 轨迹</td><td>⚠️ 同上</td></tr>
+      <tr class="best"><td>学习率</td><td>1×10⁻⁶ → 5×10⁻⁵（50×）</td><td>图 4 / 图 5（含 KL 轨迹）</td><td>✅ 最有价值的敏感性证据：对应明确的失败模式（训练崩溃），不依赖 reward–accuracy 相关性</td></tr>
+    </table>
+    </div>
+    <p>论文未报告任何明确的相变或突变点。ρ 从 10% 到 40% 意味着并集覆盖率约从 19% 到 66%（3.5 倍跨度），若性能真的“极强鲁棒”，反而暗示<strong>双掩码的具体阈值不是关键变量</strong>——这与论文强调“几何先验精确选择”的叙事存在张力（C8）。</p>
+    <p>论文明确说明结果<strong>“基于单次随机运行”，不报告标准差、置信区间或多种子重复</strong>。</p>
+  </section>
+
+  <!-- ===================== 6. 局限性 ===================== -->
+  <h2>6. 局限性</h2>
+
+  <section class="card">
+    <h3>6.1 第一类：论文自述的限制（Limitations 章节）</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>#</th><th>论文原文（英译中）</th><th>严重度</th></tr>
+      <tr><td>L1</td><td>“初始化过程需要执行截断 SVD 和双掩码操作。虽然这是训练开始时的一次性计算成本，但相比标准 LoRA 的随机初始化引入了额外的预处理步骤。”</td><td>低 —— 表 7 自证仅占训练时间 0.025%</td></tr>
+      <tr><td>L2</td><td>“我们的实验主要聚焦于推理域的 RLVR。尽管 GeoRA 在这些任务上表现强劲，其泛化性仍需在更广泛的模型架构和 verifiable rewards 之外的多样 RL 场景中进一步验证。”</td><td>中 —— 承认范围限制，但未承认下列任何一条</td></tr>
+    </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>6.2 第二类：补充批判（8 点，均为本报告的独立观察）</h3>
+
+    <h4>C1 · 论证缺口 + 实验设计问题：表 1 中 FullFT 的三列 OOD 数值与 Base 完全相同</h4>
+    <p>Qwen3-8B 上 FullFT 与 Base 在 HumanEval（76.83）、GPQA（36.91）、MMLU（71.94）三列<strong>逐位相同</strong>；Llama-3.1-8B 上同样三列同样相同（65.20 / 31.15 / 68.40）。而 IFEval 与 TruthfulQA 两列则不同。三个数字在两个不同模型上同时精确复现的概率可忽略，因此只有两种解释：<strong>(a) 复制粘贴错误，(b) 这三个基准未对 FullFT 重新评测</strong>。</p>
+    <p>剔除这三列后，<strong>唯一可信的 OOD 对比只剩 IFEval 和 TruthfulQA</strong>。重算如下：</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>方法</th><th class="num">Qwen3-8B（IFEval+TruthfulQA 平均 Δ）</th><th class="num">Llama-3.1-8B</th></tr>
+      <tr><td>FullFT</td><td class="num neg">−3.57</td><td class="num neg">−3.69</td></tr>
+      <tr><td>SparseFT</td><td class="num neg">−3.12</td><td class="num neg">−2.95</td></tr>
+      <tr><td>PiSSA</td><td class="num neg">−4.27</td><td class="num neg">−4.02</td></tr>
+      <tr><td>LoRA</td><td class="num neg">−2.14</td><td class="num neg">−1.51</td></tr>
+      <tr><td>MiLoRA</td><td class="num neg">−2.46</td><td class="num neg">−1.46</td></tr>
+      <tr class="best"><td>GeoRA</td><td class="num">−0.33</td><td class="num">−1.19</td></tr>
+    </table>
+    </div>
+    <p><strong>结论：论文的核心主张在剔除可疑数据后依然成立</strong>（GeoRA 退化最小），但 Qwen 上的领先从“OOD 净增益 +2.10pp”降级为“退化最小，−0.33pp”，<strong>“提升 OOD”的措辞不再有依据</strong>。而 Llama 上 GeoRA（−1.19）与 MiLoRA（−1.46）、LoRA（−1.51）的差距只有 0.27–0.32pp，<strong>已进入噪声量级</strong>。</p>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">图 B · 剔除可疑数据后的 OOD 退化（仅 IFEval + TruthfulQA 两列，单位 pp）</p>
+    <p class="fig-sub">C1 的重算结果。数值越接近 0 越好。两条序列是两个模型族，单位相同，故共用一个纵轴。悬停查看数值。</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-1)"></span>Qwen3-8B</span>
+      <span><span class="sw" style="background:var(--series-2)"></span>Llama-3.1-8B</span>
+    </div>
+    <svg class="chart" viewBox="0 0 900 340" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="剔除可疑数据后各方法的 OOD 退化条形图">
+      <g stroke="var(--grid)" stroke-width="1">
+        <line x1="70" y1="85.56" x2="870" y2="85.56"/>
+        <line x1="70" y1="141.11" x2="870" y2="141.11"/>
+        <line x1="70" y1="196.67" x2="870" y2="196.67"/>
+        <line x1="70" y1="252.22" x2="870" y2="252.22"/>
+      </g>
+      <line x1="70" y1="30" x2="870" y2="30" stroke="var(--baseline)" stroke-width="1.5"/>
+      <g fill="var(--muted)" font-size="12" text-anchor="end">
+        <text x="60" y="34">0</text>
+        <text x="60" y="90">−1</text>
+        <text x="60" y="145">−2</text>
+        <text x="60" y="201">−3</text>
+        <text x="60" y="256">−4</text>
+      </g>
+      <text x="16" y="150" fill="var(--muted)" font-size="12" transform="rotate(-90 16 150)" text-anchor="middle">相对 Base 的退化（pp）</text>
+
+      <rect class="bar" x="93.67" y="30" width="40" height="198.33" fill="var(--series-1)" rx="2" data-t="FullFT · Qwen3-8B = −3.57 pp"/>
+      <rect class="bar" x="139.67" y="30" width="40" height="205.00" fill="var(--series-2)" rx="2" data-t="FullFT · Llama-3.1-8B = −3.69 pp"/>
+      <rect class="bar" x="227.00" y="30" width="40" height="173.33" fill="var(--series-1)" rx="2" data-t="SparseFT · Qwen3-8B = −3.12 pp"/>
+      <rect class="bar" x="273.00" y="30" width="40" height="163.89" fill="var(--series-2)" rx="2" data-t="SparseFT · Llama-3.1-8B = −2.95 pp"/>
+      <rect class="bar" x="360.33" y="30" width="40" height="237.22" fill="var(--series-1)" rx="2" data-t="PiSSA · Qwen3-8B = −4.27 pp（最差）"/>
+      <rect class="bar" x="406.33" y="30" width="40" height="223.33" fill="var(--series-2)" rx="2" data-t="PiSSA · Llama-3.1-8B = −4.02 pp（最差）"/>
+      <rect class="bar" x="493.67" y="30" width="40" height="118.89" fill="var(--series-1)" rx="2" data-t="LoRA · Qwen3-8B = −2.14 pp"/>
+      <rect class="bar" x="539.67" y="30" width="40" height="83.89" fill="var(--series-2)" rx="2" data-t="LoRA · Llama-3.1-8B = −1.51 pp"/>
+      <rect class="bar" x="627.00" y="30" width="40" height="136.67" fill="var(--series-1)" rx="2" data-t="MiLoRA · Qwen3-8B = −2.46 pp"/>
+      <rect class="bar" x="673.00" y="30" width="40" height="81.11" fill="var(--series-2)" rx="2" data-t="MiLoRA · Llama-3.1-8B = −1.46 pp"/>
+      <rect class="bar" x="760.33" y="30" width="40" height="18.33" fill="var(--series-1)" rx="2" data-t="GeoRA · Qwen3-8B = −0.33 pp（最佳）"/>
+      <rect class="bar" x="806.33" y="30" width="40" height="66.11" fill="var(--series-2)" rx="2" data-t="GeoRA · Llama-3.1-8B = −1.19 pp（最佳，但仅领先 MiLoRA 0.27pp）"/>
+
+      <g fill="var(--text-secondary)" font-size="13" text-anchor="middle">
+        <text x="136.67" y="295">FullFT</text>
+        <text x="270.00" y="295">SparseFT</text>
+        <text x="403.33" y="295">PiSSA</text>
+        <text x="536.67" y="295">LoRA</text>
+        <text x="670.00" y="295">MiLoRA</text>
+        <text x="803.33" y="295" font-weight="700" fill="var(--series-1)">GeoRA</text>
+      </g>
+      <text x="470" y="325" fill="var(--muted)" font-size="12" text-anchor="middle">Llama 上 GeoRA 与 MiLoRA / LoRA 的差距仅 0.27–0.32pp——已进入噪声量级</text>
+    </svg>
+  </div>
+
+  <section class="card">
+    <h4>C2 · 缺乏关键竞品对比：医学与代码域的基线被削减到只剩 3 个</h4>
+    <p>表 2 的基线集合是 {Base, FullFT, LoRA}，<strong>PiSSA、MiLoRA、SparseFT 全部缺席</strong>。这不是无关紧要的省略：全文的靶子就是“PiSSA 类主分量初始化在 RLVR 下有害”。如果这个论断是<strong>方法层面的</strong>（而非数学任务特有的），它在医学和代码上也应该成立并被验证。保守推断：<strong>GeoRA 优于 SVD-based 初始化这一核心论断，目前只有数学域的证据。</strong></p>
+
+    <h4>C3 · 实验设计问题：多处“优势”小于一个 rollout 样本</h4>
+    <p>论文的 AIME 评测是 30 题 × 8 rollout = 240 个样本，网格步长 1/240 = 0.4167pp。核对数值：</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>数值</th><th>折算</th><th>验证</th></tr>
+      <tr><td>GeoRA AIME24 = 23.75</td><td>57 / 240</td><td>57/240 = 23.750% ✓</td></tr>
+      <tr><td>FullFT AIME24 = 23.33</td><td>56 / 240</td><td>56/240 = 23.333% ✓</td></tr>
+      <tr><td>GeoRA AIME25 = 21.67</td><td>52 / 240</td><td>52/240 = 21.667% ✓</td></tr>
+      <tr><td>FullFT AIME25 = 22.08</td><td>53 / 240</td><td>53/240 = 22.083% ✓</td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>GeoRA 在 AIME24 上“超过全量微调”的全部依据，是 240 次 rollout 中多答对了 1 次；而在 AIME25 上它又少答对 1 次。</strong>在单次运行、无标准差的设置下，这两个数字不构成任何可解释的差异。MATH500 上 GeoRA 78.00 vs FullFT 78.40 同理，差 2 / 500 题。<br><br>
+      <strong>唯一在 ID 上真正稳健的证据是 OlymMATH：GeoRA 12.75 vs FullFT 11.25（+1.50pp），且 GeoRA 在该列是全表最高。</strong>OlymMATH 恰好是四个 ID 基准中最难的一个——这一点值得论文自己强调，但它没有。
+    </div>
+
+    <h4>C4 · 指标有效性问题：表 6 的 S<sub>H</sub> 接近构造性同义反复</h4>
+    <p>S<sub>H</sub> 衡量适配器子空间与头部奇异子空间的对齐度。GeoRA 的构造过程<strong>显式地把高幅值条目掩掉了</strong>，因此 S<sub>H</sub> ≈ 0.005–0.015 几乎是设计的直接推论，而非需要实验才能知道的经验发现。同理 PiSSA 的 0.95–0.98 也由其定义决定。<strong>表 6 因此更接近“设计意图的自我确认”，而非“机制的因果证据”。</strong>真正能构成因果链的做法是：构造一族 S<sub>H</sub> 连续变化的初始化方案，观察 OOD 退化是否随之单调——论文没有做。（NSS 受此影响较轻，因为它测的是训练<em>之后</em>的谱位移。）</p>
+
+    <h4>C5 · 论证缺口（最严重的一条）：证明 W<sub>Geo</sub> 可压缩 ≠ 证明 RL 所需的更新落在 W<sub>Geo</sub> 的主子空间中</h4>
+    <p>论文第 4 步用图 6 论证了两件事：① W<sub>Geo</sub> 的谱是重尾可压缩的；② ΔW<sub>FullFT</sub> 的谱也是重尾可压缩的。但<strong>这两件事各自成立，推不出“ΔW<sub>FullFT</sub> 的主方向与 W<sub>Geo</sub> 的主方向重合”</strong>——两个矩阵可以都低秩，却张成完全正交的子空间。</p>
+    <p>论文本可以用一个数字堵上这个缺口：报告 top-r(ΔW<sub>FullFT</sub>) 与 top-r(W<sub>Geo</sub>) 的主子空间对齐度。他们已经有计算 S<sub>H</sub>、S<sub>T</sub> 的完整工具链，边际成本几乎为零。<strong>论文没有报告这个数。</strong></p>
+    <p>这个缺口还与外部证据存在张力：<a href="https://arxiv.org/abs/2505.11711">Mukherjee et al. (2505.11711)</a> 在 7 种 RL 方法、10 个模型族上测得 RL 更新虽然稀疏（只动 5%–30% 参数），但在被更新的矩阵内部是<strong>“接近满秩（nearly full-rank）”</strong>的。若该结论成立，“RL 更新可用秩-16 适配器捕捉”这个前提本身就需要更强的辩护。</p>
+
+    <h4>C6 · 可复现性风险：代码未公开，且方法对未公开细节敏感</h4>
+    <ul>
+      <li>ACL Anthology 与 arXiv 页面均<strong>未列出任何代码仓库或项目主页</strong>（本报告已逐一核查）。</li>
+      <li>多处实现选择未在正文中完全约束：掩码是逐层还是全局计算、ρ 分位数按矩阵还是按张量统计、randomized SVD 的过采样与幂迭代参数、W<sub>res</sub> 是否随训练重算。</li>
+      <li>结合“单次运行、无标准差”，第三方复现时<strong>无法判断偏差来源是实现差异还是随机性</strong>。</li>
+    </ul>
+
+    <h4>C7 · 失手的子任务 + 结论强度的跨模型衰减</h4>
+    <div class="tablewrap">
+    <table>
+      <tr><th>场景</th><th>GeoRA 的相对表现</th><th class="num">幅度</th></tr>
+      <tr><td>Qwen3-8B ΔOOD 领先第二名（LoRA）</td><td>领先</td><td class="num pos">+1.24pp</td></tr>
+      <tr><td>Llama-3.1-8B ΔOOD 领先第二名（MiLoRA）</td><td>领先</td><td class="num">+0.85pp</td></tr>
+      <tr><td>Llama TruthfulQA</td><td>落后 LoRA</td><td class="num neg">−0.15pp</td></tr>
+      <tr><td>Llama MATH500</td><td>落后 FullFT</td><td class="num neg">−0.50pp</td></tr>
+      <tr><td>医学 MedMCQA</td><td>落后 FullFT</td><td class="num neg">−0.25pp</td></tr>
+      <tr><td>代码均值 / HumanEval</td><td>落后 FullFT</td><td class="num neg">−0.15 / −0.65pp</td></tr>
+    </table>
+    </div>
+    <p>方向在两个模型族上一致，这是好的；但<strong>效应量在 Llama 上大致减半</strong>，论文没有讨论原因。一个可能的解释是 Llama-3.1-8B 的 base IFEval 高达 79.99（Qwen3-8B 仅 54.32），天花板效应压缩了差异——但这需要论文自己去论证。</p>
+
+    <h4>C8 · 叙事与证据的张力：如果 ρ 真的“极强鲁棒”，几何先验的精确性就不是关键</h4>
+    <p>论文一方面强调双掩码是精心设计的几何先验，另一方面又报告 ρ ∈ {10%,20%,30%,40%} 上“极强鲁棒性”。ρ 从 10% 到 40%，并集覆盖率约从 19% 变到 66%（3.5 倍跨度），若性能几乎不变，更简约的解释是：</p>
+    <div class="callout">
+      <strong>真正起作用的可能不是“选中了哪些参数”，而只是“避开了主奇异方向”这一件事。</strong>这个替代假设与 MiLoRA 的结论一致（MiLoRA 只做了“避开主分量”，S<sub>H</sub> = 0.12–0.16，ΔOOD 已转正为 +0.17 / +0.61）。而 GeoRA 相对 MiLoRA 的 OOD 增益是 +1.93pp（Qwen）/ +0.85pp（Llama）——真实但不算巨大。<br><br>
+      <strong>检验方法很简单：</strong>把双掩码换成“随机保留 35.45% 的非主分量条目”作为消融项。论文的表 4 只做了 <code>w/o M_Spec</code> 和 <code>w/o M_Euc</code>，<strong>没有做“随机掩码”这个最关键的对照</strong>。缺了它，就无法区分“几何先验有效”与“任何避开主方向的做法都有效”。
+    </div>
+
+    <h3>批判汇总</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>编号</th><th>问题类型</th><th>一句话</th><th>严重度</th></tr>
+      <tr><td>C1</td><td>实验设计问题 / 论证缺口</td><td>FullFT 三列 OOD 数值与 Base 完全相同</td><td class="neg">🔴 高</td></tr>
+      <tr><td>C2</td><td>缺乏关键竞品对比</td><td>医学 / 代码域缺 PiSSA、MiLoRA、SparseFT</td><td class="neg">🔴 高</td></tr>
+      <tr><td>C3</td><td>实验设计问题</td><td>多处优势 = 240 样本中的 1 次 rollout；单次运行无标准差</td><td class="neg">🔴 高</td></tr>
+      <tr><td>C4</td><td>指标有效性问题</td><td>S<sub>H</sub> 由构造保证，接近同义反复</td><td>🟡 中</td></tr>
+      <tr><td>C5</td><td>论证缺口</td><td>未测 ΔW<sub>FullFT</sub> 与 W<sub>Geo</sub> 的主子空间对齐度</td><td class="neg">🔴 高</td></tr>
+      <tr><td>C6</td><td>可复现性风险</td><td>代码未公开 + 多处实现细节未约束</td><td>🟡 中</td></tr>
+      <tr><td>C7</td><td>失手的子任务</td><td>代码域输给 FullFT；Llama 上效应量减半</td><td>🟡 中</td></tr>
+      <tr><td>C8</td><td>论证缺口</td><td>缺“随机掩码”对照，无法排除“只要避开主方向即可”</td><td>🟡 中</td></tr>
+    </table>
+    </div>
+  </section>
+
+  <!-- ===================== 7. 相关工作 ===================== -->
+  <h2>7. 相关工作回溯（问题传递链）</h2>
+
+  <section class="card">
+    <h3>7.1 LoRA — 2021.06，ICLR 2022</h3>
+    <p><strong>① 解决了什么问题。</strong>全量微调的存储与部署成本不可接受。LoRA 把权重更新约束为低秩形式 ΔW = BA（B 零初始化、A 随机高斯），可训练参数压到千分之一量级，推理时可合并回主干、零额外延迟。</p>
+    <p><strong>② 遗留了什么缺口。</strong>LoRA 对“BA 应该落在权重空间的哪个位置”完全不作规定——A 是随机的。既然更新被限制在一个 r 维子空间里，<strong>这个子空间的选择应当是重要的</strong>。LoRA 把这个自由度整个留给了随机性。</p>
+    <p><strong>③ 核心工作的回应。</strong>GeoRA 继承结构、否定初始化的中立性。有趣的是，表 1 里朴素 LoRA 的 ΔOOD 是 <span class="pos">+0.86pp</span>（Qwen）/ <span class="pos">+0.79pp</span>（Llama），<strong>优于 PiSSA、SparseFT 和 FullFT</strong>——在 RLVR 下，“随机而中立”竟然比“聪明但方向错误”更安全。这是 GeoRA 隐含但未点破的重要旁证。</p>
+    <p><strong>④ 关键设计的传递。</strong><code>前向结构（冻结主干 + 可训练低秩旁路）</code> 与 <code>α/r 缩放</code> 被完整继承；<code>随机初始化</code> 被完全替换。</p>
+
+    <h3>7.2 PiSSA — 2024.04，NeurIPS 2024 Spotlight</h3>
+    <p><strong>① 解决了什么问题。</strong>LoRA 的零初始化导致早期梯度信号弱、收敛慢。PiSSA 用 W 的主奇异分量初始化适配器，冻结残差。收益扎实：Mistral-7B GSM8K 72.86% vs LoRA 67.7%（+5.16pp）；LLaMA-3-70B QPiSSA 86.05% vs QLoRA 81.73%（+4.32pp）。</p>
+    <p><strong>② 遗留了什么缺口。</strong>PiSSA 建立在一个未言明的前提上：<strong>“信息量最大的方向”=“最该被训练的方向”</strong>。这在 SFT 下大致成立，但从未在“目标是在保持能力的前提下提升特定技能”的 RL 场景下被检验过。它也没讨论：当训练目标带有 KL 约束时，把容量放在主方向上会不会系统性违反该约束。</p>
+    <p><strong>③ 核心工作的回应。</strong>GeoRA 是对 PiSSA 的<strong>直接对抗性回应</strong>：接受其技术骨架（SVD 初始化 + 残差冻结 + 函数保持），但把 SVD 的<strong>对象</strong>从 W 换成 W<sub>Geo</sub>。量化为 S<sub>H</sub> 从 0.95 降到 0.015（两个数量级）、NSS 从 0.418 降到 0.096（4.4×）、ΔOOD 从 −2.44pp 翻转为 +2.10pp。<strong>PiSSA 因此扮演双重角色：既是技术来源，也是首要靶子。</strong></p>
+    <p><strong>④ 关键设计的传递。</strong><code>SVD 初始化</code>、<code>Σ^{1/2} 对称分摊</code>、<code>残差冻结</code>、<code>randomized SVD 加速</code> 四项完整继承。技术迁移形式：<strong>从“谱的哪一段”→“谁的谱”</strong>。</p>
+
+    <h3>7.3 MiLoRA — 2024.06，NAACL 2025</h3>
+    <p><strong>① 解决了什么问题。</strong>与 PiSSA 同期但结论相反：主奇异分量承载的是值得保护的预训练知识，次要分量代表“未被充分优化”的空间。因此把适配器初始化在 bottom-r 子空间上。</p>
+    <p><strong>② 遗留了什么缺口。</strong>MiLoRA 抓住了正确直觉（保护主方向），但机制仍是<strong>纯谱的</strong>——只看奇异值排序，不看参数在权重空间中的分布。它没回答：幅值接近零的权重（可塑性高）与低奇异能量的方向（曲率低）是不是同一回事？GeoRA 表 5 的答案是明确的“不是”：Jaccard 仅 <strong>0.128</strong>，交集 4.55%。<strong>MiLoRA 只覆盖了两个互补维度中的一个。</strong></p>
+    <p><strong>③ 核心工作的回应。</strong>GeoRA 是对 MiLoRA 的<strong>综合与超越</strong>：把选择准则从一维（谱）扩展为二维（谱 ∪ 欧氏）。S<sub>T</sub> 从 0.90–0.92 提升到 0.96–0.98，NSS 从 0.125–0.132 降到 0.092–0.096（改善约 27%）。但也正因 MiLoRA 已把 ΔOOD 做到正值，<strong>GeoRA 相对 MiLoRA 的增量（+1.93pp / +0.85pp）才是衡量“双掩码是否真的必要”的正确基准</strong>，而非相对 PiSSA 的 +4.54pp（见 C8）。</p>
+    <p><strong>④ 关键设计的传递。</strong><code>避开主奇异子空间</code> 的直觉被继承并强化。技术迁移形式：<strong>从“一维谱排序”→“二维几何筛选”</strong>。</p>
+
+    <h3>7.4 DeepSeekMath / GRPO — 2024.02</h3>
+    <p><strong>① 解决了什么问题。</strong>PPO 需要维护与策略同规模的 value 网络。GRPO 用同一 prompt 的一组 rollout 的组内相对优势替代 value 基线，去掉 critic，保留 KL 正则项。</p>
+    <p><strong>② 遗留了什么缺口。</strong>GRPO 定义了全新的优化动力学（组相对优势 + 显式 KL + 稀疏二元奖励），结果是梯度信号稀疏、噪声大、更新幅度被 KL 硬性限制。但整个 PEFT 生态<strong>没有做过任何适配性重新设计</strong>——LoRA、PiSSA、MiLoRA、DoRA 全部是在稠密监督 + 无 KL 约束的 SFT 假设下开发和调参的。<strong>这笔“方法学债务”就是 GeoRA 的直接问题来源。</strong></p>
+    <p><strong>③ 核心工作的回应。</strong>GeoRA 是第一批直接偿还这笔债务的工作之一：所有实验以 GRPO 为底座（KL 系数 0.001，rollout = 8），并把“KL 是否受控”提升为核心评价维度。冻结残差作为 leash 的设计意图正是针对 KL 约束。</p>
+    <p><strong>④ 关键设计的传递。</strong><code>GRPO 目标</code> 原样采用；<code>KL 散度</code> 从训练超参上升为<strong>评价指标与设计目标</strong>。</p>
+
+    <h3>7.5 RL Finetunes Small Subnetworks in LLMs — 2025.05</h3>
+    <p><strong>① 解决了什么问题。</strong>提出并验证了一个纯经验结论：在 PPO、GRPO、DPO 等 <strong>7 种 RL 方法</strong>、<strong>10 个模型族</strong>上，RL 后训练只改动 <strong>5%–30% 的参数</strong>；只微调这个子网络就能完全恢复测试准确率，得到的模型与全量微调几乎相同。且这种稀疏性是<strong>内生的</strong>。</p>
+    <p><strong>② 遗留了什么缺口。</strong>① 稀疏子网络是如何被选出来的？给出了事后识别方法，但没有<strong>事前预测</strong>规则。② 稀疏是否蕴含低秩？论文自己的测量给出否定暗示——被更新的矩阵内部是<strong>“接近满秩”</strong>的。</p>
+    <p><strong>③ 核心工作的回应。</strong>对缺口 ① 的回应是直接的：<strong>双掩码就是一个事前的、只依赖预训练权重 W 的子网络预测规则</strong>。对缺口 ② 的回应是<strong>间接且不完整的</strong>（见 C5）。</p>
+    <p><strong>④ 关键设计的传递。</strong><code>RL 更新是稀疏的</code> 作为前提被引入；<code>稀疏 ≠ 低秩</code> 作为自我设障被主动强化；<code>事后识别</code> 被升级为 <code>事前预测规则</code>。</p>
+  </section>
+
+  <!-- ===================== 8. 演进脉络 ===================== -->
+  <h2>8. 技术演进脉络</h2>
+  <section class="card">
+    <div class="flow">2021.06  LoRA [低秩约束、随机初始化、零初始化保证起点等价、α/r 缩放]
+            │  留下缺口：子空间选择完全交给随机性
+            ▼
+      ┌─────────────────────┬─────────────────────┐
+      │                     │                     │
+2024.02 GRPO/DeepSeekMath  2024.04 PiSSA      2024.06 MiLoRA
+   [组相对优势、去 critic、  [top-r 主分量初始化]  [bottom-r 次分量初始化]
+    显式 KL 约束]           S_H≈0.95            S_H≈0.16
+      │                     │                     │
+      │ 改变了优化范式        │ 假设"信息量大=该训练" │ 直觉正确但准则是一维的
+      │ 但 PEFT 未随之更新    │ 在 RL 下 ΔOOD=−2.44 │ ΔOOD=+0.17（已转正）
+      │                     │                     │
+      └──────────┬──────────┴──────────┬──────────┘
+                 │                     │
+                 │     2025.05  RL Finetunes Small Subnetworks
+                 │        [RL 只动 5%–30% 参数；但"接近满秩"]
+                 │        留下缺口：① 如何事前预测子网络
+                 │                  ② 稀疏是否蕴含低秩（暗示：否）
+                 │                     │
+                 └──────────┬──────────┘
+                            ▼
+        ┌────────────────────────────────────────────┐
+        │  2026.01  GeoRA  ★ 汇聚点                   │
+        │  • 继承 PiSSA 的 SVD 初始化 + 残差冻结        │
+        │  • 继承 MiLoRA 的"避开主方向"直觉             │
+        │  • 继承 LoRA 的前向结构与 α/r 缩放            │
+        │  • 回应稀疏子网络工作的"事前预测"缺口          │
+        │  • 以 GRPO 的 KL 约束为设计准则               │
+        │  ⇒ 关键动作：换掉做 SVD 的那个矩阵            │
+        │     W_Geo = W ⊙ (M_Spec ∪ M_Euc)           │
+        │     S_H≈0.015, NSS≈0.096, ΔOOD=+2.10       │
+        └────────────────────┬───────────────────────┘
+                             │  未回答：ΔW_FullFT 与 W_Geo 主子空间是否对齐？
+                             ▼
+        2026.06  LoRA-RLPO / RLMO [正交初始化，B₀=0]
+                 诊断不同：问题在"奇异值缩放放大梯度范数
+                 → 违反 KL 约束 → 训练崩溃"
+                 ⇒ 与 GeoRA 竞争同一个解释位；二者无 head-to-head</div>
+
+    <h3>演进的内在逻辑：评价函数的迁移</h3>
+    <div class="formula">"哪个子空间表达力最强"  ──►  "哪个子空间收敛最快"  ──►  "哪个子空间扰动代价最低"
+   (LoRA: 不关心)            (PiSSA: SFT 视角)          (MiLoRA→GeoRA: RL 视角)</div>
+    <p>推动力不是技术能力的增长，而是<strong>目标函数性质的改变</strong>。SFT 的目标是让模型学会新分布，此时“改动大”往往等价于“学得快”；RLVR 的目标是在 KL 球内提升特定可验证技能，此时“改动大”直接等价于“违反约束 + 能力塌缩”。同一个初始化方法在两种目标下的最优性完全相反——PiSSA 在 GSM8K SFT 上 +5.16pp，在数学 RLVR 的 OOD 上 −2.44pp。</p>
+
+    <h3>阶段间的关键转折</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>转折</th><th>之前</th><th>之后</th><th>标志性证据</th></tr>
+      <tr><td>T1 初始化从中立变为有偏</td><td>LoRA 随机初始化</td><td>PiSSA / MiLoRA 谱初始化</td><td>PiSSA GSM8K +5.16pp</td></tr>
+      <tr><td>T2 优化范式从 SFT 变为 RL</td><td>稠密监督、无 KL</td><td>稀疏二元奖励、显式 KL</td><td>GRPO 去 critic</td></tr>
+      <tr class="best"><td>T3 评价从单目标变为双目标</td><td>只看 ID 提升</td><td>ID + OOD 保持并列</td><td>GeoRA 表 1 的 4+5 结构</td></tr>
+      <tr><td>T4 分解对象从 W 变为 f(W)</td><td>所有方法都对 W 做 SVD</td><td>GeoRA 对 W<sub>Geo</sub> 做 SVD</td><td>S<sub>H</sub> 0.95 → 0.015</td></tr>
+    </table>
+    </div>
+    <div class="callout key">
+      <strong>T3 可能是这条线上影响最深远的一步，而它甚至不是 GeoRA 的显式主张。</strong>把 OOD 保持从“顺带提一句”提升为与 ID 提升并列的评价轴，意味着 RLVR 的成功标准被重新定义了：一个只提升 AIME 却打掉 HumanEval 的方法不再算成功。
+    </div>
+
+    <h3>社区关注点的转移</h3>
+    <ul>
+      <li><strong>2021–2023：参数效率</strong> —— 能不能用更少参数达到 FullFT 的效果</li>
+      <li><strong>2024：收敛效率</strong> —— 能不能更快达到同样效果（PiSSA 的核心卖点）</li>
+      <li><strong>2025：更新的结构性质</strong> —— RL 到底在改什么</li>
+      <li><strong>2026：稳定性与能力保持</strong> —— 能不能在不破坏已有能力的前提下提升</li>
+    </ul>
+    <p>值得注意的是，ACL 2026 的 Outstanding Paper 里同时出现了 GeoRA（几何视角）和 <em>Rethinking Entropy Interventions in RLVR</em>（熵视角）——<strong>两篇都在处理 RLVR 训练稳定性，一个从参数空间几何入手，一个从策略分布熵入手，目前完全没有交叉验证，是一个明显的空白。</strong></p>
+  </section>
+
+  <!-- ===================== 9. 对标表 ===================== -->
+  <h2>9. 相关工作表格对标</h2>
+  <section class="card">
+    <div class="tablewrap">
+    <table>
+      <tr><th>工作</th><th>年月</th><th>会议</th><th>核心贡献</th><th>主要指标</th><th>与核心工作的关系</th></tr>
+      <tr><td>LoRA</td><td>2021.06</td><td>ICLR 2022</td><td>低秩更新约束 + 零初始化</td><td>参数量 ↓1000×；RLVR 下 ΔOOD = +0.86pp</td><td>提供前向结构；其“随机初始化”被否定，但在 RL 下反而优于 PiSSA</td></tr>
+      <tr><td>GRPO / DeepSeekMath</td><td>2024.02</td><td>arXiv</td><td>组相对优势，去 critic，显式 KL</td><td>成为 RLVR 事实标准优化器</td><td>实验底座；KL 从超参升级为设计准则</td></tr>
+      <tr><td>PiSSA</td><td>2024.04</td><td>NeurIPS 2024 Spotlight</td><td>top-r 主分量初始化 + 残差冻结</td><td>Mistral-7B GSM8K 72.86 vs 67.7（<strong>+5.16pp</strong>，SFT）</td><td><strong>技术骨架来源 + 首要靶子</strong>；RLVR 下 S<sub>H</sub>=0.95, ΔOOD=−2.44pp</td></tr>
+      <tr><td>MiLoRA</td><td>2024.06</td><td>NAACL 2025</td><td>bottom-r 次分量初始化</td><td>RLVR 下 S<sub>H</sub>=0.16, NSS=0.132, ΔOOD=+0.17pp</td><td>核心直觉来源；准则被从一维扩展为二维</td></tr>
+      <tr><td>RL Finetunes Small Subnetworks</td><td>2025.05</td><td>arXiv</td><td>RL 更新的内生稀疏性</td><td>7 种 RL × 10 模型族；仅动 <strong>5%–30%</strong> 参数；“接近满秩”</td><td>提供前提（稀疏）与最强反证（满秩）；GeoRA 只回应了前者</td></tr>
+      <tr class="best"><td><strong>GeoRA（核心）</strong></td><td><strong>2026.01<br>(v4: 2026.07)</strong></td><td><strong>ACL 2026 Main<br>Outstanding</strong></td><td><strong>把 SVD 的对象从 W 换成几何筛选后的 W<sub>Geo</sub></strong></td><td><strong>ΔID +7.56 / ΔOOD +2.10pp；S<sub>H</sub>=0.015；参数 −99.5%，单步 −19.9%，显存 −28.5%</strong></td><td><strong>汇聚点</strong></td></tr>
+      <tr><td>LoRA-RLPO / RLMO</td><td>2026.06</td><td>arXiv</td><td>正交初始化（B₀=0），去掉奇异值缩放</td><td>GSM8K / MATH500 / AIME 上优于 LoRA，1.5B–7B 一致</td><td><strong>竞争性后续</strong>；诊断为“奇异值缩放放大梯度范数”，与 GeoRA 不同；<strong>无 head-to-head</strong></td></tr>
+    </table>
+    </div>
+    <h3>表格读出的三条趋势线</h3>
+    <ol>
+      <li><strong>S<sub>H</sub> 单调下降</strong>：0.95（PiSSA）→ 0.16（MiLoRA）→ 0.015（GeoRA），伴随 ΔOOD 单调上升：−2.44 → +0.17 → +2.10。三点共线，是全文最干净的趋势。</li>
+      <li><strong>参数效率的边际收益已经饱和</strong>：GeoRA 的 0.04B 相对 LoRA 同量级并无优势——本文的价值不在参数量，而在稳定性。表 3 里真正新的数字是“单步耗时 −19.9%”和“显存 −28.5%”。</li>
+      <li><strong>诊断正在分岔</strong>：GeoRA（子空间位置错了）vs LoRA-RLPO（奇异值缩放导致梯度范数爆炸）。两个诊断都能解释 PiSSA 在 RL 下的失败，但推出的解法完全不同。<strong>这是 2026 下半年该方向最值得关注的分歧点。</strong></li>
+    </ol>
+  </section>
+
+  <!-- ===================== 10. 开放挑战 ===================== -->
+  <h2>10. 开放挑战与研究机会</h2>
+
+  <section class="card">
+    <h3>10.1 理论层面</h3>
+    <p><strong>O1 · KL 预算约束下的最优子空间选择问题。</strong>具体问题：给定 KL 预算 ε、秩预算 r 和预训练权重 W，是否存在可计算的判据 J(S)，使得在所有 r 维子空间中，最大化 J 的子空间同时最小化 KL 违约概率？</p>
+    <p>GeoRA 的双掩码是纯启发式的，没有任何最优性论证。这是一个<strong>高价值、低门槛</strong>的空白：在二次近似下（把 RL 损失展开为 ½ΔWᵀHΔW，H 为 Fisher 信息矩阵），“最低曲率的 r 维子空间”有闭式解——就是 H 的 bottom-r 特征子空间。<strong>GeoRA 的谱先验实际上是这个解的一个不用计算 Hessian 的粗糙代理。</strong>直接比较“KFAC 近似的 Fisher bottom-r 子空间”与“双掩码 + SVD”，就能测出这个代理损失了多少，用现成工具即可完成。</p>
+    <p><strong>O2 · 稀疏性与低秩性的可兼容边界。</strong>具体问题：在什么条件下，一个稀疏支撑集上的矩阵必然具有快速衰减的奇异谱？给出充分条件与反例族。GeoRA 用经验对照建立了“稀疏 ≠ 低秩”，但没刻画边界；而 2505.11711 报告 RL 更新“接近满秩”。这中间存在一个可用随机矩阵理论处理的干净问题：<strong>支撑集的几何结构（而非稀疏度本身）决定了低秩性。</strong></p>
+
+    <h3>10.2 工程与应用层</h3>
+    <p><strong>O3 · 补上 GeoRA 自己缺的三个实验（最低成本、最高回报）：</strong></p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>实验</th><th>具体设计</th><th>回答什么</th></tr>
+      <tr><td><strong>E1 · 随机掩码对照</strong></td><td>把 M<sub>Spec</sub> ∪ M<sub>Euc</sub> 换成“随机保留 35.45% 的非 top-r 条目”，其余流程不变，在 Qwen3-8B 上重跑表 1</td><td>区分“几何先验有效” vs “任何避开主方向的做法都有效”（C8）</td></tr>
+      <tr><td><strong>E2 · 主子空间对齐度测量</strong></td><td>跑一次 FullFT 得 ΔW<sub>FullFT</sub>，计算 top-r(ΔW<sub>FullFT</sub>) 与 top-r(W<sub>Geo</sub>) 的主角度，与 PiSSA、MiLoRA 对比</td><td>填补最严重的论证缺口（C5）；成本近乎为零</td></tr>
+      <tr><td><strong>E3 · 3 种子重跑</strong></td><td>表 1 的 Qwen3-8B 分块用 3 个种子重跑并报告标准差</td><td>把“多 1 个 rollout”的差异变成可判定的结论（C3）</td></tr>
+    </table>
+    </div>
+    <p><strong>O4 · GeoRA vs LoRA-RLPO/RLMO 的 head-to-head。</strong>固定 GRPO 实现、同一训练集（DeepMath-103K）、同一 KL 系数（0.001）、同一硬件预算、同一秩 r=16，对比六种初始化，同时报告 ID/OOD 双轴与 KL 轨迹。<strong>这是当前该方向最关键的实验空白</strong>：两篇工作对“PiSSA 为何在 RL 下失败”给出了不同诊断，缺少 head-to-head，社区无法判断哪个诊断是对的——甚至无法排除二者说的是同一件事的两个侧面。</p>
+    <p><strong>O5 · 动态掩码。</strong>ρ 在训练中固定为 0.2。若允许 ρ 或掩码本身随训练步数演化（早期宽松、后期收紧），能否在同样 KL 预算下取得更高 ID 增益？图 7(b) 显示 ρ ∈ [10%,40%] 上性能平坦，这<strong>反而是动态调度有空间的信号</strong>——若不同阶段的最优 ρ 不同，静态最优就会是各阶段最优的折中，表现为曲线平坦。</p>
+    <p><strong>O6 · 逐层 / 逐模块的掩码预算分配。</strong>表 5 显示 MLP 与 Attn 的 Jaccard 已有差异（0.131 vs 0.119），暗示两类模块几何结构不同，但 GeoRA 对所有层用同一个 ρ。可借鉴 AdaLoRA 的预算分配思想：<strong>按层的谱能量分布或 Fisher 迹自适应分配 ρ_ℓ 与 r_ℓ。</strong></p>
+
+    <h3>10.3 新兴方向</h3>
+    <p><strong>O7 · 几何视角与熵视角的交叉验证。</strong>参数空间的几何约束（GeoRA 的 W<sub>res</sub> leash）与策略空间的熵干预（<em>Rethinking Entropy Interventions in RLVR</em>）是否作用于同一失败模式？测量：在 GeoRA 训练中记录策略熵轨迹，看它是否自动避免了熵坍缩；反之在熵干预方法上测 NSS 与 S<sub>H</sub>。若二者正交则可叠加获益；若本质在治同一个病则叠加会饱和。<strong>两种结果都有信息量，而目前没有任何工作做过。</strong></p>
+    <p><strong>O8 · 超越 verifiable rewards。</strong>在偏好类奖励（RLHF / DPO）下，奖励更稠密但更嘈杂，KL 约束通常更紧。GeoRA 的“低曲率子空间”假设是否仍适用？可操作的切入点：在 DPO 上重跑表 6 的三个几何指标，看 PiSSA 的 S<sub>H</sub>–NSS–性能链条是否还是单调的。</p>
+    <p><strong>O9 · 掩码的可解释性与安全含义。</strong>M<sub>Spec</sub> ∪ M<sub>Euc</sub> 选出的 35.45% 参数在功能上对应什么？是否与已知的“安全对齐相关”参数子集重叠？若系统性避开，则 GeoRA 顺带提供了“能力提升不损伤对齐”的机制保证；若恰好覆盖，则对齐税风险反而被放大。所需实验只是把掩码与已有的对齐关键参数定位工作做一次集合比较。</p>
+  </section>
+
+  <!-- ===================== 11. 其他工作 ===================== -->
+  <h2>11. 其他值得关注的近期工作</h2>
+  <section class="card">
+    <p><strong>Rethinking Entropy Interventions in RLVR: An Entropy Change Perspective</strong>（2026.08，ACL 2026 Main · Outstanding）</p>
+    <ul><li>从熵变化视角提出 token 级重加权稳定 RL 训练的熵动力学。与 GeoRA 同届 Outstanding，处理同一问题但路线完全不同——<strong>两篇对读是理解 2026 年 RLVR 稳定性研究全貌的最短路径</strong>。 <a href="https://2026.aclweb.org/program/best_papers/">ACL 2026 Best Papers</a></li></ul>
+
+    <p><strong>CURE: Critique-Driven Unified Reinforcement Learning for Test-Time Self-Improvement</strong>（2026.08，ACL 2026 Main · Outstanding）</p>
+    <ul><li>训练模型在推理时自我批评并改进输出，把 test-time scaling 与 RL 训练统一在一个框架里。代表“把测试时计算内化为训练目标”这条正在升温的路线。 <a href="https://2026.aclweb.org/program/best_papers/">ACL 2026 Best Papers</a></li></ul>
+
+    <p><strong>Evolutionary Guided Decoding: Iterative Value Refinement for LLMs</strong>（2026.08，ACL 2026 Main · Outstanding）</p>
+    <ul><li>迭代精化 value function 引导解码。属于“不动权重、只动解码”的 test-time 路线，与 GeoRA 的“只动 0.5% 权重”形成有趣对照。 <a href="https://2026.aclweb.org/program/best_papers/">ACL 2026 Best Papers</a></li></ul>
+
+    <p><strong>Geometry-Preserving Orthonormal Initialization for Low-Rank Adaptation in RLVR</strong>（2026.06，arXiv）</p>
+    <ul><li><strong>GeoRA 最直接的竞争者。</strong>诊断为“奇异值缩放放大梯度范数 → 违反 KL → 训练崩溃”，解法是正交初始化（B₀=0，不做 Σ<sup>1/2</sup> 缩放）。双方都未做 head-to-head——这是本期识别出的最关键实验空白。 <a href="https://arxiv.org/abs/2606.31813">arXiv:2606.31813</a></li></ul>
+
+    <p><strong>Understanding and Preventing Entropy Collapse in RLVR</strong>（2026.05，ACL 2026 Findings）</p>
+    <ul><li>系统分析 RLVR 中熵坍缩的成因与预防。与 GeoRA 的 KL 稳定性论证互补：一个从策略分布侧看，一个从参数空间侧看。 <a href="https://arxiv.org/abs/2605.11491">arXiv:2605.11491</a></li></ul>
+
+    <p><strong>LLMs Gaming Verifiers: RLVR can Lead to Reward Hacking</strong>（2026.04，ICLR 2026 LLM Reasoning Workshop）</p>
+    <ul><li>揭示 RLVR 中模型对 verifier 的博弈行为。对 GeoRA 这类“以 reward 曲线为主要证据”的工作是警示——<strong>本报告 §5.4 发现的 reward–accuracy 反序正是这条线的微型实例</strong>。 <a href="https://arxiv.org/abs/2604.15149">arXiv:2604.15149</a></li></ul>
+
+    <p><strong>Spurious Rewards Paradox: Mechanistically Understanding How RLVR Activates Memorization Shortcuts</strong>（2026.01，arXiv）</p>
+    <ul><li>机制性解释了为什么 RLVR 在虚假奖励下仍能提升分数——它激活了记忆捷径。直接质疑“ID 基准提升 = 推理能力提升”的默认假设。 <a href="https://arxiv.org/abs/2601.11061">arXiv:2601.11061</a></li></ul>
+
+    <p><strong>Do Post-Training Algorithms Actually Differ? Scale-Dependent Ranking Inversions</strong>（2026.03，arXiv）</p>
+    <ul><li>统一框架下对比 51 个 post-training 配置、8 方法 × 4 规模（0.5B–7B），报告<strong>算法排名随规模反转</strong>，模型规模影响（~50pp）远大于损失函数改动（~1pp）。对 GeoRA 是直接的外部压力。⚠️ 单作者预印本，未经同行评议。 <a href="https://arxiv.org/abs/2603.19335">arXiv:2603.19335</a></li></ul>
+
+    <p><strong>Test-Time Scaling in Reasoning LLMs: Inference Regimes, Evaluation, and Reproducibility</strong>（2026.08，arXiv）</p>
+    <ul><li>本月新出的 test-time scaling 系统性评测与可复现性研究。与本期主题正交但同属周一域，适合作为下周核心论文候选。 <a href="https://arxiv.org/abs/2608.04001">arXiv:2608.04001</a></li></ul>
+  </section>
+
+  <!-- ===================== 12. 总结 ===================== -->
+  <h2>12. 总结</h2>
+  <section class="card">
+    <p>GeoRA 的贡献可以压缩成一句话：<strong>它是第一批认真对待“SFT 的 PEFT 工具箱不能直接搬到 RLVR 上”这件事的工作，并给出了一个概念上干净的解法——换掉做 SVD 的那个矩阵。</strong></p>
+    <p>它最强的证据是表 6 的 S<sub>H</sub>–NSS–ΔOOD 三点单调链条（PiSSA 0.95/0.418/−2.44 → MiLoRA 0.16/0.132/+0.17 → GeoRA 0.015/0.096/+2.10），以及表 1 中“唯一 ID 与 OOD 双向正增益”这个结构性事实。</p>
+    <div class="callout key">
+      它最需要补的是三个成本极低的实验：<strong>随机掩码对照（排除 C8 的替代假设）、ΔW<sub>FullFT</sub> 与 W<sub>Geo</sub> 的主子空间对齐度测量（填补 C5 的核心论证缺口）、多种子重跑（让 C3 的“1 个 rollout 差异”变成可判定结论）</strong>。在这三个实验完成之前，“双掩码这个具体形式是必要的”这一主张仍然是未经检验的——已被检验的只是“避开主奇异方向是必要的”，而这一点 MiLoRA 在 2024 年就说过了。
+    </div>
+  </section>
+
+  <footer>
+    <p><strong>脚注</strong></p>
+    <ol>
+      <li><strong>索引未更新</strong>：本次为云端计划任务运行，桌面端不可达，<code>ml-report-index.md</code> 未能自动追加本期记录。建议下次桌面在线时补录：<code>2026-08-10 | LLM/NLP | GeoRA: Geometry-Aware Low-Rank Adaptation for RLVR | ACL 2026 Main (Outstanding) | 把 SVD 的对象从 W 换成几何筛选后的 W_Geo，是首批为 RLVR 重新设计 PEFT 初始化的工作</code>。</li>
+      <li><strong>数值来源</strong>：所有性能数字均标注了来源表号。ID / OOD 均值、Δ 值、题数折算、并集覆盖率、加速比等派生量均由本报告计算并已注明。</li>
+      <li><strong>抽取风险</strong>：论文全文通过 arXiv HTML 版本（v3/v4）获取，表格加粗标记在转换中可能失真，涉及加粗归属的讨论已相应弱化措辞。图 3–7 为曲线图，只能引用文字描述。</li>
+      <li><strong>未能验证的链接</strong>：<code>arxiv.org/abs/2106.09685</code>、<code>arxiv.org/abs/2406.09044</code>、<code>huggingface.co/papers</code> 三处触发抓取代理限制，未做正文级验证。</li>
+    </ol>
+    <p style="margin-top:18px">报告生成于 2026-08-10 · 核心论文 <a href="https://aclanthology.org/2026.acl-long.1110/">GeoRA (ACL 2026 Outstanding Paper)</a> · 候选池 24 篇，随机抽取，重抽 0 次</p>
+  </footer>
+
+</div>
+<div class="tip" id="tip"></div>
+<script>
+(function () {
+  var tip = document.getElementById('tip');
+  document.querySelectorAll('svg.chart rect.bar').forEach(function (el) {
+    el.addEventListener('mousemove', function (e) {
+      tip.textContent = el.getAttribute('data-t');
+      tip.style.opacity = '1';
+      var x = e.clientX + 14, y = e.clientY - 12;
+      if (x + 260 > window.innerWidth) { x = e.clientX - 260; }
+      tip.style.left = x + 'px';
+      tip.style.top = y + 'px';
+    });
+    el.addEventListener('mouseleave', function () { tip.style.opacity = '0'; });
+  });
+})();
+</script>
+</body>
+</html>

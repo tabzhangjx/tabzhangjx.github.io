@@ -1,0 +1,1015 @@
+---
+layout: null
+title: "MolGraphBench：分子回归中的 GNN 架构基准"
+date: 2026-08-09
+excerpt: "梳理 MolGraphBench 对分子回归 GNN 的系统评测，揭示层类型选择并非常量，而是能够带来显著性能差异的关键超参数。"
+permalink: /blog/2026/08/09/molgraphbench-gnn-molecular-regression/
+blog_post: true
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MolGraphBench 深度追踪报告 · 2026-08-09 · AI4Science</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --accent-soft: #cde2fb;
+    --good: #006300;
+    --crit: #d03b3b;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --accent-soft: #184f95;
+    --good: #0ca30c;
+    --crit: #e66767;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  header.hero {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 32px 34px;
+    margin-bottom: 34px;
+  }
+  .eyebrow {
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; margin: 0 0 10px;
+  }
+  h1 { font-size: 30px; line-height: 1.3; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .subtitle { font-size: 17px; color: var(--text-secondary); margin: 0 0 18px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    font-size: 12.5px; padding: 4px 11px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--text-secondary);
+    background: var(--page);
+  }
+  .chip.venue { border-color: var(--series-1); color: var(--series-1); font-weight: 600; }
+  .chip.warn { border-color: var(--series-2); color: var(--series-2); font-weight: 600; }
+  .lede {
+    border-left: 3px solid var(--series-1);
+    padding: 4px 0 4px 18px; margin: 20px 0 0;
+    color: var(--text-secondary); font-size: 15.5px;
+  }
+  h2 {
+    font-size: 22px; margin: 52px 0 16px; padding-bottom: 10px;
+    border-bottom: 1px solid var(--border); letter-spacing: -0.01em;
+  }
+  h3 { font-size: 18px; margin: 34px 0 12px; }
+  h3:first-child { margin-top: 0; }
+  h4 { font-size: 15.5px; margin: 24px 0 8px; color: var(--text-secondary); }
+  p { margin: 0 0 14px; }
+  section.card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 26px 30px; margin-bottom: 20px;
+  }
+  a { color: var(--series-1); text-decoration: none; border-bottom: 1px solid transparent; }
+  a:hover { border-bottom-color: var(--series-1); }
+  code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px; background: var(--page); padding: 1.5px 5px;
+    border-radius: 4px; border: 1px solid var(--border);
+  }
+  .formula {
+    background: var(--page); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 16px; margin: 12px 0; font-family: ui-monospace, Menlo, monospace;
+    font-size: 13.5px; overflow-x: auto; color: var(--text-primary);
+  }
+  .tblwrap { overflow-x: auto; margin: 16px 0 20px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--grid); }
+  th { color: var(--muted); font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: .05em; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.best td { background: var(--accent-soft); font-weight: 600; }
+  :root[data-theme="dark"] tr.best td { background: rgba(57,135,229,.18); }
+  td.pos { color: var(--crit); font-variant-numeric: tabular-nums; text-align: right; }
+  td.neg { color: var(--good); font-variant-numeric: tabular-nums; text-align: right; }
+  .sota-row td { color: var(--muted); font-style: italic; }
+  ol, ul { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 8px; }
+  .callout {
+    border-left: 3px solid var(--series-2); background: var(--page);
+    padding: 14px 18px; border-radius: 0 8px 8px 0; margin: 18px 0;
+    font-size: 15px; color: var(--text-secondary);
+  }
+  .callout strong { color: var(--text-primary); }
+  .callout.info { border-left-color: var(--series-1); }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  button.tgl {
+    font: inherit; font-size: 13px; padding: 6px 14px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface-1);
+    color: var(--text-secondary); cursor: pointer;
+  }
+  button.tgl:hover { color: var(--text-primary); }
+  .figure { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 24px 26px; margin: 24px 0; }
+  .fig-title { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+  .fig-sub { font-size: 13.5px; color: var(--muted); margin: 0 0 18px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 16px; font-size: 13.5px; color: var(--text-secondary); }
+  .legend span.sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 7px; vertical-align: -1px; }
+  svg.chart { width: 100%; height: auto; display: block; }
+  svg.chart text { font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  svg.chart rect.bar { cursor: pointer; }
+  svg.chart rect.bar:hover { opacity: .78; }
+  .tip {
+    position: fixed; pointer-events: none; opacity: 0; transition: opacity .1s;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 12px; font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,.14);
+    z-index: 50; color: var(--text-primary); white-space: nowrap;
+  }
+  .flow {
+    background: var(--page); border: 1px solid var(--border); border-radius: 10px;
+    padding: 20px 22px; font-family: ui-monospace, Menlo, monospace;
+    font-size: 12.5px; line-height: 1.85; overflow-x: auto; color: var(--text-secondary);
+    white-space: pre;
+  }
+  .toc { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 20px 26px; margin-bottom: 28px; }
+  .toc ol { margin: 0; padding-left: 20px; font-size: 14.5px; }
+  .toc li { margin-bottom: 4px; }
+  footer { margin-top: 60px; padding-top: 22px; border-top: 1px solid var(--border); font-size: 13.5px; color: var(--muted); }
+  footer a { color: var(--muted); }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    h1 { font-size: 23px; }
+    h2 { font-size: 19px; margin-top: 38px; }
+    h3 { font-size: 16.5px; }
+    body { font-size: 15px; }
+    header.hero { padding: 22px 18px; }
+    section.card { padding: 20px 18px; }
+    .figure { padding: 18px 14px; }
+    table { font-size: 12.5px; }
+    th, td { padding: 7px 8px; }
+    .flow { font-size: 10.5px; padding: 14px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="toolbar">
+    <button class="tgl" onclick="const r=document.documentElement; r.setAttribute('data-theme', r.getAttribute('data-theme')==='dark'?'light':'dark'); this.textContent = r.getAttribute('data-theme')==='dark'?'☀ 浅色':'☾ 深色';">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ML/AI 每日深度追踪 · 周日 · AI4Science 与跨界</p>
+    <h1>层类型不是常量，是超参——而且它值 30% 的性能</h1>
+    <p class="subtitle">MolGraphBench: A Benchmark of GNN Architectures for Molecular Regression Tasks</p>
+    <div class="meta">
+      <span class="chip venue">arXiv:2602.20573v3</span>
+      <span class="chip">2026-06-18 · cs.LG</span>
+      <span class="chip">图学习 × 计算化学</span>
+      <span class="chip">5 数据集 · 12 方法 · 4 判据</span>
+      <span class="chip warn">⚠ 代码仓库未能定位</span>
+    </div>
+    <p class="lede">分子图学习领域用了五年时间，把「底层卷积层类型」当成一个不需要讨论的背景常量。本文的数据说明这个常量在迁移学习场景下值 <strong>30.0%</strong> 的性能——比一篇 Nature 子刊论文的全部创新高出约四倍。但本文自身在 5 个数据集中的 4 个上，其宣称的「最优架构」不具统计显著性。</p>
+  </header>
+
+  <div class="toc">
+    <ol>
+      <li><a href="#s0">报告方法学声明（坦诚性前置）</a></li>
+      <li><a href="#s1">链接验证清单</a></li>
+      <li><a href="#s2">核心论文深度解析</a></li>
+      <li><a href="#s3">相关工作回溯（问题传递链）</a></li>
+      <li><a href="#s4">技术演进脉络</a></li>
+      <li><a href="#s5">相关工作表格对标</a></li>
+      <li><a href="#s6">开放挑战与研究机会</a></li>
+      <li><a href="#s7">其他值得关注的近期工作</a></li>
+      <li><a href="#s8">结论：这篇论文该怎么读</a></li>
+    </ol>
+  </div>
+
+  <h2 id="s0">0 · 报告方法学声明</h2>
+  <section class="card">
+    <p>在进入正文前，先把本期报告的三个已知局限摆在明面上：</p>
+    <ol>
+      <li><strong>去重索引不可达。</strong>本次运行是云端定时任务，用户本地设备桥在定时运行中从不连接。因此 <code>ml-report-index.md</code> 无法读取，<strong>14 天去重检查未能执行</strong>，索引也未能自动追加本期记录。</li>
+      <li><strong>随机抽取过程。</strong>候选池 27 篇（AI4Science 方向，2025-08 至 2026-08），<code>shuf -i 1-27 -n 1</code> 抽中索引 6 = MolGraphBench。<strong>重抽次数：0。</strong>资料充分性检查通过。</li>
+      <li><strong>分析基于 arXiv HTML v3 全文</strong>，不含补充材料。论文正文指向的代码仓库经多轮检索未能定位，因此超参搜索空间、逐数据集 CKA 数值、训练时间秒数三项<strong>无法核实</strong>，凡涉及处均已标注。</li>
+    </ol>
+    <div class="callout info">
+      <strong>本报告的增量在于派生统计量。</strong>所有相对提升百分比、跨数据集平均排名、双样本 t 统计量、指纹融合增益矩阵，均由本人从论文 Table 2/3/4 的原始数值重新计算得出——<strong>论文自身未报告这些量</strong>，而正是它们改变了对本文结论的判断。
+    </div>
+  </section>
+
+  <h2 id="s1">1 · 链接验证清单</h2>
+  <section class="card">
+    <p>所有链接均经实际访问验证。「未找到」= 多轮检索后仍无法定位；「403」= 页面确实存在但抓取被反爬拦截，标题与卷期经镜像交叉确认。</p>
+
+    <h4>1.1 核心论文</h4>
+    <div class="tblwrap"><table>
+      <tr><th>论文</th><th>会议 / 期刊页</th><th>arXiv</th><th>Code</th><th>数据集</th></tr>
+      <tr class="best">
+        <td><strong>MolGraphBench</strong></td>
+        <td>无（arXiv 预印本，未见会议收录）</td>
+        <td><a href="https://arxiv.org/abs/2602.20573">2602.20573v3</a><br><span style="font-size:12.5px;color:var(--muted)">cs.LG · 2026-06-18</span></td>
+        <td><strong style="color:var(--crit)">⚠ 未找到</strong><br><span style="font-size:12.5px">正文声明 <code>rajanbit/MolGraphBench</code></span></td>
+        <td><a href="https://moleculenet.org/datasets-1">MoleculeNet</a> · <a href="https://github.com/theochem/B3DB">B3DB</a> · <a href="https://github.com/Qiong-Yang/GNN-TL">GNN-TL(RT)</a></td>
+      </tr>
+    </table></div>
+
+    <div class="callout">
+      <strong>版本异常提示。</strong>v1/v2 标题为 <em>"Benchmarking GNN Models on Molecular Regression Tasks with CKA-Based Representation Analysis"</em>，v3 才改为 <em>"MolGraphBench: ..."</em>；搜索引擎索引仍停留在旧标题。同时 v2 正文声明数据代码「可向作者合理索取」（无仓库），v3 才新增 GitHub 链接——而该链接检索不到。两者结合，建议对本文可复现性保持保留态度。
+    </div>
+
+    <h4>1.2 相关工作</h4>
+    <div class="tblwrap"><table>
+      <tr><th>论文</th><th>会议 / 期刊页</th><th>arXiv</th><th>Code</th></tr>
+      <tr><td><strong>MPNN</strong> · Gilmer et al., ICML 2017</td><td><a href="https://proceedings.mlr.press/v70/gilmer17a.html">PMLR v70</a></td><td><a href="https://arxiv.org/abs/1704.01212">1704.01212</a></td><td>未找到</td></tr>
+      <tr><td><strong>MoleculeNet</strong> · Wu et al., Chem. Sci. 2018</td><td><a href="https://pubs.rsc.org/en/content/articlelanding/2018/sc/c7sc02664a">RSC DOI</a> · <a href="https://pubs.rsc.org/en/content/articlehtml/2018/sc/c7sc02664a">开放全文</a></td><td><a href="https://arxiv.org/abs/1703.00564">1703.00564</a></td><td><a href="https://github.com/deepchem/deepchem">deepchem</a> · <a href="https://github.com/deepchem/moleculenet">moleculenet</a></td></tr>
+      <tr><td><strong>FP-GNN</strong> · Cai et al., Brief. Bioinform. 2022</td><td><a href="https://academic.oup.com/bib/article/23/6/bbac408/6702671">OUP DOI</a></td><td><a href="https://arxiv.org/abs/2205.03834">2205.03834</a></td><td><code>idrugLab/FP-GNN</code>（二手引用）</td></tr>
+      <tr><td><strong>GNN-TL</strong> · Yang et al., J. Chromatogr. A 2021</td><td><a href="https://www.sciencedirect.com/science/article/abs/pii/S0021967321006609">ScienceDirect</a>（403，镜像确认）</td><td>未找到（无预印本）</td><td><a href="https://github.com/Qiong-Yang/GNN-TL">Qiong-Yang/GNN-TL</a></td></tr>
+      <tr><td><strong>Position: Poor Benchmarks</strong> · Bechler-Speicher et al.</td><td><a href="https://icml.cc/virtual/2025/poster/40105">ICML 2025 Position Track</a></td><td><a href="https://arxiv.org/abs/2502.14546">2502.14546</a></td><td>不适用</td></tr>
+      <tr><td><strong>MolGraph-xLSTM</strong> · Sun et al., Commun. Chem. 2025</td><td><a href="https://www.nature.com/articles/s42004-025-01683-z">Nature DOI</a></td><td><a href="https://arxiv.org/abs/2501.18439">2501.18439</a></td><td><code>syan1992/MolGraph-xLSTM</code>（二手引用）</td></tr>
+      <tr><td><strong>CKA 分子嵌入</strong> · Welsch et al., JCIM 2024</td><td><a href="https://pubs.acs.org/doi/10.1021/acs.jcim.4c00837">ACS DOI</a></td><td>无（<a href="https://chemrxiv.org/engage/chemrxiv/article-details/66435894418a5379b03d7d71">ChemRxiv</a>）</td><td>未找到</td></tr>
+      <tr><td>GCN · Kipf &amp; Welling, ICLR 2017</td><td>—</td><td><a href="https://arxiv.org/abs/1609.02907">1609.02907</a></td><td>—</td></tr>
+      <tr><td>GraphSAGE · Hamilton et al., NeurIPS 2017</td><td>—</td><td><a href="https://arxiv.org/abs/1706.02216">1706.02216</a></td><td>—</td></tr>
+      <tr><td>GAT · Veličković et al., ICLR 2018</td><td>—</td><td><a href="https://arxiv.org/abs/1710.10903">1710.10903</a></td><td>—</td></tr>
+      <tr><td>GIN · Xu et al., ICLR 2019</td><td>—</td><td><a href="https://arxiv.org/abs/1810.00826">1810.00826</a></td><td><a href="https://github.com/weihua916/powerful-gnns">powerful-gnns</a></td></tr>
+    </table></div>
+    <p style="font-size:13.5px;color:var(--muted)"><strong>注：</strong>在抓取到的 v3 参考文献列表中，未出现 Xu et al. (2019) 的 GIN 原始论文条目，而 Kipf&amp;Welling、Hamilton、Veličković 三篇均在列。这可能是 HTML 抽取不完整所致，也可能是真实的引用遗漏。<strong>无法确认是哪一种，故仅作提示，不计入批评条目。</strong></p>
+  </section>
+
+  <h2 id="s2">2 · 核心论文深度解析</h2>
+
+  <section class="card">
+    <h3>2.1 一句话定位</h3>
+    <div class="callout info">
+      <strong>GNN 的层类型不是架构设计时一次性钉死的结构常量，而是应当与学习率、隐藏维度并列、逐数据集调优的超参数——而且这件事在迁移学习场景下的重要性，比从头训练时高出四到五倍。</strong>
+    </div>
+    <p>后半句是本报告的派生结论。论文自己只说到前半句，并未意识到该效应是<strong>分场景</strong>的。这个「分场景」正是本文最有价值却被作者自己错过的发现（见 §2.5.4 相变分析）。</p>
+  </section>
+
+  <section class="card">
+    <h3>2.2 Motivation 与问题论证</h3>
+
+    <h4>论文指向的痛点</h4>
+    <p>论文的问题陈述在字面上很朴素：「尽管 GNN 在分子性质预测上应用激增，<strong>一个严谨的基准仍然缺失</strong>。」但这句话背后有一个更具体、可验证的观察。论文 Table 1 梳理了近年提出的「新」GNN 架构，并按其底层层类型分类：</p>
+
+    <div class="tblwrap"><table>
+      <tr><th>底层层类型</th><th>建立于其上的近期工作</th></tr>
+      <tr><td>GCN</td><td>GNN-TL、MvMRL、MolGraph-xLSTM、GraphB3</td></tr>
+      <tr><td>GAT</td><td>FP-GNN、AttentiveFP、TChemGNN</td></tr>
+      <tr><td>GAT + 其他</td><td>KA-GNNs（GAT+GCN 或 GAT+GIN）、DGCL（双图，GAT+GIN）</td></tr>
+      <tr><td>MPNN 变体</td><td>D-MPNN、FH-GNN、GMC-MPNN</td></tr>
+      <tr><td>Graph Transformer</td><td>CLAPS</td></tr>
+    </table></div>
+
+    <p>这张表暴露的问题是：<strong>这些工作各自选定一种底层层类型，然后在其上堆叠创新（xLSTM、MoE、对比学习、KAN、指纹融合），并把最终性能提升全部归因于自己的创新模块。但没有任何一篇做过「如果只换底层层类型会怎样」的对照实验。</strong>整个子领域的增量声明，都建立在一个未经检验的假设上：底层层类型的影响很小，可视为背景常量。</p>
+
+    <h4>痛点的量化（论文未做，本报告补算）</h4>
+    <p>在完全相同的迁移学习流水线下（相同预训练语料 METLIN、相同微调协议、相同数据集 RT、相同 MLP 头），<strong>只改变卷积层类型</strong>：</p>
+
+    <div class="tblwrap"><table>
+      <tr><th>层类型</th><th class="num">完全微调 MAE</th><th class="num">相对最差者</th></tr>
+      <tr><td>GCN</td><td class="num">75.621 ± 3.456</td><td class="num">—</td></tr>
+      <tr><td>GAT</td><td class="num">72.195 ± 1.112</td><td class="neg">−4.5%</td></tr>
+      <tr><td>GraphSAGE</td><td class="num">70.752 ± 2.750</td><td class="neg">−6.4%</td></tr>
+      <tr class="best"><td><strong>GIN</strong></td><td class="num"><strong>52.914 ± 1.218</strong></td><td class="num" style="color:var(--good)"><strong>−30.0%</strong></td></tr>
+    </table></div>
+
+    <div class="callout">
+      <strong>30.0% 的相对差距，完全由「换一个卷积层」产生。</strong>作为对照，MolGraph-xLSTM（Commun. Chem. 2025）作为一整篇论文的贡献，在 ESOL 上相对其 baseline HiGNN 的提升是 7.54%。<strong>一个免费的层类型替换，其效应量约为一篇 Nature 子刊论文全部创新的四倍。</strong>这是论文 Motivation 最有力的证据，而论文自己没有把它算出来。
+    </div>
+
+    <h4>为什么值得解决</h4>
+    <ul>
+      <li><strong>实践价值：</strong>如果层类型值 30% 的性能，那么任何分子性质预测项目的第一步都应该是扫四种层类型，实施成本接近于零。</li>
+      <li><strong>元科学价值：</strong>如果层类型是未被控制的混淆变量，整个子领域近五年的增量声明都需要重新审视——「新模块」的增益到底来自模块本身，还是来自它恰好搭配了合适的底层层？</li>
+      <li><strong>理论价值：</strong>GIN 在迁移场景下的统治性表现，与 Xu et al. (2019) 关于 GIN 达 1-WL 表达上界的理论构成呼应——表达能力可能在「从头拟合小数据」时用不上（易过拟合），却在「预训练表示迁移」时兑现。论文未作此推断，但数据支持它。</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h3>2.3 论文的故事线（论证结构）</h3>
+    <p>论文的论证不是线性的「提方法—做实验—报结果」，而是一个<strong>四判据收敛</strong>结构：</p>
+    <ol>
+      <li><strong>把「最优架构」拆成四个判据</strong>——绝对性能、训练效率、迁移学习、预测质量。设计权衡是：<em>牺牲结论锐利度，换取结论稳健性</em>。若四条判据指向同一架构则结论强；若分歧，则说明「最优架构」本身是伪命题。</li>
+      <li><strong>先证明 GNN 值得讨论</strong>——用 GNN vs 传统 ML 的对比确立地基。若 ECFP4+SVM 全面胜出，后面三步都没意义。</li>
+      <li><strong>引入两个正交探针解释差异来源</strong>——CKA 探针（借自 Welsch et al. 2024）测量表示互补性；高误差分子探针测量误差<em>分布</em>而非幅度。这是全文最聪明的设计。</li>
+      <li><strong>用迁移学习作终审</strong>——四判据中唯一涉及「表示可复用性」的，也最贴近实际部署。</li>
+    </ol>
+    <div class="callout">
+      <strong>关键转折点与论证断裂。</strong>论文在 §3.2 观察到 CKA(GNN, FP) 仅 0.27–0.59（低相似 = 高互补），据此<em>预期</em>融合应当有效；实验却显示融合基本无效。论文用「counterintuitive（反直觉）」一词标记这个矛盾——<strong>然后止步于此，没有解释它。</strong>这是全文最大的论证断裂（详见 §2.7 第 ④ 条）。
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>2.4 方法论与机制解剖</h3>
+    <p>设分子 SMILES 经 RDKit 解析得图 <code>G=(V,E)</code>，节点为原子、边为化学键，节点特征 <code>X ∈ R^{N×118}</code>（元素周期表 one-hot）。完整流水线：</p>
+
+    <div class="flow">SMILES
+  │
+  ├─► RDKit 解析 ─► 分子图 G=(V,E),  X ∈ R^{N×118}
+  │        │
+  │        ▼
+  │   [FC 投影层]   X_h = W_p · X ∈ R^{N×H}
+  │        │
+  │        ▼
+  │   [2–3 层图卷积]  每层内部：
+  │        │            m_v^(l) = AGG({h_u^(l-1) : u ∈ N(v)})    ◄── 层类型差异所在
+  │        │            h_v^(l) = UPD(h_v^(l-1), m_v^(l))         ◄── 层类型差异所在
+  │        │            h_v^(l) = ReLU(GraphNorm(h_v^(l))) + h_v^(l-1)
+  │        ▼
+  │   [全局池化]  G_embed = MEAN_v(h_v^(L))    ⚠ GIN 用 ADD 池化（混淆点）
+  │        │
+  └─► ECFP4 (1024-bit) ─► [FC 投影层] ─► F_embed      （仅 GNN-FP 变体）
+           │
+           ▼
+      concat(G_embed, F_embed)   或   G_embed
+           │
+           ▼
+      [2 层 MLP 回归头] ─► ŷ ∈ R</div>
+
+    <h4>四种层类型的差异仅在 AGG / UPD</h4>
+    <div class="tblwrap"><table>
+      <tr><th>层</th><th>AGG</th><th>UPD</th><th>关键性质</th></tr>
+      <tr><td>GCN</td><td>度归一化均值 Σ h_u/√(d_v d_u)</td><td>线性 + 非线性</td><td>各向同性、谱域动机</td></tr>
+      <tr><td>GAT</td><td>注意力加权和 Σ α_vu·h_u</td><td>线性 + 非线性</td><td>邻居自适应加权</td></tr>
+      <tr><td>GraphSAGE</td><td>均值后与自身<strong>拼接</strong></td><td>W · [h_v ‖ AGG]</td><td>自身与邻居分离编码</td></tr>
+      <tr class="best"><td>GIN</td><td><strong>求和</strong> Σ h_u</td><td>MLP((1+ε)h_v + AGG)</td><td>单射，达 1-WL 表达上界</td></tr>
+    </table></div>
+
+    <h4>关键机制表格</h4>
+    <div class="tblwrap"><table>
+      <tr><th>机制 / 维度</th><th>设计选择</th><th>动机</th><th>关键超参</th></tr>
+      <tr><td>节点特征</td><td>118 维元素 one-hot</td><td>最小化手工特征工程</td><td>dim = 118</td></tr>
+      <tr><td>图卷积深度</td><td>2–3 层</td><td>避免过平滑</td><td>L ∈ {2,3}（具体值未公开）</td></tr>
+      <tr><td>归一化</td><td>GraphNorm</td><td>图级批统计，适配变长图</td><td>—</td></tr>
+      <tr><td>残差连接</td><td>每层后</td><td>缓解深层退化</td><td>—</td></tr>
+      <tr><td>读出（池化）</td><td>全局均值；<strong>GIN 用求和</strong></td><td>均值对图大小不变；求和保留 GIN 单射性</td><td>⚠ 与层类型混淆</td></tr>
+      <tr><td>指纹分支</td><td>ECFP4 1024-bit → FC</td><td>引入拓扑先验</td><td>radius=2, nbits=1024</td></tr>
+      <tr><td>融合方式</td><td><strong>拼接</strong> concat(G, F)</td><td>最简单的融合</td><td>⚠ 未做消融</td></tr>
+      <tr><td>优化</td><td>Adam + MSE，100 epoch，早停 patience=10</td><td>—</td><td>lr 未公开</td></tr>
+      <tr><td>划分</td><td>随机 80/10/10</td><td>与 MoleculeNet 推荐一致</td><td>⚠ 划分固定，非交叉验证</td></tr>
+      <tr><td>重复</td><td>n = 3</td><td>报告 mean ± SD</td><td>⚠ 见 §2.5.5</td></tr>
+    </table></div>
+
+    <div class="callout">
+      <strong>未公开项中最要命的是 F_embed 投影维度。</strong>GNN-FP 的融合是拼接。如果 F_embed 维度远大于 G_embed，指纹分支会在拼接向量中占据主导，2 层 MLP 需要额外容量才能平衡两路信号——这恰好是一个能解释「CKA 说互补、实验说无效」矛盾的机制性假设，但因维度未公开而无法验证。已公开的是硬件（RTX A6000 48GB、64 核 CPU、315GB RAM）与训练协议；<strong>未公开的是隐藏维度、学习率/dropout 搜索网格、逐数据集最优超参、F_embed 维度、训练时间数值。</strong>
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>2.5 实验设计与定量结果</h3>
+
+    <h4>2.5.1 基准与数据集</h4>
+    <p>五个数据集，覆盖三个应用域，规模跨度 6.5 倍：</p>
+    <div class="tblwrap"><table>
+      <tr><th>数据集</th><th class="num">分子数</th><th class="num">测试集(10%)</th><th>域</th><th>预测目标</th></tr>
+      <tr><td>ESOL</td><td class="num">1,028</td><td class="num">~103</td><td>物理化学</td><td>水溶性 log S</td></tr>
+      <tr><td>FreeSolv</td><td class="num">642</td><td class="num">~64</td><td>物理化学</td><td>水合自由能</td></tr>
+      <tr><td>Lipophilicity</td><td class="num">4,200</td><td class="num">~420</td><td>物理化学</td><td>logD</td></tr>
+      <tr><td>B3DB</td><td class="num">1,058</td><td class="num">~106</td><td>生物</td><td>血脑屏障通透性 logBB</td></tr>
+      <tr><td>RT</td><td class="num">1,400</td><td class="num">~140</td><td>分析化学</td><td>HILIC 保留时间</td></tr>
+    </table></div>
+    <p>数据集选择有一处值得称道的设计：<strong>跨越三个性质截然不同的域</strong>。ESOL/FreeSolv/Lipophilicity 是「局部可加」性质（大体可由片段贡献叠加），B3DB 是「全局药效团依赖」性质，RT 是「色谱相互作用」性质。这个跨域设计使得 §2.5.3 的发现成为可能——尽管论文自己没有利用它。</p>
+
+    <h4>2.5.2 主结果矩阵（Table 2 · RMSE ± SD · n=3）</h4>
+    <div class="tblwrap"><table>
+      <tr><th>方法</th><th class="num">B3DB</th><th class="num">ESOL</th><th class="num">FreeSolv</th><th class="num">Lipophilicity</th><th class="num">RT</th></tr>
+      <tr><td>LR</td><td class="num">1.426 (0.000)</td><td class="num">4.380 (0.000)</td><td class="num">2.116 (0.000)</td><td class="num">1.011 (0.000)</td><td class="num">601.600 (0.000)</td></tr>
+      <tr><td>SVM</td><td class="num"><strong>0.471</strong> (0.000)</td><td class="num">1.128 (0.000)</td><td class="num">1.512 (0.000)</td><td class="num">0.730 (0.000)</td><td class="num">120.555 (0.000)</td></tr>
+      <tr><td>RF</td><td class="num">0.550 (0.002)</td><td class="num">1.569 (0.009)</td><td class="num">2.572 (0.015)</td><td class="num">0.950 (0.001)</td><td class="num">103.548 (0.456)</td></tr>
+      <tr><td>XGB</td><td class="num">0.580 (0.001)</td><td class="num">1.615 (0.003)</td><td class="num">2.420 (0.006)</td><td class="num">1.057 (0.001)</td><td class="num">108.227 (0.387)</td></tr>
+      <tr><td>GCN</td><td class="num">0.518 (0.007)</td><td class="num">0.808 (0.030)</td><td class="num">1.288 (0.104)</td><td class="num">0.664 (0.010)</td><td class="num">96.170 (2.743)</td></tr>
+      <tr><td>GAT</td><td class="num">0.552 (0.011)</td><td class="num">0.808 (0.081)</td><td class="num">1.736 (0.061)</td><td class="num">0.639 (0.028)</td><td class="num">94.734 (4.295)</td></tr>
+      <tr><td>GIN</td><td class="num">0.555 (0.011)</td><td class="num">0.772 (0.044)</td><td class="num">1.461 (0.176)</td><td class="num">0.672 (0.020)</td><td class="num">92.344 (3.042)</td></tr>
+      <tr class="best"><td><strong>GraphSAGE</strong></td><td class="num">0.542 (0.011)</td><td class="num"><strong>0.762</strong> (0.041)</td><td class="num">1.352 (0.071)</td><td class="num"><strong>0.629</strong> (0.006)</td><td class="num">89.477 (1.067)</td></tr>
+      <tr><td>GCN-FP</td><td class="num">0.508 (0.007)</td><td class="num">1.000 (0.030)</td><td class="num">1.346 (0.064)</td><td class="num">0.794 (0.017)</td><td class="num">94.879 (1.925)</td></tr>
+      <tr><td>GAT-FP</td><td class="num">0.525 (0.014)</td><td class="num">0.979 (0.078)</td><td class="num">1.355 (0.081)</td><td class="num">0.682 (0.016)</td><td class="num"><strong>88.417</strong> (1.662)</td></tr>
+      <tr><td>GIN-FP</td><td class="num">0.549 (0.020)</td><td class="num">0.814 (0.015)</td><td class="num"><strong>1.022</strong> (0.067)</td><td class="num">0.699 (0.011)</td><td class="num">91.739 (0.908)</td></tr>
+      <tr><td>GraphSAGE-FP</td><td class="num">0.529 (0.011)</td><td class="num">0.969 (0.012)</td><td class="num">1.247 (0.064)</td><td class="num">0.724 (0.013)</td><td class="num">89.927 (1.361)</td></tr>
+      <tr class="sota-row"><td>SOTA（外部）</td><td class="num">0.56</td><td class="num">0.53</td><td class="num">1.02</td><td class="num">0.55</td><td class="num">MAE 70.40 ⚠</td></tr>
+    </table></div>
+    <p style="font-size:13.5px;color:var(--muted)"><strong>SOTA 归属：</strong>B3DB ← GMC-MPNN (Nguyen 2026)；ESOL/FreeSolv/Lipophilicity ← MolGraph-xLSTM (Sun 2025)；RT ← GNN-TL (Yang 2021)。<strong>RT 的 SOTA 值存在严重问题，见 §2.7 第 ① 条。</strong></p>
+
+    <h4>派生量 1 · 跨数据集平均排名（1 = 12 方法中最优）</h4>
+    <div class="tblwrap"><table>
+      <tr><th class="num">#</th><th>方法</th><th class="num">平均排名</th><th>各数据集排名 (B3DB/ESOL/FreeSolv/Lipo/RT)</th></tr>
+      <tr class="best"><td class="num">1</td><td><strong>GraphSAGE</strong></td><td class="num"><strong>3.00</strong></td><td>6 / 1 / 5 / 1 / 2</td></tr>
+      <tr><td class="num">2</td><td>GCN</td><td class="num">4.00</td><td>3 / 3 / 3 / 3 / 8</td></tr>
+      <tr><td class="num">3</td><td>GAT-FP</td><td class="num">4.60</td><td>4 / 7 / 6 / 5 / 1</td></tr>
+      <tr><td class="num">3</td><td>GIN-FP</td><td class="num">4.60</td><td>7 / 5 / 1 / 6 / 4</td></tr>
+      <tr><td class="num">3</td><td>GraphSAGE-FP</td><td class="num">4.60</td><td>5 / 6 / 2 / 7 / 3</td></tr>
+      <tr><td class="num">6</td><td>GIN</td><td class="num">5.60</td><td>10 / 2 / 7 / 4 / 5</td></tr>
+      <tr><td class="num">7</td><td>GAT</td><td class="num">6.00</td><td>9 / 4 / 9 / 2 / 6</td></tr>
+      <tr><td class="num">7</td><td>GCN-FP</td><td class="num">6.00</td><td>2 / 8 / 4 / 9 / 7</td></tr>
+      <tr><td class="num">9</td><td>SVM</td><td class="num">7.40</td><td><strong>1</strong> / 9 / 8 / 8 / 11</td></tr>
+      <tr><td class="num">10</td><td>RF</td><td class="num">9.80</td><td>8 / 10 / 12 / 10 / 9</td></tr>
+      <tr><td class="num">11</td><td>XGB</td><td class="num">11.00</td><td>11 / 11 / 11 / 12 / 10</td></tr>
+      <tr><td class="num">12</td><td>LR</td><td class="num">11.40</td><td>12 / 12 / 10 / 11 / 12</td></tr>
+    </table></div>
+    <ul>
+      <li><strong>GraphSAGE 平均排名最优（3.00），但排名方差最大（1→6）；GCN 排名更差（4.00）却极稳定（3/3/3/3/8）。</strong>论文的结论是「GCN 和 GIN 是最优架构」——<strong>与平均排名不符</strong>（GIN 第 6，GAT 第 7）。该结论显然是四判据加权后的产物（GCN、GIN 训练最快），但论文未说明加权规则，导致结论看起来像从数据直接读出，实际不是。</li>
+      <li><strong>SVM 在 B3DB 上排名第 1</strong>，是全表唯一在某数据集上击败全部 8 个 GNN 变体的传统 ML 方法。</li>
+      <li><strong>LR 在 RT 上 RMSE = 601.600，是 GraphSAGE 的 6.7 倍。</strong>这个数字大到应触发疑问：LR 是否被正确标准化？把明显失效的 baseline 放进表里会人为抬高所有其他方法的相对优势。</li>
+    </ul>
+
+    <h4>派生量 2 · 与 SOTA 的真实差距</h4>
+    <p>论文摘要称「我们的 GNN 模型在三个数据集上取得优于或相当于当前 SOTA 的性能」。这句话字面成立，但它省略的部分更重要：</p>
+    <div class="tblwrap"><table>
+      <tr><th>数据集</th><th>本文最优</th><th class="num">数值</th><th class="num">声称 SOTA</th><th class="num">差距</th><th>判定</th></tr>
+      <tr class="best"><td>B3DB</td><td>GCN-FP</td><td class="num">0.508</td><td class="num">0.56</td><td class="neg">−9.3%</td><td>✅ 优于</td></tr>
+      <tr><td>FreeSolv</td><td>GIN-FP</td><td class="num">1.022</td><td class="num">1.02</td><td class="num">+0.2%</td><td>⚖ 持平</td></tr>
+      <tr><td>ESOL</td><td>GraphSAGE</td><td class="num">0.762</td><td class="num">0.53</td><td class="pos"><strong>+43.8%</strong></td><td>❌ 显著劣于</td></tr>
+      <tr><td>Lipophilicity</td><td>GraphSAGE</td><td class="num">0.629</td><td class="num">0.55</td><td class="pos"><strong>+14.4%</strong></td><td>❌ 劣于</td></tr>
+      <tr><td>RT</td><td>GIN (MAE)</td><td class="num">63.783</td><td class="num">MAE 70.40</td><td class="num">−9.4% ⚠</td><td>⚠ SOTA 值本身有误</td></tr>
+    </table></div>
+    <div class="callout">
+      <strong>这是全文最需要读者自己算出来的数字。</strong>5 个数据集中，明确优于 SOTA 的只有 1 个（B3DB），持平 1 个（FreeSolv，差距 0.002 仅为其自身标准差 0.067 的 3.0%，统计上毫无意义），<strong>明确劣于 SOTA 的有 2 个，其中 ESOL 落后 43.8%</strong>。摘要通过「三个数据集」的措辞，把 1 胜 1 平 2 负（+1 存疑）的战绩表述成了正面结论。<br><br>
+      需要公平地指出：<strong>对一篇基准论文而言，跑不过 SOTA 本身不是缺陷</strong>——基准的价值在公平对照，不在刷榜。真正的问题是摘要采用了刷榜论文的话术。若摘要写「标准架构在物理化学数据集上距专用 SOTA 有 14–44% 的差距，但在生物与分析化学数据集上可持平或超越」，既诚实又更有信息量。
+    </div>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">图 1 · 指纹融合增益按数据集完美分层（论文未做的派生矩阵）</p>
+    <p class="fig-sub">各数据集上 4 个架构的 (GNN-FP − GNN)/GNN 均值。负值 = 指纹带来改善。数据源：Table 2，20 个架构-数据集配对单元。</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-1)"></span>指纹有效（融合降低 RMSE）</span>
+      <span><span class="sw" style="background:var(--series-2)"></span>指纹有害（融合抬高 RMSE）</span>
+    </div>
+    <svg class="chart" viewBox="0 0 900 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="指纹融合增益按数据集分层的发散条形图">
+      <g stroke="var(--grid)" stroke-width="1">
+        <line x1="205.5" y1="34" x2="205.5" y2="262"/>
+        <line x1="336.4" y1="34" x2="336.4" y2="262"/>
+        <line x1="598.2" y1="34" x2="598.2" y2="262"/>
+        <line x1="729.1" y1="34" x2="729.1" y2="262"/>
+        <line x1="860.0" y1="34" x2="860.0" y2="262"/>
+      </g>
+      <line x1="467.3" y1="30" x2="467.3" y2="266" stroke="var(--baseline)" stroke-width="2"/>
+      <g fill="var(--muted)" font-size="12" text-anchor="middle">
+        <text x="205.5" y="282">−16%</text>
+        <text x="336.4" y="282">−8%</text>
+        <text x="467.3" y="282">0</text>
+        <text x="598.2" y="282">+8%</text>
+        <text x="729.1" y="282">+16%</text>
+        <text x="860.0" y="282">+24%</text>
+      </g>
+      <g fill="var(--text-secondary)" font-size="13.5" text-anchor="end">
+        <text x="128" y="68">FreeSolv <tspan fill="var(--muted)" font-size="11.5">(3/4)</tspan></text>
+        <text x="128" y="112">B3DB <tspan fill="var(--muted)" font-size="11.5">(4/4)</tspan></text>
+        <text x="128" y="156">RT <tspan fill="var(--muted)" font-size="11.5">(3/4)</tspan></text>
+        <text x="128" y="200">Lipophilicity <tspan fill="var(--muted)" font-size="11.5">(0/4)</tspan></text>
+        <text x="128" y="244">ESOL <tspan fill="var(--muted)" font-size="11.5">(0/4)</tspan></text>
+      </g>
+      <rect class="bar" x="241.3" y="50" width="226.0" height="26" fill="var(--series-1)" rx="2" data-tip="FreeSolv · 均值 −13.81% · 4 个架构中 3 个改善 · 最小数据集(642)"/>
+      <rect class="bar" x="425.1" y="94" width="42.2"  height="26" fill="var(--series-1)" rx="2" data-tip="B3DB · 均值 −2.58% · 4/4 架构全部改善 · 生物终点"/>
+      <rect class="bar" x="433.9" y="138" width="33.4" height="26" fill="var(--series-1)" rx="2" data-tip="RT · 均值 −2.04% · 4 个架构中 3 个改善 · 分析化学终点"/>
+      <rect class="bar" x="467.3" y="182" width="185.9" height="26" fill="var(--series-2)" rx="2" data-tip="Lipophilicity · 均值 +11.36% · 0/4 架构改善 · 物理化学终点"/>
+      <rect class="bar" x="467.3" y="226" width="317.1" height="26" fill="var(--series-2)" rx="2" data-tip="ESOL · 均值 +19.38% · 0/4 架构改善 · 物理化学终点"/>
+      <g font-size="12.5" font-weight="600" fill="var(--text-primary)">
+        <text x="231.3" y="68" text-anchor="end">−13.81%</text>
+        <text x="415.1" y="112" text-anchor="end">−2.58%</text>
+        <text x="423.9" y="156" text-anchor="end">−2.04%</text>
+        <text x="663.2" y="200">+11.36%</text>
+        <text x="794.4" y="244">+19.38%</text>
+      </g>
+    </svg>
+    <div class="tip" id="tip1"></div>
+  </div>
+
+  <section class="card">
+    <h4>2.5.3 指纹融合分析（派生矩阵，论文未做）</h4>
+    <p>论文的结论是：「指纹与图嵌入本质上是非互补的，除 FreeSolv 外未见性能增益。」我把 Table 2 中 4 架构 × 5 数据集 = 20 个配对单元的融合增益全部算出（负值 = 改善）：</p>
+    <div class="tblwrap"><table>
+      <tr><th>架构</th><th class="num">B3DB</th><th class="num">ESOL</th><th class="num">FreeSolv</th><th class="num">Lipophilicity</th><th class="num">RT</th></tr>
+      <tr><td>GCN</td><td class="neg">−1.93%</td><td class="pos">+23.76%</td><td class="pos">+4.50%</td><td class="pos">+19.58%</td><td class="neg">−1.34%</td></tr>
+      <tr><td>GAT</td><td class="neg">−4.89%</td><td class="pos">+21.16%</td><td class="neg">−21.95%</td><td class="pos">+6.73%</td><td class="neg">−6.67%</td></tr>
+      <tr><td>GIN</td><td class="neg">−1.08%</td><td class="pos">+5.44%</td><td class="neg">−30.05%</td><td class="pos">+4.02%</td><td class="neg">−0.66%</td></tr>
+      <tr><td>GraphSAGE</td><td class="neg">−2.40%</td><td class="pos">+27.17%</td><td class="neg">−7.77%</td><td class="pos">+15.10%</td><td class="pos">+0.50%</td></tr>
+      <tr class="best"><td><strong>列均值</strong></td><td class="neg"><strong>−2.58%</strong></td><td class="pos"><strong>+19.38%</strong></td><td class="neg"><strong>−13.81%</strong></td><td class="pos"><strong>+11.36%</strong></td><td class="neg"><strong>−2.04%</strong></td></tr>
+      <tr><td>有效比例</td><td class="num">4/4</td><td class="num">0/4</td><td class="num">3/4</td><td class="num">0/4</td><td class="num">3/4</td></tr>
+    </table></div>
+
+    <div class="callout">
+      <strong>论文的结论是错的，或至少被错误地泛化了。</strong>融合在 20 个单元中的 10 个带来改善——正好一半。更重要的是，<strong>改善与否几乎完美地按数据集分层，而非按架构分层</strong>，且该分层与 §2.5.1 的域划分<strong>精确重合</strong>：
+      <ul style="margin-top:10px;margin-bottom:0">
+        <li><strong>指纹有效：</strong>B3DB（生物，4/4）、RT（分析化学，3/4）、FreeSolv（最小数据集，3/4）</li>
+        <li><strong>指纹有害：</strong>ESOL（物理化学，0/4，+19.38%）、Lipophilicity（物理化学，0/4，+11.36%）</li>
+      </ul>
+    </div>
+
+    <p><strong>可检验的假设：</strong>ECFP4 编码的是子结构存在性（药效团式信息）。当目标性质依赖全局药效团特征（血脑屏障通透性、色谱相互作用）或训练数据极少时，它提供了 GNN 从小数据学不到的先验；当目标性质是局部可加的物理化学量（溶解度、logD）时，GNN 的消息传递本就能高效学到，此时 1024 维稀疏指纹只是引入噪声与过拟合风险。</p>
+    <p>论文把这个有结构、有解释力的现象压缩成了一句「非互补」。这是全文<strong>信息损失最严重</strong>的一处。</p>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">图 2 · ⚡ 相变现象：架构选择的效应量是场景依赖的</p>
+    <p class="fig-sub">纵轴为「最优架构 vs 最差架构」的相对性能跨度 (max−min)/max。前五项为从头训练（Table 2），末项为迁移学习完全微调（Table 4，同为 RT 数据集）。</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-1)"></span>从头训练</span>
+      <span><span class="sw" style="background:var(--series-2)"></span>迁移学习（完全微调）</span>
+    </div>
+    <svg class="chart" viewBox="0 0 900 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="架构效应量在从头训练与迁移学习两种场景下的对比条形图">
+      <g stroke="var(--grid)" stroke-width="1">
+        <line x1="327.5" y1="26" x2="327.5" y2="290"/>
+        <line x1="505.0" y1="26" x2="505.0" y2="290"/>
+        <line x1="682.5" y1="26" x2="682.5" y2="290"/>
+        <line x1="860.0" y1="26" x2="860.0" y2="290"/>
+      </g>
+      <line x1="150" y1="26" x2="150" y2="294" stroke="var(--baseline)" stroke-width="2"/>
+      <g fill="var(--muted)" font-size="12" text-anchor="middle">
+        <text x="150" y="312">0</text>
+        <text x="327.5" y="312">8%</text>
+        <text x="505.0" y="312">16%</text>
+        <text x="682.5" y="312">24%</text>
+        <text x="860.0" y="312">32%</text>
+      </g>
+      <g fill="var(--text-secondary)" font-size="13.5" text-anchor="end">
+        <text x="138" y="58">ESOL</text>
+        <text x="138" y="102">Lipophilicity</text>
+        <text x="138" y="146">B3DB</text>
+        <text x="138" y="190">RT</text>
+        <text x="138" y="234">FreeSolv</text>
+        <text x="138" y="278" font-weight="700" fill="var(--text-primary)">RT（迁移）</text>
+      </g>
+      <rect class="bar" x="150" y="40"  width="126.5" height="26" fill="var(--series-1)" rx="2" data-tip="ESOL 从头训练 · 5.7% · GraphSAGE 0.762 → GAT/GCN 0.808"/>
+      <rect class="bar" x="150" y="84"  width="142.0" height="26" fill="var(--series-1)" rx="2" data-tip="Lipophilicity 从头训练 · 6.4% · GraphSAGE 0.629 → GIN 0.672"/>
+      <rect class="bar" x="150" y="128" width="148.7" height="26" fill="var(--series-1)" rx="2" data-tip="B3DB 从头训练 · 6.7% · GCN 0.518 → GIN 0.555"/>
+      <rect class="bar" x="150" y="172" width="155.3" height="26" fill="var(--series-1)" rx="2" data-tip="RT 从头训练 · 7.0% · GraphSAGE 89.477 → GCN 96.170"/>
+      <rect class="bar" x="150" y="216" width="572.5" height="26" fill="var(--series-1)" rx="2" opacity="0.55" data-tip="FreeSolv 从头训练 · 25.8% · 但测试集仅 64 分子，大跨度更可能来自小样本方差"/>
+      <rect class="bar" x="150" y="260" width="665.7" height="26" fill="var(--series-2)" rx="2" data-tip="RT 迁移学习完全微调 · 30.0% · GIN 52.914 → GCN 75.621 · 同一数据集，跨度放大 4.3 倍"/>
+      <g font-size="12.5" font-weight="600" fill="var(--text-primary)">
+        <text x="286.5" y="58">5.7%</text>
+        <text x="302.0" y="102">6.4%</text>
+        <text x="308.7" y="146">6.7%</text>
+        <text x="315.3" y="190">7.0%</text>
+        <text x="732.5" y="234">25.8%</text>
+        <text x="825.7" y="278" font-weight="700">30.0%</text>
+      </g>
+      <text x="732.5" y="250" font-size="11" fill="var(--muted)">测试集仅 64 分子</text>
+    </svg>
+    <div class="tip" id="tip2"></div>
+  </div>
+
+  <section class="card">
+    <h4>2.5.4 迁移学习与相变现象（Table 4 · MAE · RT 数据集）</h4>
+    <p>预训练：METLIN（80k SMILES，反相色谱 RT）。微调：RT 数据集（1,400 条，HILIC）。三级微调粒度：</p>
+    <div class="tblwrap"><table>
+      <tr><th>层类型</th><th class="num">仅回归头</th><th class="num">FC 投影 + 回归头</th><th class="num">完全微调</th><th class="num">头→完全 改善</th></tr>
+      <tr><td>GCN</td><td class="num">93.725 (1.716)</td><td class="num">82.737 (1.119)</td><td class="num">75.621 (3.456)</td><td class="num">−19.3%</td></tr>
+      <tr><td>GAT</td><td class="num">91.323 (5.436)</td><td class="num">83.671 (3.974)</td><td class="num">72.195 (1.112)</td><td class="num">−20.9%</td></tr>
+      <tr><td>GraphSAGE</td><td class="num">84.543 (1.924)</td><td class="num">75.237 (0.264)</td><td class="num">70.752 (2.750)</td><td class="num">−16.3%</td></tr>
+      <tr class="best"><td><strong>GIN</strong></td><td class="num"><strong>60.960</strong> (0.158)</td><td class="num"><strong>55.011</strong> (0.474)</td><td class="num"><strong>52.914</strong> (1.218)</td><td class="num"><strong>−13.2%</strong></td></tr>
+    </table></div>
+
+    <div class="callout">
+      <strong>⚡ 全文最有说服力的定量证据。</strong>在 5 个从头训练场景中的 4 个，架构跨度稳定在 <strong>5.7–7.0%</strong> 的窄带内；一旦进入迁移场景，同一数据集（RT）上的跨度从 <strong>7.0% 跃升到 30.0%——放大 4.3 倍</strong>。唯一的从头训练例外是 FreeSolv（25.8%），而它恰好是最小数据集（测试集仅 64 条），大跨度更可能来自小样本方差而非真实架构差异。<br><br>
+      <strong>因此论文的核心主张需要修正为一个更精确、更可操作的版本：在从头训练时，层类型的调优收益（~6%）可能不值得四倍的搜索成本；但在任何涉及预训练/迁移的流水线中，不扫层类型就是在桌上留下 30% 的性能。</strong>
+    </div>
+
+    <p><strong>GIN 为何在迁移下胜出？</strong>论文未作解释。一个与 Xu et al. (2019) 理论一致的假设是：GIN 的求和聚合是单射的，达 1-WL 表达上界，能保留最丰富的结构信息。这种表达能力在小数据从头训练时是负担（易过拟合，故 GIN 在 B3DB 上排名第 10），但在 80k 分子上预训练时可被充分利用。<strong>这个假设可用一个便宜的实验证伪：在 METLIN 预训练规模上做 10k/40k/80k 缩放曲线，看 GIN 的相对优势是否随预训练规模单调扩大。</strong></p>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">图 3 · 三级微调粒度下的四种架构，以及 RT 基线数值的自相矛盾</p>
+    <p class="fig-sub">纵轴 MAE（越低越好）。两条虚线分别是论文 Table 2 记录的 SOTA（70.40）与论文正文所述的同一基线（38.6）——同一篇论文对同一基线给出了相差 82% 的两个数字。</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-1);opacity:.35"></span>仅回归头</span>
+      <span><span class="sw" style="background:var(--series-1);opacity:.68"></span>FC 投影 + 回归头</span>
+      <span><span class="sw" style="background:var(--series-2)"></span>完全微调</span>
+      <span><span class="sw" style="background:var(--baseline)"></span>GNN-TL 基线（两个版本）</span>
+    </div>
+    <svg class="chart" viewBox="0 0 900 350" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="四种GNN架构在三级微调粒度下的MAE分组柱状图">
+      <g stroke="var(--grid)" stroke-width="1">
+        <line x1="70" y1="280" x2="712" y2="280"/>
+        <line x1="70" y1="220" x2="712" y2="220"/>
+        <line x1="70" y1="160" x2="712" y2="160"/>
+        <line x1="70" y1="100" x2="712" y2="100"/>
+        <line x1="70" y1="40"  x2="712" y2="40"/>
+      </g>
+      <g fill="var(--muted)" font-size="12" text-anchor="end">
+        <text x="60" y="284">0</text>
+        <text x="60" y="224">25</text>
+        <text x="60" y="164">50</text>
+        <text x="60" y="104">75</text>
+        <text x="60" y="44">100</text>
+      </g>
+      <text x="24" y="165" fill="var(--muted)" font-size="12" transform="rotate(-90 24 165)" text-anchor="middle">MAE</text>
+
+      <!-- GCN -->
+      <rect class="bar" x="88.75"  y="55.1"  width="36" height="224.9" fill="var(--series-1)" opacity="0.35" rx="2" data-tip="GCN · 仅回归头 · MAE 93.725 ± 1.716"/>
+      <rect class="bar" x="130.75" y="81.4"  width="36" height="198.6" fill="var(--series-1)" opacity="0.68" rx="2" data-tip="GCN · FC+头 · MAE 82.737 ± 1.119"/>
+      <rect class="bar" x="172.75" y="98.5"  width="36" height="181.5" fill="var(--series-2)" rx="2" data-tip="GCN · 完全微调 · MAE 75.621 ± 3.456 · 比 Table2 SOTA 差 7.4%"/>
+      <!-- GAT -->
+      <rect class="bar" x="246.25" y="60.8"  width="36" height="219.2" fill="var(--series-1)" opacity="0.35" rx="2" data-tip="GAT · 仅回归头 · MAE 91.323 ± 5.436"/>
+      <rect class="bar" x="288.25" y="79.2"  width="36" height="200.8" fill="var(--series-1)" opacity="0.68" rx="2" data-tip="GAT · FC+头 · MAE 83.671 ± 3.974"/>
+      <rect class="bar" x="330.25" y="106.7" width="36" height="173.3" fill="var(--series-2)" rx="2" data-tip="GAT · 完全微调 · MAE 72.195 ± 1.112"/>
+      <!-- GIN -->
+      <rect class="bar" x="403.75" y="133.7" width="36" height="146.3" fill="var(--series-1)" opacity="0.35" rx="2" data-tip="GIN · 仅回归头 · MAE 60.960 ± 0.158 · 仅线性探针即优于其他架构的完全微调"/>
+      <rect class="bar" x="445.75" y="148.0" width="36" height="132.0" fill="var(--series-1)" opacity="0.68" rx="2" data-tip="GIN · FC+头 · MAE 55.011 ± 0.474"/>
+      <rect class="bar" x="487.75" y="153.0" width="36" height="127.0" fill="var(--series-2)" rx="2" data-tip="GIN · 完全微调 · MAE 52.914 ± 1.218 · 全表最优"/>
+      <!-- GraphSAGE -->
+      <rect class="bar" x="561.25" y="77.1"  width="36" height="202.9" fill="var(--series-1)" opacity="0.35" rx="2" data-tip="GraphSAGE · 仅回归头 · MAE 84.543 ± 1.924"/>
+      <rect class="bar" x="603.25" y="99.4"  width="36" height="180.6" fill="var(--series-1)" opacity="0.68" rx="2" data-tip="GraphSAGE · FC+头 · MAE 75.237 ± 0.264"/>
+      <rect class="bar" x="645.25" y="110.2" width="36" height="169.8" fill="var(--series-2)" rx="2" data-tip="GraphSAGE · 完全微调 · MAE 70.752 ± 2.750"/>
+
+      <line x1="70" y1="111.0" x2="716" y2="111.0" stroke="var(--baseline)" stroke-width="1.5" stroke-dasharray="7 5"/>
+      <text x="722" y="107" fill="var(--muted)" font-size="11.5">Table 2 所记</text>
+      <text x="722" y="121" fill="var(--muted)" font-size="11.5" font-weight="600">SOTA = 70.40</text>
+      <line x1="70" y1="187.4" x2="716" y2="187.4" stroke="var(--series-2)" stroke-width="1.5" stroke-dasharray="7 5"/>
+      <text x="722" y="183" fill="var(--series-2)" font-size="11.5">⚠ 论文正文所述</text>
+      <text x="722" y="197" fill="var(--series-2)" font-size="11.5" font-weight="600">同一基线 = 38.6</text>
+
+      <g fill="var(--text-secondary)" font-size="13.5" text-anchor="middle">
+        <text x="148.75" y="302">GCN</text>
+        <text x="306.25" y="302">GAT</text>
+        <text x="463.75" y="302" font-weight="700" fill="var(--text-primary)">GIN</text>
+        <text x="621.25" y="302">GraphSAGE</text>
+      </g>
+      <text x="391" y="332" fill="var(--muted)" font-size="12" text-anchor="middle">若正文的 38.6 为真值，则全部 12 个配置无一超越基线，最好的 GIN 完全微调仍落后 37.1%</text>
+    </svg>
+    <div class="tip" id="tip3"></div>
+  </div>
+
+  <section class="card">
+    <h4>2.5.5 统计显著性（论文未做，本报告补算）</h4>
+    <p>论文报告了 n=3 的标准差，但<strong>从未做过任何显著性检验</strong>，却在正文中反复使用「最优架构」的表述。双样本 t 检验（df=4，α=0.05，t<sub>crit</sub>=2.78），检验每个数据集上「最优 vs 次优」架构的差距：</p>
+    <div class="tblwrap"><table>
+      <tr><th>数据集</th><th>最优</th><th>次优</th><th class="num">差距</th><th class="num">t 统计量</th><th>判定</th></tr>
+      <tr class="best"><td>B3DB</td><td>GCN 0.518±0.007</td><td>GraphSAGE 0.542±0.011</td><td class="num">0.024</td><td class="num"><strong>3.19</strong></td><td>✅ 显著</td></tr>
+      <tr><td>ESOL</td><td>GraphSAGE 0.762±0.041</td><td>GIN 0.772±0.044</td><td class="num">0.010</td><td class="num">0.29</td><td>❌ 不显著</td></tr>
+      <tr><td>FreeSolv</td><td>GCN 1.288±0.104</td><td>GraphSAGE 1.352±0.071</td><td class="num">0.064</td><td class="num">0.88</td><td>❌ 不显著</td></tr>
+      <tr><td>Lipophilicity</td><td>GraphSAGE 0.629±0.006</td><td>GAT 0.639±0.028</td><td class="num">0.010</td><td class="num">0.60</td><td>❌ 不显著</td></tr>
+      <tr><td>RT</td><td>GraphSAGE 89.477±1.067</td><td>GIN 92.344±3.042</td><td class="num">2.867</td><td class="num">1.54</td><td>❌ 不显著</td></tr>
+    </table></div>
+
+    <div class="callout">
+      <strong>5 个数据集中，只有 1 个（B3DB）的「最优架构」在统计上确实优于次优。</strong>其余 4 个数据集上，宣称的架构排序完全落在噪声范围内。这直接动摇了摘要的核心断言「GCN 和 GIN 是分子图回归任务的最优 GNN 架构」。<br><br>
+      <strong>方差来源的隐忧：</strong>LR 与 SVM 的 SD 恰为 0.000。这两个模型是确定性的，SD 为 0 意味着<strong>三次重复共享同一数据划分</strong>。因此所有 GNN 的 SD 只捕捉权重初始化的随机性，<strong>完全没有捕捉划分随机性</strong>——而在 FreeSolv（测试集 64 分子）这样的规模下，划分方差几乎必然主导。这意味着连那唯一「显著」的 B3DB 结果也建立在被低估的不确定性之上。
+    </div>
+    <p><strong>迁移学习结果不受此影响：</strong>GIN 52.914±1.218 vs GraphSAGE 70.752±2.750，差距 17.8 是合并标准差的 8 倍以上。<strong>这再次说明：论文真正稳固的发现在迁移部分，而摘要的重心却放在了不稳固的从头训练部分。</strong></p>
+
+    <h4>2.5.6 预测质量：高误差分子比例（Table 3，%）</h4>
+    <div class="tblwrap"><table>
+      <tr><th>方法</th><th class="num">B3DB</th><th class="num">ESOL</th><th class="num">FreeSolv</th><th class="num">Lipophilicity</th><th class="num">RT</th></tr>
+      <tr><td>LR</td><td class="num">50.943</td><td class="num">83.186</td><td class="num">67.692</td><td class="num">54.762</td><td class="num">80.714</td></tr>
+      <tr class="best"><td><strong>SVM</strong></td><td class="num"><strong>18.868</strong></td><td class="num">53.982</td><td class="num">41.538</td><td class="num">36.905</td><td class="num">48.571</td></tr>
+      <tr><td>RF</td><td class="num">30.503</td><td class="num">77.581</td><td class="num">75.897</td><td class="num">52.381</td><td class="num">60.714</td></tr>
+      <tr><td>XGB</td><td class="num">33.648</td><td class="num">77.876</td><td class="num">69.231</td><td class="num">60.159</td><td class="num">68.095</td></tr>
+      <tr><td>GCN</td><td class="num">25.472</td><td class="num">42.478</td><td class="num"><strong>32.308</strong></td><td class="num">37.381</td><td class="num">36.905</td></tr>
+      <tr><td>GAT</td><td class="num">25.157</td><td class="num">46.018</td><td class="num">38.974</td><td class="num">38.095</td><td class="num">40.476</td></tr>
+      <tr><td>GIN</td><td class="num">27.673</td><td class="num"><strong>37.463</strong></td><td class="num">38.462</td><td class="num">37.381</td><td class="num"><strong>32.381</strong></td></tr>
+      <tr><td>GraphSAGE</td><td class="num">30.818</td><td class="num">40.708</td><td class="num">50.769</td><td class="num"><strong>35.714</strong></td><td class="num">40.238</td></tr>
+    </table></div>
+    <ol>
+      <li><strong>B3DB 上 SVM 以 18.868% 的高误差率大幅优于所有 GNN</strong>（最好的 GAT 为 25.157%，相对高出 33.3%）。结合 Table 2 中 SVM 的 RMSE 0.471 也是全表最优，<strong>B3DB 上传统 ECFP4+SVM 在两个判据上同时击败了全部 8 个 GNN 变体</strong>。而论文结论段写道「GNN 模型能给出优于用固定长度分子指纹训练的 ML 模型的性能」——这一断言被论文自己的数据在 1/5 的数据集上直接证伪，论文正文只以「except for the B3DB dataset」一笔带过。B3DB 恰是唯一的生物属性数据集，这个反例本身就是有价值的发现，却被当作噪声处理了。</li>
+      <li><strong>Table 3 完全没有 GNN-FP 的行。</strong>论文宣称的四判据之一是「预测质量」，而「指纹非互补」的结论横跨全文——但融合模型的预测质量从未被评估。完全可能出现的情况是：GNN-FP 虽然 RMSE 没改善，却降低了高误差分子比例（改善了误差分布的尾部而非中心）。这是一个成本为零的缺失实验（模型已训练完毕）。</li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <h3>2.6 价值分析</h3>
+    <h4>真正的贡献</h4>
+    <p><strong>不是</strong>「做了一次 GNN 基准测试」——这类基准每年都有。<strong>是</strong>：把「底层层类型」这个变量从背景常量提升为可测量的实验对象，并（在迁移学习子场景里）给出了它值 30% 性能的证据。这个证据的力量在于<strong>它是在完全受控的条件下取得的</strong>——同一数据、同一预训练语料、同一微调协议、同一回归头，只换一个 AGG/UPD 函数。</p>
+
+    <h4>可脱离本文单独复用的设计</h4>
+    <ol>
+      <li><strong>「高误差分子」分析范式。</strong>把评估从「平均误差多大」转向「误差落在哪类分子上」。论文用 RDKit 描述符对比高/低误差子集，得到「GNN 在 5 个数据集中的 3 个上，环数在高低误差组间显著不同」这一可操作的适用边界。<strong>与本文的具体结论无关，可直接迁移到任何分子回归任务的模型诊断中。</strong></li>
+      <li><strong>CKA 作为融合有效性的前置探针。</strong>「先测两路表示的互补性，再决定要不要融合」这个流程本身是省算力的好习惯——即使本文证明了 CKA 低不等于融合有效（这本身就是有价值的负面结论）。</li>
+      <li><strong>三级微调粒度协议。</strong>比常见的「冻结 vs 全微调」二分更细，能分离「表示可用性」与「表示可适配性」。从 Table 4 看，<strong>GIN 的「头→全」改善幅度最小（13.2%）恰恰说明它的预训练表示本身质量最高</strong>——仅用一个线性头就达到 60.960，比其他架构完全微调后还好。这个诊断逻辑值得复用。</li>
+      <li><strong>跨域数据集选择</strong>（物理化学 / 生物 / 分析化学）。这个设计使 §2.5.3 的域依赖性发现成为可能。后续做指纹融合或表示互补性研究的工作应直接继承这个三域配置。</li>
+    </ol>
+
+    <h4>对后续工作的启发</h4>
+    <ul>
+      <li><strong>架构敏感度的场景依赖性。</strong>本文数据暗示「架构重要性」本身是一个随预训练规模变化的量。可做成完整研究：横轴预训练分子数，纵轴架构间性能跨度，预期单调上升。若成立，将成为「什么时候该调架构」的定量指南。</li>
+      <li><strong>表示互补性的度量学。</strong>CKA 低而融合无效说明现有相似度度量无法预测融合收益。需要新度量——不是「两个表示有多不同」，而是「差异部分是否与目标标签相关」（条件互补性而非边际互补性）。</li>
+      <li><strong>基准的元评估。</strong>本文正是 Bechler-Speicher et al. 所呼吁的「更严格评测协议」的一次尝试，但它自身在统计严谨性上又落入了它试图批评的窠臼。这个递归说明：<strong>基准论文也需要基准。</strong></li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h3>2.7 局限性</h3>
+
+    <h4>第一类：论文自述的限制（Conclusion 章节）</h4>
+    <ol>
+      <li><strong>大分子失效：</strong>「与 ML 模型可以生成固定尺寸指纹不同，GNN 模型在大型复杂分子上表现出较低的预测性能。」（Figure 4 支撑：环数在 3/5 数据集上于高低误差组间显著不同）</li>
+      <li><strong>训练成本：</strong>「GNN 模型的训练时间显著高于 ML 模型，在资源受限环境下可能存在可扩展性问题。」（Figure 3）</li>
+      <li><strong>指纹非互补：</strong>「指纹与图嵌入在本质上是非互补的，除 FreeSolv 数据外未见性能增益。」（本报告 §2.5.3 认为这一自述结论本身有误）</li>
+      <li><strong>迁移域偏移（§3.5）：</strong>「我们使用的 METLIN 是反相色谱，其分布完全不同 [与 HILIC 相比]。」</li>
+    </ol>
+
+    <h4>第二类：补充批判（独立观察，8 条）</h4>
+
+    <p><strong>① [论证缺口 / 事实错误] RT 数据集的 SOTA 基线数值与论文自身正文相互矛盾，导致该数据集的所有比较结论失效。</strong></p>
+    <p>论文 Table 2 将 RT 的 SOTA 列为 <strong>MAE = 70.40</strong>，归属于 GNN-TL (Yang et al., 2021)。但论文正文另有一句原文：</p>
+    <div class="formula">"GNN-TL achieved a MAE of 38.6 on the hold-out test set for RT data after fine-tuning."</div>
+    <p><strong>同一篇论文的表格与正文，对同一个基线给出了 70.40 和 38.6 两个相差 82% 的数字。</strong>采用哪个数字，会完全颠覆结论：</p>
+    <div class="tblwrap"><table>
+      <tr><th>本文结果</th><th class="num">vs Table 2 的 70.40</th><th class="num">vs 正文的 38.6</th></tr>
+      <tr><td>GIN 从头训练 MAE 63.783</td><td class="neg">−9.4%（胜）</td><td class="pos"><strong>+65.2%（惨败）</strong></td></tr>
+      <tr><td>GIN 完全微调 MAE 52.914</td><td class="neg">−24.8%（大胜）</td><td class="pos"><strong>+37.1%（负）</strong></td></tr>
+      <tr><td>GraphSAGE 完全微调 70.752</td><td class="num">+0.5%（持平）</td><td class="pos">+83.3%（惨败）</td></tr>
+      <tr><td>GCN 完全微调 75.621</td><td class="pos">+7.4%（负）</td><td class="pos">+95.9%（惨败）</td></tr>
+    </table></div>
+    <p>摘要中「GIN with MAE of 63.783 on RT datasets」作为三项超越 SOTA 的成就之一被列出——<strong>若正文的 38.6 是正确值，这项成就实为落后 65.2%。</strong></p>
+    <div class="callout">
+      需要为论文说一句公道话：论文确实指出 GNN-TL 使用了 305k <strong>同域</strong> in-silico HILIC 数据预训练，而本文使用 80k <strong>异域</strong> METLIN 反相色谱数据，两者预训练条件不可比。<strong>但这恰恰意味着不应把 GNN-TL 列为可比 SOTA 并宣称超越它。</strong>正确做法是要么在同域数据上重做预训练，要么把 GNN-TL 标注为「不可比参考」。目前的呈现方式——表格里放一个数、正文里放另一个数、摘要引用有利的那个——无论是否有意，效果都是误导性的。
+    </div>
+
+    <p><strong>② [统计有效性] 4/5 数据集上宣称的「最优架构」不具统计显著性，且方差估计本身系统性偏低。</strong></p>
+    <p>§2.5.5 已详述：只有 B3DB 一个数据集的最优 vs 次优差距显著（t=3.19 &gt; 2.78），其余 4 个 t 值在 0.29–1.54 之间。而摘要断言「GCN 和 GIN 是最优 GNN 架构」。更深一层：LR/SVM 的 SD 恰为 0.000，证明三次重复共享同一划分，因此报告的 SD 只反映初始化方差、不含划分方差。<strong>这意味着连那唯一「显著」的 B3DB 结果也建立在被低估的不确定性之上。</strong></p>
+
+    <p><strong>③ [论证缺口] 核心结论「指纹非互补」被本文自己的数据证伪，且错失了一个有解释力的发现。</strong></p>
+    <p>§2.5.3 已详述：融合在 20 个单元中的 10 个带来改善（50%），且改善与否按数据集完美分层——B3DB 4/4、RT 3/4、FreeSolv 3/4 有效；ESOL 0/4、Lipophilicity 0/4。论文将这个有结构的现象概括为「非互补，除 FreeSolv 外无增益」，既不准确（漏掉 B3DB 与 RT 的一致增益），也丢失了「指纹在生物/分析化学终点上有效、在物理化学终点上有害」这个可解释、可预测的规律。</p>
+
+    <p><strong>④ [论证缺口] 「CKA 低但融合无效」的矛盾被标记为「反直觉」后即被搁置，而它恰恰指向可检验的机制假设。</strong></p>
+    <p>至少有三个可检验的解释，本文一个都没有测试：</p>
+    <ul>
+      <li><strong>融合方式假设：</strong>简单拼接 + 2 层 MLP 可能不足以利用互补性。对照实验：门控融合、交叉注意力、或让指纹分支只预测残差。</li>
+      <li><strong>容量/维度失衡假设：</strong>F_embed 投影维度未公开；若显著大于 G_embed，指纹分支会主导拼接向量。对照实验：扫 F_embed/G_embed 维度比。</li>
+      <li><strong>条件互补性假设：</strong>CKA 度量的是<strong>边际</strong>表示差异，而融合收益取决于<strong>条件于标签</strong>的差异。两个表示可以很不同，但差异部分与目标完全无关。</li>
+    </ul>
+    <div class="callout">
+      <strong>对第一个假设的忽略尤其可惜。</strong>FP-GNN（Cai et al. 2022）——本文 Table 1 明确列出的先驱工作——用的是<strong>三种互补指纹</strong>（MACCS + PubChem + Pharmacophore ErG）而非单一 ECFP4。<strong>本文用单一指纹得出的「非互补」结论，无法反驳 FP-GNN 用多指纹得出的「互补」结论，因为两者的指纹配置根本不同。这是一次未成立的反驳。</strong>
+    </div>
+
+    <p><strong>⑤ [实验设计混淆] GIN 使用求和池化而其余三者使用均值池化，使「架构效应」与「池化效应」完全无法分离。</strong></p>
+    <p>论文自己承认了这个混淆——在解释「GIN 与其他架构 CKA 低」时写道：「可能是由于池化公式的差异（GIN 用 add 池化，其他 GNN 用 mean 池化）。」<strong>但这个混淆污染的不只是 CKA 分析，而是全文所有涉及 GIN 的结论，包括最重要的迁移学习结果。</strong>GIN 52.914 vs GCN 75.621 这个 30% 的差距，无法判断有多少来自单射聚合、多少来自求和池化——而求和池化保留了图规模信息，<strong>RT 保留时间恰恰与分子大小强相关</strong>，这是一个高度合理的替代解释。修复成本极低：跑 GIN+mean 与 GCN+add 两个对照，2×5 = 10 组额外实验。<strong>这是全文最该做而未做的消融。</strong></p>
+
+    <p><strong>⑥ [术语误用] 将「仅微调回归头」称为 zero-shot learning。</strong></p>
+    <p>论文原文：「Even with zero-shot learning (fine-tuning MLP regression head), MAE of 60.960 was achieved.」微调一个回归头需要在目标数据上做梯度更新，这是标准的 <strong>linear probing（线性探针）</strong>，不是 zero-shot。这个误用会让引用本文的后续工作产生错误的性能预期——真正的 zero-shot 数值（直接用 METLIN 预训练模型在 HILIC 上推理）论文根本没有报告，<strong>而那个数字才是回答「表示能否跨色谱模式直接迁移」的关键。</strong></p>
+
+    <p><strong>⑦ [覆盖缺口] 四判据之一的「预测质量」从未在 GNN-FP 模型上评估。</strong></p>
+    <p>Table 3 只有 8 行（4 ML + 4 纯 GNN），缺失全部 4 个 GNN-FP 变体。而「指纹非互补」是贯穿全文的结论之一。在药物发现中，避免灾难性预测往往比平均精度更有价值——这 4 行数据的计算成本为零，却缺失了。</p>
+
+    <p><strong>⑧ [可复现性风险] 声明的代码仓库无法定位，且论文标题在版本间发生变更。</strong></p>
+    <p>v3 正文声明数据与代码可在 <code>github.com/rajanbit/MolGraphBench</code> 获取。经多种检索策略（仓库名精确匹配、站内检索、作者名关联检索）<strong>均未能定位该仓库</strong>，而同一作者的其他仓库可正常检索到。同时 v2 正文写的是「可向作者合理索取」，并无仓库。叠加标题变更，判断是该仓库很可能尚未公开或已失效。结合超参搜索空间、逐数据集最优超参、F_embed 维度、训练时间四项关键信息全部只存在于代码/补充材料中，<strong>本文目前实质上是不可复现的。</strong></p>
+    <div class="callout">
+      <strong>必须声明的自我限制：</strong>我无法直接访问 GitHub 做 404 确认（本环境网络出口受限，仅能通过搜索引擎间接检索），因此不排除该仓库存在但未被搜索引擎索引的可能。<strong>这条批评的置信度低于前七条，读者应自行访问确认。</strong>
+    </div>
+  </section>
+
+  <h2 id="s3">3 · 相关工作回溯（问题传递链）</h2>
+  <p style="color:var(--text-secondary);font-size:15px">沿本文的引用脉络与问题继承关系，选取 5 篇构成一条完整的问题传递链。这不是五个平行的工作总结，而是一条「分子图学习如何一步步把『架构选择』这个变量丢失、又如何被重新捡起」的历史。</p>
+
+  <section class="card">
+    <h3>3.1 Neural Message Passing for Quantum Chemistry — 2017.04 · ICML 2017（主会）</h3>
+    <p><strong>解决了什么问题。</strong>在 MPNN 之前，分子图上的神经网络是一堆彼此孤立的方法：Duvenaud 的神经指纹、Kearnes 的图卷积、Li 的 GGNN 各说各话，无法比较。Gilmer 等人的贡献是提出统一抽象——所有这些方法都可以写成「消息函数 M + 更新函数 U + 读出函数 R」的三段式。核心贡献一句话：<strong>把分子图神经网络从一堆技巧统一成一个有明确设计维度的架构族。</strong>最佳集成模型在 QM9 全部 13 个目标上取得当时 SOTA，其中 11/13 达到化学精度。</p>
+    <p><strong>遗留了什么缺口。</strong>MPNN 定义了设计空间，却没有给出<strong>在这个空间里如何选点</strong>的任何指导。论文探索了若干 M/U/R 变体，但只在 QM9 单一数据集（且是高度理想化的小有机分子量子化学数据）上。留下的空白是：<strong>当任务从 QM9 换成实验测量的溶解度、通透性、保留时间时，设计空间里的最优点会不会移动？</strong>MPNN 从未回答，后续十年也几乎没人系统地问过。</p>
+    <p><strong>核心论文的回应。</strong>MolGraphBench 直接在这个空白上工作。它固定了 MPNN 框架中除 M/U 之外的一切（同样的 118 维原子特征、同样的 FC 投影、同样的 GraphNorm+残差、同样的 2 层 MLP 头），只让 M/U 在四个已知实例间变化，然后在五个<strong>实验测量</strong>数据集上测量这个变化的效应量。这正是 MPNN 论文应该做但没做的那个实验。</p>
+    <p><strong>关键设计的传递。</strong>MPNN 的三段式抽象在本文中原封不动地成为实验的控制骨架——正是因为 M/U/R 可分离，「只换层类型、其余全同」这个受控实验才在工程上可行。<strong>但传递中丢了一样东西：MPNN 把 R（读出）也当作设计维度，而本文把 R 固定为均值池化——唯独 GIN 例外用了求和。这个不彻底的固定，正是 §2.7 第 ⑤ 条混淆的根源。</strong></p>
+  </section>
+
+  <section class="card">
+    <h3>3.2 MoleculeNet: A Benchmark for Molecular Machine Learning — 2018.01 · Chemical Science</h3>
+    <p><strong>解决了什么问题。</strong>2018 年前，分子机器学习论文各用各的数据、各划各的训练测试集，横向比较不可能。MoleculeNet 提供 17 个数据集、逾 70 万化合物、逾 800 个任务的统一集合，配套 DeepChem 实现和推荐划分。本文使用的 ESOL（1,128）、FreeSolv（643）、Lipophilicity（4,200）均出自此。核心贡献一句话：<strong>给分子机器学习装上了共同的度量衡。</strong></p>
+    <p><strong>遗留了什么缺口。</strong>MoleculeNet 统一了<strong>数据</strong>，却在无意中固化了一种<strong>评测文化</strong>：一篇论文的价值 = 它在这几张表上把 RMSE 降低了多少。架构、超参、划分这些维度被压缩进「我们的方法」这个黑盒里，只有最终数字被拿出来比较。这直接导致了本文 Table 1 所描述的局面——十余种「新架构」各自宣称提升，却无人知道提升来自哪个组件。</p>
+    <div class="callout info">
+      <strong>一处需要澄清的常见误传，以及我的自我修正。</strong>MoleculeNet 对 ESOL/FreeSolv/Lipophilicity 这三个物理化学回归数据集，Table 1「Rec-split」列推荐的<strong>正是随机划分（Random）</strong>；scaffold 划分主要推荐给 BBBP、Tox21 等生物活性分类数据集。而作为对比基线的 MolGraph-xLSTM（Commun. Chem. 2025）对这三个回归数据集<strong>同样使用 8:1:1 随机划分</strong>。<strong>结论：本文与其 SOTA 基线的划分协议是一致的，这个比较在划分维度上是公平的。</strong>我在初读时曾把「未用 scaffold 划分」列为批评，核实后撤回——这也是本报告需要坦白的一处自我修正。
+    </div>
+    <p><strong>核心论文的回应。</strong>MolGraphBench 继承 MoleculeNet 的数据与划分，但把评测的<strong>因变量</strong>换了：不再问「哪个方法 RMSE 最低」，而问「在方法固定的前提下，某个特定设计维度值多少」。同时把数据集从三个物理化学数据集扩展到 B3DB（生物）和 RT（分析化学）——正是这个扩展让 §2.5.3 的域依赖性发现成为可能。</p>
+    <p><strong>关键设计的传递。</strong>从「benchmark = 一组数据集」进化为「benchmark = 一个受控实验设计」。MoleculeNet 的贡献是横轴（数据集），MolGraphBench 试图补上纵轴（受控的架构变量）。</p>
+  </section>
+
+  <section class="card">
+    <h3>3.3 FP-GNN — 2022.11 · Briefings in Bioinformatics</h3>
+    <p><strong>解决了什么问题。</strong>图表示与分子指纹各有所长：GNN 学到任务相关的连续表示，指纹编码专家设计的子结构先验。FP-GNN 提出双通道架构——GAT 分支处理分子图，ANN 分支处理<strong>三种互补指纹（MACCS + PubChem + Pharmacophore ErG）</strong>，在全连接层融合。核心贡献一句话：<strong>证明图与指纹可以互补，融合优于任一单独通道。</strong>在 13 个基准的 16 个任务中于 7 个取得最佳；LIT-PCBA 平均 AUC 0.739；14 个乳腺癌细胞系数据集平均 AUC 0.849，优于 AttentiveFP、GAT、GCN、MPNN 与 XGBoost。</p>
+    <p><strong>遗留了什么缺口。</strong>FP-GNN 证明了「融合有效」，却没有拆解<strong>为什么</strong>有效、<strong>何时</strong>有效。它同时改变了三件事（引入指纹分支、用三种指纹、用 GAT 底层），因此增益无法归因。更关键的是：它从未测试「指纹数量」这个维度——单指纹够不够？也从未测试跨域一致性。</p>
+    <p><strong>核心论文的回应。</strong>MolGraphBench 的 GNN-FP 变体是对 FP-GNN 范式的一次受控复检：把融合从 GAT 一个底层推广到全部四个底层，跨五个数据集测量增益。这是 FP-GNN 未做的归因实验。<strong>但这次复检的结论「融合无效」并不成立</strong>——因为本文只用了单一 ECFP4（1024-bit），而 FP-GNN 的核心主张恰恰建立在三种互补指纹上。<strong>本文误把一个更弱命题的证否，当成了对更强命题的反驳。</strong></p>
+    <p><strong>关键设计的传递。</strong>融合位置的传递是完整的：FP-GNN 在全连接层合并，本文在池化后拼接再进 2 层 MLP——本质相同。<strong>丢失的是指纹的多样性维度。</strong>而本报告 §2.5.3 的域依赖性发现，恰好为 FP-GNN 的路线提供了新的辩护：<strong>指纹在 B3DB（生物）上 4/4 有效，正是 FP-GNN 所专注的生物活性任务类型。</strong></p>
+  </section>
+
+  <section class="card">
+    <h3>3.4 GNN-TL — 2021.09 · Journal of Chromatography A</h3>
+    <p><strong>解决了什么问题。</strong>HILIC 色谱保留时间预测的困境是实验标注极其昂贵，公开数据只有千条量级。GNN-TL 的方案是先在 <strong>~306K 条 in-silico（伪标签）HILIC 保留时间数据</strong>上预训练 GNN，再在小规模真实 HILIC 数据上微调。核心贡献一句话：<strong>用大规模同域伪标签数据的预训练，突破小样本色谱预测的数据瓶颈。</strong>本文使用的 RT 数据集（1,400 分子）及其配套仓库即出自此工作。</p>
+    <p><strong>遗留了什么缺口。</strong>GNN-TL 只用了一种架构。因此它证明的是「迁移学习对这个任务有效」，但<strong>迁移增益中有多少属于『预训练』、多少属于『恰好选对了架构』，完全无法分离</strong>。此外它的预训练语料是同域 in-silico HILIC——留下另一个问题：如果只有异域数据（如反相色谱），迁移还成立吗？</p>
+    <p><strong>核心论文的回应。</strong>MolGraphBench 的 Table 4 同时回答了这两个问题，而且回答得比论文自己意识到的更有力：</p>
+    <ul>
+      <li>对第一个缺口：在四种架构上重跑同一迁移流水线，结果显示架构贡献了 30.0% 的性能跨度——<strong>迁移增益确实与架构选择深度纠缠，GNN-TL 的单架构结论因此不完整。</strong></li>
+      <li>对第二个缺口：本文用异域的 METLIN 反相色谱数据预训练，GIN 仍取得 52.914 MAE，优于其从头训练的 63.783（改善 17.0%）——<strong>说明跨色谱模式的迁移是有效的</strong>，这是对 GNN-TL 范式的一次有价值的推广。</li>
+    </ul>
+    <p><strong>关键设计的传递与断裂。</strong>三级微调粒度协议是本文相对 GNN-TL 的方法学改进。但传递中发生了一次严重的<strong>记账错误</strong>：本文把 GNN-TL 的基线数值在 Table 2 中记为 MAE 70.40，而在正文中又写 38.6（§2.7 第 ① 条）。由于 GNN-TL 用的是同域 306K 预训练、本文用的是异域 80K 预训练，两者本就不应直接对比；把它列为可比 SOTA 并宣称超越，是这条继承链上最不严谨的一环。</p>
+  </section>
+
+  <section class="card">
+    <h3>3.5 Position: Graph Learning Will Lose Relevance Due to Poor Benchmarks — 2025.02 · ICML 2025 Position Track（主会）</h3>
+    <p><strong>解决了什么问题。</strong>这不是一篇方法论文，而是一篇诊断。Bechler-Speicher 等 12 位作者（含 Bronstein、Morris、Perozzi、Galkin）主张：图机器学习正因基准设计不佳而流失领域相关性。具体指控包括——基准过度集中于分子图等狭窄领域而忽视组合优化、芯片设计等高影响场景；数据集代表性差；评测方式碎片化；过度强调单一准确率指标，导致模型过拟合基准而非获得可泛化能力。核心贡献一句话：<strong>把「基准质量」本身认定为图学习进步的瓶颈。</strong>提出三条方向：更有意义的基准、更严格的评测协议、加强与领域专家协作。</p>
+    <p><strong>遗留了什么缺口。</strong>作为 position 论文，它诊断了病却没开出可执行的处方。「更严格的评测协议」具体意味着什么——多少次重复？哪种划分？是否需要显著性检验？如何控制混淆变量？这些都留给了社区。</p>
+    <p><strong>核心论文的回应。</strong>MolGraphBench 在引言中引用了这篇立场论文，并可被理解为对其号召的一次具体响应：把「评测协议」从「报一个数」升级为「控制变量测效应量」，并把四个判据而非单一 RMSE 作为评价维度。</p>
+    <div class="callout">
+      <strong>关键设计的传递——以及一个尖锐的反讽。</strong>传递是真实的：多判据评价、跨域数据集、受控变量，都是对 position 论文号召的正面回应。<strong>但本文在统计严谨性上恰恰重蹈了它试图批评的覆辙</strong>——n=3 且固定划分、无显著性检验、在 4/5 数据集上从噪声中读出「最优架构」的结论。position 论文批评社区「过度强调单一准确率指标」，而本文的摘要依然在用「我们在三个数据集上优于或相当于 SOTA」的刷榜话术。<br><br>
+      这个反讽不是为了贬低本文，而是指向一个真实的元问题：<strong>呼吁更好的基准是容易的，执行严格的评测协议是困难的，因为后者需要的是纪律而非洞见。</strong>本文的价值恰恰在于，它离那个标准足够近，以至于它与标准的差距是可以被精确测量的——这正是本报告 §2.7 所做的事。
+    </div>
+  </section>
+
+  <h2 id="s4">4 · 技术演进脉络</h2>
+  <section class="card">
+    <h3>4.1 演进树</h3>
+    <div class="flow">2017  MPNN [Gilmer, ICML]
+      定义 M/U/R 三段式设计空间 · QM9 上 11/13 达化学精度
+      ↓ 留下：设计空间有了，但「如何选点」无人回答
+      │
+2017–2019  四种层类型平行诞生（均非分子领域专用）
+      ├─ GCN       [Kipf&Welling, ICLR'17]  度归一化均值 · 谱域动机
+      ├─ GraphSAGE [Hamilton,     NeurIPS'17] 自身/邻居分离编码 · 归纳式
+      ├─ GAT       [Veličković,   ICLR'18]  注意力加权 · 邻居自适应
+      └─ GIN       [Xu,           ICLR'19]  求和聚合 · 单射 · 1-WL 表达上界
+      ↓ 这四个点被后续工作「任选一个」作为底座，从此成为背景常量
+      │
+2018  MoleculeNet [Wu, Chem. Sci.]
+      17 数据集 / 70万化合物 · 统一度量衡 · 物化回归推荐随机划分
+      ↓ 统一了数据，却固化了「比 RMSE 数字」的评测文化
+      │
+      ├──────────────────┬───────────────────┬──────────────────┐
+      ↓                  ↓                   ↓                  ↓
+2021 GNN-TL         2022 FP-GNN         2024 CKA探针       2025 MolGraph-xLSTM
+  [J.Chrom.A]        [Brief.Bioinform]    [Welsch, JCIM]     [Commun.Chem.]
+  306K同域预训练      GAT + 三种互补指纹    表示相似度度量      xLSTM+MoE 双层级
+  补「数据效率」      补「先验融合」        补「可解释性」      补「表达能力」
+  ⚠ 仅单一架构        ⚠ 三改动无法归因      ⚠ 仅度量不预测      ⚠ 增益未拆解
+      │                  │                   │                  │
+      └──────────────────┴───────────────────┴──────────────────┘
+      ↓  四条线各补一个维度，但全部把「底层层类型」当作已定常量
+      │
+2025  Position: 图学习将因劣质基准失去相关性 [Bechler-Speicher, ICML Position]
+      诊断：评测碎片化、过度依赖单一指标、模型过拟合基准
+      ↓ 开出了病历，没开出处方
+      │
+2026  MolGraphBench [arXiv:2602.20573v3]        ◄─── 汇聚点
+      把「层类型」从背景常量提升为受控实验变量
+      · 4 层类型 × 5 数据集 × {纯 / +指纹} × {从头 / 三级迁移}
+      · 借用 CKA 作互补性前置探针（继承 Welsch）
+      · 引入「高误差分子」分布式评估（新增）
+      结论：层类型应作为可调超参
+      ⚠ 但自身在 4/5 数据集上无统计显著性，重蹈 position 论文批评之覆辙
+      │
+      ↓ 本报告的派生发现（论文未觉察）
+2026  【相变】层类型效应量是场景依赖的：
+      从头训练 ~6%（4/5 数据集稳定于 5.7–7.0%）
+      迁移学习 ~30%（同一 RT 数据集上跨度放大 4.3 倍）</div>
+
+    <h3>4.2 演进的内在逻辑线索</h3>
+    <h4>推动力：从「能不能学」到「学什么」再到「谁在学」</h4>
+    <ul>
+      <li><strong>2017–2018（能不能学）：</strong>核心问题是神经网络能否在分子图上超越手工描述符。MPNN + MoleculeNet 联手给出肯定答案并建立基础设施。这一阶段架构本身就是创新的全部内容。</li>
+      <li><strong>2021–2025（学什么）：</strong>基础设施就位后，创新转向「往模型里加什么先验」——加大规模伪标签数据（GNN-TL）、加专家指纹（FP-GNN）、加序列建模与专家混合（MolGraph-xLSTM）、加可解释性工具（CKA）。<strong>这一阶段架构从「创新对象」退化为「实验背景」，四个层类型被随机地当作底座使用。这正是变量丢失的时刻。</strong></li>
+      <li><strong>2025–2026（谁在学）：</strong>position 论文的诊断意味着社区开始怀疑，过去五年的增量有多少是真实的。MolGraphBench 是这种怀疑的第一次定量化尝试——它问的不是「我的模型多好」，而是「你们归因归对了吗」。</li>
+    </ul>
+    <h4>阶段间的关键转折</h4>
+    <p><strong>第一个转折在 2018：</strong>MoleculeNet 之后，评价从「我在自己的数据上有效」变成「我在共同的表上数字更低」。这是巨大的进步，代价是把多维的设计选择压缩成了一维的排行榜坐标。</p>
+    <p><strong>第二个转折在 2025–2026，正在发生：</strong>从「优化排行榜位置」转向「审计排行榜有效性」。MolGraphBench、Bechler-Speicher 的 position 论文、以及同期涌现的一批评测框架（LeMat-GenBench、AtomBench、NewtonBench）共同构成这个转折。<strong>这个转折的特征是元级化——研究对象从模型变成了研究方法本身。</strong></p>
+    <h4>社区关注点的转移轨迹</h4>
+    <p>准确率（2017–2020）→ 数据效率与预训练（2020–2023）→ 可解释性与表示分析（2023–2025）→ <strong>归因有效性与评测协议（2025– ）</strong></p>
+    <p>MolGraphBench 处在最后这个阶段的开端，它的不完善（统计不严、混淆未控、记账出错）恰恰是这个阶段早期的典型特征：<strong>问题意识已经到位，方法论纪律尚未跟上。</strong></p>
+  </section>
+
+  <h2 id="s5">5 · 相关工作表格对标</h2>
+  <section class="card">
+    <div class="tblwrap"><table>
+      <tr><th>工作</th><th>年月</th><th>会议 / 出版</th><th>核心贡献</th><th>主要指标</th><th>与核心工作的关系</th></tr>
+      <tr><td>MPNN</td><td>2017.04</td><td>ICML 2017（主会）</td><td>M/U/R 三段式统一框架</td><td>QM9 13 目标全 SOTA；11/13 达化学精度</td><td>提供本文的受控实验骨架；本文补上其未做的「设计空间选点」实验</td></tr>
+      <tr><td>GCN / GraphSAGE / GAT / GIN</td><td>2017.02 / 2017.06 / 2017.10 / 2018.10</td><td>ICLR'17 / NeurIPS'17 / ICLR'18 / ICLR'19</td><td>四种 AGG/UPD 实例</td><td>非分子领域基准</td><td><strong>本文的四个被试对象</strong>；本文首次在分子回归上做受控对比</td></tr>
+      <tr><td>MoleculeNet</td><td>2018.01</td><td>Chemical Science</td><td>17 数据集 / 70万化合物统一基准</td><td>ESOL 1,128 / FreeSolv 643 / Lipo 4,200；物化回归推荐随机划分</td><td>提供本文 3/5 数据集与划分协议；本文把因变量从「方法」换成「设计维度」</td></tr>
+      <tr><td>GNN-TL</td><td>2021.09</td><td>J. Chromatogr. A</td><td>in-silico 预训练 + 微调破解 HILIC 小样本</td><td>306K 同域预训练；原文自报 MAE <strong>38.6</strong>（本文 Table 2 记为 <strong style="color:var(--crit)">70.40</strong> ⚠）</td><td>提供本文 RT 数据集；本文将其单架构迁移推广至四架构，并揭示 30% 架构跨度</td></tr>
+      <tr><td>FP-GNN</td><td>2022.11</td><td>Brief. Bioinform.</td><td>GAT + 三种互补指纹双通道融合</td><td>16 任务中 7 项最佳；LIT-PCBA AUC 0.739；细胞系 AUC 0.849</td><td>本文 GNN-FP 的直接前驱；本文用<strong>单一</strong> ECFP4 得出的「非互补」结论<strong>不足以反驳</strong>其多指纹主张</td></tr>
+      <tr><td>CKA 分子嵌入</td><td>2024.10</td><td>JCIM 64:7303</td><td>把 CKA 引入化学信息学</td><td>提出适配非旋转不变模型的 CKA；caveat：结果依赖核函数选择</td><td>本文 CKA 分析的方法来源；本文用它得到 0.27–0.59 的读数，却未解决由此产生的矛盾</td></tr>
+      <tr><td>Position: Poor Benchmarks</td><td>2025.02</td><td><strong>ICML 2025 Position Track</strong></td><td>认定基准质量为图学习瓶颈</td><td>不适用（观点论文）</td><td>本文的直接动机来源；本文是其号召的具体响应，但在统计严谨性上重蹈其所批评之覆辙</td></tr>
+      <tr><td>MolGraph-xLSTM</td><td>2025.09</td><td>Commun. Chem. 8:286</td><td>原子级+基序级双层 xLSTM + 多头 MoE</td><td>ESOL <strong>0.527±0.046</strong>、FreeSolv <strong>1.024±0.076</strong>、Lipo <strong>0.550±0.026</strong>；随机划分 8:1:1，n=3</td><td>本文 3 个数据集的 SOTA 基线；<strong>划分协议与本文一致，比较公平</strong>；本文最优模型在 ESOL 上落后其 43.8%</td></tr>
+      <tr class="best"><td><strong>MolGraphBench</strong></td><td><strong>2026.02<br>(v3: 2026.06)</strong></td><td><strong>arXiv 预印本</strong></td><td><strong>把层类型从背景常量提升为受控实验变量</strong></td><td><strong>B3DB 0.508（−9.3%）· FreeSolv 1.022（持平）· ESOL 0.762（+43.8%）· Lipo 0.629（+14.4%）· 迁移 GIN MAE 52.914</strong></td><td><strong>汇聚点</strong>；四条演进线在此被统一到一个受控实验设计下</td></tr>
+    </table></div>
+    <div class="callout">
+      <strong>表格读法。</strong>纵向看，性能趋势并非单调上升——MolGraph-xLSTM (2025) 在 ESOL 上 0.527 优于 MolGraphBench (2026) 的 0.762。这不是退步，而是两类论文的目标不同：前者优化排行榜，后者审计归因。<strong>把它们放在同一列比较本身就是 MoleculeNet 遗留的评测文化在起作用——而这恰恰是本文试图挑战的东西。</strong>
+    </div>
+  </section>
+
+  <h2 id="s6">6 · 开放挑战与研究机会</h2>
+  <section class="card">
+    <h3>6.1 理论层面</h3>
+    <p><strong>① 架构表达能力与迁移收益的定量关系。</strong>不是笼统的「研究表达能力」，而是：<em>GIN 的 1-WL 表达上界与其迁移优势之间是否存在可测量的函数关系？</em>具体实验：固定 RT 下游任务，在 METLIN 上以 {5k, 10k, 20k, 40k, 80k, 160k} 六个规模预训练四种架构，绘制「预训练规模 × 架构间性能跨度」曲线。<strong>可证伪的预测：</strong>若表达能力假设成立，GIN 的相对优势应随预训练规模单调扩大；若在某规模后平台化，说明优势来自别处（如求和池化保留的图规模信息）。<strong>高价值低门槛</strong>——所需算力约为本文全部实验的 1.5 倍。</p>
+    <p><strong>② 条件互补性度量的构造。</strong>CKA 度量的是两个表示的<strong>边际</strong>差异，而融合收益取决于<strong>条件于标签</strong>的差异。需要一个新量：<code>CI(A,B;y) = I(B;y | A)</code> 的可估计代理——「在已知表示 A 的前提下，表示 B 还能提供多少关于 y 的信息」。路线：用 MINE 或 InfoNCE 估计条件互信息，在本文的 20 个单元上验证它能否预测 §2.5.3 的融合增益符号。<strong>如果能，这个度量将成为所有多模态分子模型的前置筛选工具。</strong></p>
+    <p><strong>③ 池化算子的独立效应。</strong>一个纯粹的 2×4 析因实验：{mean, sum} 池化 × {GCN, GAT, GIN, GraphSAGE}，在五个数据集上跑。<strong>唯一目的是把 §2.7 第 ⑤ 条的混淆拆开。</strong>成本 10–40 组实验，收益是让本文（以及所有把 GIN 作为底座的工作）的结论变得可归因。</p>
+
+    <h3>6.2 工程与应用层</h3>
+    <p><strong>④ 域感知的指纹融合策略。</strong>§2.5.3 给出了可直接落地的规则草案：<strong>在生物终点（通透性、毒性、活性）与色谱/分析终点上启用指纹融合；在局部可加的物理化学终点（溶解度、logD、自由能）上禁用。</strong>验证实验：在 MoleculeNet 全部 17 个数据集上按域分层重跑 4 架构 × {纯, +FP}，检验「域 → 融合有效性」映射是否稳定。若稳定，可固化为工程默认值。</p>
+    <p><strong>⑤ 融合机制的消融。</strong>在固定 ECFP4 的前提下对比四种融合方式——朴素拼接（本文）、门控融合、交叉注意力、残差式（指纹分支只预测 GNN 的残差）。<strong>关键控制：</strong>F_embed 与 G_embed 维度必须严格配平。<strong>预期结果：</strong>若残差式融合在 ESOL 上把 +23.76% 的劣化翻转为改善，则证明问题出在融合方式而非互补性本身。</p>
+    <p><strong>⑥ 评测协议的最小可接受标准。</strong>社区需要一个明确的清单，而非「更严格的协议」这种号召。草案：(a) 至少 5 折交叉验证 × 3 种子 = 15 次运行，报告划分方差与初始化方差的分解；(b) 任何「A 优于 B」的断言必须附检验统计量；(c) 所有 baseline 的超参搜索预算必须与自有方法相同并公开；(d) SOTA 引用必须注明其划分协议、预训练语料与指标定义。<strong>本文若满足 (a) 与 (b)，其 4/5 数据集上的架构结论就不会被提出。</strong></p>
+    <p><strong>⑦ 大分子失效的机制定位。</strong>论文观察到「环数在 3/5 数据集上于高低误差组间显著不同」，但停在了相关性层面。因果实验：合成一组受控分子对（环数递增、其他描述符匹配），测量各架构的误差随环数的增长曲线，并与感受野（层数 L）做交叉。<strong>可检验假设：</strong>若失效源于感受野不足，则加深至 5–6 层配合虚拟节点或全局注意力应<em>选择性地</em>修复大分子误差而不影响小分子。</p>
+
+    <h3>6.3 新兴方向</h3>
+    <p><strong>⑧ 架构选择的自动化。</strong>本文主张「层类型应作为超参」，但它自己是手工扫的四个点。下一步：把 AGG/UPD 函数族作为搜索空间做可微 NAS，并与「扫四种标准层」这个便宜基线做<strong>同等算力预算下的 head-to-head 对比</strong>。<strong>明确的空白：</strong>目前无人知道，在分子回归上，一个学出来的聚合函数是否真的优于从四个已知选项中选最好的那个。<strong>这个对比实验的缺失，正是判断「NAS 值不值」的关键证据缺口。</strong></p>
+    <p><strong>⑨ 跨色谱/跨测定条件的迁移基准。</strong>本文偶然证明了反相色谱 → HILIC 的跨模式迁移有效（GIN 改善 17.0%）。值得做成正式基准：多种色谱模式、多种测定协议之间的迁移矩阵，量化「域距离 × 迁移收益」的关系。在代谢组学结构注释中有直接应用价值。</p>
+    <p><strong>⑩ 基准论文的可复现性契约。</strong>§2.7 第 ⑧ 条揭示的问题不是本文独有。具体机制提议：<strong>arXiv 的基准类论文应支持「仓库可达性」的自动化持续检查</strong>，并在论文页面展示最近一次检查的时间戳与状态。这不是技术难题，是流程空白。</p>
+
+    <div class="callout">
+      <strong>最关键的单个空白。</strong>如果只能做一个实验，应该是 §6.1 第 ③ 条的<strong>池化析因实验</strong>。理由：成本最低（10–40 组）；它修复的混淆污染了本文最重要的结论（30% 的迁移跨度到底是 GIN 的功劳还是 sum 池化的功劳）；它的结论会立即影响所有把 GIN 作为底座的后续工作。<strong>在这个实验做完之前，「GIN 是最佳迁移架构」这个论断严格来说应当写作「GIN + sum 池化 是最佳迁移配置」。</strong>
+    </div>
+  </section>
+
+  <h2 id="s7">7 · 其他值得关注的近期工作</h2>
+  <section class="card">
+    <p style="color:var(--muted);font-size:14px">本期候选池中未被抽中但同样值得跟进的 AI4Science 工作。</p>
+
+    <h4>LeMat-GenBench: A Unified Evaluation Framework for Crystal Generative Models（2025.12，v2 2026.01）</h4>
+    <p>与本文精神高度一致的材料领域版本：晶体生成模型的评测同样碎片化，各家用各家的稳定性/新颖性/唯一性定义。若你关心「评测协议审计」这条线，这篇与 MolGraphBench 应当对读。<br><a href="https://arxiv.org/abs/2512.04562">arXiv</a></p>
+
+    <h4>NewtonBench: Benchmarking Generalizable Scientific Law Discovery in LLM Agents（2025.10）</h4>
+    <p>把「科学定律发现」从符号回归的玩具设定推进到需要泛化的设定。值得看的原因：它直面了 LLM 智能体评测中最难的问题——如何区分「记住了定律」与「发现了定律」。<br><a href="https://arxiv.org/abs/2510.07172">arXiv</a> · <a href="https://arxiv.org/html/2510.07172v2">HTML</a></p>
+
+    <h4>Six Open Questions in Machine-Learned Interatomic Potential Foundation Models（2026.06）</h4>
+    <p>MLIP 基础模型领域的立场论文，与 Bechler-Speicher 的图学习 position 论文属同一体裁。适合快速建立该子领域的问题地图。<br><a href="https://arxiv.org/abs/2606.07327">arXiv</a> · <a href="https://arxiv.org/html/2606.07327v2">HTML</a></p>
+
+    <h4>Can LLM Design High-Quality Experiments? (OptED)（2026.08）</h4>
+    <p>本期候选池中最新的一篇。自主实验设计是 AI4Science 中最接近「闭环科学」的环节，而这方面的严肃基准极少。<br><a href="https://arxiv.org/abs/2608.03501">arXiv</a> · <a href="https://arxiv.org/html/2608.03501v1">HTML</a></p>
+
+    <h4>Agentic Self-Driving Microscopy Benchmarks Support Qualification but Do Not Necessarily Generalize to Unseen Tasks（2026.08）</h4>
+    <p>标题本身就是结论，而且是一个负面结论——这类诚实的负面基准结果在 agent 领域太稀缺了。与 OptED 配合阅读效果最佳。<br><a href="https://arxiv.org/abs/2608.05266">arXiv</a> · <a href="https://arxiv.org/html/2608.05266">HTML</a></p>
+
+    <h4>Open Materials Generation with Inference-Time Reinforcement Learning (OMatG)（2026.02，v2 2026.06）</h4>
+    <p>把推理期 RL 引入晶体生成。若你在追踪 test-time scaling 从 LLM 向科学生成模型的外溢，这是一个清晰的样本。<br><a href="https://arxiv.org/abs/2602.00424">arXiv</a> · <a href="https://arxiv.org/html/2602.00424v2">HTML</a></p>
+
+    <h4>PoET-2: Understanding protein function with a multimodal retrieval-augmented foundation model（2025.08，NeurIPS 2025 poster）</h4>
+    <p>检索增强 + 多模态在蛋白质语言模型上的落地。本期唯一进入候选池的 NeurIPS 主会级蛋白质工作。<br><a href="https://arxiv.org/abs/2508.04724">arXiv</a></p>
+  </section>
+
+  <h2 id="s8">8 · 结论：这篇论文该怎么读</h2>
+  <section class="card">
+    <p><strong>如果你只有五分钟：</strong>读 Table 4。四种 GNN 层类型在完全相同的迁移流水线下，MAE 从 75.621 跨到 52.914——30.0% 的性能差距，全部来自换一个卷积层。这个数字应该改变你下次搭建分子性质预测流水线时的第一步。</p>
+    <p><strong>如果你要引用它：</strong>引用 Table 4 和它的迁移学习结论。<strong>不要</strong>引用摘要中「三个数据集上优于或相当于 SOTA」的说法（真实战绩是 1 胜 1 平 2 负 + 1 项 SOTA 基线数值自相矛盾），也<strong>不要</strong>引用「指纹非互补」的结论（论文自己的数据显示融合在 20 个单元中的 10 个有效，且严格按数据域分层）。</p>
+    <p><strong>如果你要在此基础上做研究：</strong>先做池化析因实验（§6.1③）。在把 sum 池化与 GIN 拆开之前，本文最重要的结论是不可归因的。</p>
+    <div class="callout">
+      <strong>这篇论文的真正贡献不在它的结论，而在它的问题。</strong>分子图学习领域用了五年时间把「底层层类型」当成一个不需要讨论的背景常量，而这个常量可能值 30% 的性能。提出这个问题所需的洞见，远大于回答它所需的实验——而本文的执行恰恰在实验严谨性上没有配得上它的问题意识。这既是它的局限，也是它留给社区最清晰的行动项。
+    </div>
+  </section>
+
+  <h2>附录 · 本报告的派生计算说明</h2>
+  <section class="card">
+    <p>以下数值均非论文原文报告，由本人从 Table 2/3/4 的原始数值重新计算：</p>
+    <div class="tblwrap"><table>
+      <tr><th>派生量</th><th>计算方法</th><th>出现位置</th></tr>
+      <tr><td>跨数据集平均排名</td><td>对每个数据集内 12 个方法按 RMSE 升序排名，跨 5 数据集取算术均值</td><td>§2.5.2</td></tr>
+      <tr><td>与 SOTA 的相对差距</td><td>(本文最优 − SOTA) / SOTA × 100%</td><td>§2.5.2、§2.7①</td></tr>
+      <tr><td>指纹融合增益矩阵</td><td>(GNN-FP − GNN) / GNN × 100%，20 个单元</td><td>§2.5.3、图 1</td></tr>
+      <tr><td>架构相对跨度</td><td>(max − min) / max × 100%，仅取 4 个纯 GNN</td><td>§2.5.4、图 2</td></tr>
+      <tr><td>显著性检验</td><td>双样本 t 检验，t = (x̄₂−x̄₁)/(s_p·√(2/n))，s_p = √((s₁²+s₂²)/2)，n=3，df=4，t_crit,0.05 = 2.78</td><td>§2.5.5</td></tr>
+      <tr><td>头→完全微调改善</td><td>(仅头 − 完全) / 仅头 × 100%</td><td>§2.5.4、图 3</td></tr>
+    </table></div>
+    <div class="callout">
+      <strong>已知的计算局限。</strong>t 检验假设三次重复相互独立且方差齐性。如 §2.5.5 所述，三次重复共享同一数据划分，因此独立性假设在严格意义上不成立，计算出的 t 值应视为<strong>乐观上界</strong>——真实的不确定性只会更大。因此「4/5 数据集不显著」这一结论是<strong>稳健的</strong>：若考虑划分方差，不显著的数据集只会更多，不会更少。
+    </div>
+  </section>
+
+  <footer>
+    <p><strong>报告元信息</strong></p>
+    <p>生成日期：2026-08-09（周日 · AI4Science 与跨界轮值）｜ 候选池规模：27 篇（2025-08 至 2026-08）｜ 随机抽取 <code>shuf -i 1-27 -n 1</code> → 索引 6 ｜ <strong>重抽次数 0</strong></p>
+    <p><strong>⚠ 去重索引状态：未能执行。</strong>本次为云端定时任务，用户设备桥不可用，<code>ml-report-index.md</code> 无法读取或更新。本期记录需手动追加，建议内容：<br>
+    <code>2026-08-09 | AI4Science/图学习 | MolGraphBench: A Benchmark of GNN Architectures for Molecular Regression Tasks | arXiv:2602.20573v3 | 层类型在迁移场景下值 30% 性能，但论文自身 4/5 数据集结论无统计显著性、RT 的 SOTA 基线自相矛盾</code></p>
+    <p>核心论文全文来源：<a href="https://arxiv.org/html/2602.20573v3">arxiv.org/html/2602.20573v3</a></p>
+    <p><strong>未能核实项：</strong>超参搜索空间与逐数据集最优超参、F_embed 投影维度、逐数据集 CKA 数值、训练时间秒数、代码仓库可达性。</p>
+  </footer>
+
+</div>
+<script>
+(function(){
+  var tips = {};
+  ['tip1','tip2','tip3'].forEach(function(id){ tips[id] = document.getElementById(id); });
+  document.querySelectorAll('svg.chart').forEach(function(svg, i){
+    var tip = tips['tip' + (i+1)];
+    if (!tip) return;
+    svg.querySelectorAll('rect.bar').forEach(function(bar){
+      bar.addEventListener('mousemove', function(e){
+        tip.textContent = bar.getAttribute('data-tip');
+        tip.style.opacity = 1;
+        var x = e.clientX + 14, y = e.clientY - 14;
+        if (x + tip.offsetWidth > window.innerWidth - 12) x = e.clientX - tip.offsetWidth - 14;
+        if (x < 8) x = 8;
+        tip.style.left = x + 'px';
+        tip.style.top = y + 'px';
+      });
+      bar.addEventListener('mouseleave', function(){ tip.style.opacity = 0; });
+    });
+  });
+})();
+</script>
+</body>
+</html>

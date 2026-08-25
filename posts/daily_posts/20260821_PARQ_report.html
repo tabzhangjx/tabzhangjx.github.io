@@ -1,0 +1,746 @@
+---
+layout: null
+title: "PARQ"
+date: 2026-08-21
+topic: llm-systems
+excerpt: "解析 PARQ 如何以分段仿射正则和聚合近端更新取代直通估计器，让量化训练从连续权重收缩到真正的离散权重。"
+permalink: /blog/2026/08/21/parq-proximal-quantization-aware-training/
+blog_post: true
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>PARQ：把“先连续、后离散”的量化训练写成可证明的优化过程 · 2026-08-21</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ML/AI DAILY DEEP REPORT · ICML 2025</p>
+    <h1>PARQ：把“先连续、后离散”的量化训练写成可证明的优化过程</h1>
+    <p class="subtitle">效率与系统 · 量化感知训练、近端优化与低比特模型</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">PARQ · ICML 2025</span>
+      <span class="chip">2026-08-21</span>
+      <span class="chip">Quantization-Aware Training</span>
+    </div>
+    <p class="lede">PARQ 不再把直通估计器（STE）当作“把零导数硬改成一”的反向传播技巧，而是用凸、非光滑的分段仿射正则与聚合近端更新，让模型从近似全精度连续地收缩到真正的离散权重。</p>
+  </header>
+
+  <main><section class="card" aria-labelledby="section-1-title"><h2 id="section-1-title">0. 链接验证表</h2>
+<p>下表中的 URL 均在本次报告撰写时实际访问；“未找到/未公开”表示没有在论文、官方页面或作者仓库中核实到独立资源，而不是断言资源绝对不存在。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">论文</th>
+<th scope="col">会议主页 / 出版页</th>
+<th scope="col">arXiv（具体版本）</th>
+<th scope="col">Code 仓库</th>
+<th scope="col">数据集 / 权重</th>
+<th scope="col">项目页 / 视频</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>PARQ</strong></td>
+<td><a href="https://proceedings.mlr.press/v267/jin25e.html">ICML 2025 / PMLR</a>；<a href="https://openreview.net/forum?id=8PCxOlwbIn">OpenReview</a></td>
+<td><a href="https://arxiv.org/abs/2503.15748v1">2503.15748v1，2025-03-19</a></td>
+<td><a href="https://github.com/facebookresearch/parq">facebookresearch/parq</a>；已进入 <a href="https://github.com/pytorch/ao">torchao prototype</a></td>
+<td>CIFAR-10、ImageNet 使用公开标准数据；论文未发布新数据集或训练权重</td>
+<td>未找到独立项目页 / 视频</td>
+</tr>
+<tr>
+<td>BinaryConnect</td>
+<td><a href="https://dl.acm.org/doi/10.5555/2969442.2969588">NeurIPS 2015 论文记录</a></td>
+<td><a href="https://arxiv.org/abs/1511.00363v3">1511.00363v3，2016-04-18</a></td>
+<td>未核实到论文作者的独立官方仓库</td>
+<td>未发布新数据 / 权重</td>
+<td>未找到</td>
+</tr>
+<tr>
+<td>BinaryRelax</td>
+<td><a href="https://researchconnect.suny.edu/en/publications/binaryrelax-a-relaxation-approach-for-training-deep-neural-networ/">SIAM J. Imaging Sciences 出版记录</a></td>
+<td><a href="https://arxiv.org/abs/1801.06313v3">1801.06313v3，2018-09-05</a></td>
+<td><a href="https://github.com/penhunt">作者 GitHub 主页可见 binaryrelax 仓库</a></td>
+<td>未发布新数据 / 权重</td>
+<td>未找到</td>
+</tr>
+<tr>
+<td>ProxQuant</td>
+<td><a href="https://openreview.net/forum?id=HyzMyhCcK7">ICLR 2019 OpenReview</a></td>
+<td><a href="https://arxiv.org/abs/1810.00861v3">1810.00861v3，2019-03-05</a></td>
+<td><a href="https://github.com/allenbai01/ProxQuant">allenbai01/ProxQuant</a></td>
+<td>未发布新数据 / 权重</td>
+<td>未找到</td>
+</tr>
+<tr>
+<td>ProxConnect / Demystifying BinaryConnect</td>
+<td><a href="https://proceedings.neurips.cc/paper/2021">NeurIPS 2021 proceedings</a></td>
+<td><a href="https://arxiv.org/abs/2110.13220v1">2110.13220v1，2021-10-25</a></td>
+<td>未核实到独立官方仓库</td>
+<td>未发布新数据 / 权重</td>
+<td><a href="https://timudk.github.io/">作者页面（含 arXiv / video）</a></td>
+</tr>
+</tbody></table></div>
+</section><section class="card" aria-labelledby="section-2-title"><h2 id="section-2-title">1. 选择过程与候选池</h2>
+<p>去重索引显示最近 14 天已覆盖 DuoAttention（KV cache 稀疏保留）与 SimbaV2（深度 RL 优化几何），没有覆盖“QAT 的近端优化与凸正则化”。本次从 ICML 2025、NeurIPS 2025 的效率、系统、量化、长上下文与低秩方向建立 20 篇候选池：Star Attention、RAPID、Reward-Guided Speculative Decoding、GPTAQ、Q-VDiT、LRA-QViT、SeedLoRA、BDIA-Transformer、BlockDialect、RWKVQuant、xLSTM 7B、SketchTune、KVTuner、OrthoRank、PARQ、Learned Prefix Caching、MARS、ClusterFusion、HiFC、LLM 数值非确定性分析。候选清单及已验证主页保存于同目录 <code>candidates_2026-08-21.txt</code>。</p>
+<p>按要求执行 <code>shuf -i 1-20 -n 1</code>，结果为 <strong>15</strong>，对应 PARQ。论文正文、三张完整结果表、三次随机种子统计、算法、开源实现与理论证明均可访问，因此<strong>重抽 0 次</strong>。</p>
+</section><section class="card" aria-labelledby="section-3-title"><h2 id="section-3-title">2. 核心论文深度解析</h2>
+<h3>2.1 Motivation：真正的痛点是“离散目标没有可用梯度”</h3>
+<p>量化推理希望权重只落在有限集合 (\mathcal Q) 中，例如 1-bit 的 ({-q,+q})、三值的 ({-q,0,+q}) 或 2-bit 的四个对称值。这样能减少模型存储与乘加成本；但训练目标 (f(Q(u))) 对潜变量 (u) 的真实导数几乎处处为零，因为阶梯量化函数 (Q) 的导数几乎处处是零。STE 的做法是反向传播时把 (dQ/du) 当作 1，于是用 (\nabla f(Q(u))) 更新全精度潜变量。它有效，却留下两个明确问题：第一，零导数被替成一并不是普通意义上的近似；第二，偏置梯度的稳定性与最终迭代点为何可用，缺少与大规模深网训练直接匹配的保证（论文第 2 页，式 2–3）。</p>
+<p>这个痛点不是抽象的理论洁癖。论文表 1–3 说明，方法差异恰恰在最受约束的 1-bit 场景放大：PARQ 相对 STE 在六个模型上的平均提升为 <strong>0.615 pp</strong>，相对提升均值 <strong>0.91%</strong>；而到 4-bit 时平均只剩 <strong>0.043 pp</strong>。最强单点是 CIFAR-10 / ResNet-20 1-bit，从 STE 的 89.56% 提到 90.48%，绝对 +0.92 pp、相对 +1.03%。这意味着优化方法的价值不是“量化越多越快”这种常识，而是当可行集合极窄、硬投影更容易让训练跳变时，连续到离散的路径是否稳定。</p>
+<p>与前驱相比，新问题是三层同时成立：既要让正则器真正诱导离散结构（需要非光滑性），又要避免 W 形非凸正则把参数困在错误谷底（需要凸性），还要让最后一个训练迭代点而非平均点收敛，因为多个离散点的平均通常并不离散。PARQ 的“凸 + 非光滑 + last iterate”组合正是针对这三个要求组织的。</p>
+<h3>2.2 论文故事线：从反驳 STE 的梯度叙事到构造可执行替代</h3>
+<p>论文首先把 BinaryConnect 写成两变量更新：全精度 (u_t) 累积在量化权重 (w_t=Q(u_t)) 上计算的梯度。这个重写把注意力从“伪造导数”转移到“历史梯度如何经过映射产生结构化参数”。随后作者问：如果稀疏性可由 (\ell_1) 的非光滑拐点诱导，那么能否在每个目标量化值处制造拐点？答案是分段仿射正则 PAR。</p>
+<p>第二个转折是：普通 Prox-SGD 的正则强度随步长 (\eta_t) 缩小，软阈值死区会消失，量化作用反而在训练后期衰减。作者因此不使用当前步长，而用累计步长 (\gamma_t=\sum_{s=1}^t\eta_s) 缩放正则，得到 AProx。这样，随训练推进，近端图从斜率接近 1 的近似恒等映射，逐渐变为台阶式硬量化。</p>
+<p>第三个转折是理论到工程的断层：真实模型无法为每层预先手调量化中心 (q_k)、斜率 (a_k) 与 (\lambda)。PARQ 每步用 LSBQ 从潜权重在线估计目标值集合 (Q_t)，再独立调度斜段逆斜率 (\rho_t^{-1}:1\rightarrow0)。这牺牲了“实践算法完全等同于理论 AProx”的纯粹性，换来 optimizer-only 接口：模型前向和反向代码不必修改。</p>
+<p>隐含权衡也很清楚：PARQ 仍保留全精度潜变量与在线量化中心计算，因此它主要降低部署时权重表示与算术成本，而不是直接降低 QAT 的训练显存；它用连续退火减小硬量化跳变，却引入了退火起止与 steepness 等新超参；理论处理凸损失，但实证对象是非凸深网，二者之间靠经验而不是定理连接。</p>
+<h3>2.3 形式化定义与机制解剖</h3>
+<p>目标集合记为 (\mathcal Q={0,\pm q_1,\ldots,\pm q_m})，其中 (0=q_0&lt;q_1&lt;\cdots&lt;q_m)。PAR 正则定义为（论文式 6，第 4 页）：</p>
+<div class="formula" role="math">
+\Psi(w)=\max_{k\in{0,\ldots,m}}{a_k(|w|-q_k)+b_k},
+</div>
+<p>其中 (0\le a_0&lt;a_1&lt;\cdots&lt;a_m=+\infty)，(b_0=0)，且</p>
+<div class="formula" role="math">
+b_k=b_{k-1}+a_{k-1}(q_k-q_{k-1}).
+</div>
+<p>最大仿射函数的形式保证凸性；斜率在 (\pm q_k) 发生跳变，形成非光滑反射点，使最优性条件允许大量坐标精确停在量化值。优化目标是</p>
+<div class="formula" role="math">
+\min_w F_\lambda(w)=\mathbb E_z[f(w,z)]+\lambda\Psi(w).
+</div>
+<p>普通 Prox-SGD 使用 (\mathrm{prox}_{\eta_t\lambda\Psi})，当 (\eta_t\to0) 时趋于恒等映射。AProx 改成（论文式 11，第 7 页）：</p>
+<div class="formula" role="math">
+u_{t+1}=u_t-\eta_t g_t,\qquad
+w_{t+1}=\mathrm{prox}<em>{\gamma_t\lambda\Psi}(u</em>{t+1}),\qquad
+\gamma_t=\sum_{s=1}^{t}\eta_s.
+</div>
+<p>在凸、Lipschitz 条件下，论文定理 3.2 给出最后迭代点界（第 9 页）：</p>
+<div class="formula" role="math">
+\mathbb E[F_\lambda(w_t)]-F_\lambda(w^*)
+\le \frac{G R,[2+1.5\ln t]}{\sqrt t}.
+</div>
+<p>重要的不是速率新到多快，而是对象是 (w_t) 而非 (\bar w_t)。若每个 (w_t) 都是离散值，平均 (\bar w_t) 往往落回连续空间；所以 last-iterate 保证才与可部署量化模型同构。</p>
+<p>实践 PARQ 的伪代码（论文算法 1，第 10 页）可压缩为：</p>
+<pre><code class="language-text">输入：初值 w1、bit 数 n、学习率 ηt、逆斜率日程 ρt^{-1}
+u1 ← w1
+for t = 1 ... T-1:
+    ut+1 ← ut - ηt ∇f(wt, zt)
+    Qt+1 ← LSBQ(ut+1, n)             # 在线估计 2^n 个量化值
+    wt+1 ← prox_PARQ(ut+1, Qt+1, ρt) # 从软映射逐步变成硬台阶
+return wT
+</code></pre>
+<pre><code class="language-text">全精度潜变量 u ──在量化权重 w 上算梯度──► 梯度累积
+       │                                      │
+       └──── LSBQ 在线估计 Q_t ◄──────────────┘
+                         │
+              PARQ 近端映射，ρ^{-1}: 1 → 0
+                         │
+      近似全精度（早期）→ 软聚类（中期）→ 硬量化（末期）
+</code></pre>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">机制 / 维度</th>
+<th scope="col">设计选择</th>
+<th scope="col">动机</th>
+<th scope="col">关键超参或实现事实</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>结构正则</td>
+<td>凸、非光滑、分段仿射 (\Psi)</td>
+<td>同时制造离散拐点并避免 W 形错误谷底</td>
+<td>对称 (Q)；可扩展非对称</td>
+</tr>
+<tr>
+<td>优化器</td>
+<td>Aggregate Prox / AProx</td>
+<td>避免 (\eta_t\to0) 导致正则消失</td>
+<td>(\gamma_t=\sum_s\eta_s)</td>
+</tr>
+<tr>
+<td>量化中心</td>
+<td>每步 LSBQ 在线估计</td>
+<td>不手调各层 (q_k)</td>
+<td>1-bit 有闭式；&gt;2-bit 使用 greedy foldable 近似</td>
+</tr>
+<tr>
+<td>软到硬日程</td>
+<td>(\rho_t^{-1}) 单调由 1 降至 0</td>
+<td>初期跟随 FP，末期保证硬量化</td>
+<td>论文可用 cosine / sigmoid；代码暴露 anneal_start/end/steepness</td>
+</tr>
+<tr>
+<td>集成方式</td>
+<td>optimizer-only</td>
+<td>不改模型 forward/backward</td>
+<td>基础优化器可为 SGD/Adam/AdamW</td>
+</tr>
+<tr>
+<td>分组量化</td>
+<td>ResNet-50/DeiT 按通道；部分层保留 FP</td>
+<td>降低大模型精度损失</td>
+<td>DeiT embedding、LayerNorm、最终 projection 保持 FP</td>
+</tr>
+</tbody></table></div>
+<h3>2.4 工程细节</h3>
+<p>CIFAR-10 实验量化 ResNet-20/56 的全部权重，包括最终投影层；训练 200 epoch，SGD momentum 0.9、weight decay (2\times10^{-4})，初始学习率 0.1，在 80/120/150 epoch 各衰减 10 倍（论文第 11 页）。ImageNet / ResNet-50 对 residual block 权重逐通道量化，SGD 学习率 0.1、momentum 0.9、weight decay (10^{-4})，每 30 epoch 衰减 10 倍。</p>
+<p>DeiT-Ti/S/B 分别约 5M/22M/86M 参数，训练 300 epoch，AdamW 学习率 (5\times10^{-4})、weight decay 0.05。最后 20 epoch 把学习率固定在 (10^{-8})，论文明确说这比默认最小值 (10^{-5}) 更好；此时 PARQ 与 BinaryRelax 已进入硬量化。代码示例显示 2-bit DeiT 使用 8 GPU、per-channel LSBQ、steepness 50；ResNet-50 示例 steepness 75。这里要警惕：论文没有给出等算力训练时长、每 step 的 LSBQ 开销或 kernel 级推理速度，因而“效率”主要被展示为低比特表示可行，而非端到端系统吞吐提升。</p>
+<h3>2.5 实验设计、基准与统计</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">数据 / 模型</th>
+<th scope="col">规模与任务</th>
+<th scope="col">量化范围</th>
+<th scope="col">指标</th>
+<th scope="col">运行次数</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>CIFAR-10 / ResNet-20</td>
+<td>10 类图像分类</td>
+<td>全部权重，1/T/2/3/4-bit</td>
+<td>Top-1 test accuracy（%）</td>
+<td>3 seeds</td>
+</tr>
+<tr>
+<td>CIFAR-10 / ResNet-56</td>
+<td>10 类图像分类</td>
+<td>全部权重，1/T/2/3/4-bit</td>
+<td>Top-1 test accuracy（%）</td>
+<td>3 seeds</td>
+</tr>
+<tr>
+<td>ImageNet / ResNet-50</td>
+<td>1000 类图像分类</td>
+<td>residual block 权重逐通道</td>
+<td>Top-1 test accuracy（%）</td>
+<td>3 seeds</td>
+</tr>
+<tr>
+<td>ImageNet / DeiT-Ti</td>
+<td>5M 参数 Transformer</td>
+<td>attention block 权重逐通道；若干层 FP</td>
+<td>Top-1 test accuracy（%）</td>
+<td>3 seeds</td>
+</tr>
+<tr>
+<td>ImageNet / DeiT-S</td>
+<td>22M 参数 Transformer</td>
+<td>同上</td>
+<td>Top-1 test accuracy（%）</td>
+<td>3 seeds</td>
+</tr>
+<tr>
+<td>ImageNet / DeiT-B</td>
+<td>86M 参数 Transformer</td>
+<td>同上</td>
+<td>Top-1 test accuracy（%）</td>
+<td>3 seeds</td>
+</tr>
+</tbody></table></div>
+<p>论文只有三个 head-to-head QAT 方法，不能诚实扩成“六方法矩阵”。下表因此保留作者报告的完整三方法 × 六模型结果；数值均来自论文表 1–3。为控制表宽，这里选信息量最大的 1-bit 与 2-bit；随后再给五种位宽的聚合矩阵。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">方法 / 位宽</th>
+<th scope="col" align="right">R20/C10</th>
+<th scope="col" align="right">R56/C10</th>
+<th scope="col" align="right">R50/IN</th>
+<th scope="col" align="right">DeiT-Ti/IN</th>
+<th scope="col" align="right">DeiT-S/IN</th>
+<th scope="col" align="right">DeiT-B/IN</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>STE 1-bit</td>
+<td align="right">89.56±0.18</td>
+<td align="right">91.55±0.33</td>
+<td align="right">66.17±0.04</td>
+<td align="right">51.62±0.18</td>
+<td align="right">70.07±0.03</td>
+<td align="right">78.79±0.03</td>
+</tr>
+<tr>
+<td>BinaryRelax 1-bit</td>
+<td align="right">89.98±0.13</td>
+<td align="right"><strong>91.75±0.37</strong></td>
+<td align="right">66.14±0.28</td>
+<td align="right"><strong>52.62±0.03</strong></td>
+<td align="right">70.69±0.07</td>
+<td align="right">79.02±0.03</td>
+</tr>
+<tr>
+<td><strong>PARQ 1-bit</strong></td>
+<td align="right"><strong>90.48±0.26</strong></td>
+<td align="right">91.34±0.37</td>
+<td align="right"><strong>66.71±0.13</strong></td>
+<td align="right">52.51±0.19</td>
+<td align="right"><strong>71.06±0.02</strong></td>
+<td align="right"><strong>79.35±0.04</strong></td>
+</tr>
+<tr>
+<td>STE 2-bit</td>
+<td align="right">91.22±0.15</td>
+<td align="right">92.72±0.27</td>
+<td align="right">72.38±0.10</td>
+<td align="right">64.81±0.15</td>
+<td align="right">77.40±0.01</td>
+<td align="right">80.73±0.17</td>
+</tr>
+<tr>
+<td>BinaryRelax 2-bit</td>
+<td align="right">91.57±0.06</td>
+<td align="right">92.30±0.40</td>
+<td align="right"><strong>72.64±0.17</strong></td>
+<td align="right">65.20±0.04</td>
+<td align="right">77.43±0.04</td>
+<td align="right">80.81±0.14</td>
+</tr>
+<tr>
+<td><strong>PARQ 2-bit</strong></td>
+<td align="right"><strong>91.71±0.03</strong></td>
+<td align="right"><strong>92.77±0.10</strong></td>
+<td align="right">72.43±0.03</td>
+<td align="right"><strong>65.32±0.06</strong></td>
+<td align="right"><strong>77.63±0.04</strong></td>
+<td align="right"><strong>80.84±0.06</strong></td>
+</tr>
+</tbody></table></div>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">位宽</th>
+<th scope="col" align="right">PARQ 相对 STE 平均绝对提升</th>
+<th scope="col" align="right">平均相对提升</th>
+<th scope="col" align="right">PARQ 胜过逐模型最强基线</th>
+<th scope="col" align="right">对逐模型最强基线的平均差</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1-bit</td>
+<td align="right"><strong>+0.615 pp</strong></td>
+<td align="right"><strong>+0.910%</strong></td>
+<td align="right">4/6</td>
+<td align="right">+0.203 pp</td>
+</tr>
+<tr>
+<td>Ternary</td>
+<td align="right">+0.270 pp</td>
+<td align="right">+0.298%</td>
+<td align="right">4/6</td>
+<td align="right">-0.065 pp</td>
+</tr>
+<tr>
+<td>2-bit</td>
+<td align="right">+0.240 pp</td>
+<td align="right">+0.313%</td>
+<td align="right"><strong>5/6</strong></td>
+<td align="right"><strong>+0.055 pp</strong></td>
+</tr>
+<tr>
+<td>3-bit</td>
+<td align="right">+0.117 pp</td>
+<td align="right">+0.171%</td>
+<td align="right">2/6</td>
+<td align="right">-0.100 pp</td>
+</tr>
+<tr>
+<td>4-bit</td>
+<td align="right">+0.043 pp</td>
+<td align="right">+0.059%</td>
+<td align="right">2/6</td>
+<td align="right">-0.078 pp</td>
+</tr>
+</tbody></table></div>
+<p><strong>全文最有说服力的定量证据</strong>不是某个最高准确率，而是位宽梯度：PARQ 对 STE 的平均优势从 1-bit 的 +0.615 pp 单调缩小到 4-bit 的 +0.043 pp（本报告依据表 1–3 复算）。这与“软到硬路径主要缓解极端离散约束”高度一致。另一方面，PARQ 并非普遍最优：DeiT-Ti ternary 为 60.99%，比 BinaryRelax 的 62.18% 低 <strong>1.19 pp</strong>；DeiT-B 4-bit 为 80.35%，比 BinaryRelax 的 80.76% 低 <strong>0.41 pp</strong>。</p>
+<h3>2.6 消融、超参敏感性与相变</h3>
+<p>论文<strong>没有</strong>提供“LSBQ → PAR 正则 → 聚合步长 → 独立斜率日程”的逐层消融表，因此不能把最终提升定量归因到某一模块。STE、BinaryRelax、PARQ 的对照改变了正则几何和退火方向，是方法级对比，不是严格单变量消融。可观察的动态证据来自图 10–13：2-bit DeiT-Ti 早期 PARQ 训练损失贴近 FP；斜率快速变化阶段损失上升；末期贴近 STE。图 11 在 epoch 6、150、300 展示近端映射由斜线到台阶；图 12 说明 DeiT-S 1-bit 中 PARQ 没有 STE/BinaryRelax 的突发准确率下降；图 13 显示 (q_1,q_2) 先快速扩张再缓慢回缩。</p>
+<p>这里存在一个定性的“相变窗口”：当 (\rho^{-1}) 尚接近 1 时模型近似全精度；过渡区斜率变化导致训练损失抬升；(\rho^{-1}\to0) 后进入硬量化。论文没有公布图 10 的可机读逐 epoch 数值，也没有对 anneal_start、anneal_end、steepness 做网格表，因此无法报告相变精确阈值或置信区间。仓库给出的 DeiT steepness 50、ResNet-50 steepness 75 证明该超参随架构调整，但尚不能说明鲁棒范围。</p>
+<p>统计方面，表 1–3 每格是 3 个随机种子的均值±标准差。论文未报告置信区间、显著性检验或逐种子原始值。以 ResNet-20 1-bit 为例，PARQ–STE 差 0.92 pp，而标准差分别 0.26、0.18，效应明显大于单方标准差；但 DeiT-B ternary 的 0.01 pp 优势与 0.01/0.08 的标准差同量级，不能据此宣称稳定领先。</p>
+<h3>2.7 真正贡献、可复用设计与迁移潜力</h3>
+<p>真正贡献不是“又做了一个量化器”，而是把三套原本分离的语言接上：工程中的 STE、优化中的 dual averaging/proximal map、结构学习中的非光滑正则。这样一来，STE 可以被视为软映射极限，而不是孤立技巧；量化值、正则几何和退火路径成为可检查的设计对象。</p>
+<p>最可复用的是 optimizer-only 抽象。工程团队可以保持模型定义、forward、loss 与 backward 不变，只给参数组指定 bit 数，并替换优化器包装层。第二个可复用原则是“在线估计离散中心 + 独立调度离散强度”：中心 (Q_t) 适配层内分布，(\rho_t) 控制何时硬化，二者不再被一个 (\lambda) 混在一起。第三个是 last-iterate 评估意识：任何以离散结构为目标的训练，平均迭代点可能破坏结构，理论与日志都应追踪最终点而非只追踪平均损失。</p>
+<p>迁移空间包括稀疏化、聚类权重、混合精度与向量量化。只要目标结构可表达为一组非光滑反射点或分组近端映射，就可能沿用 AProx 思路；但对非对称、非均匀、激活量化和大语言模型，计算开销与非凸性都必须重新验证。</p>
+<h3>2.8 局限性：论文自述与补充批判</h3>
+<p>论文没有独立 Limitations 章节，以下“自述边界”均来自正文明确限定，不能误写成作者主动列出的风险清单。</p>
+<ol>
+<li><strong>理论作用域</strong>：第 2–3 节的收敛分析假设每个样本损失对权重凸、目标 Lipschitz；第 5 节却是 ResNet/DeiT 非凸训练。作者只把证明表述为 convex optimization 的 last-iterate guarantee，没有声称覆盖深网。</li>
+<li><strong>高 bit 的 LSBQ 近似</strong>：第 10 页明确说 (n&gt;2) 没有闭式解，使用 greedy foldable 表示。这意味着 3/4-bit 量化中心不是全局最小平方误差保证。</li>
+<li><strong>有限训练与理论累计强度不一致</strong>：第 10 页承认理论要求 (\gamma_t\to\infty)，有限步与衰减学习率下只能到“不很大的常数”，因此实践另设 (\rho) 日程吸收这一差异。</li>
+</ol>
+<p>补充批判：</p>
+<ol>
+<li><strong>[论证缺口] 理论—实证断裂。</strong> 因为定理 3.2 要求凸损失，而全部主实验是非凸 ResNet/DeiT，所以“last-iterate convergence 解释实际优越性”只能作为机制启发，不能从定理推出。建议在凸 logistic regression 与小型非凸网络上同时记录目标 gap、离散率和 last iterate，做同一日程的 head-to-head。</li>
+<li><strong>[缺乏关键竞品对比] 基线只有 2 个。</strong> 因为表 1–3 只对 STE 与 BinaryRelax，而论文相关工作讨论 ProxQuant/ProxConnect，故无法判断 PARQ 相对最接近的近端方法提升来自凸 PAR 还是调参差异。应在同一代码、同一 LSBQ、同一增强下加入 ProxQuant、ProxConnect。</li>
+<li><strong>[实验设计问题] 没有逐模块消融。</strong> 因为在线 LSBQ、aggregate scaling、软到硬斜率和最终 20 epoch 的 (10^{-8}) 学习率同时存在，所以 +0.615 pp 的 1-bit 均值不能归因给凸正则本身。建议 2×2×2 因子实验拆开中心更新、聚合步长与 annealing。</li>
+<li><strong>[失手的子任务] 优势并不单调。</strong> 因为 DeiT-Ti ternary 的 60.99% 比 BinaryRelax 62.18% 低 1.19 pp，DeiT-B 4-bit 低 0.41 pp，所以“更稳定、常到更好局部极小”的结论主要适用于低 bit/部分模型，而非跨位宽统治。</li>
+<li><strong>[指标有效性问题] 没有真实效率。</strong> 因为论文只报 Top-1 accuracy，没有模型字节数、训练吞吐、推理延迟、能耗或专用低比特 kernel，故不能从“n-bit 权重”直接推出端到端速度。尤其 DeiT 的 embedding、LayerNorm、final projection 保持 FP，实际压缩率也不是简单的 32/n。</li>
+<li><strong>[统计证据问题] 三种子仍不足以支撑微小差。</strong> 因为 DeiT-B ternary 仅 +0.01 pp、DeiT-S 4-bit 仅 +0.04 pp，且某些标准差达到 0.08/0.12，所以这些胜负可能落在随机波动内。至少应报告配对 seeds、95% CI 与多重比较校正。</li>
+<li><strong>[可复现性风险] 论文超参报告不闭合。</strong> 因为正文只描述 cosine/sigmoid 可选，仓库示例却对 DeiT 用 steepness 50、ResNet-50 用 75，且未给敏感性曲线，所以跨架构迁移仍需要重新搜索。代码公开显著降低了风险，但没有消除调参预算偏差。</li>
+<li><strong>[外部有效性] 没有语言模型、激活量化和真实部署。</strong> 因为全部 30 个量化配置来自图像分类权重量化，所以不能外推到 LLM 的激活 outlier、KV cache、MoE expert 或生成误差累积。最直接空白是在同一 1B–7B 语言模型上比较权重-only 与 W+A QAT。</li>
+</ol>
+</section><section class="card" aria-labelledby="section-4-title"><h2 id="section-4-title">3. 相关工作回溯：问题与技术来源链</h2>
+<h3>3.1 BinaryConnect — 2015，NeurIPS</h3>
+<p><strong>解决了什么。</strong> BinaryConnect 在 forward/backward 使用二值权重，却保留全精度潜权重累积梯度，证明无需让训练状态本身始终是二值也能获得可部署模型。它以加减操作取代乘法的硬件动机与“潜变量—量化变量”双层结构带入主流。</p>
+<p><strong>遗留缺口。</strong> 反向传播绕过 sign/round 的零导数，本质上采用 STE。该技巧在经验上有效，却没有解释为何把导数从 0 改成 1 不会造成不可控偏置；hard map 从训练第一步开始，也容易使优化轨迹跳变。</p>
+<p><strong>PARQ 的回应。</strong> PARQ保留同一双变量框架，但把硬 (Q(u)) 替成随时间变陡的近端映射，早期近似 FP、晚期回到 BinaryConnect。于是 BinaryConnect 成为 PARQ 的渐近端点，而不是需额外辩护的启发式。</p>
+<p><strong>设计传递。</strong> “全精度 latent 累积在量化权重上计算的梯度”原样保留；改变的是 latent 到 quantized weight 的映射几何。</p>
+<h3>3.2 BinaryRelax — 2018，SIAM Journal on Imaging Sciences</h3>
+<p><strong>解决了什么。</strong> BinaryRelax 不在训练初期硬施加离散集合，而以到量化集合的平方距离（Moreau envelope）连续松弛，并逐渐增加正则强度，最后切换到精确量化的小学习率阶段。它建立了“先软后硬”的 continuation 叙事。</p>
+<p><strong>遗留缺口。</strong> 平方距离对应平滑、非凸的 W 形几何；平滑性不容易把权重精确吸到离散点，非凸山丘又可能阻止参数从错误谷移动到更优谷。其两阶段切换也可能引入突变。</p>
+<p><strong>PARQ 的回应。</strong> PARQ继承 continuation，但把方向改为凸、非光滑 PAR：非光滑拐点负责“吸附”，凸性负责消除 W 形错误谷。表 1–3 直接把 BinaryRelax 作为主要基线；不过 PARQ 只在 17/30 个配置超过 BinaryRelax（本报告由三表复算），说明几何优势并非自动转化为所有模型的准确率优势。</p>
+<p><strong>设计传递。</strong> 从“正则强度逐渐推向硬约束”演进为“近端斜率逐渐由 1 变为无穷”；二者都把训练时间当作量化自由度。</p>
+<h3>3.3 ProxQuant — 2019，ICLR</h3>
+<p><strong>解决了什么。</strong> ProxQuant 把量化训练写成正则化学习问题，在随机梯度之间插入 prox operator，并指出 STE/BinaryConnect 可与 dual averaging 联系。它第一次系统地把 QAT 从伪梯度语言迁移到近端优化语言。</p>
+<p><strong>遗留缺口。</strong> ProxQuant 常用到离散集合的距离类非凸正则，且普通 Prox-SGD 中正则影响随学习率缩小；它没有解决“最后迭代点必须保持离散”与“凸正则如何产生多个离散聚类点”的组合问题。</p>
+<p><strong>PARQ 的回应。</strong> PARQ 构造凸而多拐点的 PAR，并用累计步长而非当前步长缩放正则，避免末期量化作用消失。理论重点从平均/函数值收敛推进到 last iterate。</p>
+<p><strong>设计传递。</strong> prox-between-gradients 的骨架被保留；正则函数、缩放方式与目标证明被替换。</p>
+<h3>3.4 ProxConnect — 2021，NeurIPS</h3>
+<p><strong>解决了什么。</strong> ProxConnect进一步说明 BinaryConnect 是 dual averaging 的特例，提出易设计、易分析的 proximal quantizer，并给出收敛结果。它把 BinaryConnect、PTQ 与多种量化算法放到统一优化框架中。</p>
+<p><strong>遗留缺口。</strong> PARQ 论文第 3 页明确指出，ProxConnect 的凸正则结果缺少一个能实际诱导多值量化的凸构造，且主要保证平均迭代；平均多个量化点并不保证仍量化。</p>
+<p><strong>PARQ 的回应。</strong> AProx 在算法形式上与 ProxConnect 等价，但 PARQ补上两个缺口：具体的凸非光滑 PAR，以及 last-iterate 与平均迭代相同量级的收敛界。</p>
+<p><strong>设计传递。</strong> dual-averaging / aggregate gradient 的解释直接进入 AProx；PARQ把抽象的 proximal family 固化为可在 ResNet/DeiT 上运行、能在线估计中心的实现。</p>
+</section>
+<figure class="figure" aria-labelledby="figure-parq-title">
+  <p class="fig-title" id="figure-parq-title">PARQ 相对 STE 的平均准确率提升随位宽收缩</p>
+  <p class="fig-sub">六个模型平均绝对提升；单位为百分点（pp）。低位宽收益最明显。</p>
+  <div class="legend" aria-label="图例"><span><span class="swatch" style="background:var(--chart-primary)"></span>PARQ − STE</span></div>
+  <svg class="chart" viewBox="0 0 900 330" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>PARQ 相对 STE 的六模型平均准确率提升</title>
+    <desc>1-bit 0.615，ternary 0.270，2-bit 0.240，3-bit 0.117，4-bit 0.043 个百分点。</desc>
+    <line x1="90" y1="275" x2="850" y2="275" stroke="var(--grid)" stroke-width="2"/>
+    <text x="40" y="280" fill="var(--muted)" font-size="14">0</text>
+    <rect x="120" y="81.7" width="82" height="193.3" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="1-bit: +0.615 pp"><title>1-bit: +0.615 pp</title></rect><text x="161" y="71.7142857142857" text-anchor="middle" fill="var(--text-primary)" font-size="14">+0.615</text><text x="161" y="302" text-anchor="middle" fill="var(--text-secondary)" font-size="14">1-bit</text><rect x="265" y="190.1" width="82" height="84.9" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="T: +0.270 pp"><title>T: +0.270 pp</title></rect><text x="306" y="180.1428571428571" text-anchor="middle" fill="var(--text-primary)" font-size="14">+0.270</text><text x="306" y="302" text-anchor="middle" fill="var(--text-secondary)" font-size="14">T</text><rect x="410" y="199.6" width="82" height="75.4" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="2-bit: +0.240 pp"><title>2-bit: +0.240 pp</title></rect><text x="451" y="189.57142857142856" text-anchor="middle" fill="var(--text-primary)" font-size="14">+0.240</text><text x="451" y="302" text-anchor="middle" fill="var(--text-secondary)" font-size="14">2-bit</text><rect x="555" y="238.2" width="82" height="36.8" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="3-bit: +0.117 pp"><title>3-bit: +0.117 pp</title></rect><text x="596" y="228.22857142857143" text-anchor="middle" fill="var(--text-primary)" font-size="14">+0.117</text><text x="596" y="302" text-anchor="middle" fill="var(--text-secondary)" font-size="14">3-bit</text><rect x="700" y="261.5" width="82" height="13.5" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="4-bit: +0.043 pp"><title>4-bit: +0.043 pp</title></rect><text x="741" y="251.48571428571427" text-anchor="middle" fill="var(--text-primary)" font-size="14">+0.043</text><text x="741" y="302" text-anchor="middle" fill="var(--text-secondary)" font-size="14">4-bit</text>
+  </svg>
+  <figcaption>来源：PARQ 表 1–3，本报告复算。完整数值与标准差见相邻表格。</figcaption>
+</figure><section class="card" aria-labelledby="section-5-title"><h2 id="section-5-title">4. 技术演进脉络</h2>
+<pre><code class="language-text">2015 BinaryConnect [硬量化前向；FP latent；STE]
+        │
+        ├── 2018 BinaryRelax [连续松弛；非凸平滑距离；两阶段]
+        │          │
+        │          └── 提出“先软后硬”，但存在 W 形谷底与切换突变
+        │
+        └── 2019 ProxQuant [正则化 + proximal gradient]
+                   │
+                   └── 2021 ProxConnect [dual averaging 统一；prox family；平均迭代保证]
+                                  │
+                                  ├── 缺具体凸多值量化正则
+                                  └── 平均量化点不一定量化
+                                           │
+2025 PARQ [凸+非光滑 PAR；AProx；last iterate；在线 LSBQ；软→硬日程]
+</code></pre>
+<p>内在推动力是从“绕过不可导”转向“设计优化几何”。早期关心二值权重能否训练；中期关心硬约束能否松弛；随后关心 STE 与 proximal/dual averaging 的统一解释；PARQ 再把注意力落到正则的局部拐点、全局凸性与最后迭代结构。社区关注点也从单一 accuracy 扩展到稳定性、可证明性与代码集成，但 PARQ 仍未完成真实低比特 kernel 与端到端 latency 的最后一公里。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">工作</th>
+<th scope="col">发表年月</th>
+<th scope="col">会议/出版</th>
+<th scope="col">核心贡献</th>
+<th scope="col">主要证据</th>
+<th scope="col">与 PARQ 的关系</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>BinaryConnect</td>
+<td class="num">2015.12</td>
+<td>NeurIPS 2015</td>
+<td>FP latent + binary forward/backward</td>
+<td>MNIST/CIFAR/SVHN 接近当时 SOTA</td>
+<td>算法端点与双变量来源</td>
+</tr>
+<tr>
+<td>BinaryRelax</td>
+<td class="num">2018.11</td>
+<td>SIAM JIS</td>
+<td>Moreau 平滑松弛 + continuation</td>
+<td>CIFAR/ImageNet</td>
+<td>继承软到硬，替换非凸平滑几何</td>
+</tr>
+<tr>
+<td>ProxQuant</td>
+<td class="num">2019.05</td>
+<td>ICLR 2019</td>
+<td>正则化 QAT + prox gradient</td>
+<td>ResNet/LSTM</td>
+<td>继承 prox，解决正则衰减与结构保证</td>
+</tr>
+<tr>
+<td>ProxConnect</td>
+<td class="num">2021.12</td>
+<td>NeurIPS 2021</td>
+<td>dual averaging 统一与 prox family</td>
+<td>CIFAR-10/ImageNet</td>
+<td>AProx 形式来源；补具体凸正则和 last iterate</td>
+</tr>
+<tr>
+<td><strong>PARQ</strong></td>
+<td><strong>2025.07</strong></td>
+<td><strong>ICML 2025</strong></td>
+<td><strong>凸非光滑 PAR + AProx + 在线 LSBQ</strong></td>
+<td><strong>表1–3：30配置、3 seeds</strong></td>
+<td><strong>汇聚点</strong></td>
+</tr>
+</tbody></table></div>
+</section><section class="card" aria-labelledby="section-6-title"><h2 id="section-6-title">5. 开放挑战与可操作研究机会</h2>
+<h3>5.1 理论层面</h3>
+<ol>
+<li><strong>非凸 last-iterate 界。</strong> 在相同网络、相同噪声假设下，对 AProx、ProxConnect、STE 给出 gradient mapping 或局部稳定点的最后迭代界；实验同时测目标 gap、离散率和 basin 切换次数，验证理论量是否预测准确率。</li>
+<li><strong>在线 (Q_t) 的耦合分析。</strong> 当前定理把 (\Psi) 视作固定，而实践每步用 LSBQ 改变 (Q_t)。可固定一组模型，比较 frozen-Q、每 epoch 更新 Q、每 step 更新 Q，研究漂移速度与收敛误差的界。</li>
+<li><strong>多值凸非光滑正则的必要性。</strong> 在完全相同的 prox kernel 和 schedule 下，对比 convex-PAR、nonconvex-L1 distance、smooth-L2 distance，测过错谷次数、Hessian 谱和最终离散率，以确认“凸性/非光滑性”各自的因果贡献。</li>
+</ol>
+<h3>5.2 工程与应用层</h3>
+<ol>
+<li><strong>等 GPU-hour QAT。</strong> 固定 8×H100、相同 batch 与 wall-clock，比较 STE、BinaryRelax、ProxQuant、PARQ 的 images/s、额外显存、LSBQ 时间占比和最终准确率；这能补上当前只报 accuracy 的关键空白。</li>
+<li><strong>真实推理 Pareto。</strong> 导出 INT1/T/INT2 模型到同一后端，报告模型大小、峰值内存、p50/p99 latency、吞吐与能耗；对保留 FP 的 DeiT 层单独计账，避免把理论 bit-width 当成实际压缩率。</li>
+<li><strong>退火 schedule 公平比较。</strong> 固定总训练步与调参预算，对 cosine、sigmoid、linear 以及 validation-triggered schedule 做 head-to-head；每种报告 10 seeds 与退火区间的 loss spike。</li>
+<li><strong>LLM 扩展。</strong> 在同一 1B/7B 模型、相同 token 预算下，对 W1/W2-only 与 W2A8 比较 PARQ、STE、GPTQ-style QAT；指标同时包括 perplexity、zero-shot accuracy、生成稳定性和 tokens/s。</li>
+</ol>
+<h3>5.3 新兴方向</h3>
+<ol>
+<li><strong>MoE 专家自适应量化。</strong> 比较全专家共享 (Q)、每 expert 独立 (Q_e)、按路由频率分组 (Q_g)，固定总 bit 预算，观察长尾专家是否因样本少而中心漂移。</li>
+<li><strong>激活与 KV cache 的时变量化。</strong> 将 PAR 的反射点扩展到 token/通道条件形式，和静态 per-channel quantization 在相同 context length、batch 与显存预算下比较；重点测 outlier token 的误差传播。</li>
+<li><strong>结构组合。</strong> 在相同压缩率下对比“PARQ only”“structured sparsity only”“PARQ+sparsity”，检查两个非光滑结构正则是否竞争；报告实际 kernel 加速而非只报理论 FLOPs。</li>
+</ol>
+</section><section class="card" aria-labelledby="section-7-title"><h2 id="section-7-title">6. 其他值得关注的近期工作</h2>
+<ol>
+<li><strong><a href="https://proceedings.mlr.press/v267/li25dn.html">GPTAQ</a></strong>（2025.07，ICML 2025）：用相对于全精度层输出的 asymmetric calibration 减少层间量化误差累积，适合与 PARQ 的训练时优化几何对照。</li>
+<li><strong><a href="https://proceedings.mlr.press/v267/li25dd.html">KVTuner</a></strong>（2025.07，ICML 2025）：按层敏感性分配 KV cache 混合精度，代表“bit 预算也是可学习资源”的系统方向。</li>
+<li><strong><a href="https://proceedings.mlr.press/v267/jang25c.html">BlockDialect</a></strong>（2025.07，ICML 2025）：面向 LLM 全路径矩阵乘的细粒度 mixed-format；论文主页报告其相对 MXFP4 的准确率优势，值得追踪硬件格式与 QAT 的耦合。</li>
+<li><strong><a href="https://proceedings.mlr.press/v267/xu25at.html">RWKVQuant</a></strong>（2025.07，ICML 2025）：针对 RWKV 非线性算子阻碍平滑/旋转融合的问题设计 proxy-guided PTQ，提醒量化不能脱离架构算子。</li>
+<li><strong><a href="https://proceedings.mlr.press/v267/feng25q.html">Q-VDiT</a></strong>（2025.07，ICML 2025）：为视频 DiT 设计 token-aware error compensation 与蒸馏目标，重点在时间维量化误差。</li>
+<li><strong><a href="https://proceedings.mlr.press/v267/beck25b.html">xLSTM 7B</a></strong>（2025.07，ICML 2025）：从 recurrent architecture 而非压缩入手换取长生成效率，适合与低比特 Transformer 做等质量吞吐比较。</li>
+<li><strong><a href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/414f642a1ea9350006669774cba9bcd4-Abstract-Conference.html">Learned Prefix Caching</a></strong>（2025.12，NeurIPS 2025）：学习会话是否继续来指导 prefix cache eviction，报告在等命中率下减少 18–47% cache、仿真 prefill throughput +11%。</li>
+</ol>
+</section><section class="card" aria-labelledby="section-8-title"><h2 id="section-8-title">7. 结论</h2>
+<p>PARQ 最重要的价值，是把 QAT 的“经验技巧”改写成可拆解的三个对象：目标量化中心、结构诱导正则与时间退火路径。复算表 1–3 后，证据最强的区域是 1–2 bit：1-bit 对 STE 六模型平均 +0.615 pp，2-bit 在 5/6 模型上超过逐模型最强基线；但它没有在所有位宽获胜，也没有给出真实 latency、能耗或 LLM 结果。因而更准确的结论是：<strong>PARQ 提供了一条更有原则、在极低 bit 时更稳健的训练路径，但尚未证明它是端到端系统上更快或跨架构普适的量化方案。</strong></p>
+<hr>
+<p>数据来源说明：核心公式、算法、实验设置与数值来自 <a href="https://arxiv.org/pdf/2503.15748">PARQ arXiv PDF</a> 第 2–13 页、表 1–3、算法 1、图 10–13；所有二次平均、绝对 pp 与相对百分比由报告基于原表复算。论文未报告逐模块消融、超参网格、置信区间、推理延迟和能耗，本报告均未补造。HTML 已通过 Warm Editorial 结构、依赖、语义与占位符验证（0 errors / 0 warnings）；运行环境未提供 <code>/usr/bin/chromium</code>、<code>/opt/pw-browsers</code> 或其他可执行 Chromium，且按约束未运行浏览器安装，因此无法完成 Playwright 的浅色、深色、移动端截图核验，已保留响应式、打印与主题切换规则并明确记录这一验证缺口。</p>
+</section></main>
+
+  <footer>核心来源：PARQ ICML 2025 / arXiv:2503.15748v1。生成日期：2026-08-21。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

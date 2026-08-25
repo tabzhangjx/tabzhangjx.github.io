@@ -1,0 +1,1568 @@
+---
+layout: null
+title: "SimbaV2"
+date: 2026-08-20
+topic: rl-peft
+excerpt: "解析 SimbaV2 如何通过超球面归一化与尺度稳定的分布式价值分类，提升深度强化学习的可扩展性与训练稳定性。"
+permalink: /blog/2026/08/20/simbav2-scalable-deep-reinforcement-learning/
+blog_post: true
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>ML/AI 每日深度论文追踪：SimbaV2 · 2026-08-20</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  .math.display { display:block; max-width:100%; margin:12px 0; padding:12px 16px; overflow-x:auto; border:1px solid var(--border); border-radius:8px; background:var(--page); font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace; font-size:13.5px; }
+  td, th { font-variant-numeric: tabular-nums; vertical-align: top; }
+  pre code { white-space: pre; }
+  .card > hr { border:0; border-top:1px solid var(--grid); margin:24px 0; }
+  .card img { max-width:100%; height:auto; }
+  @media (max-width:640px) { .chart { min-width:640px; } .figure { overflow-x:auto; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ICML 2025 Spotlight · 强化学习 / 具身智能</p>
+    <h1>ML/AI 每日深度论文追踪：SimbaV2</h1>
+    <p class="subtitle">Hyperspherical Normalization for Scalable Deep Reinforcement Learning</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">PMLR 267 · arXiv:2502.15280v2</span>
+      <span class="chip">2026-08-20</span>
+      <span class="chip">Scalable Deep RL</span>
+    </div>
+    <p class="lede">把权重、特征与残差更新约束到单位超球面，并用尺度稳定的分布式价值分类，让深度 RL 的模型容量与更新次数重新成为可用的扩展轴。</p>
+  </header>
+
+  <main>
+<section class="card" aria-labelledby="section-1-title">
+<h2 id="section-1-title">0. 链接验证表</h2>
+<p>下表中的每个 URL 均在 2026-08-20 实际访问。<code>未公开/未找到</code>
+表示在论文主页、arXiv
+元数据、官方代码仓库和会议页中未核实到，而不是断言资源绝对不存在。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">论文</th>
+<th scope="col">会议主页 / Proceedings</th>
+<th scope="col">arXiv（具体版本）</th>
+<th scope="col">Code 仓库</th>
+<th scope="col">数据集 / 权重</th>
+<th scope="col">项目主页 / 视频</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd best">
+<td><strong>SimbaV2（核心）</strong></td>
+<td><a href="https://proceedings.mlr.press/v267/lee25u.html">ICML 2025 /
+PMLR 267</a></td>
+<td><a
+href="https://arxiv.org/abs/2502.15280v2">2502.15280v2，2025-05-29</a></td>
+<td><a
+href="https://github.com/DAVIAN-Robotics/SimbaV2">DAVIAN-Robotics/SimbaV2</a></td>
+<td><a href="https://davian-robotics.github.io/SimbaV2/">项目页 Dataset
+入口</a>；独立模型权重未找到</td>
+<td><a
+href="https://davian-robotics.github.io/SimbaV2/">项目主页</a>；视频未找到</td>
+</tr>
+<tr class="even">
+<td>Soft Actor-Critic</td>
+<td><a href="https://proceedings.mlr.press/v80/haarnoja18b.html">ICML
+2018 / PMLR 80</a></td>
+<td><a
+href="https://arxiv.org/abs/1801.01290v2">1801.01290v2，2018-08-08</a></td>
+<td><a href="https://github.com/haarnoja/sac">haarnoja/sac</a></td>
+<td>未公开</td>
+<td><a
+href="https://sites.google.com/view/sac-and-applications/">论文所列视频入口</a></td>
+</tr>
+<tr class="odd">
+<td>The Primacy Bias in Deep RL</td>
+<td><a href="https://proceedings.mlr.press/v162/nikishin22a.html">ICML
+2022 / PMLR 162</a></td>
+<td><a
+href="https://arxiv.org/abs/2205.07802v1">2205.07802v1，2022-05-16</a></td>
+<td><a
+href="https://github.com/evgenii-nikishin/rl_with_resets">evgenii-nikishin/rl_with_resets</a></td>
+<td>未公开</td>
+<td>未找到</td>
+</tr>
+<tr class="even">
+<td>Stop Regressing</td>
+<td><a
+href="https://proceedings.mlr.press/v235/farebrother24a.html">ICML 2024
+/ PMLR 235</a></td>
+<td><a
+href="https://arxiv.org/abs/2403.03950v1">2403.03950v1，2024-03-06</a></td>
+<td>官方统一仓库未找到；论文各实验代码分散</td>
+<td>未公开</td>
+<td>未找到</td>
+</tr>
+<tr class="odd">
+<td>BRO</td>
+<td><a
+href="https://proceedings.neurips.cc/paper_files/paper/2024/hash/cd3b5d2ed967e906af24b33d6a356cac-Abstract-Conference.html">NeurIPS
+2024</a></td>
+<td><a
+href="https://arxiv.org/abs/2405.16158v3">2405.16158v3，2024-12-03</a></td>
+<td><a
+href="https://github.com/naumix/BiggerRegularizedOptimistic">naumix/BiggerRegularizedOptimistic</a></td>
+<td>未公开</td>
+<td><a href="https://sites.google.com/view/bro-agent/">BRO
+项目页</a></td>
+</tr>
+<tr class="even">
+<td>SimBa</td>
+<td><a href="https://openreview.net/forum?id=jXLiDKsuDo">ICLR 2025 /
+OpenReview</a></td>
+<td><a
+href="https://arxiv.org/abs/2410.09754v2">2410.09754v2，2025-05-29</a></td>
+<td><a
+href="https://github.com/SonyResearch/simba">SonyResearch/simba</a></td>
+<td>仓库含论文结果；独立权重未找到</td>
+<td><a href="https://sonyresearch.github.io/simba/">项目主页</a></td>
+</tr>
+</tbody>
+</table></div>
+<p>说明：核心论文的 arXiv 页面明确记录 v1 为 2025-02-21、v2 为
+2025-05-29，并标注 “ICML’25 (spotlight)”；PMLR 页确认其为第 42 届
+ICML、页码 33352–33403。项目主页和仓库已迁移到 DAVIAN Robotics 名下，旧
+<code>dojeon-ai</code> 地址不稳定，因此表中采用实际可达的新地址。</p>
+<hr />
+
+</section>
+<section class="card" aria-labelledby="section-2-title">
+<h2 id="section-2-title">1. 检索、去重与随机选择</h2>
+<h3 id="11-去重结果">1.1 去重结果</h3>
+<p>运行日为星期四（<code>date +%u = 4</code>），按固定轮转进入“强化学习
+/ Agent / 具身智能”。检索前读取 <code>ml-report-index.md</code>：过去 14
+天该领域覆盖过 <strong>EARL-BO</strong>（2026-08-13），其主题是用
+Attention–DeepSets、GP 世界模型和 PPO
+做高维多步贝叶斯优化。为避免主题近邻重复，本次排除 BO、黑盒优化和多步
+acquisition planning，转向“深度 RL 的架构扩展与训练稳定性”。</p>
+<h3 id="12-候选池20-篇">1.2 候选池（20 篇）</h3>
+<p>候选池优先取 ICML 2025、ICLR 2025/2026 的主会论文，辅以近期高质量
+agent/具身工作。所有论文均不早于 2024-08-20；其中 1–14 可在 <a
+href="https://proceedings.mlr.press/v267/">ICML 2025 PMLR 267</a>
+核实，15–20 可由对应 OpenReview/arXiv 页面核实。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">#</th>
+<th scope="col">候选论文</th>
+<th scope="col">时间 / venue</th>
+<th scope="col">主题</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td>LMRL Gym: Benchmarks for Multi-Turn Reinforcement Learning with
+Language Models</td>
+<td>2025.07 / ICML</td>
+<td>多轮语言 RL</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td>RLEF: Grounding Code LLMs in Execution Feedback with Reinforcement
+Learning</td>
+<td>2025.07 / ICML</td>
+<td>执行反馈与代码 Agent</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td>Convex Markov Games: A New Frontier for Multi-Agent Reinforcement
+Learning</td>
+<td>2025.07 / ICML</td>
+<td>多智能体理论</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td>R3DM: Enabling Role Discovery and Diversity Through Dynamics Models
+in MARL</td>
+<td>2025.07 / ICML</td>
+<td>角色发现</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td>Agent-Centric Actor-Critic for Asynchronous MARL</td>
+<td>2025.07 / ICML</td>
+<td>异步多智能体</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td>Test-Time Adaptation for Online Vision-Language Navigation with
+Feedback-based RL</td>
+<td>2025.07 / ICML</td>
+<td>视觉语言导航</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td>Task-Aware Virtual Training for OOD Meta-RL</td>
+<td>2025.07 / ICML</td>
+<td>元强化学习</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;"><strong>8</strong></td>
+<td><strong>Hyperspherical Normalization for Scalable Deep
+RL</strong></td>
+<td><strong>2025.07 / ICML Spotlight</strong></td>
+<td><strong>架构与可扩展性</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td>STAR: Learning Diverse Robot Skill Abstractions through
+Rotation-Augmented VQ</td>
+<td>2025.07 / ICML</td>
+<td>机器人技能</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td>Revisiting Cooperative Off-Policy Multi-Agent Reinforcement
+Learning</td>
+<td>2025.07 / ICML</td>
+<td>cooperative MARL</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td>HYGMA: Hypergraph Coordination Networks with Dynamic Grouping for
+MARL</td>
+<td>2025.07 / ICML</td>
+<td>动态分组协作</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">12</td>
+<td>GradPS: Resolving Futile Neurons in Parameter Sharing Networks for
+MARL</td>
+<td>2025.07 / ICML</td>
+<td>参数共享与梯度冲突</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td>M³HF: Multi-Agent RL from Multi-Phase Human Feedback of Mixed
+Quality</td>
+<td>2025.07 / ICML</td>
+<td>人类反馈 MARL</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td>Test-Time Adapted RL with Action Entropy Regularization</td>
+<td>2025.07 / ICML</td>
+<td>测试时适应</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td>Safe In-Context Reinforcement Learning</td>
+<td>2026 / ICLR</td>
+<td>安全 ICRL</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">16</td>
+<td>ReLIC: A Recipe for 64k Steps of In-Context RL</td>
+<td>2025 / ICLR</td>
+<td>长历史 ICRL</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td>MEM1: Learning to Synergize Memory and Reasoning for Efficient
+Long-Horizon Agents</td>
+<td>2026 / ICLR</td>
+<td>长程 Agent 记忆</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td>Agent Learning via Early Experience</td>
+<td>2026 / ICLR</td>
+<td>经验驱动 Agent RL</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">19</td>
+<td>Tree Search for LLM Agent Reinforcement Learning</td>
+<td>2026 / ICLR</td>
+<td>树搜索与 Agent RL</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">20</td>
+<td>ERA: Transforming VLMs into Embodied Agents through Embodied
+Reasoning and RL</td>
+<td>2026 / ICLR</td>
+<td>具身推理</td>
+</tr>
+</tbody>
+</table></div>
+<p>随机命令为 <code>shuf -i 1-20 -n 1</code>，输出
+<strong>8</strong>。核心论文材料完整，故<strong>重抽次数为
+0</strong>。</p>
+<hr />
+
+</section>
+
+<figure class="figure" aria-labelledby="figure-main-title">
+  <p class="fig-title" id="figure-main-title">低 UTD 下的 57 任务总体分数</p>
+  <p class="fig-sub">SimbaV2 的 0.892 比 SimBa 高 0.112（相对 +14.36%）；横轴为归一化总体分数，越高越好。</p>
+  <div class="legend" aria-label="图例"><span><span class="swatch" style="background:var(--chart-primary)"></span>SimbaV2</span><span><span class="swatch" style="background:var(--chart-comparison)"></span>对照方法</span></div>
+  <svg class="chart" viewBox="0 0 900 390" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>六种低 UTD 强化学习方法的 57 任务总体分数</title>
+    <desc>SAC 0.554，TD7 0.617，TD-MPC2 0.749，BRO 0.731，SimBa 0.780，SimbaV2 0.892。</desc>
+    <g stroke="var(--grid)" stroke-width="1"><line x1="175" y1="25" x2="175" y2="350"/><line x1="330" y1="25" x2="330" y2="350"/><line x1="485" y1="25" x2="485" y2="350"/><line x1="640" y1="25" x2="640" y2="350"/><line x1="795" y1="25" x2="795" y2="350"/></g>
+    <g font-size="13"><text x="175" y="372" text-anchor="middle">0.0</text><text x="330" y="372" text-anchor="middle">0.25</text><text x="485" y="372" text-anchor="middle">0.50</text><text x="640" y="372" text-anchor="middle">0.75</text><text x="795" y="372" text-anchor="middle">1.00</text></g>
+    <g font-size="14">
+      <text x="160" y="62" text-anchor="end">SAC</text><rect x="175" y="42" width="343.5" height="28" rx="4" fill="var(--chart-comparison)" tabindex="0" data-tip="SAC：0.554"/><text x="528" y="62">0.554</text>
+      <text x="160" y="112" text-anchor="end">TD7</text><rect x="175" y="92" width="382.5" height="28" rx="4" fill="var(--chart-comparison)" tabindex="0" data-tip="TD7：0.617"/><text x="567" y="112">0.617</text>
+      <text x="160" y="162" text-anchor="end">TD-MPC2</text><rect x="175" y="142" width="464.4" height="28" rx="4" fill="var(--chart-comparison)" tabindex="0" data-tip="TD-MPC2：0.749"/><text x="649" y="162">0.749</text>
+      <text x="160" y="212" text-anchor="end">BRO</text><rect x="175" y="192" width="453.2" height="28" rx="4" fill="var(--chart-comparison)" tabindex="0" data-tip="BRO：0.731"/><text x="638" y="212">0.731</text>
+      <text x="160" y="262" text-anchor="end">SimBa</text><rect x="175" y="242" width="483.6" height="28" rx="4" fill="var(--chart-comparison)" tabindex="0" data-tip="SimBa：0.780"/><text x="668" y="262">0.780</text>
+      <text x="160" y="312" text-anchor="end">SimbaV2</text><rect x="175" y="292" width="553.0" height="28" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="SimbaV2：0.892"/><text x="738" y="312">0.892</text>
+    </g>
+  </svg>
+  <figcaption>数据：核心论文表 1(a)，第 7 页；每个任务训练 1M 环境步。图表数据在正文表格中有等价文本表示。</figcaption>
+</figure>
+<section class="card" aria-labelledby="section-3-title">
+<h2 id="section-3-title">2. 核心论文深度解析</h2>
+<h3 id="21-motivation为什么把网络做大在-rl-中反而会坏掉">2.1
+Motivation：为什么“把网络做大”在 RL 中反而会坏掉</h3>
+<p>监督学习的训练分布大体静态，模型增大后即使优化更复杂，也能持续看到同一分布上的监督信号；在线
+RL 则同时移动三样东西：策略改变导致采样分布改变，bootstrap 目标随着
+critic 改变，奖励尺度又因任务而变。论文把这个差异称作 scaling
+paradox：容量或计算增加并不自动提升性能，甚至会放大早期数据过拟合、特征范数漂移和有效学习率失衡。</p>
+<p>论文没有停留在抽象论断。图 4（第 6 页）同时追踪 DMC-Hard 与
+HBench-Hard 上的平均归一化回报、critic
+中间特征范数、参数范数、梯度范数和有效学习率
+<code>ELR = ||∇W|| / ||W||</code>。SimBa 的 encoder 与 predictor
+呈现方向相反的 ELR 漂移：encoder 上升、predictor 下降；SimbaV2
+则把多数权重和所有中间特征限制到单位球面，因而范数和 ELR
+维持稳定。图没有提供可逐点抄录的原始数值，所以这里不能量化漂移幅度；但“同一训练轨迹中多种范数同时发散、而球面版本稳定”构成方法动机的直接机制证据。</p>
+<p>更关键的量化痛点来自图 1 与表 1：在 57 个任务、每个 100
+万环境步下，TD-MPC2（UTD=1）总体归一化分数为 0.749，SimBa 即使用 UTD=8
+也只有 0.818，BRO（UTD=8）为 0.807；SimbaV2 在 <strong>UTD=1 已达到
+0.848</strong>。这意味着旧方法增加 8 倍更新并没有跨过 SimbaV2
+的低计算配置。表 1 进一步显示，在低 UTD 条件下 SimbaV2 为
+0.892，而此前完整五域结果最强的 SimBa 为 0.780，绝对提高
+<strong>0.112</strong>、相对提高 <strong>14.36%</strong>。</p>
+<p>问题的新颖性不在“归一化有用”——LayerNorm、谱归一化、weight decay
+都已存在——而在于作者将三个不稳定源统一成几何约束：输入和隐藏状态都落到单位球面，权重更新后投影回单位球面，回报则映射到固定
+support
+的分类分布。这样，模型容量、更新次数和奖励尺度不再各自需要一套修补机制。</p>
+<h3 id="22-论文的故事线从症状几何约束到规模化证据">2.2
+论文的故事线：从症状、几何约束到规模化证据</h3>
+<p>论文的论证可压缩为五个递进步骤：</p>
+<ol type="1">
+<li><strong>指出尺度悖论。</strong> RL 的数据与目标非平稳，普通 MLP
+或仅靠 LayerNorm 的架构在加深、加宽或提高 UTD 时会过拟合和失去
+plasticity。</li>
+<li><strong>定位可观测症状。</strong> SimBa 的特征、参数、梯度范数和 ELR
+在不同子模块间漂移；这不是单纯“模型不够大”，而是不同层实际走在不同学习率时间尺度上。</li>
+<li><strong>把幅度自由度显式剥离。</strong>
+权重与特征只负责方向，learnable scaler 单独负责幅度；LERP
+则控制新特征进入残差流的速度。</li>
+<li><strong>处理价值目标的尺度。</strong> 若只约束网络而仍用 MSE
+拟合重尾、移动的 bootstrap target，梯度仍会被回报尺度支配；所以引入
+101-bin categorical critic、奖励方差缩放和 support 边界。</li>
+<li><strong>要求真正的 scaling 证据。</strong>
+作者不只报固定规模结果，而是分别改变 critic 宽度
+<code>{128,256,512,1024}</code>、深度 <code>{1,2,4,8}</code>、UTD
+<code>{1,2,4,8}</code>，再比较有无 reset。</li>
+</ol>
+<p>关键转折在第 3→4 步：如果论文只做 hyperspherical
+MLP，它仍可被解释为普通架构技巧；把回报尺度也纳入同一个“控制有效步长”的故事，才使方法成为完整的
+RL
+优化方案。代价是方法不再是单一、纯净的球面消融：主模型同时改变输入投影、非线性块、残差、权重更新、critic
+loss、reward scaling
+和学习率调度，因而总收益不能完全归因于一个机制。</p>
+<h3 id="23-方法论与机制解剖">2.3 方法论与机制解剖</h3>
+<h4 id="231-基础目标">2.3.1 基础目标</h4>
+<p>SimbaV2 保留 SAC 的最大熵 actor 目标：</p>
+<p><span
+class="math display">ℒ<sub><em>π</em></sub> = 𝔼<sub><em>ā</em> ∼ <em>π</em><sub><em>θ</em></sub></sub>[<em>α</em>log<em>π</em><sub><em>θ</em></sub>(<em>ā</em>∣<em>o</em>)−<em>Q</em><sub><em>ϕ</em></sub>(<em>o</em>,<em>ā</em>)].</span></p>
+<p>普通 SAC 用标量 Bellman MSE 训练 critic；SimbaV2 改用固定 support
+上的分类分布。第 <code>i</code> 个原子为：</p>
+<p><span class="math display">$
+\delta_i=G_{\min}+(i-1)\frac{G_{\max}-G_{\min}}{n_{atom}-1},\quad
+i=1,\dots,n_{atom},
+$</span></p>
+<p>其中论文表 3 取
+<code>n_atom=101</code>、<code>[G_min,G_max]=[-5,5]</code>。critic 产生
+logits <code>z</code>，令 <code>p=softmax(z)</code>，最终标量值是
+<code>Q(o,a)=Σ_i δ_i p_i</code>；训练时对投影后的 Bellman target
+分布使用 KL / categorical cross-entropy，而非 MSE。</p>
+<h4 id="232-输入保留长度信息的球面投影">2.3.2
+输入：保留长度信息的球面投影</h4>
+<p>直接 <code>L2Norm(o)</code> 会让 <code>[1,0]</code> 与
+<code>[2,0]</code> 完全相同。作者先做 running-statistics
+normalization，再加一个常数坐标：</p>
+<p><span class="math display">$
+\bar o_t=\frac{o_t-\mu_t}{\sqrt{\sigma_t^2+\epsilon}},\qquad
+\tilde o_t=\operatorname{L2Norm}([\bar o_t;c_{shift}]).
+$</span></p>
+<p>常数 <code>c_shift=3</code>
+使原向量的长度映射为相对最后一维的夹角，因此在进入单位球面后仍保留幅度线索。随后：</p>
+<p><span
+class="math display"><em>h</em><sub><em>t</em></sub><sup>0</sup> = L2Norm (<em>s</em><sub><em>h</em></sub><sup>0</sup>⊙<em>W</em><sub><em>h</em></sub><sup>0</sup><em>õ</em><sub><em>t</em></sub>).</span></p>
+<h4 id="233-隐层球面-mlp--lerp">2.3.3 隐层：球面 MLP + LERP</h4>
+<p>第 <code>l</code> 层先做 inverted-bottleneck MLP（扩张到
+<code>4d_h</code>）并归一化：</p>
+<p><span
+class="math display"><em>h̃</em><sub><em>t</em></sub><sup><em>l</em></sup> = L2Norm (<em>W</em><sub><em>h</em>, 2</sub><sup><em>l</em></sup>ReLU((<em>W</em><sub><em>h</em>, 1</sub><sup><em>l</em></sup><em>h</em><sub><em>t</em></sub><sup><em>l</em></sup>)⊙<em>s</em><sub><em>h</em></sub><sup><em>l</em></sup>)),</span></p>
+<p>再用逐维可学习的插值向量 <code>α^l</code> 替代无约束残差相加：</p>
+<p><span
+class="math display"><em>h</em><sub><em>t</em></sub><sup><em>l</em> + 1</sup> = L2Norm ((1−<em>α</em><sup><em>l</em></sup>)⊙<em>h</em><sub><em>t</em></sub><sup><em>l</em></sup>+<em>α</em><sup><em>l</em></sup>⊙<em>h̃</em><sub><em>t</em></sub><sup><em>l</em></sup>).</span></p>
+<p>作者把 LERP 解释为球面上 Riemannian retraction 的一阶近似。初始化
+<code>α_init=1/(L+1)</code>
+让深网络起点更接近恒等映射，<code>α_scale=1/√d_h</code>
+独立控制其有效学习速度。</p>
+<h4 id="234-奖励缩放与权重投影">2.3.4 奖励缩放与权重投影</h4>
+<p>累计折扣回报按 <code>G_t←γG_{t-1}+r_t</code> 更新，跟踪其运行方差
+<code>σ²_{t,G}</code> 和历史最大值
+<code>G_{t,max}</code>，奖励变为：</p>
+<p><span class="math display">$
+\bar
+r_t=\frac{r_t}{\max\left(\sqrt{\sigma^2_{t,G}+\epsilon},\;G_{t,max}/G_{max}\right)}.
+$</span></p>
+<p>第一项把目标方差压到近似单位尺度，第二项避免 target 超出
+<code>[−5,5]</code>。注意作者<strong>不减均值</strong>，因为 episodic
+task 中 reward shift
+可能改变最优策略。每次梯度更新后，所有权重向量重新投影至单位球面；幅度表达交由
+scaler，而不是 weight norm 自由增长。</p>
+<h4 id="235-流程示意">2.3.5 流程示意</h4>
+<pre class="text"><code>环境观测 o_t
+   │  Running mean/std
+   ▼
+RSNorm(o_t) ── 拼接常数 c_shift=3 ── L2Norm
+   │
+   ▼
+Linear → learnable scaler → L2Norm        （输入球面）
+   │
+   ├──×L: Linear(4d) → ReLU → Linear(d) → L2Norm
+   │        ╰──────── LERP(α) 与残差插值 ───────╯
+   ▼
+单位球面 latent h_L
+   ├── Actor head → π(a|o) → SAC 最大熵目标
+   └── Critic head → 101-bin categorical Q
+                         ▲
+reward → running-return variance/max → scale &amp; bound → Bellman distribution target
+
+每次参数更新后：W ← W / ||W||₂</code></pre>
+<h4 id="236-关键机制与工程细节">2.3.6 关键机制与工程细节</h4>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">机制 / 维度</th>
+<th scope="col">设计选择</th>
+<th scope="col">动机</th>
+<th scope="col">关键超参 / 来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>观测标准化</td>
+<td>RSNorm</td>
+<td>跟随在线分布、消除各维尺度差</td>
+<td><code>ε</code> 见实现；正文式 3–4</td>
+</tr>
+<tr class="even">
+<td>输入球面映射</td>
+<td>拼接常数后 L2Norm</td>
+<td>既限制范数又保留原向量长度</td>
+<td><code>c_shift=3</code>；表 3</td>
+</tr>
+<tr class="odd">
+<td>非线性块</td>
+<td><code>d→4d→d</code>、ReLU、L2Norm</td>
+<td>将方向学习与幅度学习分离</td>
+<td>actor <code>L=1,d=128</code>；critic <code>L=2,d=512</code></td>
+</tr>
+<tr class="even">
+<td>残差</td>
+<td>逐维 LERP + L2Norm</td>
+<td>控制新特征注入，深网初始化近恒等</td>
+<td><code>α_init=1/(L+1)</code>，<code>α_scale=1/√d</code></td>
+</tr>
+<tr class="odd">
+<td>权重更新</td>
+<td>正交初始化；每步单位范数投影</td>
+<td>固定 weight norm，稳定 ELR</td>
+<td>weight decay = 0</td>
+</tr>
+<tr class="even">
+<td>critic</td>
+<td>101 原子 categorical distribution</td>
+<td>降低 noisy / non-stationary target 对梯度的冲击</td>
+<td>support <code>[-5,5]</code></td>
+</tr>
+<tr class="odd">
+<td>reward</td>
+<td>不中心化，只按 return variance 与最大值缩放</td>
+<td>同时稳定 actor/critic，避免 episodic reward shift</td>
+<td><code>ε=1e-8</code></td>
+</tr>
+<tr class="even">
+<td>数据与更新</td>
+<td>uniform replay；SAC</td>
+<td>让架构效果不依赖优先回放等复杂机制</td>
+<td>buffer 1M，batch 256，UTD=2</td>
+</tr>
+<tr class="odd">
+<td>优化器</td>
+<td>Adam + 线性 LR decay</td>
+<td>球面模型近似恒定 ELR，后期需显式减小步长</td>
+<td><code>1e-4→3e-5</code>；正文第 6 页；表 3 末行印刷为
+<code>3e-4</code>，存在冲突</td>
+</tr>
+</tbody>
+</table></div>
+<p>最后一行是可复现性要点：正文明确写 <code>1×10⁻⁴→3×10⁻⁵</code>，而 PDF
+表 3 的提取文本显示 final LR
+<code>3e−4</code>。由于前者是“衰减”、后者反而增大，二者逻辑冲突；代码配置应作为复现实验的最终依据，报告不擅自消除这一差异。</p>
+<h3 id="24-实验设计与基准">2.4 实验设计与基准</h3>
+<p>论文使用 57 个 state-based continuous-control 任务，均训练 100
+万环境步。表 5 给出各域设置：MuJoCo episode length 1000、action repeat
+1；DMC 1000/2；MyoSuite 100/2；HumanoidBench 500–1000/2。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">基准</th>
+<th scope="col" style="text-align: right;">任务数</th>
+<th scope="col">能力侧重</th>
+<th scope="col">指标与归一化</th>
+<th scope="col">论文来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Gym-MuJoCo v4</td>
+<td style="text-align: right;">5</td>
+<td>经典连续运动与接触动力学</td>
+<td>相对 random 与 TD3 的 TD3-normalized return</td>
+<td>第 6 页；附录表 5–6</td>
+</tr>
+<tr class="even">
+<td>DMC-Easy</td>
+<td style="text-align: right;">21</td>
+<td>中低难度 locomotion / manipulation</td>
+<td>return / 1000</td>
+<td>第 6 页；表 1</td>
+</tr>
+<tr class="odd">
+<td>DMC-Hard</td>
+<td style="text-align: right;">7</td>
+<td>dog 与 humanoid 高维控制</td>
+<td>return / 1000</td>
+<td>第 6 页；表 1</td>
+</tr>
+<tr class="even">
+<td>MyoSuite</td>
+<td style="text-align: right;">10</td>
+<td>肌骨手部与运动控制</td>
+<td>success rate</td>
+<td>第 6 页；表 1</td>
+</tr>
+<tr class="odd">
+<td>HumanoidBench</td>
+<td style="text-align: right;">14</td>
+<td>全身 locomotion 与 manipulation</td>
+<td>return / 任务成功阈值</td>
+<td>第 6 页；表 1</td>
+</tr>
+<tr class="even">
+<td>D4RL MuJoCo（离线）</td>
+<td style="text-align: right;">9</td>
+<td>3 环境 × 3 数据质量</td>
+<td>expert-normalized score</td>
+<td>附录 D，表 4</td>
+</tr>
+</tbody>
+</table></div>
+<p>聚合时五个 domain-group 并非等权：<code>All (57)</code>
+是任务级汇总，DMC-Easy 的 21 项权重约 36.8%，MuJoCo 仅
+8.8%。因此总体均值适合描述“任务集合平均表现”，不等同于“各域等权通用性”。</p>
+<h3 id="25-主结果完整五域--六方法矩阵">2.5 主结果：完整五域 ×
+六方法矩阵</h3>
+<p>以下为低 UTD（≤2）条件，数值逐项来自论文<strong>表 1(a)，第 7
+页</strong>。<code>±</code> 是 95% CI；TD7 与 TD-MPC2 的部分 CI
+是由任务均值近似，原文以 <code>†</code>
+标记并警告可能不准确。粗体表示该列最高点；由于论文还用 Welch t-test
+标记“与最高值无显著差异”的项，仅凭纯文本无法恢复所有底色，故本表只粗体化数值最大者。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">MuJoCo (5) ↑</th>
+<th scope="col" style="text-align: right;">DMC-Easy (21) ↑</th>
+<th scope="col" style="text-align: right;">DMC-Hard (7) ↑</th>
+<th scope="col" style="text-align: right;">MyoSuite (10) ↑</th>
+<th scope="col" style="text-align: right;">HBench (14) ↑</th>
+<th scope="col" style="text-align: right;">All (57) ↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>SAC</td>
+<td style="text-align: right;">1.092±0.081</td>
+<td style="text-align: right;">0.762±0.094†</td>
+<td style="text-align: right;">0.136±0.040</td>
+<td style="text-align: right;">0.607±0.088</td>
+<td style="text-align: right;">0.279±0.050</td>
+<td style="text-align: right;">0.554±0.057</td>
+</tr>
+<tr class="even">
+<td>TD7</td>
+<td style="text-align: right;">1.570±0.030</td>
+<td style="text-align: right;">0.689±0.134†</td>
+<td style="text-align: right;">0.182±0.137†</td>
+<td style="text-align: right;">0.356±0.126</td>
+<td style="text-align: right;">0.289±0.083</td>
+<td style="text-align: right;">0.617±0.358†</td>
+</tr>
+<tr class="odd">
+<td>TD-MPC2</td>
+<td style="text-align: right;">1.040±0.115</td>
+<td style="text-align: right;"><strong>0.889±0.064†</strong></td>
+<td style="text-align: right;">0.465±0.139†</td>
+<td style="text-align: right;">0.650±0.148</td>
+<td style="text-align: right;">0.710±0.149</td>
+<td style="text-align: right;">0.749±0.168†</td>
+</tr>
+<tr class="even">
+<td>BRO</td>
+<td style="text-align: right;">1.101±0.182</td>
+<td style="text-align: right;">0.861±0.036</td>
+<td style="text-align: right;">0.693±0.066</td>
+<td style="text-align: right;">0.714±0.076</td>
+<td style="text-align: right;">0.468±0.107</td>
+<td style="text-align: right;">0.731±0.039</td>
+</tr>
+<tr class="odd">
+<td>SimBa</td>
+<td style="text-align: right;">1.147±0.077</td>
+<td style="text-align: right;">0.864±0.024</td>
+<td style="text-align: right;">0.706±0.050</td>
+<td style="text-align: right;">0.743±0.079</td>
+<td style="text-align: right;">0.606±0.073</td>
+<td style="text-align: right;">0.780±0.028</td>
+</tr>
+<tr class="even best">
+<td><strong>SimbaV2</strong></td>
+<td style="text-align: right;"><strong>1.617±0.103</strong></td>
+<td style="text-align: right;">0.874±0.025</td>
+<td style="text-align: right;"><strong>0.729±0.065</strong></td>
+<td style="text-align: right;"><strong>0.847±0.066</strong></td>
+<td style="text-align: right;"><strong>0.776±0.064</strong></td>
+<td style="text-align: right;"><strong>0.892±0.032</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>相对逐列最强前驱的增益：</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">维度</th>
+<th scope="col" style="text-align: right;">最强前驱</th>
+<th scope="col" style="text-align: right;">SimbaV2 − 前驱（绝对）</th>
+<th scope="col" style="text-align: right;">相对变化</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>MuJoCo</td>
+<td style="text-align: right;">TD7 1.570</td>
+<td style="text-align: right;">+0.047</td>
+<td style="text-align: right;">+2.99%</td>
+</tr>
+<tr class="even">
+<td>DMC-Easy</td>
+<td style="text-align: right;">TD-MPC2 0.889</td>
+<td style="text-align: right;"><strong>−0.015</strong></td>
+<td style="text-align: right;"><strong>−1.69%</strong></td>
+</tr>
+<tr class="odd">
+<td>DMC-Hard</td>
+<td style="text-align: right;">MR.Q 0.723（表 1 全量行）</td>
+<td style="text-align: right;">+0.006</td>
+<td style="text-align: right;">+0.83%</td>
+</tr>
+<tr class="even">
+<td>MyoSuite</td>
+<td style="text-align: right;">SimBa 0.743</td>
+<td style="text-align: right;">+0.104</td>
+<td style="text-align: right;">+14.00%</td>
+</tr>
+<tr class="odd">
+<td>HBench</td>
+<td style="text-align: right;">TD-MPC2 0.710</td>
+<td style="text-align: right;">+0.066</td>
+<td style="text-align: right;">+9.30%</td>
+</tr>
+<tr class="even">
+<td>All</td>
+<td style="text-align: right;">SimBa 0.780</td>
+<td style="text-align: right;"><strong>+0.112</strong></td>
+<td style="text-align: right;"><strong>+14.36%</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>全文最有说服力的定量证据：</strong> 不是某个简单域的小幅
+SOTA，而是五域总体分数从 0.780 提到 0.892，同时 UTD 仍为 2；提高 UTD 到
+8 后 SimbaV2 又从 0.892 升到 0.911（+0.019，+2.13%），而无需
+reset。另一方面，DMC-Easy 仍落后 TD-MPC2
+0.015，说明“全域最优”并不成立。</p>
+<p>高 UTD（≥8）对比同样来自表 1(b)：</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">MuJoCo</th>
+<th scope="col" style="text-align: right;">DMC-Easy</th>
+<th scope="col" style="text-align: right;">DMC-Hard</th>
+<th scope="col" style="text-align: right;">MyoSuite</th>
+<th scope="col" style="text-align: right;">HBench</th>
+<th scope="col" style="text-align: right;">All</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DreamerV3</td>
+<td style="text-align: right;">0.760</td>
+<td style="text-align: right;">0.714</td>
+<td style="text-align: right;">0.009</td>
+<td style="text-align: right;">0.482</td>
+<td style="text-align: right;">0.022</td>
+<td style="text-align: right;">0.397</td>
+</tr>
+<tr class="even">
+<td>BRO</td>
+<td style="text-align: right;">1.150</td>
+<td style="text-align: right;">0.871</td>
+<td style="text-align: right;">0.767</td>
+<td style="text-align: right;">0.814</td>
+<td style="text-align: right;">0.619</td>
+<td style="text-align: right;">0.807</td>
+</tr>
+<tr class="odd">
+<td>SimBa</td>
+<td style="text-align: right;">1.175</td>
+<td style="text-align: right;">0.866</td>
+<td style="text-align: right;">0.720</td>
+<td style="text-align: right;">0.834</td>
+<td style="text-align: right;">0.657</td>
+<td style="text-align: right;">0.818</td>
+</tr>
+<tr class="even best">
+<td><strong>SimbaV2</strong></td>
+<td style="text-align: right;"><strong>1.598</strong></td>
+<td style="text-align: right;"><strong>0.876</strong></td>
+<td style="text-align: right;"><strong>0.769</strong></td>
+<td style="text-align: right;"><strong>0.866</strong></td>
+<td style="text-align: right;"><strong>0.822</strong></td>
+<td style="text-align: right;"><strong>0.911</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>此表最显著的难域差距是 HBench：0.822 对 SimBa 0.657，绝对
++0.165、相对 +25.11%。不过跨算法 UTD 并非完全一致，REDQ/DroQ 使用
+20、MAD-TD 使用 8、BRO 高 UTD 行在正文中还出现 10
+的描述，因此它是“高计算区间”而非严格等 FLOPs 排行。</p>
+<h3 id="26-消融研究哪些部件真正不可少">2.6
+消融研究：哪些部件真正不可少</h3>
+<p>论文表 2（第 9 页）报告 3 个随机种子的均值与跨任务 95%
+CI。下表选择直接触及核心主张的 10 个配置；变化以默认 SimbaV2 的
+<code>All=0.892</code> 为基准。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">配置变化</th>
+<th scope="col" style="text-align: right;">MuJoCo</th>
+<th scope="col" style="text-align: right;">DMC-Easy</th>
+<th scope="col" style="text-align: right;">DMC-Hard</th>
+<th scope="col" style="text-align: right;">MyoSuite</th>
+<th scope="col" style="text-align: right;">HBench</th>
+<th scope="col" style="text-align: right;">All</th>
+<th scope="col">相对默认</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>去掉输入 L2Norm</td>
+<td style="text-align: right;">1.370</td>
+<td style="text-align: right;">0.779</td>
+<td style="text-align: right;">0.700</td>
+<td style="text-align: right;">0.815</td>
+<td style="text-align: right;">0.711</td>
+<td style="text-align: right;">0.809</td>
+<td>−0.083 / −9.30%</td>
+</tr>
+<tr class="even">
+<td>去掉 shift</td>
+<td style="text-align: right;">1.406</td>
+<td style="text-align: right;">0.771</td>
+<td style="text-align: right;">0.724</td>
+<td style="text-align: right;">0.800</td>
+<td style="text-align: right;">0.700</td>
+<td style="text-align: right;">0.810</td>
+<td>−0.082 / −9.19%</td>
+</tr>
+<tr class="odd">
+<td><code>c_shift: 3→1</code></td>
+<td style="text-align: right;">1.558</td>
+<td style="text-align: right;">0.862</td>
+<td style="text-align: right;">0.718</td>
+<td style="text-align: right;">0.870</td>
+<td style="text-align: right;">0.791</td>
+<td style="text-align: right;">0.888</td>
+<td>−0.004 / −0.45%</td>
+</tr>
+<tr class="even">
+<td>shift projection→resize projection</td>
+<td style="text-align: right;"><strong>1.623</strong></td>
+<td style="text-align: right;">0.842</td>
+<td style="text-align: right;">0.720</td>
+<td style="text-align: right;"><strong>0.852</strong></td>
+<td style="text-align: right;"><strong>0.779</strong></td>
+<td style="text-align: right;">0.884</td>
+<td>−0.008 / −0.90%</td>
+</tr>
+<tr class="odd">
+<td>categorical loss→MSE</td>
+<td style="text-align: right;">1.343</td>
+<td style="text-align: right;">0.868</td>
+<td style="text-align: right;">0.708</td>
+<td style="text-align: right;">0.757</td>
+<td style="text-align: right;">0.767</td>
+<td style="text-align: right;">0.846</td>
+<td>−0.046 / −5.16%</td>
+</tr>
+<tr class="even">
+<td>去掉 reward scaling</td>
+<td style="text-align: right;">1.395</td>
+<td style="text-align: right;">0.852</td>
+<td style="text-align: right;">0.712</td>
+<td style="text-align: right;">0.840</td>
+<td style="text-align: right;">0.735</td>
+<td style="text-align: right;">0.852</td>
+<td>−0.040 / −4.48%</td>
+</tr>
+<tr class="odd">
+<td>去掉 return bounding</td>
+<td style="text-align: right;"><strong>1.620</strong></td>
+<td style="text-align: right;">0.824</td>
+<td style="text-align: right;"><strong>0.733</strong></td>
+<td style="text-align: right;">0.805</td>
+<td style="text-align: right;"><strong>0.787</strong></td>
+<td style="text-align: right;">0.868</td>
+<td>−0.024 / −2.69%</td>
+</tr>
+<tr class="even">
+<td>soft target→hard target</td>
+<td style="text-align: right;">1.589</td>
+<td style="text-align: right;"><strong>0.878</strong></td>
+<td style="text-align: right;"><strong>0.746</strong></td>
+<td style="text-align: right;"><strong>0.848</strong></td>
+<td style="text-align: right;">0.770</td>
+<td style="text-align: right;">0.890</td>
+<td>−0.002 / −0.22%</td>
+</tr>
+<tr class="odd">
+<td>去掉 LR decay</td>
+<td style="text-align: right;">1.562</td>
+<td style="text-align: right;">0.858</td>
+<td style="text-align: right;">0.719</td>
+<td style="text-align: right;">0.810</td>
+<td style="text-align: right;">0.754</td>
+<td style="text-align: right;">0.863</td>
+<td>−0.029 / −3.25%</td>
+</tr>
+<tr class="even">
+<td><strong>默认 SimbaV2</strong></td>
+<td style="text-align: right;">1.617</td>
+<td style="text-align: right;">0.874</td>
+<td style="text-align: right;">0.729</td>
+<td style="text-align: right;">0.847</td>
+<td style="text-align: right;">0.776</td>
+<td style="text-align: right;"><strong>0.892</strong></td>
+<td>—</td>
+</tr>
+</tbody>
+</table></div>
+<p>从逐层贡献看，最大的两个损失来自输入几何：去掉 L2Norm 或 shift
+都使总体下降约
+9.2%。这说明“球面”本身不够，<strong>保留幅度信息的球面嵌入</strong>才是不可替代组合。第二层是
+output stabilization：MSE 与无 reward scaling 分别损失 5.16% 和
+4.48%。soft target、<code>c_shift</code> 精确取值、scaler / α
+初始化则相对不敏感，说明结构约束比具体常数更重要。</p>
+<p>这里还出现值得警惕的非单调性：resize projection 在
+MuJoCo、MyoSuite、HBench 三列略高于默认，hard target 在 DMC
+两列更高，去掉 bounding 在 MuJoCo、DMC-Hard、HBench
+也更高。因此默认配置是总体折中，并非每个模块在每个域都单调增益。</p>
+<h3 id="27-超参敏感性与相变">2.7 超参敏感性与“相变”</h3>
+<p>论文的 scaling sweep 覆盖：critic width
+<code>{128,256,512,1024}</code>（参数约 0.3M→17.8M）、critic depth
+<code>{1,2,4,8}</code>（约 2.2M→17.8M）以及 UTD
+<code>{1,2,4,8}</code>；有 reset 时每 500,000 次 update 重置一次。图
+5–7只给曲线和轴，没有表格化的逐点数值，因此本报告不从像素反推精确值。</p>
+<p>可核实的阶段变化有三点：</p>
+<ul>
+<li>DMC-Hard 上 SimbaV2 的深度收益在 <code>L≈4</code>
+后开始平台化；这是论文明确描述的饱和点，而非精确统计检验出的 phase
+transition。</li>
+<li>HBench-Hard 上 SimbaV2 到 <code>L=8</code> 时解决全部 5 个 hard
+task；SimBa 在 <code>L≥2</code>
+后趋于平台或下降。这里存在“深度从负担变成资产”的结构性转折。</li>
+<li>UTD 提升时，SimBa 在 DMC-Hard 约 UTD=2、HBench-Hard 约 UTD=1
+就平台；SimbaV2 在 1→8 仍持续增益，且加入 reset 略有伤害。对 SimbaV2
+而言，reset 从补救机制变为扰动。</li>
+</ul>
+<p>但论文<strong>没有</strong>报告 learning
+rate、<code>c_shift</code>、atom 数或 support
+宽度的连续敏感性曲线，也没有对平台点做 changepoint /
+分段回归。因此只能说观察到“平台化和方向分叉”，不能声称严格的相变。</p>
+<h3 id="28-统计显著性">2.8 统计显著性</h3>
+<p>主表报告跨 raw benchmark samples 的 95% CI，并以 Welch’s
+t-test、显著性水平 0.05 判断某项是否显著劣于最高值；完整消融用 3
+seeds，在线主结果不同基线来自 3、5、10、15 seeds
+不等。论文的统计意识优于只报单次均值的 RL 工作，但仍有三处限制：</p>
+<ol type="1">
+<li>部分基线只有任务均值，CI 是作者近似计算（表 1 的
+<code>†</code>），原文承认可能不准确。</li>
+<li>“跨所有 raw benchmark samples”的 CI
+混合任务与种子，任务难度与方差并不同质；它不等价于对 57
+个任务做严格层次模型。</li>
+<li>多列、多方法做大量 Welch test，却未报告多重比较校正；因此 0.05
+阈值下的边缘差异（如 DMC-Hard +0.006）不宜过度解读。</li>
+</ol>
+<p>离线 RL 表 4 用 10
+trials，并在缺方差的基线上用环境平均方差替代。SimbaV2+BC 总平均
+86.7±1.6，与 TD7+BC 87.2±1.6 接近但并未赢；它的强项集中在
+Hopper：三种数据质量为 98.1、99.9、106.2，而 TD7+BC 为
+76.1、91.1、108.2。该结果支持“架构可迁移到
+offline”，但不支持“无需算法设计就普遍 SOTA”。</p>
+<h3 id="29-真正贡献可复用设计与迁移潜力">2.9
+真正贡献、可复用设计与迁移潜力</h3>
+<p>真正贡献不是“又一种归一化”，而是把 RL
+可扩展性拆成三种可控制自由度：方向由单位球面参数/特征承载，幅度由 scaler
+承载，残差注入速度由 <code>α</code> 承载；价值目标的尺度再由 reward
+scaling + categorical support 控制。这个分解让优化诊断有了明确对象：若
+ELR 失衡，可查权重投影；若 target 梯度爆炸，可查 return
+scaling；若深层信息覆盖残差，可查 LERP。</p>
+<p>可独立复用的设计包括：</p>
+<ul>
+<li>“拼接常数再归一化”的输入嵌入，可用于任何既想固定范数又不能丢长度信息的连续状态模型。</li>
+<li><code>α_init=1/(L+1)</code> 的 LERP，可作为深 residual policy/critic
+的近恒等初始化。</li>
+<li>不中心化的 return-variance scaling，避免 episodic reward shift
+改变策略排序。</li>
+<li>以 scaling
+sweep（宽度、深度、UTD、reset）而非单一规模评测架构，这是一套可迁移的实验协议。</li>
+<li>将分类 critic 作为抗 noisy target 的默认候选，而不是只在
+distributional RL 中追求风险分布建模。</li>
+</ul>
+<p>迁移潜力最大的并非直接替换 LLM Transformer 的
+LayerNorm，而是将“方向与幅度解耦 + 固定 target support”用于大规模 value
+/ reward model。论文自己也把 model-based、visual RL、真实机器人和
+RL-for-LLM 列为机会；但这些方向涉及 attention、像素
+encoder、混合精度和超长序列，不能由 state-based MLP 的结果直接外推。</p>
+<h3 id="210-局限性">2.10 局限性</h3>
+<h4 id="论文自述的限制--范围边界">论文自述的限制 / 范围边界</h4>
+<p>论文没有独立的 <code>Limitations</code> 章节。以下三点来自第 6 节
+“Lessons and Opportunities”（第 9
+页），应理解为作者主动留下的范围边界，而非逐字的负面自评：</p>
+<ol type="1">
+<li><strong>尚未验证真实机器人。</strong> 作者把 real-world robotics
+列为未来机会；当前 57
+个任务全部来自仿真，无法证明传感噪声、延迟、接触模型误差下仍稳定。</li>
+<li><strong>尚未扩展到 model-based 与 visual RL。</strong> 当前主线以
+state vector + SAC 为底座，作者明确将 model-based 和 pixel-based visual
+RL 留作后续。</li>
+<li><strong>尚未验证大模型 RL。</strong> 作者提出严格归一化可能有益于 RL
+训练 LLM，但未给语言模型或 Transformer 实验。</li>
+</ol>
+<h4 id="独立补充批判7-点">独立补充批判（7 点）</h4>
+<ol type="1">
+<li><p><strong>[论证缺口] 球面归一化与“整套配方”没有完全拆开。</strong>
+因为默认相对 SimBa 同时改变 input shift、L2Norm、LERP、weight
+projection、categorical loss、reward scaling、bounding 与 LR
+schedule，而表 2 主要是单项回退，所以不能从总体 <code>0.780→0.892</code>
+推出这 0.112 全由 hyperspherical geometry 贡献。需要
+<code>SimBa + 仅球面</code>、<code>SimBa + 仅分类 critic</code>、二者交互的
+2×2 实验。</p></li>
+<li><p><strong>[缺乏关键竞品等预算比较] UTD 不是 FLOPs。</strong> 因为图
+1 把 SimbaV2 UTD=1 的 0.848 与 TD-MPC2 UTD=1、SimBa/BRO UTD=8
+比较，但模型大小、world-model rollout、ensemble 数和每 update
+成本不同，所以“更少计算”只在 UTD 代理意义上成立。应在相同
+GPU-hour、同硬件、同 batch 的 Pareto 曲线上 head-to-head。</p></li>
+<li><p><strong>[失手的子任务] DMC-Easy 并非最优。</strong> 因为低 UTD 下
+SimbaV2 为 0.874，而 TD-MPC2 为 0.889，绝对少
+0.015（−1.69%），所以论文的优势集中在高维或困难控制，不能概括为所有连续控制域均优。</p></li>
+<li><p><strong>[实验设计问题] 总体均值受任务数不均衡影响。</strong> 因为
+DMC-Easy 占 21/57=36.84%，MuJoCo 只占 5/57=8.77%，所以
+<code>All=0.892</code>
+对域权重敏感。若做五域等权，结论和显著性可能变化；论文未同时报告
+domain-macro average。</p></li>
+<li><p><strong>[统计有效性问题] 极小优势小于 CI 尺度。</strong> 因为
+DMC-Hard 对 MR.Q 仅 <code>0.729−0.723=0.006</code>，而 SimbaV2 CI 为
+±0.065、MR.Q 为 ±0.061，所以不能把该列数值第一解释为稳定优势；需要
+paired seeds 或 task-stratified bootstrap。</p></li>
+<li><p><strong>[可复现性风险] 学习率文本冲突。</strong> 因为正文第 6
+页写 <code>1e−4→3e−5</code>，PDF 表 3 提取为 final
+<code>3e−4</code>，后者与“decay”语义矛盾，所以仅依赖论文表格可能复现错误。虽然代码公开缓解风险，报告仍建议固定
+commit 并导出最终配置。</p></li>
+<li><p><strong>[外推有效性问题] 状态控制结果不足以证明 Agent / LLM
+scaling。</strong> 因为所有在线主结果都是 state vector、MLP
+critic、连续动作和 1M-step 仿真，且论文未测 attention、token-level
+reward、partial observability 或多轮工具调用，所以第 6 节对 LLM RL
+的展望目前只是机制类比，不是经验结论。</p></li>
+</ol>
+<hr />
+
+</section>
+<section class="card" aria-labelledby="section-4-title">
+<h2 id="section-4-title">3.
+相关工作回溯：问题如何一步步传到 SimbaV2</h2>
+<h3 id="31-soft-actor-critic--2018icml">3.1 Soft Actor-Critic —
+2018，ICML</h3>
+<p><strong>解决了什么。</strong> SAC 将 off-policy actor-critic
+与最大熵目标结合，既最大化期望回报也最大化策略熵，缓解连续控制中的探索与脆弱收敛问题。它提供了
+SimbaV2 所保留的 actor loss、双 Q/target critic 和 replay-based
+训练骨架。</p>
+<p><strong>遗留缺口。</strong> SAC 解决的是算法目标与样本复用，却默认用
+MLP 和标量 Bellman MSE；当 critic 变大、UTD
+提高、数据分布移动时，原始目标没有主动限制特征、参数与 bootstrap target
+的尺度。</p>
+<p><strong>核心论文如何回应。</strong> SimbaV2 不更换 SAC
+的策略优化逻辑，而是把网络和 critic 输出层重写为球面几何 + categorical
+value；这使实验可以把性能变化主要归因于 architecture /
+optimization，而不是新 policy objective。</p>
+<p><strong>关键设计传递。</strong> 最大熵 actor
+目标完整保留；变化发生在表示、价值估计和参数更新几何上。这种“固定算法、替换架构”的对照是论文最重要的因果控制之一。</p>
+<h3
+id="32-the-primacy-bias-in-deep-reinforcement-learning--2022icml">3.2
+The Primacy Bias in Deep Reinforcement Learning — 2022，ICML</h3>
+<p><strong>解决了什么。</strong> 该工作把 RL
+对早期经验过拟合、后期新证据利用不足定义为 primacy bias，并用周期性重置
+agent 的部分参数恢复 plasticity；它在 Atari 100k 与 DMC
+上都观察到一致改善。</p>
+<p><strong>遗留缺口。</strong> reset
+会丢失有用参数信息，而且更新越频繁、模型越大，重建成本越高。它治疗的是“已经失去
+plasticity 的网络”，不是预防范数和 ELR 走向失衡。</p>
+<p><strong>核心论文如何回应。</strong> SimbaV2 通过每步 weight
+projection、feature L2Norm 和 LERP，让模型不先进入需要 reset
+的病态区域。图 7 显示 SimBa 加 reset 后可改善，而 SimbaV2 加 reset
+反而略降，说明预防性约束可以替代恢复性手术。</p>
+<p><strong>关键设计传递。</strong> primacy-bias 工作把“周期重置”变成后来
+scaling 方法的标准控制组；SimbaV2 继承的不是 reset
+模块，而是检验问题：高 UTD 下是否还能学习新数据。</p>
+<h3 id="33-stop-regressing--2024icml">3.3 Stop Regressing —
+2024，ICML</h3>
+<p><strong>解决了什么。</strong> 该工作指出大型 value network 用 MSE
+拟合 noisy、non-stationary bootstrap targets
+时难以扩展，提出把回报离散成分类分布，以 cross-entropy 训练，在
+Atari、机器人操作、Chess、Wordle 等多域提高可扩展性。</p>
+<p><strong>遗留缺口。</strong> 分类 loss
+稳定了输出目标，却不限制输入、隐藏特征和权重范数；在连续状态与连续动作的
+actor-critic 中，reward magnitude 还会同时影响 actor 与 critic。</p>
+<p><strong>核心论文如何回应。</strong> SimbaV2 直接继承 categorical
+critic 的思想，并加入不中心化 reward scaling 与 return
+bounding，使同一尺度控制同时作用于两条 loss。表 2 中退回 MSE 使总体从
+0.892 降至 0.846（−5.16%），说明这一技术来源是主配方的实质组成。</p>
+<p><strong>关键设计传递。</strong> 技术从“用分类替代回归”进化为“分类
+support + 动态 reward scale +
+球面网络”三者协同；目标函数稳定化被嵌入整个优化几何。</p>
+<h3 id="34-bro--2024neurips-spotlight">3.4 BRO — 2024，NeurIPS
+Spotlight</h3>
+<p><strong>解决了什么。</strong> BRO 通过更大的 regularized
+critic、optimistic exploration 与周期 reset 证明 model-free RL
+也能扩展，在 DMC、MetaWorld、MyoSuite 共 40
+个任务上报告强结果；项目页称训练超过 15,000 个 agents 来分析 critic
+capacity 与 replay ratio。</p>
+<p><strong>遗留缺口。</strong> BRO 的扩展依赖多项 domain-specific
+enhancement 和 reset。论文表 1 中 BRO 在低 UTD 总体 0.731、高 UTD
+0.807，计算增加有效，但难域 HBench 仍低于 SimBa/SimbaV2。</p>
+<p><strong>核心论文如何回应。</strong> SimbaV2 把“强正则 +
+reset”的外部维护改成每一步的几何投影；高 UTD 下其总体 0.911 对 BRO
+0.807，绝对 +0.104、相对 +12.89%，HBench 为 0.822 对
+0.619（+32.79%）。</p>
+<p><strong>关键设计传递。</strong> 两者都确认 critic 而非 actor 是主要
+scaling 轴；SimbaV2 的 sweep 因而固定较小
+actor（128）并将宽/深扩展集中于 critic。</p>
+<h3 id="35-simba--2025iclr-spotlight">3.5 SimBa — 2025，ICLR
+Spotlight</h3>
+<p><strong>解决了什么。</strong> SimBa 用 RSNorm、residual feedforward
+block 和 LayerNorm 注入 simplicity bias，只替换网络架构就让
+SAC、PPO、TD-MPC2、METRA 等多种 RL 算法受益；项目页报告 SAC+SimBa 覆盖
+51 个连续控制任务。</p>
+<p><strong>遗留缺口。</strong> LayerNorm 仍允许 weight norm
+与层间有效学习率漂移；表 1 中 SimBa 从 UTD=2 的 0.780 升到 UTD=8 的
+0.818，但高计算收益开始饱和。深度到 <code>L≥2</code>
+后也可能平台或下降。</p>
+<p><strong>核心论文如何回应。</strong> SimbaV2 是直接继承与重构：保留
+RSNorm 和 residual 思路，把 LayerNorm 变为严格 L2Norm，把残差相加变成
+LERP，把 weight decay 变成 projection，再补上 distributional critic 与
+reward scaling。</p>
+<p><strong>关键设计传递。</strong>
+这是最清晰的架构血缘：<code>RSNorm → shift+L2Norm</code>，<code>residual block → spherical MLP+LERP</code>，<code>weight decay → unit projection</code>，<code>scalar Q → categorical Q</code>。核心论文不是推翻
+SimBa，而是把“simplicity bias”从软正则推进为显式几何约束。</p>
+<hr />
+
+</section>
+<section class="card" aria-labelledby="section-5-title">
+<h2 id="section-5-title">4. 技术演进脉络</h2>
+<pre class="text"><code>2018 SAC [off-policy + 最大熵；连续控制算法骨架]
+   │
+   ├── 2022 Primacy Bias [发现早期过拟合 → 周期 reset 恢复 plasticity]
+   │          └──────────────┐
+   │                         │  高 UTD / 大 critic 会失稳
+   ├── 2024 BRO [大 critic + 强正则 + optimism + reset]
+   │                         │
+   ├── 2024 Stop Regressing [MSE → categorical CE，稳定移动价值目标]
+   │                         │
+   └── 2025 SimBa [RSNorm + residual MLP + LayerNorm，架构注入 simplicity bias]
+                              │
+                              ▼
+                   2025 SimbaV2 [统一汇聚]
+                   ├─ input/feature/weight 全部球面化
+                   ├─ residual → LERP，幅度 → scaler
+                   ├─ scalar MSE → categorical critic
+                   └─ reward variance/max scaling；无需 reset 仍随 UTD 扩展</code></pre>
+<p>内在推动力是社区关注点从“设计更聪明的 RL
+算法”转向“让学习系统在非平稳数据上保持可塑性”。早期 SAC
+主要关注探索和样本复用；primacy bias 把失败归因到训练历史；BRO 证明加大
+critic 有回报，但需强正则和重置；Stop Regressing 把输出 loss 视作
+scaling bottleneck；SimBa 再把网络结构本身提升为一等公民。SimbaV2
+的关键转折是：从训练中定期修复参数，变为每一步都把参数和表示维持在受控流形上。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">发表年月</th>
+<th scope="col">会议 / 出版</th>
+<th scope="col">核心贡献</th>
+<th scope="col">代表性指标 / 范围</th>
+<th scope="col">与核心工作的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Soft Actor-Critic</td>
+<td>2018.07</td>
+<td>ICML</td>
+<td>最大熵 off-policy actor-critic</td>
+<td>连续控制、多随机种子稳定</td>
+<td>提供 policy / Q 学习骨架</td>
+</tr>
+<tr class="even">
+<td>Primacy Bias</td>
+<td>2022.07</td>
+<td>ICML</td>
+<td>reset 缓解早期经验过拟合</td>
+<td>Atari 100k + DMC</td>
+<td>给出 plasticity 问题与 reset 对照</td>
+</tr>
+<tr class="odd">
+<td>Stop Regressing</td>
+<td>2024.07</td>
+<td>ICML</td>
+<td>categorical value 取代 MSE</td>
+<td>Atari、robot、Chess、Wordle</td>
+<td>传递 distributional critic</td>
+</tr>
+<tr class="even">
+<td>BRO</td>
+<td>2024.12</td>
+<td>NeurIPS Spotlight</td>
+<td>大 critic + regularization + optimism</td>
+<td>40 tasks；项目页称 &gt;15k agents</td>
+<td>证明 critic scaling 可行，但依赖 reset</td>
+</tr>
+<tr class="odd">
+<td>SimBa</td>
+<td>2025.05</td>
+<td>ICLR Spotlight</td>
+<td>simplicity-biased RL architecture</td>
+<td>项目页 51 tasks</td>
+<td>直接架构前身</td>
+</tr>
+<tr class="even best">
+<td><strong>SimbaV2</strong></td>
+<td><strong>2025.07</strong></td>
+<td><strong>ICML Spotlight</strong></td>
+<td><strong>球面网络 + categorical Q + reward scaling</strong></td>
+<td><strong>57 tasks；All=0.892@UTD2</strong></td>
+<td><strong>汇聚点：预防性稳定替代周期修复</strong></td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+
+</section>
+<section class="card" aria-labelledby="section-6-title">
+<h2 id="section-6-title">5. 开放挑战与可操作研究机会</h2>
+<h3 id="51-理论层面">5.1 理论层面</h3>
+<ol type="1">
+<li><strong>球面投影何时改善 Bellman operator 的条件数？</strong> 在相同
+replay distribution 下，对普通 MLP、LayerNorm、spectral norm、SimbaV2
+测量 critic Jacobian spectrum、Bellman residual Lipschitz bound 与
+ELR；控制参数量和
+optimizer，判断稳定性来自流形约束还是隐式学习率重标定。</li>
+<li><strong>LERP 的 Riemannian 近似误差。</strong> 比较当前一阶
+LERP、精确 exponential map、standard residual，在
+<code>L={2,4,8,16}</code> 上测 geodesic
+step、性能和数值误差，寻找近似误差随深度积累的上界。</li>
+<li><strong>classification critic 的收益来自 bounded gradient
+还是分布建模？</strong> 做相同 support 的 Huber regression、two-hot
+CE、HL-Gauss 与 quantile loss head-to-head，并匹配每样本梯度范数；若 CE
+优势在匹配梯度后消失，贡献应归因于优化而非 distributional
+semantics。</li>
+</ol>
+<h3 id="52-工程与应用层">5.2 工程与应用层</h3>
+<ol type="1">
+<li><strong>等 GPU-hour scaling。</strong> 在同一 A100/H100、同 JAX
+版本、相同 1M 环境步与 wall-clock 上比较
+SimbaV2、BRO、TD-MPC2、FoG；绘制 return–GPU-hour–peak memory 三维
+Pareto，替代仅用 UTD 代表计算。</li>
+<li><strong>真实机器人噪声与延迟。</strong> 在同一 manipulation policy
+上，对比 SimBa/SimbaV2 在观测噪声 0–10%、动作延迟 0–5
+steps、动力学随机化下的成功率和恢复时间；验证单位球面是否会放大方向噪声。</li>
+<li><strong>像素输入的归一化边界。</strong> 固定 DrQ-v2
+数据增强，比较只球面化 MLP head、同时球面化 CNN/ViT
+encoder、完全不球面化三种设置；测 representation rank、dead
+features、return 和吞吐。</li>
+<li><strong>在线到离线的一致配置。</strong> 论文离线只加
+<code>λ=0.1</code> BC。下一步应在相同 backbone / data / tuning budget
+下对 SimbaV2+BC、TD7+BC、IQL 做 10 seeds paired test，尤其解释为何
+Hopper 大胜而 HalfCheetah/Walker2d 落后。</li>
+</ol>
+<h3 id="53-新兴方向">5.3 新兴方向</h3>
+<ol type="1">
+<li><strong>LLM Agent 的 token-level 球面 critic。</strong> 在 Tau2Bench
+或 WebArena 上，固定基础模型与 rollout budget，对比 LayerNorm value
+head、unit-sphere value head、仅 reward
+normalization；同时报告成功率、KL、梯度尖峰和每 token value
+calibration。</li>
+<li><strong>多智能体中的共享球面与私有球面。</strong> 在 SMACv2 /
+MAMuJoCo 上比较共享 critic weight sphere、agent-specific sphere
+与普通参数共享，测 credit assignment、角色多样性和 non-stationarity
+robustness。</li>
+<li><strong>安全 RL 的尺度失配。</strong> reward 与 cost 分别拥有不同
+running variance 时，比较共享 scaler、双
+scaler、约束拉格朗日乘子归一化；在相同 violation budget 下报告
+return–cost Pareto，避免“奖励稳定但安全梯度失真”。</li>
+<li><strong>终身学习与可控遗忘。</strong> 把 SimbaV2 与 FoG、P3O
+做序列任务 head-to-head：同样的网络容量增长和总更新预算下，比较 forward
+transfer、backward transfer 与 plasticity；判断“永不
+reset”是否会把旧任务方向锁死在球面上。</li>
+</ol>
+<hr />
+
+</section>
+<section class="card" aria-labelledby="section-7-title">
+<h2 id="section-7-title">6. 其他值得关注的近期工作</h2>
+<p><strong>A Forget-and-Grow Strategy for Deep RL Scaling in Continuous
+Control</strong>（2025.07，ICML）<br />
+用 replay decay 主动淡化早期经验，并动态扩网络；它与 SimbaV2
+构成“修改数据记忆”对“修改优化几何”的直接对照。<a
+href="https://proceedings.mlr.press/v267/kang25c.html">PMLR</a></p>
+<p><strong>Stay Hungry, Keep Learning: Sustainable Plasticity for Deep
+RL</strong>（2025.07，ICML）<br />
+提出 neuron regeneration、cycle reset 与 inner
+distillation；值得用来检验 SimbaV2 的预防性约束能否长期替代恢复机制。<a
+href="https://proceedings.mlr.press/v267/zhou25am.html">PMLR</a></p>
+<p><strong>The Courage to Stop: Overcoming Sunk Cost Fallacy in Deep
+RL</strong>（2025.07，ICML）<br />
+LEAST 用 Q 与梯度统计提前终止低价值 episode，从数据采集端减少 replay
+pollution，与网络端稳定化互补。<a
+href="https://proceedings.mlr.press/v267/liu25ay.html">PMLR</a></p>
+<p><strong>Assistax: A Multi-Agent Hardware-Accelerated Benchmark for
+Assistive Robotics</strong>（arXiv 2507.21638v3，2026-07-21 修订）<br />
+在 JAX/MuJoCo-MJX 中让机器人与主动 humanoid partner 同时学习，为球面
+MARL 的吞吐与协作稳定性提供现成试验场。<a
+href="https://arxiv.org/abs/2507.21638">arXiv</a></p>
+<p><strong>CaP-X: Benchmarking and Improving Code-as-Policy Agents for
+Robot Manipulation</strong>（2026.03，预印本）<br />
+用可执行程序组合 perception/control primitives，补上 VLA 与传统 policy
+之间的系统化比较空间。<a
+href="https://arxiv.org/abs/2603.22435">arXiv</a></p>
+<p><strong>ViVa: A Video-Generative Value Model for Robot
+Manipulation</strong>（2026.04，预印本）<br />
+把时间动态纳入 value estimation；若与 SimbaV2 的 categorical value head
+结合，可直接测试“更好的动态模型”与“更稳定的输出几何”谁贡献更大。<a
+href="https://huggingface.co/papers/2604.08168">Hugging Face
+Papers</a></p>
+<p><strong>Agent World Model: Infinity Synthetic Environments for
+Agentic RL</strong>（2026.02，预印本）<br />
+生成 1,000 个 code-driven environments、35K tools 与 10K
+tasks，适合做跨环境 fixed-hyperparameter 的 Agent scaling 检验。<a
+href="https://huggingface.co/papers/2602.10090">Hugging Face
+Papers</a></p>
+<hr />
+
+</section>
+<section class="card" aria-labelledby="section-8-title">
+<h2 id="section-8-title">7. 结论</h2>
+<p>SimbaV2 最值得看的地方，是它把深度 RL 的 scaling
+问题从“再加一种正则”提升为一套统一的尺度控制：方向、幅度、残差注入和价值目标各自有明确通道。57
+任务低 UTD 总体分数从 SimBa 的 0.780 提升到
+0.892（+0.112，+14.36%），且高 UTD 无 reset 仍升到
+0.911，是有说服力的系统级证据。</p>
+<p>但最谨慎的结论应是：<strong>SimbaV2
+证明了一套球面架构与分布式价值配方在 state-based continuous control
+上可扩展，而不是证明“超球面归一化单独导致
+SOTA”，更不是证明它已适用于视觉、真实机器人或 LLM Agent。</strong>
+DMC-Easy 的 −1.69%、混合 seed/近似 CI、UTD 非等 FLOPs，以及 LR
+表述冲突，都要求后续做更严格的等预算与因子化比较。</p>
+<hr />
+
+</section>
+<section class="card" aria-labelledby="section-9-title">
+<h2 id="section-9-title">来源与追溯说明</h2>
+<ul>
+<li>核心数字来自核心论文 PDF：表 1（第 7 页）、表 2（第 8–9 页）、表
+3（第 19–20 页）、表 4（第 20–21 页）、表 5（第 23 页）以及图
+1、4–7。PDF：<a
+href="https://www.cs.utexas.edu/~pstone/Papers/bib2html-links/pstone_simba.pdf">作者镜像</a>。</li>
+<li>会议身份、页码与作者来自 <a
+href="https://proceedings.mlr.press/v267/lee25u.html">PMLR
+官方页</a>；版本日期来自 <a
+href="https://arxiv.org/abs/2502.15280v2">arXiv 元数据</a>。</li>
+<li>百分比均由表中原始数值计算：相对变化
+<code>(SimbaV2−baseline)/baseline×100%</code>；绝对变化保留原指标单位，不误写为百分点。</li>
+<li>候选池的 ICML 论文由 <a
+href="https://proceedings.mlr.press/v267/">PMLR 267 accepted papers</a>
+验证；OpenReview 页面遇到 challenge 时，仅以可访问的会议元数据和 arXiv
+页面交叉确认，不引用不可见内容。</li>
+<li>本报告未运行论文代码或复现实验；对曲线没有公开逐点数值的部分，只报告作者文字中明确描述的趋势，不从图像估算数据。</li>
+<li>HTML 已通过 Warm Editorial Report 的结构与离线依赖校验（0 error / 0
+warning）。本次运行环境未提供
+<code>/usr/bin/chromium</code>、<code>/opt/pw-browsers</code>
+或实际存在的 Playwright Chromium 可执行文件；按要求未运行
+<code>playwright install</code>，因此浅色、深色、移动端的自动截图检查无法完成。已通过静态检查确保宽表置于横向滚动容器、移动端图表在
+figure 内滚动、主题变量与键盘 tooltip
+完整，但这不等价于真实浏览器视觉验收。</li>
+<li>去重索引已在本次生成后更新。</li>
+</ul>
+
+</section>
+</main>
+
+  <footer>来源：核心论文表 1–5、图 1 与图 4–7；PMLR、arXiv、官方项目页与代码仓库均于 2026-08-20 验证。去重索引已更新。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

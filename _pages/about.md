@@ -14,6 +14,9 @@ I received my PhD in Informatics from New Jersey Institute of Technology in May 
 
 ## Research
 
-My research focuses on two connected directions: **trustworthy machine intelligence for structured data**, including graph neural network explainability, robustness under distribution shift, and evidence-grounded graph RAG; and **efficient multimodal foundation models**, including LVLM training and post-training, long-video understanding, information-aware frame sampling, mixture-of-experts routing, and scalable ML systems. Across both directions, I aim to build models that preserve decision-critical information while remaining reliable, interpretable, and efficient in real-world applications.
+My research goal is to build **reliable and efficient foundation models** that preserve and exploit decision-critical information across multimodal and structured data, from training and adaptation through deployment.
+
+- **Trustworthy AI for Graph Learning and Structured Reasoning:** developing faithful and reliable explanations, diagnostics, and reasoning methods for graph and structured models, with an emphasis on explanation fidelity, confidence awareness, and robustness under distribution shift.
+- **Efficient Multimodal Training, Adaptation, and Deployment:** building efficient multimodal foundation models for content understanding through representation learning, model and data optimization, task adaptation, and scalable deployment.
 
 I actively welcome research collaborations in trustworthy graph learning, GNN/LLM/VLM explainability, multimodal and video understanding, model architecture and training optimization, and scalable ML systems. I’m also open to working with motivated, well-prepared interns.

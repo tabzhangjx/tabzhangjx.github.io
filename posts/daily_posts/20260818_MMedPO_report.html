@@ -1,0 +1,1297 @@
+---
+layout: null
+title: "MMedPO"
+date: 2026-08-18
+topic: vlm-vision
+excerpt: "解析 MMedPO 如何以病灶局部扰动和临床相关性加权，让医疗多模态偏好优化同时比较回答质量与影像证据。"
+permalink: /blog/2026/08/18/mmedpo-medical-multimodal-preference-optimization/
+blog_post: true
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>MMedPO：临床感知的多模态偏好优化 · 2026-08-18</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-primary-alt: #3987e5;
+    --chart-comparison: #eb6834;
+    --chart-comparison-alt: #d95926;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #eb6834;
+    --chart-comparison-alt: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">视觉与多模态 · ICML 2025 深度论文追踪</p>
+    <h1>MMedPO：临床感知的多模态偏好优化</h1>
+    <p class="subtitle">从文本偏好走向病灶证据偏好：完整结果、消融、技术脉络与八项批判</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">ICML 2025 / arXiv:2412.06141v3</span>
+      <span class="chip">2026-08-18</span>
+      <span class="chip">Medical VLM · Preference Optimization</span>
+    </div>
+    <p class="lede">MMedPO 将医疗 VLM 幻觉重述为图像与文字证据没有被等权纳入偏好，并用病灶局部扰动与临床相关性加权，让 DPO 同时比较回答和影像。</p>
+  </header>
+
+  <main>
+    <section class="card" aria-labelledby="0-链接验证表"><h2 id="0-链接验证表">0. 链接验证表</h2>
+<p>以下链接均在本次报告生成时实际访问；“未找到”意味着没有在论文、官方项目或可核验检索结果中确认，而非断言资源绝不存在。</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="可横向滚动的数据表"><table>
+<thead>
+<tr class="header">
+<th scope="col">论文</th>
+<th scope="col" class="num">会议主页 / ACL Anthology</th>
+<th scope="col" class="num">arXiv（核验版本）</th>
+<th scope="col" class="num">Code 仓库</th>
+<th scope="col" class="num">数据集 / 权重</th>
+<th scope="col" class="num">项目主页 / 视频</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd best">
+<td><strong>MMedPO（核心）</strong></td>
+<td class="num"><a href="https://proceedings.mlr.press/v267/zhu25v.html">ICML 2025 /
+PMLR</a>；<a href="https://openreview.net/forum?id=e6vlZdLlIK">OpenReview</a></td>
+<td class="num"><a href="https://arxiv.org/abs/2412.06141v3">2412.06141v3，2025-05-21</a></td>
+<td class="num"><a href="https://github.com/aiming-lab/MMedPO">aiming-lab/MMedPO</a></td>
+<td class="num">训练脚本已公开；论文使用
+IU-Xray、MIMIC-CXR、SLAKE、VQA-RAD，仓库未提供统一可直接分发的数据镜像；基础权重沿用
+LLaVA-Med-1.5</td>
+<td class="num">未找到独立项目页 / 视频</td>
+</tr>
+<tr class="even">
+<td>LLaVA-Med</td>
+<td class="num"><a href="https://github.com/microsoft/LLaVA-Med">NeurIPS 2023
+Datasets &amp; Benchmarks（仓库收录接受信息）</a></td>
+<td class="num"><a href="https://arxiv.org/abs/2306.00890v1">2306.00890v1，2023-06-01</a></td>
+<td class="num"><a href="https://github.com/microsoft/LLaVA-Med">microsoft/LLaVA-Med</a></td>
+<td class="num"><a href="https://huggingface.co/microsoft/llava-med-v1.5-mistral-7b">LLaVA-Med-1.5-Mistral-7B</a></td>
+<td class="num"><a href="https://www.microsoft.com/en-us/research/project/llava-large-language-and-vision-assistant/">Microsoft
+Research LLaVA 项目</a></td>
+</tr>
+<tr class="odd">
+<td>Direct Preference Optimization（DPO）</td>
+<td class="num"><a href="https://proceedings.neurips.cc/paper_files/paper/2023/hash/a85b405ed65c6477a4fe8302b5e06ce7-Abstract-Conference.html">NeurIPS
+2023</a></td>
+<td class="num"><a href="https://arxiv.org/abs/2305.18290v3">2305.18290v3，2024-07-29</a></td>
+<td class="num"><a href="https://github.com/eric-mitchell/direct-preference-optimization">eric-mitchell/direct-preference-optimization</a></td>
+<td class="num">仓库含示例配置；无单一专属权重</td>
+<td class="num">未找到独立项目页 / 视频</td>
+</tr>
+<tr class="even">
+<td>POVID</td>
+<td class="num">未找到正式会议主页；以预印本为准</td>
+<td class="num"><a href="https://arxiv.org/abs/2402.11411v1">2402.11411v1，2024-02-18</a></td>
+<td class="num"><a href="https://github.com/YiyangZhou/POVID">YiyangZhou/POVID</a></td>
+<td class="num"><a href="https://github.com/YiyangZhou/POVID#examples">偏好数据与两阶段权重入口（仓库）</a></td>
+<td class="num">未找到独立项目页 / 视频</td>
+</tr>
+<tr class="odd">
+<td>SIMA</td>
+<td class="num"><a href="https://aclanthology.org/events/naacl-2025/">NAACL 2025
+Findings（arXiv 标注）</a></td>
+<td class="num"><a href="https://arxiv.org/abs/2405.15973v4">2405.15973v4，2025-02-08</a></td>
+<td class="num">未找到可确认的官方仓库</td>
+<td class="num">未找到</td>
+<td class="num">未找到独立项目页 / 视频</td>
+</tr>
+<tr class="even">
+<td>STLLaVA-Med</td>
+<td class="num"><a href="https://aclanthology.org/2024.emnlp-main.1119/">EMNLP 2024
+主会 / ACL Anthology</a></td>
+<td class="num"><a href="https://arxiv.org/abs/2406.19973v2">2406.19973v2，2024-10-24</a></td>
+<td class="num"><a href="https://github.com/heliossun/STLLaVA-Med">heliossun/STLLaVA-Med</a></td>
+<td class="num"><a href="https://github.com/heliossun/STLLaVA-Med#data">模型与 10K
+DPO 数据入口（仓库）</a></td>
+<td class="num">未找到独立项目页 / 视频</td>
+</tr>
+</tbody>
+</table>
+</div></section><section class="card" aria-labelledby="1-检索去重与随机选择记录"><h2 id="1-检索去重与随机选择记录">1. 检索、去重与随机选择记录</h2>
+<p>本日用 <code>date +%u</code> 得到
+2，故轮转到“视觉与多模态”。检索前已读取
+<code>ml-report-index.md</code>；最近 14 天记录覆盖
+EPG、EARL-BO、DuoAttention、稀疏自编码器理论、DPLM2.1、HEX
+等主题，没有医疗视觉语言偏好优化或下列具体论文，因此不存在去重冲突。候选优先取近
+12 个月的 ICML 2025、NeurIPS 2025 与 ICLR 2026 正式工作；少量候选以官方
+OpenReview 接受页为依据。</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="可横向滚动的数据表"><table>
+<thead>
+<tr class="header">
+<th style="text-align: right;" scope="col">#</th>
+<th scope="col" class="num">候选工作</th>
+<th scope="col" class="num">年份 / 来源</th>
+<th scope="col" class="num">主题切面</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td class="num">ReAgent-V</td>
+<td class="num">NeurIPS 2025</td>
+<td class="num">视觉推理 Agent</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td class="num">Time-R1</td>
+<td class="num">NeurIPS 2025</td>
+<td class="num">视频时间推理</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td class="num">Logic-in-Frames</td>
+<td class="num">NeurIPS 2025</td>
+<td class="num">视频逻辑推理</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td class="num">Enhancing MLLMs with 3D Vision Geometry Priors</td>
+<td class="num">NeurIPS 2025</td>
+<td class="num">3D 几何先验</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td class="num">VideoHallu</td>
+<td class="num">NeurIPS 2025</td>
+<td class="num">视频幻觉评测</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td class="num">Towards Self-Refinement VLMs</td>
+<td class="num">NeurIPS 2025</td>
+<td class="num">自我修正</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td class="num">HoPE</td>
+<td class="num">NeurIPS 2025</td>
+<td class="num">多模态对齐</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">8</td>
+<td class="num">LiveStar</td>
+<td class="num">NeurIPS 2025</td>
+<td class="num">流式视频理解</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td class="num">MME-VideoOCR</td>
+<td class="num">NeurIPS 2025</td>
+<td class="num">视频 OCR 评测</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td class="num">Vid-SME</td>
+<td class="num">NeurIPS 2025</td>
+<td class="num">视频空间理解</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td class="num">Time-VLM</td>
+<td class="num">ICML 2025</td>
+<td class="num">时间序列视觉语言模型</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;"><strong>12</strong></td>
+<td class="num"><strong>MMedPO</strong></td>
+<td class="num"><strong>ICML 2025</strong></td>
+<td class="num"><strong>医疗多模态偏好优化</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td class="num">LVLM-based Deepfake Detection</td>
+<td class="num">ICML 2025</td>
+<td class="num">深伪检测</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td class="num">Visual Graph Arena</td>
+<td class="num">ICML 2025</td>
+<td class="num">图结构视觉推理</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td class="num">FeatSharp</td>
+<td class="num">ICML 2025</td>
+<td class="num">密集视觉特征</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">16</td>
+<td class="num">Bring Reason to Vision</td>
+<td class="num">ICML 2025</td>
+<td class="num">视觉推理</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td class="num">Robust MLLMs Against Modality Conflict</td>
+<td class="num">ICML 2025</td>
+<td class="num">模态冲突鲁棒性</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td class="num">Reranking Reasoning Context</td>
+<td class="num">ICML 2025</td>
+<td class="num">多模态上下文排序</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">19</td>
+<td class="num">I Think, Therefore I Diffuse</td>
+<td class="num">ICML 2025</td>
+<td class="num">推理增强生成</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">20</td>
+<td class="num">Gradient Inversion for MLLMs</td>
+<td class="num">ICML 2025</td>
+<td class="num">多模态安全</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">21</td>
+<td class="num">Are Unified VLMs Necessary?</td>
+<td class="num">ICLR 2026</td>
+<td class="num">统一架构评估</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">22</td>
+<td class="num">Multimodal Data Mixtures</td>
+<td class="num">ICLR 2026</td>
+<td class="num">数据配方</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">23</td>
+<td class="num">Vision-R1</td>
+<td class="num">2025 预印本 / OpenReview</td>
+<td class="num">强化视觉推理</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">24</td>
+<td class="num">Vision-Language Process Reward Models</td>
+<td class="num">2025 OpenReview</td>
+<td class="num">过程奖励模型</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">25</td>
+<td class="num">LEMUR</td>
+<td class="num">ICLR 2026 OpenReview</td>
+<td class="num">细粒度多模态检索</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">26</td>
+<td class="num">Mordal</td>
+<td class="num">ICLR 2026 OpenReview</td>
+<td class="num">多模态推理</td>
+</tr>
+</tbody>
+</table>
+</div><p>随机命令为 <code>shuf -i 1-26 -n 1</code>，结果为
+<strong>12</strong>。MMedPO 的正式论文、HTML
+全文、代码、主结果、消融和工程配置均可访问，因此重抽次数为
+<strong>0</strong>。候选池的作用是给随机过程可复核边界，并不意味着每一篇都具有相同资料成熟度。</p>
+</section><figure class="figure" aria-labelledby="gain-chart-title">
+  <p class="fig-title" id="gain-chart-title">对逐数据集最强单一竞品的相对提升</p>
+  <p class="fig-sub">本报告据核心论文表 1 复算；先在每个数据集内平均其指标，再选择该数据集最强的单一非 MMedPO 方法。单 Y 轴，单位为 %。</p>
+  <div class="legend" aria-label="图例"><span><span class="swatch" style="background:var(--chart-primary)"></span>MMedPO 相对提升</span><span><span class="swatch" style="background:var(--chart-comparison)"></span>0% 参考线</span></div>
+  <svg class="chart" viewbox="0 0 900 360" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>MMedPO 在四个数据集上相对最强单一竞品的提升</title>
+    <desc>SLAKE 3.18%，VQA-RAD 6.26%，IU-Xray 12.33%，MIMIC-CXR 18.83%。</desc>
+    <line x1="180" y1="34" x2="180" y2="310" stroke="var(--chart-comparison)" stroke-width="3"></line>
+    <g font-size="14">
+      <text x="165" y="330" text-anchor="middle">0</text><text x="315" y="330" text-anchor="middle">5</text><text x="465" y="330" text-anchor="middle">10</text><text x="615" y="330" text-anchor="middle">15</text><text x="765" y="330" text-anchor="middle">20%</text>
+      <text x="160" y="82" text-anchor="end">SLAKE</text><rect x="180" y="58" width="95.4" height="34" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="SLAKE：+3.18%"></rect><text x="286" y="81">3.18%</text>
+      <text x="160" y="142" text-anchor="end">VQA-RAD</text><rect x="180" y="118" width="187.8" height="34" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="VQA-RAD：+6.26%"></rect><text x="378" y="141">6.26%</text>
+      <text x="160" y="202" text-anchor="end">IU-Xray</text><rect x="180" y="178" width="369.9" height="34" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="IU-Xray：+12.33%"></rect><text x="560" y="201">12.33%</text>
+      <text x="160" y="262" text-anchor="end">MIMIC-CXR</text><rect x="180" y="238" width="564.9" height="34" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="MIMIC-CXR：+18.83%"></rect><text x="755" y="261">18.83%</text>
+    </g>
+  </svg>
+  <figcaption>来源：MMedPO 表 1，本报告复算。图下方正文表格提供逐指标等价数据；不同数据集的聚合指标语义不同，图仅比较相对提升。</figcaption>
+</figure><section class="card" aria-labelledby="2-核心论文深度解析"><h2 id="2-核心论文深度解析">2. 核心论文深度解析</h2>
+<h3 id="21-motivation问题不是会不会说医学而是是否真的依据影像">2.1
+Motivation：问题不是“会不会说医学”，而是“是否真的依据影像”</h3>
+<p>LLaVA-Med 一类 Med-LVLM
+把视觉编码器接入语言模型后，可以生成流畅的医疗回答，但流畅不等于图像忠实。MMedPO
+指出的具体失效是 <strong>modality
+misalignment</strong>：训练和解码更容易依赖语言模型中已有的医学共现知识，而不是当前
+X
+光或病例图像中的病灶证据。于是模型可能给出医学上“像真的”描述，却不是这张图的事实。普通文本
+DPO
+只比较同一图像下的两个答案；如果拒绝答案过于荒谬，模型仅需学会语言常识区分，不必提高看图能力。</p>
+<p>论文用四个测试集把痛点量化。基础 LLaVA-Med-1.5-7B 在 SLAKE 开放题 /
+闭合题分别为 <strong>44.26 / 61.30</strong>，VQA-RAD 为 <strong>29.24 /
+63.97</strong>；在 IU-Xray 报告生成上，平均 BLEU / ROUGE-L / METEOR 只有
+<strong>14.56 / 10.31 / 10.95</strong>，MIMIC-CXR 对应 <strong>10.25 /
+9.38 / 7.71</strong>（核心论文表 1，LLaVA-Med
+行）。这不是直接的“幻觉率”，但说明基础模型在问答与报告生成两类接口上都留下大幅空间。</p>
+<p>新颖性在于：POVID 已把人工注入文本幻觉与全图扰动并入视觉 DPO，SIMA
+已用视觉指标改进自批判，STLLaVA-Med 已把 GPT-4o
+监督的自训练带入医学；MMedPO
+没有简单叠加三者，而是提出一个医疗特化判断——<strong>不是所有错误、所有像素都同等临床相关</strong>。它只扰动病灶区域，并让医学模型群或视觉工具给偏好样本赋权，因此优化信号试图落在“影响临床判断的错”上。</p>
+<p>为什么值得解决？医学图像回答的错误成本不对称：把背景纹理描述得不够漂亮与凭空生成病灶并非同类风险。另一方面，人工标注每个偏好对既昂贵又涉及专家时间。若能用工具构造困难负例，同时保持低成本
+LoRA
+微调，就可能把领域对齐从一次昂贵标注工程变成可复用的数据—优化流程。不过，本文并未验证真实临床决策安全性；这里的价值是研究框架价值，不是部署许可。</p>
+<h3 id="22-故事线从难负例到临床加权的三次转折">2.2
+故事线：从“难负例”到“临床加权”的三次转折</h3>
+<p>第一转折是把答案幻觉当作偏好数据资源。作者从目标模型采样回答，再由
+GPT-4o 挑出幻觉最强的样本；若现有采样不足以形成困难负例，就让
+GPT-4o生成医学上看似合理但事实错误的回答。这样，chosen 与 rejected
+的差距不再是语法质量，而是临床事实。</p>
+<p>第二转折是承认文本负例仍可能让模型绕开图像。于是作者调用
+MedKLIP，以提示词 “disease”
+产生病灶热图，只在病灶区域注入扩散噪声。对于相同回答，图像从原图变为局部被破坏的图，DPO
+必须利用视觉证据差异。这一设计牺牲了对未知病灶、工具漏检的覆盖，换取扰动的语义集中度。</p>
+<p>第三转折是对偏好对加权。文本负例由三个 Med-LLM
+评分并多轮辩论，视觉负例由 MedKLIP
+置信度评分；标准化、截断后作为损失权重。隐含假设是“工具共识 /
+置信度”与临床重要性单调相关。该假设直观但没有由医师评分做外部标定，这会成为后文的核心局限。</p>
+<p>整体流程如下：</p>
+<pre class="text"><code>                    ┌─ 目标 Med-LVLM 多次采样 ─ GPT-4o 选/造困难幻觉 ─ Med-LLM 群评分 ┐
+原始 (影像, 问题, 正答) ┤                                                        ├─ 加权偏好对
+                    └─ MedKLIP 病灶热图 ─ 仅病灶区域扩散加噪 ─ 工具置信度评分 ─────┘
+                                               ↓
+                                      Clinical-aware M-DPO
+                                               ↓
+                                    LoRA 更新 LLaVA-Med-1.5-7B</code></pre>
+<h3 id="23-方法论与机制解剖">2.3 方法论与机制解剖</h3>
+<p>记原图为 (x_v)，病灶热图 / 掩码为 (h)，扩散步 (k) 的累计噪声系数为
+(\bar\xi_k)，高斯噪声为 (\epsilon)。视觉拒绝样本为：</p>
+<p>[ x_v^*=\sqrt{\bar\xi_k}(x_v\odot h)+\sqrt{1-\bar\xi_k}(\epsilon\odot
+h)+x_v\odot(1-h). ]</p>
+<p>式子的关键不是标准扩散加噪，而是最后一项完整保留非病灶区域：它把“全图质量下降”控制成“临床证据局部失真”。文本负例则在原图下产生
+(y_l)，正答为 (y_w)。工具给出原始相关性分数 (s)，作者按
+(\mu=1,\sigma^2=0.1) 标准化并截断：</p>
+<p>[ s' =
+\operatorname{clip}\left(\frac{s-\mu}{\sigma},0.75,1.25\right). ]</p>
+<p>最终损失沿 DPO 的隐式奖励差展开，并把 rejected
+条件允许为文本或扰动视觉条件：</p>
+<p>[ \mathcal L_{\text{MMedPO}}=-\mathbb
+E\left[s'\log\sigma\left(\beta\log\frac{\pi_\theta(y_w|x)}{\pi_0(y_w|x)}-\beta\log\frac{\pi_\theta(y_l|x^<em>)}{\pi_0(y_l|x^</em>)}\right)\right].
+]</p>
+<p>这里用 (\beta) 表示 DPO 温度，以避免与论文中截断下界也记为 (\alpha)
+的符号冲突。直觉上，当一个偏好对被工具判断为更具临床相关性时，(s')
+增大，其梯度被放大；截断把最大 / 最小权重限制为 1.25 / 0.75，最大比值为
+<strong>1.667</strong>，避免工具噪声完全支配训练。</p>
+<p>伪代码可概括为：</p>
+<pre class="text"><code>for each clinical example (image, prompt, preferred_answer):
+    candidates = target_med_vlm.sample(image, prompt)
+    text_negative = GPT4o.select_or_generate_hard_hallucination(candidates)
+    text_score = debate([Med42-7B, Med42-70B, BioMistral-7B], max_rounds=5)
+
+    lesion_map, visual_score = MedKLIP(image, prompt="disease")
+    corrupted_image = diffuse_only_inside(image, lesion_map)
+
+    add weighted pair (image, preferred_answer, text_negative, normalize(text_score))
+    add weighted pair (corrupted_image, preferred_answer, rejected_condition, normalize(visual_score))
+
+optimize weighted_DPO_with_LoRA(epochs=3, lr=1e-7, batch_size=4)</code></pre>
+<div class="table-scroll" role="region" tabindex="0" aria-label="可横向滚动的数据表"><table>
+<thead>
+<tr class="header">
+<th scope="col">机制 / 维度</th>
+<th scope="col" class="num">设计选择</th>
+<th scope="col" class="num">动机</th>
+<th scope="col" class="num">已报告关键设置</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>基础模型</td>
+<td class="num">LLaVA-Med-1.5 7B</td>
+<td class="num">保留医疗视觉指令能力</td>
+<td class="num">7B；LoRA 更新</td>
+</tr>
+<tr class="even">
+<td>文本负例</td>
+<td class="num">目标模型采样 + GPT-4o 选取 / 生成</td>
+<td class="num">形成医学上貌似合理的困难幻觉</td>
+<td class="num">生成数量 / 温度未完整报告</td>
+</tr>
+<tr class="odd">
+<td>视觉负例</td>
+<td class="num">MedKLIP 病灶热图内扩散加噪</td>
+<td class="num">强迫偏好依赖病灶视觉证据</td>
+<td class="num">提示词 “disease”；扩散步敏感性未报告</td>
+</tr>
+<tr class="even">
+<td>文本相关性</td>
+<td class="num">3 个 Med-LLM 多智能体辩论</td>
+<td class="num">降低单一裁判偏差</td>
+<td class="num">最多 5 轮；无共识则历史平均</td>
+</tr>
+<tr class="odd">
+<td>视觉相关性</td>
+<td class="num">MedKLIP 置信度</td>
+<td class="num">让高可信病灶对权重更高</td>
+<td class="num">标准化后截断 [0.75, 1.25]</td>
+</tr>
+<tr class="even">
+<td>优化</td>
+<td class="num">临床相关性加权 DPO</td>
+<td class="num">在无显式奖励模型下直接对齐</td>
+<td class="num">batch=4，lr=1e-7，3 epochs</td>
+</tr>
+<tr class="odd">
+<td>计算环境</td>
+<td class="num">PyTorch 2.1.2</td>
+<td class="num">复现训练栈</td>
+<td class="num">4×RTX A6000；约 2–3 小时</td>
+</tr>
+</tbody>
+</table>
+</div><p>偏好训练对数量为：IU-Xray 视觉 2,069 + 文本 2,069 =
+<strong>4,138</strong>；MIMIC-CXR 800 + 800 =
+<strong>1,600</strong>；SLAKE 4,919 + 4,919 =
+<strong>9,838</strong>；VQA-RAD 1,797 + 1,797 =
+<strong>3,594</strong>（核心论文实验设置 / 数据统计表）。合计
+<strong>19,170</strong> 对，且视觉 /
+文本严格各半。这个平衡是工程上的清晰选择，却没有证明 1:1
+是最优比例。</p>
+<h3 id="24-基准数据集与指标">2.4 基准、数据集与指标</h3>
+<div class="table-scroll" role="region" tabindex="0" aria-label="可横向滚动的数据表"><table>
+<thead>
+<tr class="header">
+<th scope="col">基准</th>
+<th style="text-align: right;" scope="col" class="num">测试规模（论文报告）</th>
+<th scope="col" class="num">任务</th>
+<th scope="col" class="num">指标</th>
+<th scope="col" class="num">能力覆盖与注意事项</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>SLAKE</td>
+<td style="text-align: right;" class="num">641 图像、1,061 QA</td>
+<td class="num">医疗 VQA</td>
+<td class="num">开放题 Recall、闭合题 Accuracy</td>
+<td class="num">有结构化医学知识，但规模较小</td>
+</tr>
+<tr class="even">
+<td>VQA-RAD</td>
+<td style="text-align: right;" class="num">315 图像、451 QA</td>
+<td class="num">放射学 VQA</td>
+<td class="num">开放题 Recall、闭合题 Accuracy</td>
+<td class="num">测试仅 451 问答，百分点易受少数样本影响</td>
+</tr>
+<tr class="odd">
+<td>IU-Xray</td>
+<td style="text-align: right;" class="num">590 图像 / 报告</td>
+<td class="num">胸片报告生成</td>
+<td class="num">平均 BLEU-1/2/3/4、ROUGE-L、METEOR</td>
+<td class="num">词面重叠不等同临床事实正确</td>
+</tr>
+<tr class="even">
+<td>MIMIC-CXR</td>
+<td style="text-align: right;" class="num">200 测试样本</td>
+<td class="num">胸片报告生成</td>
+<td class="num">同上</td>
+<td class="num">200 样本尤其需要置信区间，但论文未给</td>
+</tr>
+</tbody>
+</table>
+</div><h3 id="25-主结果完整-10-指标矩阵">2.5 主结果：完整 10 指标矩阵</h3>
+<p>下表全部抄录自核心论文 <strong>表 1（非 SFT
+分组）</strong>。粗体为逐列最优。最后一列是本报告把 10
+个不同语义的百分制指标做的简单均值，仅用于总体检查，不是论文官方指标。</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="可横向滚动的数据表"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th style="text-align: right;" scope="col" class="num">SLAKE Open</th>
+<th style="text-align: right;" scope="col" class="num">SLAKE Closed</th>
+<th style="text-align: right;" scope="col" class="num">VQA-RAD Open</th>
+<th style="text-align: right;" scope="col" class="num">VQA-RAD Closed</th>
+<th style="text-align: right;" scope="col" class="num">IU BLEU avg</th>
+<th style="text-align: right;" scope="col" class="num">IU R-L</th>
+<th style="text-align: right;" scope="col" class="num">IU METEOR</th>
+<th style="text-align: right;" scope="col" class="num">MIMIC BLEU avg</th>
+<th style="text-align: right;" scope="col" class="num">MIMIC R-L</th>
+<th style="text-align: right;" scope="col" class="num">MIMIC METEOR</th>
+<th style="text-align: right;" scope="col" class="num">10项均值</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>LLaVA-Med</td>
+<td style="text-align: right;" class="num">44.26</td>
+<td style="text-align: right;" class="num">61.30</td>
+<td style="text-align: right;" class="num">29.24</td>
+<td style="text-align: right;" class="num">63.97</td>
+<td style="text-align: right;" class="num">14.56</td>
+<td style="text-align: right;" class="num">10.31</td>
+<td style="text-align: right;" class="num">10.95</td>
+<td style="text-align: right;" class="num">10.25</td>
+<td style="text-align: right;" class="num">9.38</td>
+<td style="text-align: right;" class="num">7.71</td>
+<td style="text-align: right;" class="num">26.19</td>
+</tr>
+<tr class="even">
+<td>Self-Rewarding</td>
+<td style="text-align: right;" class="num">42.63</td>
+<td style="text-align: right;" class="num">61.30</td>
+<td style="text-align: right;" class="num">33.29</td>
+<td style="text-align: right;" class="num">64.17</td>
+<td style="text-align: right;" class="num">14.20</td>
+<td style="text-align: right;" class="num">10.38</td>
+<td style="text-align: right;" class="num">10.52</td>
+<td style="text-align: right;" class="num">10.78</td>
+<td style="text-align: right;" class="num">9.27</td>
+<td style="text-align: right;" class="num">7.73</td>
+<td style="text-align: right;" class="num">26.43</td>
+</tr>
+<tr class="odd">
+<td>DPO</td>
+<td style="text-align: right;" class="num">49.30</td>
+<td style="text-align: right;" class="num">62.02</td>
+<td style="text-align: right;" class="num">29.76</td>
+<td style="text-align: right;" class="num">64.70</td>
+<td style="text-align: right;" class="num">16.08</td>
+<td style="text-align: right;" class="num">12.95</td>
+<td style="text-align: right;" class="num">17.13</td>
+<td style="text-align: right;" class="num">11.19</td>
+<td style="text-align: right;" class="num">9.45</td>
+<td style="text-align: right;" class="num">7.80</td>
+<td style="text-align: right;" class="num">28.04</td>
+</tr>
+<tr class="even">
+<td>POVID</td>
+<td style="text-align: right;" class="num">52.43</td>
+<td style="text-align: right;" class="num">70.35</td>
+<td style="text-align: right;" class="num">31.77</td>
+<td style="text-align: right;" class="num">65.07</td>
+<td style="text-align: right;" class="num">20.80</td>
+<td style="text-align: right;" class="num">24.33</td>
+<td style="text-align: right;" class="num">30.05</td>
+<td style="text-align: right;" class="num">11.21</td>
+<td style="text-align: right;" class="num">9.66</td>
+<td style="text-align: right;" class="num">7.84</td>
+<td style="text-align: right;" class="num">32.35</td>
+</tr>
+<tr class="odd">
+<td>SIMA</td>
+<td style="text-align: right;" class="num">51.77</td>
+<td style="text-align: right;" class="num">69.10</td>
+<td style="text-align: right;" class="num">31.23</td>
+<td style="text-align: right;" class="num">64.80</td>
+<td style="text-align: right;" class="num">17.11</td>
+<td style="text-align: right;" class="num">22.87</td>
+<td style="text-align: right;" class="num">29.10</td>
+<td style="text-align: right;" class="num">11.16</td>
+<td style="text-align: right;" class="num">9.58</td>
+<td style="text-align: right;" class="num">7.49</td>
+<td style="text-align: right;" class="num">31.42</td>
+</tr>
+<tr class="even">
+<td>FiSAO</td>
+<td style="text-align: right;" class="num">52.69</td>
+<td style="text-align: right;" class="num">70.46</td>
+<td style="text-align: right;" class="num">32.70</td>
+<td style="text-align: right;" class="num">64.11</td>
+<td style="text-align: right;" class="num">21.06</td>
+<td style="text-align: right;" class="num">25.72</td>
+<td style="text-align: right;" class="num">30.82</td>
+<td style="text-align: right;" class="num">11.32</td>
+<td style="text-align: right;" class="num">9.68</td>
+<td style="text-align: right;" class="num">7.62</td>
+<td style="text-align: right;" class="num">32.62</td>
+</tr>
+<tr class="odd">
+<td>STLLaVA-Med</td>
+<td style="text-align: right;" class="num">48.65</td>
+<td style="text-align: right;" class="num">61.75</td>
+<td style="text-align: right;" class="num">30.17</td>
+<td style="text-align: right;" class="num">64.38</td>
+<td style="text-align: right;" class="num">16.11</td>
+<td style="text-align: right;" class="num">10.58</td>
+<td style="text-align: right;" class="num">10.51</td>
+<td style="text-align: right;" class="num">11.11</td>
+<td style="text-align: right;" class="num">9.29</td>
+<td style="text-align: right;" class="num">7.72</td>
+<td style="text-align: right;" class="num">26.03</td>
+</tr>
+<tr class="even best">
+<td><strong>MMedPO</strong></td>
+<td style="text-align: right;" class="num"><strong>53.99</strong></td>
+<td style="text-align: right;" class="num"><strong>73.08</strong></td>
+<td style="text-align: right;" class="num"><strong>36.36</strong></td>
+<td style="text-align: right;" class="num"><strong>66.54</strong></td>
+<td style="text-align: right;" class="num"><strong>23.49</strong></td>
+<td style="text-align: right;" class="num"><strong>29.52</strong></td>
+<td style="text-align: right;" class="num"><strong>34.16</strong></td>
+<td style="text-align: right;" class="num"><strong>12.85</strong></td>
+<td style="text-align: right;" class="num"><strong>11.13</strong></td>
+<td style="text-align: right;" class="num"><strong>10.03</strong></td>
+<td style="text-align: right;" class="num"><strong>35.12</strong></td>
+</tr>
+</tbody>
+</table>
+</div><p>最严谨的 head-to-head 不是拿 MMedPO 与原始 DPO 比，而是逐列选择表 1
+最强非 MMedPO 竞品：</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="可横向滚动的数据表"><table>
+<thead>
+<tr class="header">
+<th scope="col">指标</th>
+<th style="text-align: right;" scope="col" class="num">最强竞品（值）</th>
+<th style="text-align: right;" scope="col" class="num">MMedPO</th>
+<th style="text-align: right;" scope="col" class="num">绝对提升</th>
+<th style="text-align: right;" scope="col" class="num">相对提升</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>SLAKE Open</td>
+<td style="text-align: right;" class="num">FiSAO 52.69</td>
+<td style="text-align: right;" class="num">53.99</td>
+<td style="text-align: right;" class="num">+1.30 pp</td>
+<td style="text-align: right;" class="num">+2.47%</td>
+</tr>
+<tr class="even">
+<td>SLAKE Closed</td>
+<td style="text-align: right;" class="num">FiSAO 70.46</td>
+<td style="text-align: right;" class="num">73.08</td>
+<td style="text-align: right;" class="num">+2.62 pp</td>
+<td style="text-align: right;" class="num">+3.72%</td>
+</tr>
+<tr class="odd">
+<td>VQA-RAD Open</td>
+<td style="text-align: right;" class="num">FiSAO 32.70</td>
+<td style="text-align: right;" class="num">36.36</td>
+<td style="text-align: right;" class="num">+3.66 pp</td>
+<td style="text-align: right;" class="num">+11.19%</td>
+</tr>
+<tr class="even">
+<td>VQA-RAD Closed</td>
+<td style="text-align: right;" class="num">POVID 65.07</td>
+<td style="text-align: right;" class="num">66.54</td>
+<td style="text-align: right;" class="num">+1.47 pp</td>
+<td style="text-align: right;" class="num">+2.26%</td>
+</tr>
+<tr class="odd">
+<td>IU BLEU avg</td>
+<td style="text-align: right;" class="num">FiSAO 21.06</td>
+<td style="text-align: right;" class="num">23.49</td>
+<td style="text-align: right;" class="num">+2.43 pp</td>
+<td style="text-align: right;" class="num">+11.54%</td>
+</tr>
+<tr class="even">
+<td>IU ROUGE-L</td>
+<td style="text-align: right;" class="num">FiSAO 25.72</td>
+<td style="text-align: right;" class="num">29.52</td>
+<td style="text-align: right;" class="num"><strong>+3.80 pp</strong></td>
+<td style="text-align: right;" class="num">+14.77%</td>
+</tr>
+<tr class="odd">
+<td>IU METEOR</td>
+<td style="text-align: right;" class="num">FiSAO 30.82</td>
+<td style="text-align: right;" class="num">34.16</td>
+<td style="text-align: right;" class="num">+3.34 pp</td>
+<td style="text-align: right;" class="num">+10.84%</td>
+</tr>
+<tr class="even">
+<td>MIMIC BLEU avg</td>
+<td style="text-align: right;" class="num">FiSAO 11.32</td>
+<td style="text-align: right;" class="num">12.85</td>
+<td style="text-align: right;" class="num">+1.53 pp</td>
+<td style="text-align: right;" class="num">+13.52%</td>
+</tr>
+<tr class="odd">
+<td>MIMIC ROUGE-L</td>
+<td style="text-align: right;" class="num">FiSAO 9.68</td>
+<td style="text-align: right;" class="num">11.13</td>
+<td style="text-align: right;" class="num">+1.45 pp</td>
+<td style="text-align: right;" class="num">+14.98%</td>
+</tr>
+<tr class="even">
+<td>MIMIC METEOR</td>
+<td style="text-align: right;" class="num">POVID 7.84</td>
+<td style="text-align: right;" class="num">10.03</td>
+<td style="text-align: right;" class="num">+2.19 pp</td>
+<td style="text-align: right;" class="num"><strong>+27.93%</strong></td>
+</tr>
+</tbody>
+</table>
+</div><p><strong>全文最有说服力的定量证据</strong>不是某一个夸张百分比，而是
+MMedPO 在 <strong>10/10</strong>
+列都超过了真正的逐列最强竞品；其绝对优势为 <strong>1.30–3.80
+pp</strong>。其中 IU-Xray ROUGE-L 的 +3.80 pp 是最大绝对提升，MIMIC-CXR
+METEOR 的 +27.93% 是最大相对提升。另一方面，最小优势只有 1.30
+pp，且没有误差条，不能自动等同为统计显著。</p>
+<p>SFT 分组也不是全面无敌：SFT+MMedPO 在表 1 的 SLAKE 两列、VQA-RAD
+Closed、IU BLEU、IU ROUGE-L、IU METEOR、MIMIC 三列领先，但 VQA-RAD Open
+为 <strong>34.03</strong>，低于 SFT+STLLaVA-Med 的
+<strong>33.72</strong> 吗？不是，仍高
+0.31；它同样逐列领先。不过相对优势有些仅是小数点级别，仍需要重复运行。</p>
+<h3 id="26-消融哪个部件真的贡献了多少">2.6
+消融：哪个部件真的贡献了多少</h3>
+<p>核心论文表 2 把文本阶段（Stage 1）、视觉阶段（Stage
+2）与临床相关性评分 CRS 配对比较；值是每个数据集的聚合分数。</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="可横向滚动的数据表"><table>
+<thead>
+<tr class="header">
+<th scope="col">配置</th>
+<th style="text-align: right;" scope="col" class="num">SLAKE</th>
+<th style="text-align: right;" scope="col" class="num">VQA-RAD</th>
+<th style="text-align: right;" scope="col" class="num">IU-Xray</th>
+<th style="text-align: right;" scope="col" class="num">MIMIC-CXR</th>
+<th scope="col" class="num">加 CRS 的增量</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Stage 1，无 CRS</td>
+<td style="text-align: right;" class="num">55.65</td>
+<td style="text-align: right;" class="num">47.23</td>
+<td style="text-align: right;" class="num">10.95</td>
+<td style="text-align: right;" class="num">6.55</td>
+<td class="num">—</td>
+</tr>
+<tr class="even">
+<td>Stage 1，有 CRS</td>
+<td style="text-align: right;" class="num">57.62</td>
+<td style="text-align: right;" class="num">48.67</td>
+<td style="text-align: right;" class="num">15.66</td>
+<td style="text-align: right;" class="num">6.58</td>
+<td class="num">+1.97 / +1.44 / <strong>+4.71</strong> / +0.03 pp</td>
+</tr>
+<tr class="odd">
+<td>Stage 2，无 CRS</td>
+<td style="text-align: right;" class="num">60.59</td>
+<td style="text-align: right;" class="num">45.94</td>
+<td style="text-align: right;" class="num">19.30</td>
+<td style="text-align: right;" class="num">7.17</td>
+<td class="num">—</td>
+</tr>
+<tr class="even">
+<td>Stage 2，有 CRS</td>
+<td style="text-align: right;" class="num">60.88</td>
+<td style="text-align: right;" class="num">46.97</td>
+<td style="text-align: right;" class="num">25.00</td>
+<td style="text-align: right;" class="num">7.24</td>
+<td class="num">+0.29 / +1.03 / <strong>+5.70</strong> / +0.07 pp</td>
+</tr>
+</tbody>
+</table>
+</div><p>CRS 对 IU-Xray 的作用很强，但对 MIMIC-CXR
+几乎为零。这意味着“临床加权普遍有效”的结论过宽；更符合数据的说法是：它在部分报告生成分布上有效，跨机构稳定性未证实。</p>
+<p>多智能体评分（表 3）相对单智能体：SLAKE
+<strong>56.09→57.53（+1.44）</strong>，VQA-RAD
+<strong>48.67→51.14（+2.47）</strong>，IU-Xray
+<strong>15.67→15.86（+0.19）</strong>，MIMIC-CXR
+<strong>6.58→6.86（+0.28）</strong>。局部病灶扰动相对全局扰动（表
+4）：<strong>58.88→59.88、46.91→46.98、24.88→25.00、6.80→7.24</strong>，即
++1.00、+0.07、+0.12、+0.44
+pp。最小两项非常小，且没有方差，不能判断是否超过随机波动。</p>
+<p>更细的报告生成消融（表 8）出现非单调：IU-Xray 的 Stage 2-only METEOR
+是 <strong>34.26</strong>，完整 Stage 1+2 多智能体为
+<strong>34.16</strong>，反而低 <strong>0.10</strong>；MIMIC-CXR 则从
+Stage 2-only 的 8.81 提升到完整配置约
+10.05。这个差异提示文本负例与视觉负例并非总是互补，至少在一个指标上存在轻微干扰。</p>
+<h3 id="27-超参数敏感性相变与统计显著性">2.7
+超参数敏感性、相变与统计显著性</h3>
+<p>论文报告固定训练配置（LoRA、1e-7、batch 4、3 epochs、4×A6000、2–3
+小时），但<strong>没有</strong>给学习率、LoRA
+rank、扩散步、病灶阈值、文本/视觉负例比例、CRS 截断区间或 DPO
+温度的系统敏感性曲线。因此不能声称存在经实验证实的相变。</p>
+<p>可以指出一个“设计上的硬阈值”：CRS 权重被截断在
+[0.75,1.25]，权重动态范围最多 1.667
+倍；这会防止极端裁判分数支配梯度，但是否在 1.25
+附近出现性能平台化，论文没有扫描数据。局部相对全局扰动在四数据集仅增
+0.07–1.00 pp，也不足以推出病灶精度超过某阈值后发生跃迁。</p>
+<p>论文<strong>未报告多随机种子均值、标准差、置信区间或显著性检验</strong>。尤其
+MIMIC-CXR 测试仅 200 个样本，SLAKE / VQA-RAD 的部分领先只有 1–2
+pp；没有逐样本 bootstrap 或至少 3 次训练，无法区分稳定增益和采样 /
+解码波动。本报告保留所有小数，但不把小数位当作统计精度。</p>
+<h3 id="28-真正贡献可复用设计与迁移潜力">2.8
+真正贡献、可复用设计与迁移潜力</h3>
+<p>真正贡献有三层。第一，问题重构：多模态对齐不能只对回答文本做偏好，因为模型可能通过语言先验“答对”；负例应同时覆盖回答与证据模态。第二，领域结构：扰动应该由任务相关区域而非任意像素定义，医学里是病灶图，遥感可换成目标区域，工业质检可换成缺陷掩码。第三，偏好对不是等价值样本；用有界权重吸收工具可信度，是一种低成本、可稳定训练的软课程。</p>
+<p>可脱离本文复用的模块包括：困难文本负例生成器、ROI
+内扩散扰动、工具共识到 [0.75,1.25] 的有界映射、双通道偏好数据的统一 DPO
+接口，以及“局部 vs 全局扰动”的消融模板。迁移到普通 VLM 时，MedKLIP
+可改用分割器 / grounding 模型，Med-LLM
+裁判可改用任务专家模型；但权重必须在目标领域重新标定，不能把“工具置信度=临床重要性”直接搬走。</p>
+<p>后续最值得借鉴的是<strong>让反事实只破坏决策相关证据</strong>。这比简单加噪更接近因果干预：若回答在证据破坏后仍不变，模型可能未使用该证据。真正的下一步应把这种直觉升级为可检验的反事实一致性指标，而不只是训练技巧。</p>
+<h3 id="29-局限性论文自述与独立批判">2.9 局限性：论文自述与独立批判</h3>
+<h4 id="论文自述限制">论文自述限制</h4>
+<p>论文没有独立的 Limitations / Discussion 章节，也没有明确列出 2–3
+条“作者承认的限制”。这是需要如实记录的缺失。能从实验设置直接确认的范围边界包括：只基于
+LLaVA-Med-1.5-7B、只覆盖四个数据集、依赖 GPT-4o / 三个 Med-LLM /
+MedKLIP；但这些是本报告从设置中归纳的约束，<strong>不冒充作者自述</strong>。</p>
+<h4 id="独立批判8-点">独立批判（8 点）</h4>
+<ol type="1">
+<li><p><strong>论证缺口｜“最佳基线”口径不严。</strong> 因为表 1 中 POVID
+/ FiSAO 在多数列明显高于原始 DPO，而正文醒目相对提升主要按 DPO
+计算，所以宣传百分比并非对真正最强竞品的
+head-to-head。逐列复算后仍全胜，但绝对差为 1.30–3.80
+pp；应以这组数字作为主要结论。</p></li>
+<li><p><strong>统计显著性缺失。</strong>
+因为论文没有标准差、置信区间或多种子结果，而局部扰动对 VQA-RAD / IU-Xray
+的优势仅 0.07 / 0.12 pp（表
+4），所以不能推出这两个增益稳定存在。</p></li>
+<li><p><strong>指标有效性问题。</strong> 因为报告生成只报
+BLEU、ROUGE-L、METEOR，没有 CheXbert / RadGraph /
+医师事实核验，而这些词面指标允许“用相似词生成错误临床事实”，所以实验尚未直接证明减少临床幻觉。</p></li>
+<li><p><strong>实验设计问题｜外部泛化窄。</strong> 因为训练和测试集中于
+IU-Xray、MIMIC-CXR、SLAKE、VQA-RAD，且测试最小仅 200
+个样本，所以无法推断到
+CT、MRI、病理切片、眼底或跨医院设备分布。</p></li>
+<li><p><strong>裁判闭环风险。</strong> 因为 GPT-4o 负责选 /
+造文本负例，Med-LLM
+群负责相关性评分，没有医师盲评校准，所以优化可能学习“机器裁判一致偏好”而非临床偏好；最多
+5 轮辩论也可能放大共享语料偏差。</p></li>
+<li><p><strong>工具依赖与病灶漏检。</strong> 因为视觉负例完全依赖
+MedKLIP 以单一提示 “disease”
+产生热图，如果工具漏掉罕见病灶，训练根本不会扰动真正证据；而表 4
+的局部化优势在四数据集仅 0.07–1.00
+pp，尚不足以证明精准定位是主要因果来源。</p></li>
+<li><p><strong>模块并非严格互补。</strong> 因为表 8 中 IU-Xray Stage
+2-only METEOR 34.26，高于完整多智能体配置
+34.16，所以文本与视觉负例至少在这一指标上有 -0.10
+的干扰；论文缺少混合比例扫描解释冲突。</p></li>
+<li><p><strong>可复现性 / 成本报告不完整。</strong> 因为只给总训练 2–3
+小时和 4×A6000，却未报告 GPT-4o 调用次数、token 成本、采样温度、扩散步与
+LoRA
+rank，所以“低成本”只能对模型微调成立，不能对端到端数据构造成本成立。论文符号还把不同角色的量记为相似的
+α，增加实现歧义。</p></li>
+</ol>
+</section><section class="card" aria-labelledby="3-相关工作回溯问题与技术来源链"><h2 id="3-相关工作回溯问题与技术来源链">3.
+相关工作回溯：问题与技术来源链</h2>
+<h3 id="31-llava-med--2023neurips-datasets--benchmarks">3.1 LLaVA-Med —
+2023，NeurIPS Datasets &amp; Benchmarks</h3>
+<p><strong>解决了什么。</strong> LLaVA-Med 用 PubMed Central 图文对和
+GPT-4 生成的视觉指令，通过先学医学词汇对齐、再学开放对话的课程，把通用
+LLaVA 迁移到生物医学。论文报告可在 8×A100 上少于 15 小时训练（LLaVA-Med
+arXiv 摘要）。它解决的是“通用 VLM 不懂医学图文语义”的基础适配。</p>
+<p><strong>遗留缺口。</strong>
+指令微调优化“输出像参考答案”，没有直接约束模型必须读取当前影像；强语言模型可能依靠疾病共现作答。开放问答中，流畅性会掩盖证据错配。</p>
+<p><strong>MMedPO 如何回应。</strong> MMedPO 直接以 LLaVA-Med-1.5-7B
+为策略模型，把问题从领域知识灌输推进到证据忠实对齐。它不重建视觉语言骨干，而在后训练阶段构造反事实负例。</p>
+<p><strong>设计传递。</strong> 视觉编码器—投影器—LLM
+的医疗基础结构、四个常用数据集和 LoRA
+训练生态被继承；创新发生在偏好数据与损失层。</p>
+<h3 id="32-dpo--2023neurips">3.2 DPO — 2023，NeurIPS</h3>
+<p><strong>解决了什么。</strong> DPO 通过 RLHF
+最优策略的闭式参数化，把“训练奖励模型 +
+PPO”化为偏好对上的二分类式目标，避免在线采样与复杂 RL 调参。</p>
+<p><strong>遗留缺口。</strong> 原始 DPO 把条件视为固定文本 prompt，默认
+chosen / rejected 已正确表达人的偏好。放到
+VLM，它并不保证偏好差异来自图像，也没有区分临床上重要与不重要的偏好对。</p>
+<p><strong>MMedPO 如何回应。</strong> MMedPO 保留 DPO
+的参考策略对数比结构，但把 rejected
+条件扩展到病灶被扰动的图像，并以临床相关性分数乘损失。</p>
+<p><strong>设计传递。</strong> 关键传递是隐式奖励差与参考模型 KL
+约束；进化点是从“每对等权、条件固定”到“条件可干预、每对有界加权”。</p>
+<h3 id="33-povid--2024arxiv">3.3 POVID — 2024，arXiv</h3>
+<p><strong>解决了什么。</strong> POVID 首先明确把 VLM
+幻觉视为模态对齐问题：一条支路让 GPT-4V
+向正确答案注入合理幻觉，另一条支路扭曲图像触发模型固有幻觉，再用 DPO
+联合训练。</p>
+<p><strong>遗留缺口。</strong>
+全局或通用视觉扭曲可能破坏与任务无关的像素，文本负例也没有医疗风险排序；在医学图像中，病灶可能只占极小区域，通用扰动会把“低画质”与“临床证据消失”混在一起。</p>
+<p><strong>MMedPO 如何回应。</strong> 它把 POVID
+的两支路结构医学化：GPT-4o 负责困难临床幻觉，MedKLIP
+只扰动病灶，并为两类样本加入相关性权重。</p>
+<p><strong>设计传递。</strong> “外部注入幻觉 +
+触发模型固有幻觉”的双负例骨架被完整继承；视觉扰动从全局退化进化为 ROI
+内扩散，样本从等权进化为工具加权。</p>
+<h3 id="34-sima--2025naacl-findings">3.4 SIMA — 2025，NAACL
+Findings</h3>
+<p><strong>解决了什么。</strong> SIMA
+用模型自生成候选、自批判和视觉指标进行自改进，直接针对 VLM
+的语言偏置；论文在 14 个幻觉及综合基准上评估（arXiv 摘要）。</p>
+<p><strong>遗留缺口。</strong>
+通用视觉指标不一定对应医学重要性，自批判仍可能由同源语言偏见主导；“看起来更符合图”不等于“病灶层面正确”。</p>
+<p><strong>MMedPO 如何回应。</strong> 它用医学专用裁判群和 MedKLIP
+替代通用视觉批评，把自评信号绑定到临床病灶与医学知识。</p>
+<p><strong>设计传递。</strong>
+自生成—自评价—偏好优化闭环被继承；评价器从通用 /
+单一自批判变为异构医学工具与多模型辩论。</p>
+<h3 id="35-stllava-med--2024emnlp-主会">3.5 STLLaVA-Med — 2024，EMNLP
+主会</h3>
+<p><strong>解决了什么。</strong> STLLaVA-Med
+让策略模型自动产生医疗视觉指令数据，并由 GPT-4o 监督 DPO；其摘要称仅使用
+9% 医疗数据便在三个 VQA 基准取得竞争性零样本结果。</p>
+<p><strong>遗留缺口。</strong> 它重点解决数据稀缺，偏好监督仍以答案 /
+指令质量为中心；没有显式构造“图像证据被破坏”的对照，也没有临床相关性连续权重。</p>
+<p><strong>MMedPO 如何回应。</strong> MMedPO 将 GPT-4o
+监督保留在文本负例端，同时新增病灶局部视觉负例和
+CRS。换言之，它从“更省数据地学医学回答”转向“更明确地学图像依赖”。</p>
+<p><strong>设计传递。</strong> GPT-4o
+作为昂贵专家、较小策略模型自采样、DPO LoRA 微调三点被传递；MMedPO
+进一步引入多裁判和视觉工具，使监督从单专家变成复合系统。</p>
+</section><section class="card" aria-labelledby="4-技术演进脉络"><h2 id="4-技术演进脉络">4. 技术演进脉络</h2>
+<pre class="text"><code>2023 LLaVA-Med [医学视觉指令微调；解决“领域知识/接口”]
+      │
+      ├──────────── 2023 DPO [无显式奖励模型的偏好优化]
+      │                         │
+      ↓                         ↓
+2024 STLLaVA-Med [GPT-4o 监督、自训练、数据效率] ─────┐
+      │                                              │
+2024 POVID [文本幻觉 + 图像扰动；双模态负例] ────────┤
+      │                                              ├─ 2025 MMedPO
+2025 SIMA [自生成、自批判、视觉指标] ────────────────┤  [病灶局部反事实
+                                                     │   + 医学裁判群
+                                                     └─  + 有界临床加权]</code></pre>
+<p>内在推动力是从 <strong>领域指令驱动 → 偏好驱动 → 双模态反事实驱动 →
+领域工具加权</strong>。第一阶段关注“模型能否用医学语言回答”；第二阶段发现答案质量不等于证据忠实；第三阶段开始构造图像负例；第四阶段进一步问“哪种错误值得更大梯度”。社区关注点也从平均准确率转向幻觉、数据效率与证据定位，但
+MMedPO 仍未跨过最后一关：用临床事实指标和专家评价验证安全收益。</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="可横向滚动的数据表"><table>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col" class="num">发表年月</th>
+<th scope="col" class="num">会议 / 出版</th>
+<th scope="col" class="num">核心贡献</th>
+<th scope="col" class="num">代表性量化信息</th>
+<th scope="col" class="num">与 MMedPO 的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>LLaVA-Med</td>
+<td class="num">2023.06</td>
+<td class="num">NeurIPS 2023 D&amp;B</td>
+<td class="num">医疗视觉指令课程</td>
+<td class="num">&lt;15 小时、8×A100（摘要）</td>
+<td class="num">提供基础模型与医学接口</td>
+</tr>
+<tr class="even">
+<td>DPO</td>
+<td class="num">2023.05 / 2024.07 v3</td>
+<td class="num">NeurIPS 2023</td>
+<td class="num">闭式偏好优化</td>
+<td class="num">无需显式奖励模型 / PPO</td>
+<td class="num">提供损失骨架</td>
+</tr>
+<tr class="odd">
+<td>POVID</td>
+<td class="num">2024.02</td>
+<td class="num">arXiv</td>
+<td class="num">文本注幻觉 + 图像扭曲</td>
+<td class="num">双阶段偏好数据</td>
+<td class="num">提供双负例问题框架</td>
+</tr>
+<tr class="even">
+<td>STLLaVA-Med</td>
+<td class="num">2024.10 v2</td>
+<td class="num">EMNLP 2024</td>
+<td class="num">GPT-4o 监督自训练</td>
+<td class="num">使用 9% 医疗数据（摘要）</td>
+<td class="num">提供医疗自训练链</td>
+</tr>
+<tr class="odd">
+<td>SIMA</td>
+<td class="num">2025.02 v4</td>
+<td class="num">NAACL 2025 Findings</td>
+<td class="num">视觉指标引导自批判</td>
+<td class="num">覆盖 14 个基准（摘要）</td>
+<td class="num">提供工具化自评价思想</td>
+</tr>
+<tr class="even best">
+<td><strong>MMedPO</strong></td>
+<td class="num"><strong>2025.05 v3</strong></td>
+<td class="num"><strong>ICML 2025</strong></td>
+<td class="num"><strong>病灶局部反事实 + CRS 加权</strong></td>
+<td class="num"><strong>表 1：10/10 指标超越逐列最强竞品</strong></td>
+<td class="num"><strong>汇聚点</strong></td>
+</tr>
+</tbody>
+</table>
+</div></section><section class="card" aria-labelledby="5-开放挑战与可操作研究机会"><h2 id="5-开放挑战与可操作研究机会">5. 开放挑战与可操作研究机会</h2>
+<h3 id="51-理论层面">5.1 理论层面</h3>
+<ol type="1">
+<li><strong>工具加权是否一致。</strong>
+在固定偏好对、相同训练预算下比较等权
+DPO、未截断置信度、[0.5,1.5]、[0.75,1.25]
+与基于医师风险等级的权重；检验工具置信度与医师临床重要性之间的 Spearman
+相关，并估计何时加权带来偏差。</li>
+<li><strong>反事实充分性。</strong>
+对同一病灶分别做遮挡、扩散噪声、语义修复和边界外噪声，测量回答变化与病灶事实变化的因果效应。若边界外噪声同样改变答案，则当前“局部干预=证据利用”的解释不成立。</li>
+<li><strong>双负例冲突。</strong> 固定总 19,170
+对预算，扫描文本:视觉比例 0:1、1:3、1:1、3:1、1:0，并记录逐指标 Pareto
+前沿，解释表 8 中 -0.10 METEOR 的非单调现象。</li>
+</ol>
+<h3 id="52-工程与应用层">5.2 工程与应用层</h3>
+<ol type="1">
+<li><strong>真正公平的竞品对比。</strong> 在同一 LLaVA-Med-1.5-7B、相同
+LoRA rank、19,170 偏好对和 4×A6000 小时预算下重训
+DPO、POVID、SIMA、FiSAO、MMedPO；至少 5 个种子，做配对 bootstrap。当前表
+1 没有证明数据 / 算力完全等预算。</li>
+<li><strong>临床事实评测。</strong> 在 IU-Xray、MIMIC-CXR 同时报告
+BLEU、RadGraph F1、CheXbert label
+F1、病灶否定错误率，并让至少两名放射科医师盲评 200
+对；直接测试词面提升是否转化为事实提升。</li>
+<li><strong>跨工具鲁棒性。</strong> 将 MedKLIP
+改用两个独立定位器，并加入人工病灶框上界；比较定位 IoU
+与最终事实准确率。这样能区分“MMedPO 机制有效”还是“恰好 MedKLIP
+有效”。</li>
+<li><strong>端到端成本表。</strong> 报告 GPT-4o
+调用数、token、失败重试、三个 Med-LLM 推理 GPU 时和训练 GPU
+时；与专家标注 19,170 对的抽样成本比较，才能验证经济性。</li>
+</ol>
+<h3 id="53-新兴方向">5.3 新兴方向</h3>
+<ol type="1">
+<li><strong>多模态医疗证据链。</strong> 把单张影像扩展为影像序列 + 检验
++
+病史；比较统一偏好权重与按模态分解权重，评测模型能否在病史与影像冲突时指出冲突而非盲从任一模态。</li>
+<li><strong>不确定性与拒答。</strong> 给 CRS
+同时预测重要性和不确定性，在低共识样本上训练可校准拒答；以相同覆盖率比较
+selective risk，而不只比较全量准确率。</li>
+<li><strong>隐私与偏差。</strong>
+按医院、设备、性别、年龄分层报告局部扰动收益；对罕见病灶做 equalized
+error 分析。若 MedKLIP
+对某亚组定位差，偏好优化可能系统性忽略该亚组。</li>
+</ol>
+</section><section class="card" aria-labelledby="6-其他值得关注的近期工作"><h2 id="6-其他值得关注的近期工作">6. 其他值得关注的近期工作</h2>
+<ol type="1">
+<li><strong>VistaDPO</strong>（2025.07，ICML
+2025）把视频偏好分成实例、时间和感知三层，并构造 7.2K 空间—时间标注
+QA；它是把“证据局部化”从医学图像推到视频的直接参照。<a href="https://proceedings.mlr.press/v267/huang25g.html">PMLR</a></li>
+<li><strong>Can We Predict Performance of Large Models across
+Vision-Language Tasks?</strong>（2025.07，ICML 2025）用概率矩阵分解与
+MCMC 预测未测
+VLM×任务性能，并给不确定性；适合缓解多基准评测成本，但不能替代关键安全基准实测。<a href="https://proceedings.mlr.press/v267/zhao25y.html">PMLR</a>｜<a href="https://github.com/Qinyu-Allen-Zhao/CrossPred-LVLM">Code</a></li>
+<li><strong>LEMUR</strong>（ICLR 2026 OpenReview）把 VLM
+用于细粒度、区域级多模态检索；值得关注它是否能把区域表征能力迁移为
+MMedPO 所需的更可靠 ROI 选择。<a href="https://openreview.net/forum?id=IF4ccCwSKd">OpenReview</a></li>
+<li><strong>Robustness of Vision-Language-Action Models against
+Multimodal Perturbations</strong>（ICLR 2026 OpenReview）把扰动扩展到
+VLA
+的多模态输入与动作，提供检验“局部扰动训练是否迁移到交互系统”的邻近问题。<a href="https://openreview.net/forum?id=cS6xizdYD5">OpenReview</a></li>
+<li><strong>mDPO: Conditional and Anchored Preference
+Optimization</strong>（2024–2025
+项目）同样针对语言偏好压过图像的问题，以条件偏好和 reward anchor 约束
+chosen 概率下滑；与 MMedPO
+做同骨干等预算对比，是最缺失的竞品实验之一。<a href="https://feiwang96.github.io/mDPO/">项目页</a></li>
+<li><strong>POVID</strong>（2024.02，预印本）虽已作为技术前驱详述，但其公开数据与两阶段权重使它仍是最可操作的复现实验基线；研究者可先复现全局扰动，再替换成病灶
+ROI。<a href="https://arxiv.org/abs/2402.11411">arXiv</a>｜<a href="https://github.com/YiyangZhou/POVID">Code / Data /
+Weights</a></li>
+</ol>
+</section><section class="card" aria-labelledby="7-结论"><h2 id="7-结论">7. 结论</h2>
+<p>MMedPO 的价值不在于再造一种 DPO
+公式，而在于把“偏好是否依赖正确视觉证据”变成可构造的数据问题。表 1
+经过更严格的逐列最强竞品复算后，仍在 10/10
+指标领先，这是稳健的方向性证据；但缺少多种子、临床事实指标、医师评价和工具校准，使它目前更适合作为<strong>医疗多模态后训练设计蓝图</strong>，而不是临床可靠性的终局证明。</p>
+<hr>
+<p><strong>可复核性脚注。</strong>
+所有性能数字均来自实际读取的核心论文表 1–4、表 8
+及实验设置；本报告未补造未报告的超参扫描、标准差或显著性。索引已在文件交付阶段尝试更新；若持久化更新失败，交付消息将明确说明。</p>
+</section></main>
+
+  <footer>来源：ICML 2025 / PMLR 与 arXiv:2412.06141v3；生成于 2026-08-18。所有数字均在报告中标注表号，未报告数据不补造。</footer></div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

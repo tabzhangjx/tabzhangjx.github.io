@@ -1,0 +1,1157 @@
+---
+layout: null
+title: "DPLM-2.1"
+date: 2026-08-16
+topic: ai4science
+excerpt: "解析 DPLM-2.1 如何通过位级监督、几何偏置与结构表征对齐，改善多模态蛋白语言模型的三维结构学习。"
+permalink: /blog/2026/08/16/dplm-2-1-multimodal-protein-language-model/
+blog_post: true
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>DPLM-2.1 深度论文报告 · 2026-08-16</title><style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #246fca;
+    --chart-comparison: #c95224;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  :root { --chart-primary:#2a78d6; --chart-comparison:#eb6834; }
+  :root[data-theme="dark"] { --chart-primary:#3987e5; --chart-comparison:#d95926; }
+  h2 { scroll-margin-top:20px; }
+  h3 { margin-top:1.7em; }
+  h4 { margin-top:1.35em; }
+  .card > p, .card > ul, .card > ol { overflow-wrap:anywhere; }
+  math { overflow-x:auto; max-width:100%; }
+  .chart-scroll { overflow-x:auto; }
+  .chart rect { outline-offset:3px; }
+  @media (max-width:620px) { .chart { min-width:720px; } }
+</style></head>
+<body><div class="wrap"><div class="toolbar"><button class="theme-toggle" id="theme-toggle" type="button" aria-pressed="false">☾ 深色</button></div>
+<header class="hero"><p class="eyebrow">ICML 2025 Spotlight · AI4Science</p><h1>结构 token 的问题不只在压缩，而在监督几何</h1><p class="subtitle">每日 ML/AI 深度论文追踪 · 2026-08-16</p><div class="meta"><span class="chip source">ICML 2025 Spotlight</span><span class="chip">周日：AI4Science</span><span class="chip">28 篇候选随机抽样</span></div><p class="lede">DPLM-2.1 用位级监督、几何偏置与结构表征对齐，让 650M 模型在 PDB 时间切分上将 RMSD 从 5.307 降至 2.370；但 CAMEO、物理有效性与复现完整性仍划出清晰边界。</p></header>
+<main><blockquote>
+<p><strong>日期</strong>：2026-08-16　　<strong>领域</strong>：AI4Science
+/ 蛋白质基础模型　　<strong>核心论文</strong>：<em>Elucidating the
+Design Space of Multimodal Protein Language Models</em>（ICML 2025
+Spotlight）</p>
+<p><strong>一句话定位</strong>：问题不只是“把三维结构离散成 token
+会丢信息”，更是“把相近结构压成彼此无关的类别索引，让语言模型学错了监督几何”；DPLM-2.1
+用位级监督、几何归纳偏置与结构表征对齐，把离散蛋白语言模型重新接回连续三维空间。</p>
+</blockquote>
+<section class="card" aria-labelledby="链接验证表"><h2 id="链接验证表">0. 链接验证表</h2>
+<p>以下链接均于 2026-08-16
+实际访问；“未公开/未找到”表示在论文、项目页、会议页与官方仓库中未核实到独立入口。arXiv
+日期按具体版本记录。</p>
+<table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">论文</th>
+<th scope="col">会议主页 / 出版页</th>
+<th scope="col">arXiv / 预印本</th>
+<th scope="col">Code 仓库</th>
+<th scope="col">数据集 / 权重</th>
+<th scope="col">项目主页 / 视频</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>核心：DPLM-2.1 / Elucidating the Design Space…</strong></td>
+<td><a href="https://proceedings.mlr.press/v267/hsieh25a.html">ICML 2025
+/ PMLR 267</a></td>
+<td><a
+href="https://arxiv.org/abs/2504.11454v3">2504.11454v3，2025-06-12</a></td>
+<td><a href="https://github.com/bytedance/dplm">bytedance/dplm</a></td>
+<td><a href="https://huggingface.co/airkingbd/dplm2_bit_650m">DPLM-2 Bit
+650M 权重</a>；<a
+href="https://huggingface.co/datasets/airkingbd/pdb_swissprot">PDB+SwissProt
+数据</a></td>
+<td><a
+href="https://bytedance.github.io/dplm/dplm-2.1/">项目页</a>；视频未找到</td>
+</tr>
+<tr class="even">
+<td>DPLM</td>
+<td><a href="https://proceedings.mlr.press/v235/wang24ct.html">ICML 2024
+/ PMLR 235</a></td>
+<td><a
+href="https://arxiv.org/abs/2402.18567v2">2402.18567v2，2024-10-16</a></td>
+<td><a href="https://github.com/bytedance/dplm">同一官方仓库</a></td>
+<td><a
+href="https://github.com/bytedance/dplm#model-checkpoints">仓库中的模型入口</a>；UniRef50
+入口见仓库</td>
+<td><a href="https://bytedance.github.io/dplm/">项目页</a></td>
+</tr>
+<tr class="odd">
+<td>DPLM-2</td>
+<td><a href="https://arxiv.org/abs/2410.13782">ICLR 2025；论文入口由
+arXiv 注明</a></td>
+<td><a
+href="https://arxiv.org/abs/2410.13782v1">2410.13782v1，2024-10-17</a></td>
+<td><a href="https://github.com/bytedance/dplm">同一官方仓库</a></td>
+<td><a
+href="https://huggingface.co/datasets/airkingbd/pdb_swissprot">PDB+SwissProt</a>；多尺度权重见仓库</td>
+<td><a href="https://bytedance.github.io/dplm/">项目总页</a></td>
+</tr>
+<tr class="even">
+<td>ESM3</td>
+<td><a
+href="https://www.science.org/doi/10.1126/science.ads0018">Science，2025-01-16</a></td>
+<td><a
+href="https://www.biorxiv.org/content/10.1101/2024.07.01.600583v1">bioRxiv
+v1，2024-07-02</a></td>
+<td><a href="https://github.com/Biohub/esm">Biohub/esm</a></td>
+<td>训练数据未公开；开放模型入口见仓库</td>
+<td><a
+href="https://www.evolutionaryscale.ai/blog/esm3-release">官方发布页</a>；<a
+href="https://www.youtube.com/watch?v=qeqbm8a1-ZA">公开视频</a></td>
+</tr>
+<tr class="odd">
+<td>REPA</td>
+<td><a href="https://openreview.net/forum?id=DJSZGGZYVi">ICLR 2025
+OpenReview</a></td>
+<td><a
+href="https://arxiv.org/abs/2410.06940v4">2410.06940v4，2025-06-18</a></td>
+<td><a href="https://github.com/sihyun-yu/REPA">sihyun-yu/REPA</a></td>
+<td>预训练视觉编码器依赖见仓库；独立数据集/权重未找到</td>
+<td><a href="https://sihyun.me/REPA/">项目页</a>；视频未找到</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>可达性说明。</strong> Science 页面在本次自动抓取中返回
+403，但 DOI、PubMed
+与官方发布页相互印证；因此将其标记为“出版链接存在但正文自动访问受限”，未从该页面抽取任何定量数字。OpenReview
+个别页面触发浏览器验证，本文只用其确认会议信息，所有核心数字均来自可读取的
+arXiv v3/PMLR 正文。</p>
+</section><section class="card" aria-labelledby="候选池与随机抽取记录"><h2 id="候选池与随机抽取记录">0.1 候选池与随机抽取记录</h2>
+<p>候选来自 ICML 2025 PMLR 267 的正式论文目录，满足运行日 AI4Science
+轮转、距今不超过 12 个月、且与索引近 14 日主题不重复。候选共 28 篇：</p>
+<ol type="1">
+<li>From Mechanistic Interpretability to Mechanistic Biology；2. A
+Variational Perspective on Generative Protein Fitness Optimization；3.
+Boosting Protein Graph Representations through Static-Dynamic Fusion；4.
+<strong>Elucidating the Design Space of Multimodal Protein Language
+Models</strong>；5. NMA-tune；6. Aligning Protein Conformation Ensemble
+Generation with Physical Feedback；7. Diffusion on Language Model
+Encodings for Protein Sequence Generation；8. PPDiff；9.
+Flexibility-conditioned Protein Structure Design；10. Protriever；11.
+All-atom Inverse Protein Folding；12. CFP-Gen；13. Protein Structure
+Tokenization；14. ReQFlow；15. Bridging Protein Sequences and Microscopy
+Images；16. Beyond Atoms；17. Pretraining GFlowNets for Molecular Graph
+Generation；18. Offline Model-based Optimization for Molecular
+Discovery；19. Foundation Molecular Grammar；20. Kinetic Langevin
+Diffusion for Crystalline Materials；21. Open Materials Generation；22.
+All-atom Diffusion Transformers；23. OmniArch；24. LLM-SRBench；25.
+SCENT；26. Retrieval Augmented Zero-Shot Enzyme Generation；27.
+Physics-Informed Weakly Supervised Interatomic Potentials；28.
+Physics-informed Temporal Alignment for PDE Foundation Models。</li>
+</ol>
+<p>执行 <code>shuf -i 1-28 -n 1</code> 得到
+<strong>4</strong>。论文有正式全文、14
+张以上定量表/附表、代码与权重，资料充分，<strong>重抽 0
+次</strong>。候选池总入口：<a
+href="https://proceedings.mlr.press/v267/">ICML 2025 PMLR 267</a>。</p>
+<hr />
+</section><section class="card" aria-labelledby="核心论文深度解析"><h2 id="核心论文深度解析">1. 核心论文深度解析</h2>
+<h3 id="标题与核心定位">1.1 标题与核心定位</h3>
+<p>这篇工作的真正创新不是又造了一个更大的蛋白模型，而是把多模态蛋白语言模型拆成四个可检验层级：<strong>监督标签、生成空间、网络归纳偏置、训练数据覆盖</strong>。作者证明，结构
+tokenizer 的重建误差只是上限之一；更致命的是语言模型面对无拓扑关系的
+codebook index 时，分类目标与几何相似性不一致。于是解决路径从“换更好的
+tokenizer”转向“改变预测单位、补回连续残差、注入成对几何、借教师表征平滑监督”。</p>
+<h3 id="motivation具体痛点与定量证据">1.2
+Motivation：具体痛点与定量证据</h3>
+<p>多模态 PLM 希望统一建模氨基酸序列 () 与三维骨架
+()。结构先由编码器压到连续 latent，再量化为离散
+token，语言模型才能像处理词表一样处理三维结构。这个接口带来三个可量化故障。</p>
+<p>第一是<strong>量化损失</strong>。论文表 1（PDF 第 3 页）中，连续
+latent 重建 RMSD 为 1.3127、TM-score 为 0.9733；量化后分别恶化到 1.9806
+与 0.9385。RMSD 增加 0.6679，即 <strong>50.88%
+相对恶化</strong>；TM-score 绝对下降 0.0348。离散化并非免费压缩。</p>
+<p>第二是<strong>tokenizer 重建好，不等于语言模型生成好</strong>。表
+2（PDF 第 3 页）中，ESM3 tokenizer 的重建 RMSD 0.7248，远优于 DPLM-2 的
+1.9806；但同架构模型在 CAMEO 2022 上使用 ESM3 codebook 后，生成 RMSD 是
+8.4424，反而差于 DPLM-2 codebook 的 7.7025。也就是说，重建误差降低
+<strong>63.41%</strong>，生成误差却增加
+<strong>9.61%</strong>。这直接否定了“只优化 tokenizer
+重建即可”的朴素路线。</p>
+<p>第三是<strong>索引监督严重失真</strong>。表 3（PDF 第 3
+页）显示，DPLM-2 在 CAMEO 上的完整结构索引准确率仅 0.0864，而按 bit
+展开后准确率为 0.7720；PDB 时间切分上是 0.1188 对
+0.7932。一个索引由多个二元位编码，两个几何相近 token 可能只差一位，却在
+softmax
+类别空间里被当成完全无关；反之，索引数值相近也不表示几何相近。问题的新颖性正在这里：失败不是容量不足的笼统说法，而是<strong>监督度量与结构度量错配</strong>。</p>
+<p>为什么值得解决？统一模型可执行无条件序列—结构共生成、序列给定的折叠、结构给定的逆折叠、motif
+scaffolding
+与表征学习；如果结构通道只是粗糙符号，统一性便是表面统一。更现实的是，650M
+模型若能靠设计而非堆参数接近 3B
+专用折叠器，意味着研究团队可在更小算力预算下开展蛋白生成实验。</p>
+<h3 id="论文故事线从诊断到组合设计">1.3
+论文故事线：从诊断到组合设计</h3>
+<p>论证链条分四次转折。</p>
+<ol type="1">
+<li><strong>先把瓶颈拆开。</strong> 作者比较连续/离散重建、不同
+tokenizer、索引/位准确率，说明“tokenizer 有损”与“LM 不会预测
+token”是两个独立问题。</li>
+<li><strong>再改变监督单位。</strong> Bit-based modeling 把 (2^K)
+类索引分类改成 (K) 个二元分类，让损失函数看到局部位差；ResDiff
+学量化残差；Hybrid FM 则把 encoder–PLM–decoder
+重新解释为坐标空间去噪器。</li>
+<li><strong>承认序列 Transformer 缺几何。</strong> GeoDPLM 引入
+residue-pair 表征、pair bias、transition 与可选 triangle operation；REPA
+从 ESMFold 抽取平滑的结构语义作为教师。</li>
+<li><strong>最后检验模块是否正交。</strong> 表 7
+的关键结论是“更多模块不一定更好”：Geo+Bit 的多样性 0.900，而加入 FM
+后降到 0.575；All* 的 PDB RMSD 2.379，也未优于 Bit+FM+ResDiff+SFT 的
+2.370。作者因此推荐 <strong>Geo + Bit</strong>，而不是模块全家桶。</li>
+</ol>
+<p>隐含权衡也很清楚：离散 token
+保留语言模型的可扩展性与统一接口，却牺牲连续几何；FM恢复坐标精度，却因
+ODE 采样轨迹压低多样性；SFT优化折叠，却牺牲无条件共生成；triangle
+operation 更“像 AlphaFold”，却让训练慢 3.9×/6.8×，指标没有相称回报。</p>
+<h3 id="方法论与机制解剖">1.4 方法论与机制解剖</h3>
+<h4 id="形式化定义">1.4.1 形式化定义</h4>
+<p>蛋白由 (L) 个残基组成：</p>
+<p>[ =(r_1,,r_L),r_i=(s_i,x_i), s_i{1,,20},;x_i^{4}. ]</p>
+<p>DPLM 的吸收式离散扩散前向核为：</p>
+<p>[ q(<sup>{(t)}</sup>{(t-1)})= !(^{(t)};
+_t^{(t-1)}+(1-<em>t)</em>{noise}), ]</p>
+<p>反向目标可化为带噪声层级权重的交叉熵。DPLM-2 将结构 () 编码为
+(_{cont})，LFQ 逐维量化：</p>
+<p>[ <em>{cont} </em>{quant}{-1,+1}^{LK}
+z_{index}=<em>{k=1}<sup>{K}(z</sup>{[k]}</em>{quant}&gt;0)2^{k-1} .
+]</p>
+<p>原始多模态目标对序列与结构索引做联合预测：</p>
+<p>[ _t=. ]</p>
+<p>位级目标将后一项展开成 (K) 个二元预测：</p>
+<p>[ ^{bit}_t=. ]</p>
+<p>ResDiff 对残差 (=<em>{cont}-</em>{quant}) 建模：</p>
+<p>[ <em>=</em>{r,,t} |-<em>(r_t,t,h,z</em>{quant})|<em>2^2,
+</em>{cont}=z_{quant}+. ]</p>
+<p>Hybrid FM 把整体定义为坐标去噪器 (_=DecPLMEnc)，Euler 步为：</p>
+<p>[ <em>s</em>(_t,t) +_t, ]</p>
+<p>并在每步先做 Kabsch 对齐。REPA 则用三层 MLP 投影 PLM 隐状态，与
+ESMFold 表征最大化余弦相似：</p>
+<p>[ <em>{REPA}=-1L</em>{i=1}^{L} (y_i,h_(h_i)). ]</p>
+<h4 id="流程图">1.4.2 流程图</h4>
+<pre class="text"><code>蛋白骨架 x ──Enc──&gt; 连续 z_cont ──LFQ──&gt; K 位 z_quant ──&gt; index
+    │                         │                   │
+    │                         └─残差 r──────────&gt; ResDiff 精修
+    │                                             │
+序列 s ───────────────&gt; 掩码离散扩散 PLM &lt;────────┘
+                              │
+                  ┌───────────┼─────────────┐
+                  │           │             │
+               Bit 监督    Geo pair bias   REPA←ESMFold
+                  │           │             │
+                  └───────────┴─────────────┘
+                              ↓
+                Dec 得到骨架 / FM 直接坐标采样</code></pre>
+<h4 id="关键机制与工程细节">1.4.3 关键机制与工程细节</h4>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">机制</th>
+<th scope="col">设计选择</th>
+<th scope="col">动机</th>
+<th scope="col">已报告关键设置</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Bit supervision</td>
+<td>(K) 个二元分类替代 (2^K) 类索引</td>
+<td>让标签距离更接近 latent 局部变化</td>
+<td>直接复用 LFQ 的位表示；论文未单列 K 的敏感性</td>
+</tr>
+<tr class="even">
+<td>ResDiff</td>
+<td>条件扩散预测 (z_{cont}-z_{quant})</td>
+<td>补回量化丢失的高频局部细节</td>
+<td>条件含量化 token 与各层隐藏态；附录 C.1</td>
+</tr>
+<tr class="odd">
+<td>Hybrid FM</td>
+<td>encoder–PLM–decoder 充当坐标去噪器</td>
+<td>兼取离散预训练与连续坐标精度</td>
+<td>Euler 积分、每步 Kabsch；采样步数约少 10×（第 7 页）</td>
+</tr>
+<tr class="even">
+<td>GeoDPLM</td>
+<td>pair bias、pair/structure transition；可选 triangle</td>
+<td>注入残基间高阶关系</td>
+<td>pair dim 128；structure dim 1280；PairFormer TU hidden 128、TA
+hidden 32；4/16 heads（附录 C.4，第 15 页）</td>
+</tr>
+<tr class="odd">
+<td>REPA</td>
+<td>ESMFold folding trunk 教师，多层加权</td>
+<td>以平滑高维结构语义替代尖锐离散标签</td>
+<td>3 次 recycling；3-layer MLP；learnable softmax layer ensemble（附录
+C.5）</td>
+</tr>
+<tr class="even">
+<td>Folding SFT</td>
+<td>序列不 mask，只 mask 结构</td>
+<td>专门优化 (p(xs))</td>
+<td>提升折叠但失去无条件共生成评估资格</td>
+</tr>
+<tr class="odd">
+<td>Multimer</td>
+<td>PDB-Multimer + chain linker / position offset</td>
+<td>扩展单链模型到链间关系</td>
+<td>全集 11,614/291 train/val；实际 SFT 过滤至 3,462 条、长度 60–512（表
+8、正文第 9 页）</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="实验设计与定量结果">1.5 实验设计与定量结果</h3>
+<h4 id="数据集任务与指标">1.5.1 数据集、任务与指标</h4>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">数据/任务</th>
+<th scope="col">规模或切分</th>
+<th scope="col">能力</th>
+<th scope="col">指标解释</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>CAMEO 2022 folding</td>
+<td>论文沿用 DPLM-2 评测；样本数未在本文正文重报</td>
+<td>时间外蛋白折叠</td>
+<td>RMSD↓ 衡量坐标偏差；TM-score↑ 衡量全局拓扑</td>
+</tr>
+<tr class="even">
+<td>PDB date split folding</td>
+<td>按日期隔离；本文未重报样本数</td>
+<td>分布内外之间的近期结构泛化</td>
+<td>RMSD↓、TM-score↑</td>
+</tr>
+<tr class="odd">
+<td>Unconditional co-generation</td>
+<td>每个蛋白长度生成 40 个样本（图 6）</td>
+<td>序列—结构共同生成的模式覆盖</td>
+<td>FoldSeek cluster 数 / 样本数，即 Diversity↑</td>
+</tr>
+<tr class="even">
+<td>CAMEO inverse folding</td>
+<td>结构条件生成序列</td>
+<td>序列恢复与自洽结构</td>
+<td>AAR↑、self-consistency TM-score↑</td>
+</tr>
+<tr class="odd">
+<td>HumanPPI / DeepLoc</td>
+<td>按 SaProt 协议</td>
+<td>结构感知表征</td>
+<td>分类准确率 Acc↑</td>
+</tr>
+<tr class="even">
+<td>PDB-Multimer</td>
+<td>11,614 train / 291 val；平均 2.88±1.66 链</td>
+<td>多链建模</td>
+<td>RMSD↓、TM-score↑</td>
+</tr>
+</tbody>
+</table></div>
+<p>论文未报告主结果的多次运行标准差或置信区间；PDB-Multimer
+的链数/长度给出数据分布标准差，但这不是模型性能不确定性。</p>
+<h4 id="主结果完整矩阵">1.5.2 主结果完整矩阵</h4>
+<p>下表逐项转录论文表 7（PDF 第 8
+页）。五列指标、十个配置；粗体是各列可比较配置中的最优值。“—”是论文未评估，不补造。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<colgroup>
+<col style="width: 13%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">PDB RMSD↓</th>
+<th scope="col" style="text-align: right;">PDB TM↑</th>
+<th scope="col" style="text-align: right;">CAMEO RMSD↓</th>
+<th scope="col" style="text-align: right;">CAMEO TM↑</th>
+<th scope="col" style="text-align: right;">Diversity↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DPLM-2 650M</td>
+<td style="text-align: right;">5.307</td>
+<td style="text-align: right;">0.8306</td>
+<td style="text-align: right;">7.703</td>
+<td style="text-align: right;">0.7936</td>
+<td style="text-align: right;">0.700</td>
+</tr>
+<tr class="even">
+<td>Bit</td>
+<td style="text-align: right;">3.221</td>
+<td style="text-align: right;">0.9043</td>
+<td style="text-align: right;">6.403</td>
+<td style="text-align: right;">0.8380</td>
+<td style="text-align: right;">0.825</td>
+</tr>
+<tr class="odd">
+<td>Bit + FM</td>
+<td style="text-align: right;">2.870</td>
+<td style="text-align: right;">0.9099</td>
+<td style="text-align: right;">6.183</td>
+<td style="text-align: right;">0.8418</td>
+<td style="text-align: right;">0.525</td>
+</tr>
+<tr class="even">
+<td>Bit + FM + ResDiff</td>
+<td style="text-align: right;">2.788</td>
+<td style="text-align: right;">0.9146</td>
+<td style="text-align: right;">6.077</td>
+<td style="text-align: right;">0.8456</td>
+<td style="text-align: right;">0.525</td>
+</tr>
+<tr class="odd">
+<td>Bit + FM + ResDiff + SFT</td>
+<td style="text-align: right;"><strong>2.370</strong></td>
+<td style="text-align: right;">0.9270</td>
+<td style="text-align: right;">5.847</td>
+<td style="text-align: right;">0.8442</td>
+<td style="text-align: right;">—</td>
+</tr>
+<tr class="even">
+<td><strong>Geo + Bit（推荐）</strong></td>
+<td style="text-align: right;">2.551</td>
+<td style="text-align: right;">0.9254</td>
+<td style="text-align: right;">5.955</td>
+<td style="text-align: right;"><strong>0.8520</strong></td>
+<td style="text-align: right;"><strong>0.900</strong></td>
+</tr>
+<tr class="odd">
+<td>Geo + Bit + FM</td>
+<td style="text-align: right;">2.443</td>
+<td style="text-align: right;">0.9261</td>
+<td style="text-align: right;">6.172</td>
+<td style="text-align: right;">0.8404</td>
+<td style="text-align: right;">0.575</td>
+</tr>
+<tr class="even">
+<td>Geo + Bit + REPA</td>
+<td style="text-align: right;">2.507</td>
+<td style="text-align: right;">0.9264</td>
+<td style="text-align: right;">6.192</td>
+<td style="text-align: right;">0.8412</td>
+<td style="text-align: right;">0.875</td>
+</tr>
+<tr class="odd">
+<td>Geo + Bit + REPA + SFT</td>
+<td style="text-align: right;">2.404</td>
+<td style="text-align: right;"><strong>0.9322</strong></td>
+<td style="text-align: right;"><strong>5.754</strong></td>
+<td style="text-align: right;">0.8424</td>
+<td style="text-align: right;">—</td>
+</tr>
+<tr class="even">
+<td>All*</td>
+<td style="text-align: right;">2.379</td>
+<td style="text-align: right;">0.9297</td>
+<td style="text-align: right;">6.200</td>
+<td style="text-align: right;">0.8398</td>
+<td style="text-align: right;">—</td>
+</tr>
+</tbody>
+</table></div>
+<p>相对 DPLM-2 650M：Bit 把 PDB RMSD 降低 2.086，即
+<strong>39.31%</strong>，TM-score 提升 0.0737（<strong>+8.87%
+相对</strong>）；推荐的 Geo+Bit 把 PDB RMSD 降低
+<strong>51.93%</strong>，CAMEO RMSD 降低
+<strong>22.70%</strong>，多样性提高 <strong>28.57%</strong>。专用 SFT
+配置把 PDB RMSD 降到 2.370，相对基线降低 <strong>55.34%</strong>。</p>
+<blockquote>
+<p><strong>全文最有说服力的证据</strong>：只改变监督表示、参数规模仍为
+650M，Bit 就将 PDB RMSD 5.307→3.221；进一步采用 Geo+Bit 得到 2.551 和
+0.900 多样性。这说明瓶颈主要不是参数量，而是监督几何与结构归纳偏置。</p>
+</blockquote>
+<p>表 4（PDF 第 5 页）还给出外部基线：ESMFold 3B 在 CAMEO/PDB 的 RMSD 为
+3.9900/2.8400；ESM3 1.4B 为 6.3300/4.9003；MultiFlow 为
+17.8400/15.6400。Bit+FM+ResDiff+SFT 的 PDB RMSD 2.3698，比 ESMFold 低
+<strong>16.56%</strong>，但 CAMEO RMSD 5.8472 比 ESMFold 高
+<strong>46.55%</strong>。因此“达到或超过专用折叠模型”只在特定切分/指标成立，不能广播为全面胜出。</p>
+<h4 id="逐层消融与相变">1.5.3 逐层消融与相变</h4>
+<figure class="figure" aria-labelledby="rmsd-chart-title">
+  <p class="fig-title" id="rmsd-chart-title">设计选择改变 PDB folding RMSD 与生成多样性的 Pareto 位置</p>
+  <p class="fig-sub">位级监督带来最大精度跃迁；FM 继续降低 RMSD，却显著压缩无条件生成多样性。</p>
+  <div class="legend" aria-label="图例"><span><span class="swatch" style="background:#2a78d6"></span>PDB RMSD（越低越好）</span></div>
+  <div class="chart-scroll" role="region" aria-label="可横向滚动的数据图" tabindex="0">
+  <svg class="chart" viewBox="0 0 900 390" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>DPLM-2.1 各配置在 PDB date split 上的 RMSD</title>
+    <desc>DPLM-2 为 5.307，Bit 为 3.221，Bit 加 FM 为 2.870，Bit 加 FM 和 ResDiff 为 2.788，Geo 加 Bit 为 2.551，SFT 配置为 2.370。</desc>
+    <g stroke="var(--grid)" stroke-width="1"><line x1="92" y1="315" x2="860" y2="315"/><line x1="92" y1="240" x2="860" y2="240"/><line x1="92" y1="165" x2="860" y2="165"/><line x1="92" y1="90" x2="860" y2="90"/></g>
+    <g fill="var(--muted)" font-size="13"><text x="48" y="320">2.0</text><text x="48" y="245">3.0</text><text x="48" y="170">4.0</text><text x="48" y="95">5.0</text><text x="18" y="42">RMSD</text></g>
+    <g fill="var(--chart-primary)">
+      <rect x="112" y="67" width="78" height="248" rx="5" tabindex="0" data-tip="DPLM-2：RMSD 5.307；Diversity 0.700"/>
+      <rect x="240" y="224" width="78" height="91" rx="5" tabindex="0" data-tip="Bit：RMSD 3.221；Diversity 0.825"/>
+      <rect x="368" y="250" width="78" height="65" rx="5" tabindex="0" data-tip="Bit + FM：RMSD 2.870；Diversity 0.525"/>
+      <rect x="496" y="256" width="78" height="59" rx="5" tabindex="0" data-tip="Bit + FM + ResDiff：RMSD 2.788；Diversity 0.525"/>
+      <rect x="624" y="274" width="78" height="41" rx="5" tabindex="0" data-tip="Geo + Bit：RMSD 2.551；Diversity 0.900（推荐）"/>
+      <rect x="752" y="288" width="78" height="27" rx="5" tabindex="0" data-tip="Bit + FM + ResDiff + SFT：RMSD 2.370；Diversity 未评估"/>
+    </g>
+    <g fill="var(--text-secondary)" font-size="11" text-anchor="middle"><text x="151" y="343">Base</text><text x="279" y="343">Bit</text><text x="407" y="343">Bit+FM</text><text x="535" y="343">+ResDiff</text><text x="663" y="343">Geo+Bit</text><text x="791" y="343">+SFT</text><text x="472" y="376">模型配置</text></g>
+  </svg></div>
+  <figcaption>数据：核心论文表 7（PDF 第 8 页）。图中只有一个 RMSD 纵轴；多样性精确值通过 hover/focus tooltip 与相邻数据表提供，未使用双 Y 轴。</figcaption>
+</figure>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<colgroup>
+<col style="width: 13%" />
+<col style="width: 18%" />
+<col style="width: 18%" />
+<col style="width: 18%" />
+<col style="width: 18%" />
+<col style="width: 13%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">配置（表 7）</th>
+<th scope="col" style="text-align: right;">PDB RMSD↓</th>
+<th scope="col" style="text-align: right;">相对上一层</th>
+<th scope="col" style="text-align: right;">CAMEO RMSD↓</th>
+<th scope="col" style="text-align: right;">Diversity↑</th>
+<th scope="col">解释</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Base</td>
+<td style="text-align: right;">5.307</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">7.703</td>
+<td style="text-align: right;">0.700</td>
+<td>索引监督</td>
+</tr>
+<tr class="even">
+<td>+ Bit</td>
+<td style="text-align: right;">3.221</td>
+<td style="text-align: right;">-39.31%</td>
+<td style="text-align: right;">6.403</td>
+<td style="text-align: right;">0.825</td>
+<td>最大单步收益</td>
+</tr>
+<tr class="odd">
+<td>+ FM</td>
+<td style="text-align: right;">2.870</td>
+<td style="text-align: right;">-10.90%</td>
+<td style="text-align: right;">6.183</td>
+<td style="text-align: right;">0.525</td>
+<td>精度升，多样性骤降</td>
+</tr>
+<tr class="even">
+<td>+ ResDiff</td>
+<td style="text-align: right;">2.788</td>
+<td style="text-align: right;">-2.86%</td>
+<td style="text-align: right;">6.077</td>
+<td style="text-align: right;">0.525</td>
+<td>全局指标边际收益小</td>
+</tr>
+<tr class="odd">
+<td>+ SFT</td>
+<td style="text-align: right;">2.370</td>
+<td style="text-align: right;">-14.99%</td>
+<td style="text-align: right;">5.847</td>
+<td style="text-align: right;">未评估</td>
+<td>任务专化，失去共生成可比性</td>
+</tr>
+</tbody>
+</table></div>
+<p>几何消融（表 5，PDF 第 6 页）显示：无 SFT 时 Base 5.521/7.703；加
+pair bias/transition 得 4.823/7.244；再加 structure transition 得
+3.883/6.550。triangle update 反而退到 4.837/7.197，triangle attention 为
+4.415/6.973。更复杂的 triangle 模块分别让训练慢 <strong>3.9× 与
+6.8×</strong>（正文第 6 页），却不胜过廉价 transition。</p>
+<p><strong>相变高亮。</strong> 从 index 到 bit 是性能相变：PDB index
+accuracy 0.1188→0.2641、bit accuracy 0.7932→0.8648，同时 RMSD
+5.3071→3.2213（表 3，第 3 页）。而从 Bit 到 Bit+FM 是目标权衡相变：PDB
+RMSD继续改善 10.90%，多样性却 0.825→0.525，下降
+<strong>36.36%</strong>。这不是平滑“越多越好”，而是生成轨迹从随机离散去噪转向更确定的
+ODE 后模式覆盖发生突变。</p>
+<h4 id="repa逆折叠与表征学习">1.5.4 REPA、逆折叠与表征学习</h4>
+<p>表 6（第 7 页）中，REPA 将 DPLM-2 的 PDB RMSD
+5.521→4.919（-10.90%），GeoDPLM
+4.823→4.340（-10.01%）；说明教师表征对两类架构均有效。表 13（第 16
+页）中，CAMEO 逆折叠 AAR 从 DPLM-2 650M 的 0.4962 升至 Bitwise
+0.5586、Geo+Bit+REPA 0.5681，绝对提升 0.0719（相对
+<strong>14.49%</strong>）。表 14（第 17 页）中，Bitwise 在 HumanPPI 达
+88.89%，超过 SaProt 的 86.41% 与 DPLM-2 的 84.44%；但 DeepLoc 83.39%
+仍低于 SaProt 85.57%。这是一项“有迁移但不普适”的证据。</p>
+<h4 id="多链数据">1.5.5 多链数据</h4>
+<p>表 9（第 8 页）将 monomer tokenizer 训练数据从 200K 增加 1.2M
+后，PDB-Multimer 重建 RMSD 9.973→6.873（-31.08%），TM-score
+0.694→0.784；说明单链数据能迁移到多链局部几何。表 10（第 9 页）中
+position offset 将 tokenizer 多链 RMSD 6.873→5.886（-14.36%），但折叠端
+ESMFold 仍以 TM-score 0.850 领先 DPLM-2/链连接/offset 的
+0.768/0.771/0.767。表 11 还显示只用 PDB-Multimer SFT 会让 CAMEO RMSD
+恶化到 10.989；加回 SwissProt 才恢复到
+6.410，表明多链与单链数据需要联合而非替代。</p>
+<h4 id="超参敏感性与统计显著性">1.5.6 超参敏感性与统计显著性</h4>
+<p>论文没有给学习率、bit 维数 (K)、codebook 大小、FM 步数、REPA
+权重或位置 offset 的系统 sweep
+曲线，也没有多随机种子均值±标准差。能确认的工程点只有 pair/structure
+hidden dimensions、attention heads、3 次 ESMFold recycling、每 10k step
+记录训练速度，以及 FM 约少 10× 采样步。</p>
+<p>因此，本文可以把 5.307→3.221
+视为<strong>同论文设定下的大效应量</strong>，但不能声称统计显著；也不能确认
+bit 方案是否在某个 (K) 后平台化。唯一可称为“行为突变”的是表 7
+的目标权衡，不是严格意义由连续超参扫描证明的相变。</p>
+<h3 id="价值分析">1.6 价值分析</h3>
+<p><strong>真正贡献</strong>是建立了“诊断—设计—组合验证”的范式。它告诉后续研究者：不要把结构
+tokenizer 的 reconstruction 当代理终点；要同时检查 token
+predictability、坐标质量、全局拓扑、多样性和跨任务迁移。这个框架比单个模块更有寿命。</p>
+<p>可独立复用的设计有三类。第一，任何 LFQ/VQ
+多模态模型都可测试位级或分层标签，避免 codebook index
+的假等距。第二，REPA
+的思想可以跨领域迁移：让通用生成模型对齐专用科学模型的隐藏表征，而不是只蒸馏最终预测。第三，组合消融必须报告<strong>正交性</strong>；Geo、Bit、FM、REPA
+都单独有效，不代表相加有效。</p>
+<p>迁移潜力包括
+RNA/小分子构象、晶体结构、蛋白—配体复合物。共同结构是“一部分模态天然离散、一部分模态连续且具对称性”。位监督适合离散端，等变/成对模块适合几何端，物理能量适合约束端。尤其值得借鉴的是低成本选择：Geo+Bit
+避开 FM 与 REPA 的额外采样/教师预计算，仍同时保住折叠与多样性。</p>
+<h3 id="局限性">1.7 局限性</h3>
+<h4 id="论文自述限制">1.7.1 论文自述限制</h4>
+<p>论文附录 B“Discussions and Limitations”（PDF 第 14
+页）明确承认四点：</p>
+<ol type="1">
+<li><strong>离散表示仍有损。</strong> Bit
+只缓解量化，不捕获完整连续几何；模型主要处理残基/骨架，缺少全原子相互作用。</li>
+<li><strong>缺少物理约束。</strong>
+框架没有显式能量先验，结构指标改善不等同于物理可实现性。</li>
+<li><strong>规模结论未验证。</strong> 分析最多到
+3B，设计在更大模型上是否继续有效未知。</li>
+<li><strong>高质量多链数据稀缺。</strong> PDB-Multimer 经过长度过滤后
+SFT 仅 3,462 样本，蛋白家族外泛化受限。</li>
+</ol>
+<h4 id="补充批判">1.7.2 补充批判</h4>
+<ol type="1">
+<li><p><strong>[论证缺口] “超越专用折叠器”存在切分选择性。</strong>
+因为表 4 中 SFT 模型在 PDB RMSD 2.3698 优于 ESMFold
+2.8400（16.56%），但在 CAMEO 是 5.8472 对 3.9900，反而差 46.55%，所以“on
+par / outperform”不能不带数据集限定。</p></li>
+<li><p><strong>[指标有效性] RMSD、TM-score
+不证明生物功能或可合成性。</strong>
+因为所有主结果都是结构相似度，论文没有 wet-lab
+验证、能量松弛后稳定性、Rosetta energy、pLDDT/calibration 或功能
+assay，所以 2.370 RMSD 不能推出生成蛋白具有目标功能。</p></li>
+<li><p><strong>[统计显著性] 无多随机种子。</strong> 因为表 4–7、13–14
+均没有性能标准差/置信区间，所以 REPA 在 GeoDPLM 上 CAMEO TM-score
+0.8128→0.8217 这类 0.0089
+的增益可能受训练波动影响；报告只能称观察到提升，不能称显著。</p></li>
+<li><p><strong>[实验设计] 基线值在表间不完全一致。</strong> 因为 DPLM-2
+的 PDB RMSD 在表 4/7 是 5.3071/5.307，而表 5/6 是 5.521，摘要写
+5.52→2.36；所以不同训练或评测配置没有在汇总叙事中充分区分，导致相对提升可在
+55.34% 与 57.07% 间变化。</p></li>
+<li><p><strong>[模块交互] All* 不是最优，削弱“统一堆叠”叙事。</strong>
+因为 All* PDB RMSD 2.379 差于 SFT 路径 2.370，CAMEO 6.200 更差于
+5.754；所以模块间存在负交互，设计空间不是可加性模块库。作者诚实报告了这一点，但缺少解释交互的受控二阶实验。</p></li>
+<li><p><strong>[失手子任务] FM 的精度收益以多样性为代价。</strong> 因为
+Bit→Bit+FM 的 PDB RMSD 3.221→2.870，但 diversity
+0.825→0.525（-36.36%）；所以若目标是发现多样骨架，FM
+可能是错误选择。论文给出 ODE 性质解释，却未比较 stochastic sampler
+来验证因果。</p></li>
+<li><p><strong>[缺乏关键竞品公平对比]
+模型大小与任务专化不对称。</strong> 因为 ESMFold 3B 是专用折叠器、ESM3
+1.4B 是不同训练数据的多模态模型，而核心配置含 folding
+SFT；所以参数优势与任务监督、训练数据无法解耦。需要等训练
+token、等结构数据、等 SFT 的 head-to-head。</p></li>
+<li><p><strong>[可复现性风险] 仓库公开程度不完整。</strong>
+官方仓库明确提供 DPLM-2 Bit 权重，但 README 仍写“full implementation
+will be released soon”；当前可核实权重为 2.62GB 的 650M Bit
+模型，GeoDPLM、ResDiff、FM、REPA
+全组合的完整复现入口未被同等清晰公开。因此表 7
+的组合结论难以端到端复核。</p></li>
+</ol>
+<hr />
+</section><section class="card" aria-labelledby="相关工作回溯问题与技术来源链"><h2 id="相关工作回溯问题与技术来源链">2.
+相关工作回溯：问题与技术来源链</h2>
+<h3 id="dplm-2024.07icml-2024">2.1 DPLM — 2024.07，ICML 2024</h3>
+<p><strong>解决什么。</strong> DPLM
+将吸收式离散扩散引入蛋白序列语言建模，把无条件生成、表征学习、motif
+scaffolding、逆折叠条件生成放进一个统一模型。它解决了自回归顺序对蛋白序列并不天然、条件组合不灵活的问题，并为当前工作提供序列端预训练底座。</p>
+<p><strong>遗留缺口。</strong> DPLM
+原生只处理氨基酸离散序列；结构只能作为外部条件，不能共同生成。序列合理也不保证三维骨架合理，因此统一蛋白模型仍缺结构通道。</p>
+<p><strong>核心论文如何回应。</strong> DPLM-2.1
+没有抛弃离散扩散，而是保留其扩展性，把结构同样离散化后联合训练；随后修补离散结构带来的监督与几何问题。</p>
+<p><strong>设计传递。</strong> “任意 mask 比例的去噪语言建模”从 DPLM
+传到 DPLM-2/2.1；核心工作改变的是结构目标粒度，不是扩散骨架。</p>
+<h3 id="dplm-2-2024.10-预印本-iclr-2025">2.2 DPLM-2 — 2024.10 预印本 /
+ICLR 2025</h3>
+<p><strong>解决什么。</strong> DPLM-2 用 LFQ tokenizer
+把三维骨架压成结构 token，与序列 token 联合建模，从而支持
+sequence–structure co-generation、folding、inverse folding 与 motif
+scaffolding。它是核心论文的直接基线与实验载体。</p>
+<p><strong>遗留缺口。</strong> 统一接口建立了，但 tokenizer
+量化丢细节、索引预测准确率低、序列 Transformer 缺少几何偏置；表 3 的
+CAMEO index accuracy 0.0864 是这一缺口的直接度量。</p>
+<p><strong>核心论文如何回应。</strong> DPLM-2.1
+把“是否离散化”改写成“怎样离散化、怎样监督、怎样补连续信息”，分别提出
+Bit、ResDiff、FM、Geo、REPA。</p>
+<p><strong>设计传递。</strong> LFQ 的逐位量化本来只是 tokenizer
+内部实现，在核心论文中被提升为语言模型显式监督单位；这是最关键的“隐藏设计→学习目标”迁移。</p>
+<h3 id="esm3-2024.07-预印本-2025.01-science">2.3 ESM3 — 2024.07 预印本 /
+2025.01 Science</h3>
+<p><strong>解决什么。</strong> ESM3 把序列、结构与功能编码为多轨离散
+token，并把规模扩至
+98B；其核心贡献是证明多模态蛋白语言模型可以被任意模态组合提示，并产生实验验证的远缘荧光蛋白。</p>
+<p><strong>遗留缺口。</strong> 大规模并不回答结构 tokenizer
+是否适合语言模型。核心论文表 2 的受控比较显示，ESM3 tokenizer 重建 RMSD
+0.7248 虽好，换入同一 DPLM-2 架构后生成 RMSD 8.4424，反而弱于 DPLM-2
+tokenizer 的 7.7025。</p>
+<p><strong>核心论文如何回应。</strong> 它把 ESM3 作为反例说明
+reconstruction proxy 不充分，转而优化可预测性与几何偏置；也因此不把“更大
+codebook/更低重建误差”当唯一方向。</p>
+<p><strong>设计传递。</strong> ESM3
+的多轨离散统一思想被继承；核心论文增加位级相关性与连续修复，试图保住多轨语言接口又降低几何代价。</p>
+<h3 id="repa-2024.10-预印本-iclr-2025-oral">2.4 REPA — 2024.10 预印本 /
+ICLR 2025 Oral</h3>
+<p><strong>解决什么。</strong> REPA 在图像扩散 Transformer
+中，将噪声状态隐藏表征对齐到预训练视觉编码器，达到 17.5× 训练加速并取得
+FID 1.42。它把生成困难重新解释为“高质量表征学习困难”。</p>
+<p><strong>遗留缺口。</strong> 原始 REPA 针对图像、二维 patch 与 DINO
+类教师；是否可跨到离散蛋白结构、以及该选哪个科学教师未知。</p>
+<p><strong>核心论文如何回应。</strong> DPLM-2.1 以 ESMFold folding trunk
+为教师，将 REPA 迁移到残基结构表征；表 6 证明它对纯 LM 与 GeoDPLM
+都有效。</p>
+<p><strong>设计传递。</strong>
+从“视觉自监督教师→图像生成器”进化为“专用折叠器→通用蛋白生成器”，并用可学习多层
+ensemble 免去手选对齐层。</p>
+<hr />
+</section><section class="card" aria-labelledby="技术演进脉络"><h2 id="技术演进脉络">3. 技术演进脉络</h2>
+<pre class="text"><code>2024 DPLM [离散扩散；仅序列；统一生成/表征]
+      │
+      ├──&gt; 2024/2025 DPLM-2 [LFQ 结构 token；序列+结构联合分布]
+      │          │
+      │          ├── 缺口 A：量化残差丢失 ──&gt; ResDiff / Hybrid FM
+      │          ├── 缺口 B：index 标签无几何 ─&gt; Bit supervision
+      │          └── 缺口 C：Transformer 无三维偏置 ─&gt; GeoDPLM
+      │
+2024 ESM3 [序列/结构/功能多轨；超大规模]
+      └── 提醒：统一离散接口可扩展，但 tokenizer 重建≠生成能力
+
+2024 REPA [外部表征平滑生成监督]
+      └──&gt; 2025 DPLM-2.1 [ESMFold 教师对齐]
+
+2025 DPLM-2.1 汇聚点
+      [Bit + Geo 为推荐主干；FM/ResDiff/SFT 按目标选择；Multimer 扩数据覆盖]</code></pre>
+<p>内在推动力不是单纯扩大模型，而是<strong>从接口统一转向度量一致</strong>：早期关心“序列和结构能否都变成
+token”；随后发现 token
+的可预测性、几何邻近关系与坐标精度并不一致；再把连续模型、等变偏置和专用教师重新引入。关键转折是承认“语言统一”不等于“物理统一”。社区关注点也从单一
+folding accuracy 转向精度—多样性—效率三目标：表 7
+和训练速度分析正是这种变化。</p>
+</section><section class="card" aria-labelledby="跨论文对标"><h2 id="跨论文对标">4. 跨论文对标</h2>
+<table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">发表年月</th>
+<th scope="col">会议/出版</th>
+<th scope="col">核心贡献</th>
+<th scope="col">代表性证据</th>
+<th scope="col">与核心工作的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DPLM</td>
+<td>2024.07</td>
+<td>ICML 2024</td>
+<td>蛋白序列离散扩散 LM</td>
+<td>统一生成、表征与条件控制</td>
+<td>提供扩散语言骨架</td>
+</tr>
+<tr class="even">
+<td>DPLM-2</td>
+<td>2024.10 / 2025</td>
+<td>ICLR 2025</td>
+<td>LFQ 结构 token + 序列结构联合建模</td>
+<td>核心论文基线 PDB RMSD 5.307</td>
+<td>直接问题来源</td>
+</tr>
+<tr class="odd">
+<td>ESM3</td>
+<td>2025.01</td>
+<td>Science</td>
+<td>序列/结构/功能多轨扩展到 98B</td>
+<td>论文受控实验：tokenizer 重建 0.7248 RMSD，但生成 8.4424</td>
+<td>证明低重建误差不足</td>
+</tr>
+<tr class="even">
+<td>REPA</td>
+<td>2025.04</td>
+<td>ICLR Oral</td>
+<td>外部教师表征对齐生成模型</td>
+<td>原论文报告 17.5× 训练加速、FID 1.42</td>
+<td>技术来源，迁移到 ESMFold 教师</td>
+</tr>
+<tr class="odd">
+<td><strong>DPLM-2.1</strong></td>
+<td><strong>2025.07</strong></td>
+<td><strong>ICML Spotlight</strong></td>
+<td><strong>Bit+Geo+连续修复的设计空间</strong></td>
+<td><strong>650M：PDB RMSD 5.307→2.370；Geo+Bit diversity
+0.900</strong></td>
+<td><strong>汇聚与诊断框架</strong></td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="开放挑战与可操作研究机会"><h2 id="开放挑战与可操作研究机会">5. 开放挑战与可操作研究机会</h2>
+<h3 id="理论层面">5.1 理论层面</h3>
+<ol type="1">
+<li><strong>标签度量一致性的下界。</strong> 固定相同 LFQ
+encoder、codebook 与参数量，对比 index CE、bit BCE、Gray code、层次
+softmax、基于 latent 距离的 soft label；测定在相同训练 token 下，结构
+RMSD 可由 token classification error 推出的最紧上界。</li>
+<li><strong>离散—连续联合表示的可识别性。</strong> 在同一数据上对比纯
+token、token+residual、直接 SE(3) flow，控制计算与监督；检验 residual
+是否只修局部键长，还是能改变全局 topology。</li>
+<li><strong>模块非正交性的因果解释。</strong> 做完整 (2^4)
+因子实验（Bit/Geo/FM/REPA），至少 3 seeds，拟合二阶交互项；验证 REPA 与
+Bit 是否确实因“平滑监督重复”而互相饱和。</li>
+</ol>
+<h3 id="工程与应用层">5.2 工程与应用层</h3>
+<ol type="1">
+<li><strong>等预算公平折叠对比。</strong> 统一 PDB/SwissProt 数据、650M
+参数、训练 FLOPs、folding SFT 与采样时间，对比
+DPLM-2.1、ESMFold-small、ESM3-open、Proteina；同时报
+CAMEO/PDB、推理秒数和峰值显存。</li>
+<li><strong>精度—多样性 Pareto。</strong> 在 Bit+FM 上加入 stochastic
+interpolant、温度或噪声注入，与纯 ODE head-to-head；固定 40
+samples/length，画 RMSD 与 FoldSeek diversity 的单一 Pareto 图，确认
+36.36% diversity 损失能否回收。</li>
+<li><strong>物理可行性补测。</strong> 对同一批生成结构做 clash
+rate、Ramachandran outlier、Rosetta/Amber relaxation、短程 MD 稳定性；与
+RMSD/TM-score 做相关分析，检验结构指标是否代理真实物理质量。</li>
+<li><strong>复现缺口。</strong> 公开 Geo/ResDiff/FM/REPA
+全配置后，以仓库默认命令复现表 7；记录 wall-clock、GPU-hours、预计算
+ESMFold 表征成本，建立“每 1% RMSD 改善的计算代价”。</li>
+</ol>
+<h3 id="新兴方向">5.3 新兴方向</h3>
+<ol type="1">
+<li><strong>全原子与配体条件。</strong> 把主链 4 原子扩到 side-chain 与
+ligand，比较 residue token+atom residual、全原子 flow 两路线；任务用
+protein–ligand pose、interface RMSD、binding energy，而非只看单链
+TM-score。</li>
+<li><strong>多链长尾泛化。</strong> 按链数、界面面积、同源家族分层，比较
+monomer-only、multimer-only、curriculum mixed；特别复测论文中
+multimer-only 导致 CAMEO RMSD 10.989 的负迁移来源。</li>
+<li><strong>实验闭环。</strong> 从生成集中按 Geo+Bit、Bit+FM
+两策略各选等量候选，盲测表达率、热稳定性与功能；用实验成功率检验“0.900
+diversity”是否比“2.370 RMSD”更能预测发现价值。</li>
+<li><strong>不确定性与拒答。</strong> 在 CAMEO/PDB
+之外构造低同源、超长、无序蛋白集合；用 ensemble/conformal
+方法给折叠误差区间，对比 TM-score
+单点输出，建立何时不应信任生成结构的阈值。</li>
+</ol>
+<hr />
+</section><section class="card" aria-labelledby="其他值得关注的近期工作"><h2 id="其他值得关注的近期工作">6. 其他值得关注的近期工作</h2>
+<p><strong>Protein Structure Tokenization: Benchmarking and New
+Recipe</strong>（2025.07，ICML 2025）<br />
+从局部子结构、效率与 codebook 利用率系统评测 tokenizer；AminoAseed 相对
+ESM3 在 24 个监督任务平均提升 6.31%，非常适合作为 DPLM-2.1 下一轮
+tokenizer head-to-head。 <a
+href="https://proceedings.mlr.press/v267/yuan25i.html">论文</a> | <a
+href="https://github.com/KatarinaYuan/StructTokenBench">Code/权重</a></p>
+<p><strong>Retrieval Augmented Zero-Shot Enzyme Generation for Specified
+Substrate</strong>（2025.07，ICML 2025）<br />
+把底物相似性检索与条件离散扩散结合，定义零样本底物指定酶生成；值得看它如何把通用序列生成接到可评价的催化目标。
+<a href="https://proceedings.mlr.press/v267/du25i.html">论文</a> | Code
+未找到</p>
+<p><strong>Foundation Molecular Grammar</strong>（2025.07，ICML
+2025）<br />
+用多模态基础模型诱导可解释分子图语法，连接图像、文本与分子图；其“先获得结构化符号再生成”的路线与蛋白结构
+token 的度量问题形成呼应。 <a
+href="https://proceedings.mlr.press/v267/sun25aa.html">论文</a> | <a
+href="https://github.com/shiningsunnyday/induction">Code</a></p>
+<p><strong>Open Materials Generation with Stochastic
+Interpolants</strong>（2025.07，ICML 2025）<br />
+在统一随机插值框架中同时处理周期晶格、坐标与原子种类，是检验“连续/离散联合生成”如何跨到晶体的重要参照。
+<a href="https://proceedings.mlr.press/v267/hollmer25a.html">论文</a> |
+<a href="https://github.com/FERMat-ML/OMatG">Code</a></p>
+<p><strong>All-atom Diffusion Transformers</strong>（2025.07，ICML
+2025）<br />
+用共享 latent 同时生成周期材料和非周期分子，并扩到 5 亿参数；与 DPLM-2.1
+的对照点是：它弱化领域特定归纳偏置，换取统一与速度。 <a
+href="https://proceedings.mlr.press/v267/joshi25a.html">论文</a> | <a
+href="https://github.com/facebookresearch/all-atom-diffusion-transformer">Code</a></p>
+<p><strong>LLM-SRBench</strong>（2025.07，ICML 2025）<br />
+239 个跨四科学领域的符号回归问题揭示最好系统 symbolic accuracy 仅
+31.5%；它提醒 AI4Science 评测必须防记忆并把“发现”与“复述公式”分开。 <a
+href="https://proceedings.mlr.press/v267/shojaee25a.html">论文</a> |
+Code 入口见会议页</p>
+<p><strong>Bridging Protein Sequences and Microscopy Images with Unified
+Diffusion Models</strong>（2025.07，ICML 2025）<br />
+CELL-Diff
+在蛋白序列与荧光显微图之间双向生成，把蛋白多模态从“序列—结构”扩到“序列—细胞定位表型”。
+<a href="https://proceedings.mlr.press/v267/zheng25e.html">论文</a> |
+Code 未找到</p>
+<hr />
+</section><section class="card" aria-labelledby="结论"><h2 id="结论">7. 结论</h2>
+<p>DPLM-2.1 最重要的结论不是某个单一 SOTA
+数字，而是一个对多模态科学模型普遍有效的工程原则：<strong>符号化接口必须保留底层连续空间的邻近关系，否则规模化语言建模会优化一个错误的度量。</strong>
+650M 模型通过 Bit 将 PDB RMSD 从 5.307 降到 3.221，再用 Geo+Bit 在 2.551
+RMSD 与 0.900 diversity
+之间取得更平衡的点，证明设计可替代一部分参数规模。</p>
+<p>但报告也必须保留边界：CAMEO 上它仍明显不及 ESMFold；主结果无多
+seed；没有物理能量与实验验证；全组合并非最优；完整组件代码尚未同等公开。因此，最可靠的后续路线不是继续叠模块，而是做等预算、跨切分、带物理和实验终点的
+Pareto 评测。</p>
+<hr />
+<h3 id="来源与核验说明">来源与核验说明</h3>
+<ul>
+<li>核心定量数据全部来自 <a
+href="https://arxiv.org/pdf/2504.11454v3">arXiv 2504.11454v3
+PDF（2025-06-12）</a>：表 1–3（第 3 页）、表 4（第 5 页）、表 5（第 6
+页）、表 6（第 7 页）、表 7–9（第 8 页）、表 10–11（第 9 页）、限制（第
+14 页）、表 13（第 16 页）、表 14（第 17 页）。页码按 PDF
+显示页计。</li>
+<li>会议与发表信息由 <a
+href="https://proceedings.mlr.press/v267/hsieh25a.html">PMLR</a>
+验证；代码、权重与数据由官方项目页、GitHub 与 Hugging Face
+实际访问验证。</li>
+<li>相对提升均由表中原始值重新计算，四舍五入到两位小数；未报告项保留为“—”。</li>
+<li>本报告分析的不完备处：未实际训练模型或运行蛋白结构评测；无法从论文缺失信息推断随机种子波动、训练总
+FLOPs、完整超参曲线或 wet-lab 成功率。</li>
+<li>HTML 已通过 Warm Editorial 结构与离线依赖验证（0
+warnings）。运行环境虽有 Playwright 包，但指定的
+<code>/usr/bin/chromium</code> 与 <code>/opt/pw-browsers</code>
+均不存在，且未发现其他 Chromium 可执行文件；遵照“不运行 playwright
+install”，本期无法完成浅色、深色、移动端的真实浏览器截图对比。响应式、主题与打印规则因此只经过静态校验，未声称完成视觉渲染验收。</li>
+</ul>
+<p><strong>索引状态</strong>：本地 <code>ml-report-index.md</code>
+已更新；持久化同步在交付阶段执行。</p>
+</section></main><footer>核心来源：<a href="https://proceedings.mlr.press/v267/hsieh25a.html">ICML 2025 / PMLR</a> · <a href="https://arxiv.org/abs/2504.11454v3">arXiv 2504.11454v3</a> · 生成日期 2026-08-16</footer></div><div class="tip" id="tip" role="tooltip" aria-live="polite"></div><script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script></body></html>

@@ -1,0 +1,1259 @@
+---
+layout: null
+title: "DM/FM Alignment"
+date: 2026-08-19
+topic: vlm-vision
+excerpt: "解析奖励加权分布如何统一扩散模型与流匹配模型的对齐，在无需针对每个奖励重训模型的情况下修正采样动力学。"
+permalink: /blog/2026/08/19/diffusion-flow-matching-reward-alignment/
+blog_post: true
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>统一扩散与流匹配的奖励加权对齐 · 2026-08-19</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-primary-alt: #3987e5;
+    --chart-comparison: #eb6834;
+    --chart-comparison-alt: #d95926;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #eb6834;
+    --chart-comparison-alt: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">生成模型 · 2026 arXiv 预印本深读</p>
+    <h1>统一扩散与流匹配的奖励加权对齐</h1>
+    <p class="subtitle">从 reward-weighted distribution 到 score / velocity guidance：理论、成本与证据缺口</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">arXiv:2602.00413v1</span>
+      <span class="chip">2026-08-19</span>
+      <span class="chip">Diffusion · Flow Matching · Alignment</span>
+    </div>
+    <p class="lede">不再为每个奖励重训生成模型，而是直接修正采样动力学：扩散侧学习平滑条件期望，流匹配侧估计奖励重加权速度。</p>
+  </header>
+
+  <main>
+    <section class="card" aria-labelledby="0-链接验证表"><h2 id="0-链接验证表">0. 链接验证表</h2>
+<p>下列 URL
+均在本次报告生成时实际访问。核心工作截至核验时只有预印本，未找到可确认的官方代码、独立项目主页或公开权重；这也是本报告降低
+venue 置信等级的重要原因。</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="可横向滚动的数据表"><table>
+<thead>
+<tr class="header">
+<th scope="col">论文</th>
+<th scope="col" class="num">会议主页 / 正式出版</th>
+<th scope="col" class="num">arXiv（具体版本）</th>
+<th scope="col" class="num">Code 仓库</th>
+<th scope="col" class="num">数据集 / 权重</th>
+<th scope="col" class="num">项目主页 / 视频</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Alignment of Diffusion Model and Flow Matching for
+Text-to-Image Generation（核心）</strong></td>
+<td class="num">未找到正式会议录；<a href="https://openreview.net/pdf/88965b66dac9a13dbfcc89883c8c0013f22b329a.pdf">OpenReview
+PDF 镜像</a>无法确认接收状态</td>
+<td class="num"><a href="https://arxiv.org/abs/2602.00413v1">2602.00413v1，2026-01-31</a></td>
+<td class="num"><strong>未公开 / 未找到</strong></td>
+<td class="num">使用 <a href="https://huggingface.co/datasets/yuvalkirstain/pickapic_v2">Pick-a-Pic</a>；72
+MB guidance 权重未公开</td>
+<td class="num">未找到</td>
+</tr>
+<tr class="even">
+<td>DDPO / Training Diffusion Models with Reinforcement Learning</td>
+<td class="num"><a href="https://openreview.net/forum?id=YCWjhGrJFD">ICLR 2024
+OpenReview</a></td>
+<td class="num"><a href="https://arxiv.org/abs/2305.13301v4">2305.13301v4，2024-01-04</a></td>
+<td class="num"><a href="https://github.com/jannerm/ddpo">jannerm/ddpo</a></td>
+<td class="num">仓库含训练实现；无统一专属数据集</td>
+<td class="num"><a href="https://rl-diffusion.github.io/">项目页</a></td>
+</tr>
+<tr class="odd">
+<td>Diffusion-DPO</td>
+<td class="num"><a href="https://openaccess.thecvf.com/content/CVPR2024/html/Wallace_Diffusion_Model_Alignment_Using_Direct_Preference_Optimization_CVPR_2024_paper.html">CVPR
+2024 Open Access</a></td>
+<td class="num"><a href="https://arxiv.org/abs/2311.12908v1">2311.12908v1，2023-11-21</a></td>
+<td class="num"><a href="https://github.com/SalesforceAIResearch/DiffusionDPO">SalesforceAIResearch/DiffusionDPO</a></td>
+<td class="num"><a href="https://github.com/SalesforceAIResearch/DiffusionDPO#model-checkpoints">SD1.5
+/ SDXL 权重入口（仓库）</a>；Pick-a-Pic V2</td>
+<td class="num">未找到独立项目页 / 视频</td>
+</tr>
+<tr class="even">
+<td>SPO / Step-by-step Preference Optimization</td>
+<td class="num"><a href="https://openaccess.thecvf.com/content/CVPR2025/html/Liang_Aesthetic_Post-Training_Diffusion_Models_from_Generic_Preferences_with_Step-by-step_Preference_CVPR_2025_paper.html">CVPR
+2025 Open Access</a></td>
+<td class="num"><a href="https://arxiv.org/abs/2406.04314v3">2406.04314v3，2025-03-25</a></td>
+<td class="num"><a href="https://github.com/RockeyCoss/SPO">RockeyCoss/SPO</a></td>
+<td class="num"><a href="https://github.com/RockeyCoss/SPO#-available-checkpoints">模型与
+LoRA 权重（仓库）</a></td>
+<td class="num"><a href="https://rockeycoss.github.io/spo.github.io/">项目主页</a></td>
+</tr>
+<tr class="odd">
+<td>On the Guidance of Flow Matching</td>
+<td class="num"><a href="https://proceedings.mlr.press/v267/feng25s.html">ICML 2025
+/ PMLR</a></td>
+<td class="num"><a href="https://arxiv.org/abs/2502.02150v3">2502.02150v3，2025-05-26</a></td>
+<td class="num"><a href="https://github.com/AI4Science-WestlakeU/flow_guidance">AI4Science-WestlakeU/flow_guidance</a></td>
+<td class="num">实验配置随代码；未找到专属权重</td>
+<td class="num">未找到独立视频</td>
+</tr>
+</tbody>
+</table>
+</div></section><section class="card" aria-labelledby="1-检索去重与随机选择记录"><h2 id="1-检索去重与随机选择记录">1. 检索、去重与随机选择记录</h2>
+<p>运行日
+<code>date +%u=3</code>，按轮转规则进入生成模型方向。检索前读取
+<code>ml-report-index.md</code>：最近 14 天已有 2026-08-12 的 EPG（无
+VAE 的像素空间生成），其余为 RL、效率、理论、AI4Science、LLM 与医疗
+VLM，不与本期“生成模型奖励对齐”重复。</p>
+<p>候选池优先收集 ICML 2025、NeurIPS 2025、ICLR 2026 正式论文，其次是近
+12 个月且全文 / 定量资料完整的 arXiv。候选如下：</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="可横向滚动的数据表"><table>
+<thead>
+<tr class="header">
+<th style="text-align: right;" scope="col">#</th>
+<th scope="col" class="num">候选工作</th>
+<th scope="col" class="num">年份 / 来源</th>
+<th scope="col" class="num">子方向</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td class="num">On the Guidance of Flow Matching</td>
+<td class="num">ICML 2025</td>
+<td class="num">流匹配引导</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td class="num">Mean Flows for One-step Generative Modeling</td>
+<td class="num">NeurIPS 2025 / arXiv</td>
+<td class="num">一步生成</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td class="num">STORK</td>
+<td class="num">ICLR 2026</td>
+<td class="num">快速扩散 / 流采样</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td class="num">TimeFlow</td>
+<td class="num">ICLR 2026</td>
+<td class="num">时序生成</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td class="num">Flow Along the K-Amplitude</td>
+<td class="num">ICLR 2026</td>
+<td class="num">流几何</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td class="num">Exploring the Design Space of Transition Matching</td>
+<td class="num">ICLR 2026</td>
+<td class="num">转移匹配</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td class="num">GLASS Flows</td>
+<td class="num">ICLR 2026</td>
+<td class="num">奖励对齐</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">8</td>
+<td class="num">Source-Guided Flow Matching</td>
+<td class="num">ICLR 2026</td>
+<td class="num">条件引导</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td class="num">OneFlow</td>
+<td class="num">2025 arXiv</td>
+<td class="num">混合模态生成</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td class="num">Diffusion Transformers with Representation Autoencoders</td>
+<td class="num">2025 arXiv</td>
+<td class="num">生成潜空间</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td class="num">Neon</td>
+<td class="num">2025 arXiv</td>
+<td class="num">生成器自训练</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">12</td>
+<td class="num">STARFlow-V</td>
+<td class="num">2025 arXiv</td>
+<td class="num">视频 normalizing flow</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td class="num">DriveWAM</td>
+<td class="num">2026 arXiv</td>
+<td class="num">世界—动作生成</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td class="num">LangFlow</td>
+<td class="num">2026 arXiv</td>
+<td class="num">连续语言扩散</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td class="num">Federated Flow Matching</td>
+<td class="num">ICLR 2026</td>
+<td class="num">联邦生成</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">16</td>
+<td class="num">Edit-Based Flow Matching for Temporal Point Processes</td>
+<td class="num">ICLR 2026</td>
+<td class="num">点过程生成</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td class="num">Wasserstein Flow Matching</td>
+<td class="num">ICML 2025</td>
+<td class="num">分布族生成</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td class="num">Can Diffusion Models Learn Hidden Inter-Feature Rules?</td>
+<td class="num">ICML 2025</td>
+<td class="num">组合规律</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">19</td>
+<td class="num">Continuous Visual Autoregressive Generation via Score
+Maximization</td>
+<td class="num">ICML 2025</td>
+<td class="num">连续自回归</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">20</td>
+<td class="num">Does Generation Require Memorization?</td>
+<td class="num">ICML 2025</td>
+<td class="num">创造性 / 记忆</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">21</td>
+<td class="num">SketchDNN</td>
+<td class="num">ICML 2025</td>
+<td class="num">CAD 草图生成</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">22</td>
+<td class="num">Taming Diffusion for Dataset Distillation</td>
+<td class="num">ICML 2025</td>
+<td class="num">数据蒸馏</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">23</td>
+<td class="num">Long-Term TalkingFace Generation</td>
+<td class="num">ICML 2025</td>
+<td class="num">长视频人脸生成</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;"><strong>24</strong></td>
+<td class="num"><strong>Alignment of Diffusion Model and Flow Matching for
+Text-to-Image Generation</strong></td>
+<td class="num"><strong>2026 arXiv</strong></td>
+<td class="num"><strong>统一奖励加权对齐</strong></td>
+</tr>
+</tbody>
+</table>
+</div><p>第一次执行 <code>shuf -i 1-24 -n 1</code> 抽中
+<strong>10</strong>。该工作与 8 月 12 日 EPG 同属“生成潜空间 /
+表征自编码器替代传统 VAE”的同一主题，触发 14
+天主题去重，因此重抽。第二次执行同一命令抽中
+<strong>24</strong>。核心工作虽是预印本，但有完整 HTML、理论推导、6
+方法×4 指标主表、训练成本、步数消融与 3×3
+超参表；资料充足，重抽在此停止。总重抽次数：<strong>1</strong>。</p>
+</section><figure class="figure" aria-labelledby="spo-chart-title">
+  <p class="fig-title" id="spo-chart-title">核心方法相对 SPO 的自动指标变化</p>
+  <p class="fig-sub">据核心论文表 2 复算。正值表示核心方法更高，负值表示 SPO 更高；单一横轴，单位为相对百分比。</p>
+  <div class="legend" aria-label="图例">
+    <span><span class="swatch" style="background:var(--chart-primary)"></span>核心方法领先</span>
+    <span><span class="swatch" style="background:var(--chart-comparison)"></span>核心方法落后</span>
+  </div>
+  <svg class="chart" viewbox="0 0 900 390" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>核心方法相对 SPO 的四项指标变化</title>
+    <desc>PickScore 增加 0.087%，HPSV2 增加 1.006%，ImageReward 降低 1.648%，Aesthetic 增加 1.383%。</desc>
+    <line x1="480" y1="34" x2="480" y2="330" stroke="var(--grid)" stroke-width="2"></line>
+    <g font-size="14">
+      <text x="180" y="365" text-anchor="middle">-2%</text><text x="330" y="365" text-anchor="middle">-1%</text><text x="480" y="365" text-anchor="middle">0</text><text x="630" y="365" text-anchor="middle">+1%</text><text x="780" y="365" text-anchor="middle">+2%</text>
+      <text x="155" y="86" text-anchor="end">PickScore</text><rect x="480" y="61" width="13.1" height="36" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="PickScore：+0.087%"></rect><text x="505" y="85">+0.087%</text>
+      <text x="155" y="151" text-anchor="end">HPSV2</text><rect x="480" y="126" width="150.9" height="36" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="HPSV2：+1.006%"></rect><text x="642" y="150">+1.006%</text>
+      <text x="155" y="216" text-anchor="end">ImageReward</text><rect x="232.8" y="191" width="247.2" height="36" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="ImageReward：-1.648%"></rect><text x="220" y="215" text-anchor="end">-1.648%</text>
+      <text x="155" y="281" text-anchor="end">Aesthetic</text><rect x="480" y="256" width="207.5" height="36" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="Aesthetic：+1.383%"></rect><text x="699" y="280">+1.383%</text>
+    </g>
+  </svg>
+  <figcaption>来源：arXiv:2602.00413v1 表 2，本报告复算。该图直接揭示论文“四项均胜”表述与 ImageReward 数据不一致；正文提供原始值表。</figcaption>
+</figure><section class="card" aria-labelledby="2-核心论文深度解析"><h2 id="2-核心论文深度解析">2. 核心论文深度解析</h2>
+<h3 id="21-motivation对齐为何一定要改模型参数">2.1
+Motivation：对齐为何一定要改模型参数？</h3>
+<p>主流文本到图像对齐大致走两条路。RLHF / DDPO
+把每一步去噪视为动作，用最终奖励做 policy gradient；Diffusion-DPO、SPO
+则从偏好对构造可微目标。它们的共同点是：每换一个奖励，就要修改大生成模型的参数。核心论文第
+1 节把问题量化成算力与泛化负担：表 2 中 Diffusion-DPO 训练 <strong>4,800
+GPU-hour</strong>，SPO <strong>234 GPU-hour</strong>；核心方法只训练一个
+<strong>72 MB</strong> 引导网络，用 <strong>92 GPU-hour</strong>。相对
+SPO 下降 <strong>60.68%</strong>，相对 Diffusion-DPO 下降
+<strong>98.08%</strong>。</p>
+<p>但论文更重要的观察不是“微调贵”，而是对齐目标已经隐含了目标分布。若参考模型为
+(\pi_{\rm ref}(x\mid y))，奖励为 (r(x,y))，KL 正则系数为
+(\beta)，标准对齐问题的闭式最优分布是：</p>
+<p>[ \pi_r(x\mid y)=\frac{1}{Z(y)}\pi_{\rm ref}(x\mid
+y)\exp\left(\frac{r(x,y)}{\beta}\right). ]</p>
+<p>因此，理论上不必更新参考模型；只要能从 (\pi_r)
+采样，就完成了对齐。问题被从“参数优化”改写为“奖励加权采样”。这对快速切换审美、文本一致性、安全或领域奖励有直接价值。</p>
+<p>论文同时发现：把奖励梯度直接加到扩散 score 上会出现两难。引导强度
+(\alpha)
+太小，结果几乎不变；太大，高维奖励景观中的梯度会制造伪影（正文图
+2、§3.2）。作者称之为 guidance 的 adversarial
+nature。流匹配则不同，其正确修正是条件期望而非输入梯度，理论上不具有同一种梯度攻击式失稳。</p>
+<h3 id="22-故事线从同一个目标分布分叉出两套工程方案">2.2
+故事线：从同一个目标分布分叉出两套工程方案</h3>
+<p>第一步，作者从 KL 正则对齐的解析解出发，把 reward-weighted
+distribution 设为唯一目标。这个起点统一了扩散和 flow
+matching：二者都不需要重新定义“偏好”，只需要求目标分布下的 score 或
+velocity。</p>
+<p>第二步，在扩散分支上，作者推导目标 score = 参考 score +
+奖励指数的后验条件期望之对数梯度。直接 Monte Carlo
+需要穿过采样轨迹反传，Tweedie 近似又有偏；于是作者训练小网络 (h_\psi)
+估计条件期望，并对其梯度景观加一致性正则。这里的权衡是：<strong>不微调大生成器，但仍需为奖励训练一个小引导器</strong>。</p>
+<p>第三步，为适配 SDXL-Turbo 一步生成，时间不再从 ([0,T])
+均匀采样，而固定 (t=T)。这使 (h_\psi)
+退化为时间无关网络，训练容易，却牺牲了对通用多步扩散轨迹的直接覆盖。</p>
+<p>第四步，在流匹配分支上，作者推导目标 velocity = 参考 velocity +
+奖励重加权条件速度的期望。因为没有对 (x_t)
+求奖励梯度，可用重要性采样从边缘分布估计，宣称无需训练额外网络。这里牺牲的是估计方差与每步候选采样成本；论文没有完整报告这些成本。</p>
+<pre class="text"><code>                           KL-regularized alignment
+                                     │
+                     target ∝ reference × exp(reward / β)
+                                     │
+                ┌────────────────────┴────────────────────┐
+                │                                         │
+       Diffusion score branch                    Flow velocity branch
+       score_ref + ∇ log E[e^{r/β}]              v_ref + E[(R-1)v_cond]
+                │                                         │
+       直接梯度会产生伪影                         无输入梯度的条件期望
+                │                                         │
+       学 72 MB hψ + 一致性正则                    重要性采样估计
+                │                                         │
+       SDXL-Turbo：1 step                         SD3.5 Large Turbo：4 steps</code></pre>
+<h3 id="23-方程级机制解剖">2.3 方程级机制解剖</h3>
+<h4 id="扩散从目标-score-到引导网络">扩散：从目标 score 到引导网络</h4>
+<p>核心定理 3.1（正文式 10）给出：</p>
+<p>[ s_q(x_t,y,t)=\nabla_{x_t}\log p_t(x_t\mid y)
++\nabla_{x_t}\log\mathbb E_{p(x_0\mid x_t,y)}
+\left[\exp\left(\frac{r(x_0,y)}{\beta}\right)\right]. ]</p>
+<p>第一项可直接使用预训练扩散模型；第二项是精确奖励引导。为避免每个
+(x_t) 上采样完整后验，作者以均方误差训练：</p>
+<p>[ \mathcal L_{\rm guidance}(\psi)= \mathbb
+E\left[\left|h_\psi(x_t,y,t)-
+\exp\left(\frac{r(x_0,y)}{\beta}\right)\right|_2^2\right]. ]</p>
+<p>其总体最优解恰好是条件期望，因此采样 score 变为：</p>
+<p>[ s_{\rm aligned}=s_{\rm ref}+\nabla_{x_t}\log h_{\psi^*}(x_t,y,t).
+]</p>
+<p>为平滑引导景观，作者再加入 (\mathcal L_{\rm consistence})，使参考条件
+score 与 (\nabla\log h_\psi) 的和接近奖励加权分布的条件
+score；最终目标（正文式 15）：</p>
+<p>[ \psi^*=\arg\min_\psi \left{\mathcal L_{\rm guidance}+\eta\mathcal
+L_{\rm consistence}\right}. ]</p>
+<h4 id="流匹配从奖励比率到速度修正">流匹配：从奖励比率到速度修正</h4>
+<p>定理 4.1（正文式 16）定义归一化奖励比率：</p>
+<p>[ R(x_1,x_t,y)= \frac{\exp(r(x_1,y)/\beta)} {\mathbb E_{x_1'\sim
+p_{1|t}}[\exp(r(x_1',y)/\beta)]}, ]</p>
+<p>并得到：</p>
+<p>[ v_q(x_t,y,t)=v_p(x_t,y,t)+ \mathbb E_{x_1\sim p_{1|t}}
+\left[(R(x_1,x_t,y)-1)v_t(x_t\mid x_1,y)\right]. ]</p>
+<p>论文再用重要性采样把后验期望改写为从 (p(x_1\mid y))
+的边缘样本求期望。概念上，这是“高奖励终点对应的条件速度被放大、低奖励终点被压低”，而不是沿奖励梯度直接推图像。</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="可横向滚动的数据表"><table>
+<thead>
+<tr class="header">
+<th scope="col">机制 / 维度</th>
+<th scope="col" class="num">扩散分支</th>
+<th scope="col" class="num">流匹配分支</th>
+<th scope="col" class="num">关键设置 / 风险</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>目标</td>
+<td class="num">奖励加权 score</td>
+<td class="num">奖励加权 velocity</td>
+<td class="num">共同目标分布 (\pi_r)</td>
+</tr>
+<tr class="even">
+<td>修正形式</td>
+<td class="num">(\nabla\log E[e^{r/\beta}])</td>
+<td class="num">(E[(R-1)v])</td>
+<td class="num">前者有输入梯度，后者无</td>
+</tr>
+<tr class="odd">
+<td>额外训练</td>
+<td class="num">训练 72 MB 引导网络</td>
+<td class="num">宣称 training-free</td>
+<td class="num">flow 推理采样开销未完整报告</td>
+</tr>
+<tr class="even">
+<td>稳定机制</td>
+<td class="num">consistency regularization</td>
+<td class="num">归一化奖励比率</td>
+<td class="num">(\eta=1,\beta=15) 最佳</td>
+</tr>
+<tr class="odd">
+<td>骨干</td>
+<td class="num">SDXL-Turbo</td>
+<td class="num">SD3.5 Large Turbo</td>
+<td class="num">1 step vs 4 steps，不是同骨干比较</td>
+</tr>
+<tr class="even">
+<td>数据</td>
+<td class="num">Pick-a-Pic V1 583K 偏好对</td>
+<td class="num">由生成 / 奖励估计驱动</td>
+<td class="num">数据构造细节不对称</td>
+</tr>
+<tr class="odd">
+<td>优化</td>
+<td class="num">Adam，lr=1e-3，batch=32，10 epochs</td>
+<td class="num">不训练生成器</td>
+<td class="num">GPU 型号、推理吞吐未报告</td>
+</tr>
+</tbody>
+</table>
+</div><p>算法 1（附录 C.1）的工程流程可以压缩为：</p>
+<pre class="text"><code>repeat:
+    1. 从 583K alignment pairs 采样 batch b；前向加噪得到 x_T
+    2. 计算 L_guidance = mean ||hψ(x_T,y)-exp(r(x_0,y)/β)||²
+    3. 从 winning responses 再采样 batch b，并前向加噪
+    4. 计算 L_consistence，使 s_ref + ∇log hψ 接近目标条件 score
+    5. 用 ∇ψ(L_guidance + η L_consistence) 更新 ψ
+until convergence
+return ψ</code></pre>
+<h3 id="24-实验设置数据与指标">2.4 实验设置、数据与指标</h3>
+<div class="table-scroll" role="region" tabindex="0" aria-label="可横向滚动的数据表"><table>
+<thead>
+<tr class="header">
+<th scope="col">项目</th>
+<th scope="col" class="num">论文设置</th>
+<th scope="col" class="num">解释</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>训练数据</td>
+<td class="num">Pick-a-Pic V1，583K image preference pairs</td>
+<td class="num">核心方法离线训练引导器</td>
+</tr>
+<tr class="even">
+<td>Diffusion-DPO 数据</td>
+<td class="num">Pick-a-Pic V2，超过 800K pairs</td>
+<td class="num">数据版本与数量不同</td>
+</tr>
+<tr class="odd">
+<td>SPO 数据</td>
+<td class="num">Pick-a-Pic V1 随机 4K prompts，在线训练</td>
+<td class="num">不是同一种预算口径</td>
+</tr>
+<tr class="even">
+<td>测试</td>
+<td class="num">Pick-a-Pic validation unique split，500 prompts</td>
+<td class="num">单一 prompt 来源，规模有限</td>
+</tr>
+<tr class="odd">
+<td>PickScore</td>
+<td class="num">人类偏好代理：审美、连贯、真实感</td>
+<td class="num">同族信号也用于奖励 / 数据，存在闭环风险</td>
+</tr>
+<tr class="even">
+<td>HPSV2</td>
+<td class="num">文本—图像人类偏好分数</td>
+<td class="num">主要反映 prompt adherence</td>
+</tr>
+<tr class="odd">
+<td>ImageReward</td>
+<td class="num">学习式人类偏好模型</td>
+<td class="num">与 PickScore 并非完全一致</td>
+</tr>
+<tr class="even">
+<td>Aesthetic</td>
+<td class="num">LAION 审美预测器</td>
+<td class="num">不直接评价多样性、事实或安全</td>
+</tr>
+<tr class="odd">
+<td>采样</td>
+<td class="num">SDXL-Turbo 1 step；SD3.5 Large Turbo 4 steps</td>
+<td class="num">扩散与 flow 分支配置不同</td>
+</tr>
+</tbody>
+</table>
+</div><h3 id="25-主结果6-方法4-指标与成本矩阵">2.5 主结果：6 方法×4
+指标与成本矩阵</h3>
+<p>下表完整转录核心论文 <strong>表 2，SDXL
+分组</strong>；所有质量指标越高越好，GPU-hour
+越低越好。“—”是论文未报告，并非 0。</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="可横向滚动的数据表"><table>
+<thead>
+<tr class="header">
+<th scope="col">类型</th>
+<th scope="col" class="num">方法</th>
+<th style="text-align: right;" scope="col" class="num">PickScore</th>
+<th style="text-align: right;" scope="col" class="num">HPSV2</th>
+<th style="text-align: right;" scope="col" class="num">ImageReward</th>
+<th style="text-align: right;" scope="col" class="num">Aesthetic</th>
+<th style="text-align: right;" scope="col" class="num">Training GPU-hour</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Base</td>
+<td class="num">SDXL-Turbo</td>
+<td style="text-align: right;" class="num">21.95</td>
+<td style="text-align: right;" class="num">26.95</td>
+<td style="text-align: right;" class="num">0.5380</td>
+<td style="text-align: right;" class="num">5.950</td>
+<td style="text-align: right;" class="num">—</td>
+</tr>
+<tr class="even">
+<td>Training-free</td>
+<td class="num">Direct backpropagate</td>
+<td style="text-align: right;" class="num">21.84</td>
+<td style="text-align: right;" class="num">27.53</td>
+<td style="text-align: right;" class="num">0.5870</td>
+<td style="text-align: right;" class="num">5.922</td>
+<td style="text-align: right;" class="num">—</td>
+</tr>
+<tr class="odd">
+<td>Training-free</td>
+<td class="num">Tweedie’s formula</td>
+<td style="text-align: right;" class="num">22.34</td>
+<td style="text-align: right;" class="num">28.76</td>
+<td style="text-align: right;" class="num">0.9501</td>
+<td style="text-align: right;" class="num">6.002</td>
+<td style="text-align: right;" class="num">—</td>
+</tr>
+<tr class="even">
+<td>Finetuning</td>
+<td class="num">Diffusion-DPO</td>
+<td style="text-align: right;" class="num">22.64</td>
+<td style="text-align: right;" class="num">29.31</td>
+<td style="text-align: right;" class="num">0.9436</td>
+<td style="text-align: right;" class="num">6.015</td>
+<td style="text-align: right;" class="num">4,800</td>
+</tr>
+<tr class="odd">
+<td>Finetuning</td>
+<td class="num">SPO</td>
+<td style="text-align: right;" class="num">23.06</td>
+<td style="text-align: right;" class="num">31.80</td>
+<td style="text-align: right;" class="num"><strong>1.0803</strong></td>
+<td style="text-align: right;" class="num">6.364</td>
+<td style="text-align: right;" class="num">234</td>
+</tr>
+<tr class="even">
+<td><strong>Guidance（核心）</strong></td>
+<td class="num"><strong>Ours</strong></td>
+<td style="text-align: right;" class="num"><strong>23.08</strong></td>
+<td style="text-align: right;" class="num"><strong>32.12</strong></td>
+<td style="text-align: right;" class="num">1.0625</td>
+<td style="text-align: right;" class="num"><strong>6.452</strong></td>
+<td style="text-align: right;" class="num"><strong>92</strong></td>
+</tr>
+</tbody>
+</table>
+</div><p>对真正最强竞品 SPO 的逐列差异为：</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="可横向滚动的数据表"><table>
+<thead>
+<tr class="header">
+<th scope="col">指标</th>
+<th style="text-align: right;" scope="col" class="num">SPO</th>
+<th style="text-align: right;" scope="col" class="num">Ours</th>
+<th style="text-align: right;" scope="col" class="num">绝对变化</th>
+<th style="text-align: right;" scope="col" class="num">相对变化</th>
+<th scope="col" class="num">判断</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>PickScore</td>
+<td style="text-align: right;" class="num">23.06</td>
+<td style="text-align: right;" class="num">23.08</td>
+<td style="text-align: right;" class="num">+0.02</td>
+<td style="text-align: right;" class="num">+0.087%</td>
+<td class="num">极小领先</td>
+</tr>
+<tr class="even">
+<td>HPSV2</td>
+<td style="text-align: right;" class="num">31.80</td>
+<td style="text-align: right;" class="num">32.12</td>
+<td style="text-align: right;" class="num">+0.32</td>
+<td style="text-align: right;" class="num">+1.006%</td>
+<td class="num">小幅领先</td>
+</tr>
+<tr class="odd">
+<td>ImageReward</td>
+<td style="text-align: right;" class="num"><strong>1.0803</strong></td>
+<td style="text-align: right;" class="num">1.0625</td>
+<td style="text-align: right;" class="num"><strong>-0.0178</strong></td>
+<td style="text-align: right;" class="num"><strong>-1.648%</strong></td>
+<td class="num"><strong>核心方法落后</strong></td>
+</tr>
+<tr class="even">
+<td>Aesthetic</td>
+<td style="text-align: right;" class="num">6.364</td>
+<td style="text-align: right;" class="num">6.452</td>
+<td style="text-align: right;" class="num">+0.088</td>
+<td style="text-align: right;" class="num">+1.383%</td>
+<td class="num">小幅领先</td>
+</tr>
+<tr class="odd">
+<td>Training GPU-hour</td>
+<td style="text-align: right;" class="num">234</td>
+<td style="text-align: right;" class="num">92</td>
+<td style="text-align: right;" class="num">-142</td>
+<td style="text-align: right;" class="num"><strong>-60.68%</strong></td>
+<td class="num">明确成本优势</td>
+</tr>
+</tbody>
+</table>
+</div><p><strong>全文最可信的定量证据</strong>是成本—质量 Pareto：在 3/4
+自动指标持平或略优的同时，训练 GPU-hour 从 234 降至 92。论文“across four
+criteria 全部超过”的文字与表 2 不一致，因为 ImageReward 明确低于
+SPO；因此不能把它写成四项全胜。</p>
+<p>相对未对齐 SDXL-Turbo，核心方法提升 PickScore
+<strong>+1.13（+5.15%）</strong>、HPSV2
+<strong>+5.17（+19.18%）</strong>、ImageReward
+<strong>+0.5245（+97.49%）</strong>、Aesthetic
+<strong>+0.502（+8.44%）</strong>（表
+2）。这些数值说明引导有效，但用基线而非最强竞品会显著放大观感。</p>
+<p>Flow matching 分支只有两行（核心论文表 2，SD3.5 Large Turbo
+分组）：</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="可横向滚动的数据表"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th style="text-align: right;" scope="col" class="num">PickScore</th>
+<th style="text-align: right;" scope="col" class="num">HPSV2</th>
+<th style="text-align: right;" scope="col" class="num">ImageReward</th>
+<th style="text-align: right;" scope="col" class="num">Aesthetic</th>
+<th scope="col" class="num">相对基线提升</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>SD3.5 Large Turbo</td>
+<td style="text-align: right;" class="num">22.30</td>
+<td style="text-align: right;" class="num">30.29</td>
+<td style="text-align: right;" class="num">1.0159</td>
+<td style="text-align: right;" class="num">6.5190</td>
+<td class="num">—</td>
+</tr>
+<tr class="even">
+<td><strong>Ours</strong></td>
+<td style="text-align: right;" class="num"><strong>23.14</strong></td>
+<td style="text-align: right;" class="num"><strong>32.31</strong></td>
+<td style="text-align: right;" class="num"><strong>1.1025</strong></td>
+<td style="text-align: right;" class="num"><strong>6.5280</strong></td>
+<td class="num">+3.77% / +6.67% / +8.52% / <strong>+0.14%</strong></td>
+</tr>
+</tbody>
+</table>
+</div><p>这里四项都提高，但 Aesthetic 绝对增量只有
+<strong>0.009</strong>。没有方差时，0.009 不能被解读为稳定改进；且没有与
+On the Guidance of Flow Matching、GLASS 等同类方法 head-to-head。</p>
+<h3 id="26-消融与超参数最关键的无正则对照反而缺席">2.6
+消融与超参数：最关键的“无正则”对照反而缺席</h3>
+<p>步数 / 引导消融来自核心论文 <strong>表 3</strong>：</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="可横向滚动的数据表"><table>
+<thead>
+<tr class="header">
+<th scope="col">配置</th>
+<th style="text-align: right;" scope="col" class="num">PickScore</th>
+<th style="text-align: right;" scope="col" class="num">相对无引导 1-step</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Backpropagate，1 step</td>
+<td style="text-align: right;" class="num">21.84</td>
+<td style="text-align: right;" class="num">-0.30（-1.36%）</td>
+</tr>
+<tr class="even">
+<td>No guidance，1 step</td>
+<td style="text-align: right;" class="num">22.14</td>
+<td style="text-align: right;" class="num">—</td>
+</tr>
+<tr class="odd">
+<td>Tweedie，1 step</td>
+<td style="text-align: right;" class="num">22.34</td>
+<td style="text-align: right;" class="num">+0.20（+0.90%）</td>
+</tr>
+<tr class="even">
+<td>No guidance，3 steps</td>
+<td style="text-align: right;" class="num">22.56</td>
+<td style="text-align: right;" class="num">+0.42（+1.90%）</td>
+</tr>
+<tr class="odd">
+<td>No guidance，2 steps</td>
+<td style="text-align: right;" class="num">22.64</td>
+<td style="text-align: right;" class="num">+0.50（+2.26%）</td>
+</tr>
+<tr class="even">
+<td><strong>Ours，1 step</strong></td>
+<td style="text-align: right;" class="num"><strong>23.08</strong></td>
+<td style="text-align: right;" class="num"><strong>+0.94（+4.25%）</strong></td>
+</tr>
+</tbody>
+</table>
+</div><p>这支持“一步有引导优于两 / 三步无引导”，但没有 <strong>Ours 2-step /
+3-step</strong>，因此不能判断引导与额外步数是否叠加，也不能做严格等推理
+FLOPs 比较。另一个内部不一致是表 2 的 SDXL baseline
+PickScore=21.95，而表 3 的 no-guidance 1-step=22.14，相差
+0.19；论文没有解释是否随机种子、prompt 子集或配置不同。</p>
+<p>超参网格来自附录 <strong>表 4</strong>：</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="可横向滚动的数据表"><table>
+<thead>
+<tr class="header">
+<th style="text-align: right;" scope="col">正则强度 η \ 奖励温度 β</th>
+<th style="text-align: right;" scope="col" class="num">β=10</th>
+<th style="text-align: right;" scope="col" class="num">β=15</th>
+<th style="text-align: right;" scope="col" class="num">β=20</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">η=0.1</td>
+<td style="text-align: right;" class="num">22.82</td>
+<td style="text-align: right;" class="num">22.79</td>
+<td style="text-align: right;" class="num">22.72</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">η=0.5</td>
+<td style="text-align: right;" class="num">22.78</td>
+<td style="text-align: right;" class="num">23.01</td>
+<td style="text-align: right;" class="num">22.79</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">η=1.0</td>
+<td style="text-align: right;" class="num">22.76</td>
+<td style="text-align: right;" class="num"><strong>23.08</strong></td>
+<td style="text-align: right;" class="num">22.84</td>
+</tr>
+</tbody>
+</table>
+</div><p>最高点在 ((\eta,\beta)=(1,15))，全网格跨度 <strong>0.36
+PickScore</strong>。它显示明显交互：增大 η 只在 β=15 有益，β=10 时反而从
+22.82 降到 22.76。不能称为“相变”，因为采样点仅 3×3；更关键的是作者没有给
+(\eta=0)，所以没有直接隔离 consistency regularization 的净贡献。</p>
+<h3 id="27-统计显著性">2.7 统计显著性</h3>
+<p>论文未报告随机种子数、标准差、置信区间、配对 bootstrap
+或显著性检验。测试只有 500 prompts，核心方法相对 SPO 的 PickScore 仅
++0.02、Aesthetic 仅 +0.088；这些差距可能小于 prompt / seed
+方差。所有表格小数位应理解为一次评测读数，而非确定到最后一位的真实效应。</p>
+<h3 id="28-真正贡献可复用设计与迁移潜力">2.8
+真正贡献、可复用设计与迁移潜力</h3>
+<p>真正贡献首先是分布视角：RLHF、DPO、guidance
+并非三件互不相关的工程技巧，它们都在逼近 (p_{\rm
+ref}\exp(r/\beta))。这个重述使扩散 score 与 flow velocity
+可以在同一目标下推导，减少“凭经验加一个 reward gradient”的随意性。</p>
+<p>第二个贡献是把条件期望学习成小引导器，而不是微调整个 SDXL。72 MB
+对比大骨干是明确的参数解耦；92 GPU-hour
+虽不算“零成本”，但为一个新奖励训练模块远低于 4,800 GPU-hour 的全模型
+Diffusion-DPO。</p>
+<p>第三个贡献是识别两类生成动力学的结构差异：扩散修正含
+(\nabla_{x_t})，奖励景观不平滑会转成伪影；flow
+修正是条件速度期望，避免同类输入梯度。这不是简单说“flow
+更好”，而是指出稳定性问题出现在哪个算子上。</p>
+<p>可独立复用的设计包括：reward-weighted distribution
+作为统一接口；条件期望回归；对引导器梯度景观的一致性正则；一步模型固定
+(t=T) 的轻量训练；以及 flow
+侧的边缘重要性采样。它们可迁移到文生视频、分子生成、音频或
+3D，但每个领域都必须重新验证奖励代理、估计方差与多样性塌缩。</p>
+<h3 id="29-局限性论文自述与独立批判">2.9 局限性：论文自述与独立批判</h3>
+<h4 id="论文自述限制">论文自述限制</h4>
+<p>论文没有独立 Limitations / Discussion 章节，也没有明确承认自身 2–3
+点限制。第 1 节和 §3.2 讨论的是<strong>既有微调与 vanilla guidance
+的限制</strong>，不能冒充作者对本方法的自我批判。可从设置确认的范围边界（仅两个骨干、500
+prompts、自动奖励指标）属于本报告归纳，而非作者自述。</p>
+<h4 id="独立批判8-点">独立批判（8 点）</h4>
+<ol type="1">
+<li><p><strong>论证缺口｜“四项均胜”与表格矛盾。</strong> 因为表 2 中
+Ours 的 ImageReward=1.0625，低于 SPO=1.0803，差 -0.0178（-1.65%），所以
+§5.2 “surpasses baseline approaches across four criteria” 不成立；应写成
+3/4 指标领先、1 项落后。</p></li>
+<li><p><strong>统计显著性缺失。</strong> 因为只评 500 prompts 且未给
+seed / 方差，而 PickScore 相对 SPO 仅
++0.02（+0.087%），所以无法证明这一小幅领先不是评测噪声。</p></li>
+<li><p><strong>指标闭环 / 有效性问题。</strong> 因为 Pick-a-Pic
+偏好数据和 PickScore 类代理参与训练 / 奖励，同时评测仍使用
+PickScore、HPSV2、ImageReward、Aesthetic，且没有人工盲评，所以结果可能表示“更会迎合自动裁判”，而非更符合真实用户。</p></li>
+<li><p><strong>公平比较问题。</strong> 因为 Diffusion-DPO 使用 &gt;800K
+V2 pairs、核心方法使用 583K V1 pairs、SPO 只用 4K prompts
+在线生成，三者的数据单位、版本和在线采样成本不同，所以论文所谓“comparable
+datasets”不足以建立严格等预算比较。</p></li>
+<li><p><strong>关键消融缺失。</strong> 因为表 4 最小 η=0.1，没有
+η=0，而核心故事将 consistency regularization
+视为抑制伪影的关键，所以无法从定量上隔离该正则的净贡献。</p></li>
+<li><p><strong>Flow 分支证据过薄。</strong> 因为 flow 只有 SD3.5
+baseline 与 Ours 两行，没有 On the Guidance of Flow Matching
+等竞品，也没有候选数 /
+重要性采样方差消融，所以“一般性统一框架”主要由理论而非充分实验支撑。</p></li>
+<li><p><strong>成本口径不完整。</strong> 因为 92 GPU-hour 只报告
+guidance network 训练，flow 分支的每步重要性采样、reward evaluation
+与推理延迟未给；同时 GPU 型号缺失，所以不能把“无额外 computational
+cost”解释为端到端零开销。</p></li>
+<li><p><strong>可复现性风险 / 命名边界。</strong> 因为核心代码与 72 MB
+权重未公开，且“finetuning-free”实际仍训练 10 epochs
+的奖励专用网络，所以方法更准确的名称是“backbone-frozen
+alignment”，而不是广义“无需训练”。表 2 与表 3 baseline 还相差 0.19
+PickScore，协议差异无法从代码核查。</p></li>
+</ol>
+</section><section class="card" aria-labelledby="3-相关工作回溯问题如何一步步传递"><h2 id="3-相关工作回溯问题如何一步步传递">3.
+相关工作回溯：问题如何一步步传递</h2>
+<h3 id="31-ddpo--2024iclr">3.1 DDPO — 2024，ICLR</h3>
+<p><strong>解决了什么。</strong> DDPO 把扩散去噪过程解释为多步 MDP，用
+policy gradient 直接最大化不可微下游奖励；它证明了生成模型不必只做
+likelihood / denoising 训练，也可以对审美、可压缩性、VLM 一致性进行 RL
+后训练。</p>
+<p><strong>遗留缺口。</strong> 多步轨迹的 policy gradient
+需要采样与更新大模型，奖励变化后必须重训，且容易出现过优化 /
+多样性损失。其代码最初以 TPU 为主，工程门槛也较高。</p>
+<p><strong>核心论文如何回应。</strong> 核心论文接受同一个 KL
+正则奖励目标，却跳过 policy optimization：它直接求最优奖励加权分布的
+score / velocity，只训练小引导器或完全不训练 flow 骨干。</p>
+<p><strong>关键设计传递。</strong>
+“生成轨迹可以被下游奖励控制”这一问题设定被继承；策略梯度被条件期望引导替换，从参数空间更新转成采样动力学修正。</p>
+<h3 id="32-diffusion-dpo--2024cvpr">3.2 Diffusion-DPO — 2024，CVPR</h3>
+<p><strong>解决了什么。</strong> Diffusion-DPO 用 ELBO
+构造扩散模型的可微 DPO 似然比，在 Pick-a-Pic <strong>851K</strong>
+人工偏好对上微调 SDXL；它省去显式 reward model 与 PPO。</p>
+<p><strong>遗留缺口。</strong> 它仍更新生成器，论文核心表 2 记录
+<strong>4,800
+GPU-hour</strong>；一套参数对应一套偏好。偏好标签还被沿完整轨迹传播，难以定位哪一步产生审美差异。</p>
+<p><strong>核心论文如何回应。</strong> 核心工作从 DPO
+同一个解析最优分布出发，但不把 (r) 反解为模型对数概率比，而把目标 score
+分解为参考 score + 条件引导。</p>
+<p><strong>关键设计传递。</strong> 奖励加权分布 (p\exp(r/\beta))
+是最直接的数学传递；不同点是从“改变 (p_\theta)”进化到“冻结
+(p)，改变采样场”。</p>
+<h3 id="33-spo--2025cvpr">3.3 SPO — 2025，CVPR</h3>
+<p><strong>解决了什么。</strong> SPO
+指出最终图像偏好被粗暴传播到所有中间步会错配。它每一步从同一噪声状态采候选，用
+step-aware preference model 选择 win /
+lose，逐步累积细节审美改进。项目页显示 SDXL 上
+PickScore/HPSV2/ImageReward/Aesthetic 为
+<strong>23.06/31.80/1.0803/6.364</strong>。</p>
+<p><strong>遗留缺口。</strong>
+它仍在线采样并微调生成模型，每个奖励需再次训练；其 234 GPU-hour 已比
+Diffusion-DPO 低很多，但仍不是即插即用。</p>
+<p><strong>核心论文如何回应。</strong> 核心工作把 SPO
+当作最强质量—成本基线，以 92 GPU-hour 引导器在 3/4 指标略优、ImageReward
+略弱，实现更好的成本 Pareto。</p>
+<p><strong>关键设计传递。</strong>
+两者都承认“奖励信号沿时间步的作用不能粗糙处理”；SPO
+显式逐步构造偏好，核心工作则通过 (h_\psi(x_t,y,t))
+学时间条件期望，并在一步模型中固定 (t=T)。</p>
+<h3 id="34-on-the-guidance-of-flow-matching--2025icml-spotlight">3.4 On
+the Guidance of Flow Matching — 2025，ICML Spotlight</h3>
+<p><strong>解决了什么。</strong> 该工作建立一般 flow matching guidance
+框架，覆盖 training-free
+渐近精确引导、训练型损失与两类近似方法，并在合成数据、图像逆问题和离线
+RL 上验证。它明确指出 flow guidance 比经典 diffusion guidance
+更一般。</p>
+<p><strong>遗留缺口。</strong>
+通用框架主要面向能量条件与逆问题，没有专门完成现代文本到图像奖励对齐，也没有围绕
+SD3.5 Turbo 的 Pick-a-Pic 指标做系统比较。</p>
+<p><strong>核心论文如何回应。</strong> 核心工作把目标具体化为
+reward-weighted T2I distribution，推导归一化奖励比率 (R)
+对条件速度的修正，并声称可由边缘样本重要性估计。</p>
+<p><strong>关键设计传递。</strong> “先求 oracle velocity 再设计可计算
+estimator”的路线被继承；核心工作把一般能量 guidance
+收束为人类偏好奖励，却遗憾地没有把这篇 ICML 工作放入主结果
+head-to-head。</p>
+</section><section class="card" aria-labelledby="4-技术演进脉络与跨论文对标"><h2 id="4-技术演进脉络与跨论文对标">4. 技术演进脉络与跨论文对标</h2>
+<pre class="text"><code>2023–2024  DDPO [去噪=MDP；policy gradient；任意 reward]
+       │
+       ├──────── Diffusion-DPO [ELBO 似然比；851K 偏好对；无显式 reward]
+       │                    │
+       │                    └── SPO [每步候选 + step-aware preference；细粒度审美]
+       │
+2025   └──────── On Guidance of Flow Matching [一般 oracle guidance / estimator]
+                            │
+                            ↓
+2026 核心预印本 [同一个 reward-weighted distribution]
+       ├─ diffusion：小 hψ 估条件期望 + landscape consistency
+       └─ flow：奖励重加权条件速度 + importance sampling</code></pre>
+<p>推动力不是单纯从 RL 换成 DPO，而是
+<strong>从“改变整个生成器”转向“保持基础模型不动、在轨迹或向量场上注入可切换目标”</strong>。关键转折有两个：Diffusion-DPO
+让偏好优化脱离显式奖励模型；flow guidance
+又让对齐脱离生成器参数更新。核心预印本试图统一它们，但扩散分支仍要训练
+reward-specific guide，因此离真正任意奖励即插即用还有一步。</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="可横向滚动的数据表"><table>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col" class="num">发表年月</th>
+<th scope="col" class="num">Venue</th>
+<th scope="col" class="num">核心贡献</th>
+<th scope="col" class="num">本文可核验代表数字</th>
+<th scope="col" class="num">与核心工作的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DDPO</td>
+<td class="num">2024.01 v4</td>
+<td class="num">ICLR 2024</td>
+<td class="num">扩散轨迹 policy gradient</td>
+<td class="num">可直接优化审美 / VLM 奖励</td>
+<td class="num">奖励后训练的问题来源</td>
+</tr>
+<tr class="even">
+<td>Diffusion-DPO</td>
+<td class="num">2023.11</td>
+<td class="num">CVPR 2024</td>
+<td class="num">扩散 ELBO-DPO</td>
+<td class="num">851K 偏好对；核心表 2 计 4,800 GPU-h</td>
+<td class="num">目标分布与最贵基线</td>
+</tr>
+<tr class="odd">
+<td>SPO</td>
+<td class="num">2025.03 v3</td>
+<td class="num">CVPR 2025</td>
+<td class="num">step-aware 逐步偏好</td>
+<td class="num">核心表 2：23.06 PickScore，234 GPU-h</td>
+<td class="num">最强质量—成本竞品</td>
+</tr>
+<tr class="even">
+<td>On Guidance of FM</td>
+<td class="num">2025.05 v3</td>
+<td class="num">ICML 2025 Spotlight</td>
+<td class="num">一般 flow guidance</td>
+<td class="num">37 页、7 图；多任务验证</td>
+<td class="num">flow 理论来源 / 缺失竞品</td>
+</tr>
+<tr class="odd">
+<td><strong>核心论文</strong></td>
+<td class="num"><strong>2026.01</strong></td>
+<td class="num"><strong>arXiv v1</strong></td>
+<td class="num"><strong>统一 reward-weighted score / velocity</strong></td>
+<td class="num"><strong>92 GPU-h；3/4 指标胜 SPO</strong></td>
+<td class="num"><strong>汇聚点</strong></td>
+</tr>
+</tbody>
+</table>
+</div></section><section class="card" aria-labelledby="5-开放挑战与可操作研究机会"><h2 id="5-开放挑战与可操作研究机会">5. 开放挑战与可操作研究机会</h2>
+<h3 id="51-理论层面">5.1 理论层面</h3>
+<ol type="1">
+<li><strong>有限样本误差界。</strong> 固定 SD3.5 与奖励，扫描 flow
+重要性样本数 (K=1,2,4,8,16)，测 velocity estimator 方差、reward 与
+NFE；推导误差随 (K)、(\beta) 和 reward tail 的界。当前只有 oracle
+等式，没有有限 K 保证。</li>
+<li><strong>引导景观与伪影的因果关系。</strong> 在相同 reward 下比较原始
+gradient、谱归一化、Jacobian penalty 与本文 consistency loss；同时报告
+guidance Jacobian
+范数、LPIPS、多样性和人工伪影率，检验“更平滑所以更好”而非仅相关。</li>
+<li><strong>奖励加权的 mode collapse 边界。</strong> 扫描 (\beta)
+到更低温区间，画 reward—precision—recall
+Pareto；求在保持多样性下可达到的最大 reward，而不是只报 β=10/15/20
+的窄窗。</li>
+</ol>
+<h3 id="52-工程与应用层">5.2 工程与应用层</h3>
+<ol type="1">
+<li><strong>真正等预算 head-to-head。</strong> 在相同 SDXL-Turbo、583K
+pairs、同 GPU 型号、92 GPU-hour 下比较
+Ours、SPO、Diffusion-DPO、DRaFT、Tweedie；报告训练、数据生成、reward
+evaluation、推理总成本。当前 4,800/234/92 不包含同样的成本边界。</li>
+<li><strong>人类评测与外部 prompt。</strong> 在 Pick-a-Pic 之外使用
+PartiPrompts、DrawBench、GenEval，各 500 prompts；至少 3 名盲评者比较
+prompt adherence、审美、伪影和多样性，并与四个自动 reward
+的相关系数对照。</li>
+<li><strong>补齐关键消融。</strong> 加入 η=0、Ours 2/3/4-step、不同 hψ
+容量（18/36/72/144 MB）和训练数据 10%/25%/50%/100%，才能定位 92 GPU-hour
+的最小可用配置。</li>
+<li><strong>多奖励切换成本。</strong>
+对审美、文本一致性、安全三个奖励分别训练引导器，再测试线性组合、动态路由与联合引导；比较“3
+个小 guide”与“1 个多头 guide”的成本和干扰。</li>
+</ol>
+<h3 id="53-新兴方向">5.3 新兴方向</h3>
+<ol type="1">
+<li><strong>视频 / 世界模型。</strong> 在固定视频 flow backbone
+上对比终帧奖励、逐帧奖励和轨迹 reward-weighted velocity；评测 temporal
+consistency 与长程奖励漂移，避免把图像公式直接外推。</li>
+<li><strong>非可微黑盒反馈。</strong> 虽然条件期望回归允许不可微
+reward，但应在真实人类反馈、程序验证器或物理模拟器上
+head-to-head，比较查询效率；这是模块化对齐最有价值的使用场景。</li>
+<li><strong>安全与组合约束。</strong> 把 reward-weighting 扩展为硬约束 +
+软偏好：同一 prompt
+下比较拉格朗日引导、拒绝采样和本文指数加权，报告安全违反率与质量损失，而不是把安全压成单一标量。</li>
+</ol>
+</section><section class="card" aria-labelledby="6-其他值得关注的近期工作"><h2 id="6-其他值得关注的近期工作">6. 其他值得关注的近期工作</h2>
+<ol type="1">
+<li><strong>Mean Flows for One-step Generative
+Modeling</strong>（2025.05，NeurIPS 2025 /
+arXiv）以平均速度而非瞬时速度刻画一步生成，ImageNet-256 从头训练达到
+1-NFE FID <strong>3.43</strong>；它是检验本文 guidance
+是否能迁移到不同一步动力学的首选骨干。<a href="https://arxiv.org/abs/2505.13447">arXiv</a></li>
+<li><strong>STORK</strong>（ICLR 2026）面向图像与视频的 diffusion / flow
+快速采样；值得与本文一起比较“减少
+NFE”和“奖励引导”能否相乘，而不是各自独立优化。<a href="https://openreview.net/forum?id=CeOIVXMl4r">OpenReview</a></li>
+<li><strong>Transition Matching</strong>（ICLR
+2026）用离散时间、连续状态的转移核统一 flow
+与连续自回归生成；它拓宽了本文只覆盖 score / velocity
+两种动力学的边界。<a href="https://openreview.net/forum?id=jR8HV4uTcf">OpenReview</a>｜<a href="https://arxiv.org/abs/2506.23589">arXiv</a></li>
+<li><strong>GLASS Flows</strong>（ICLR 2026）直接研究 reward alignment
+的高效推理探索，是核心 flow 分支最应该补做的同题竞品。<a href="https://openreview.net/forum?id=vH7OAPZ2dR">OpenReview</a></li>
+<li><strong>OneFlow</strong>（2025.10，arXiv）把离散文本 Edit Flow
+与图像 latent flow matching 结合，支持并发混合模态生成并报告最高 50%
+训练 FLOPs 节省；奖励加权是否能同时控制两种状态空间，是自然下一步。<a href="https://arxiv.org/abs/2510.03506">arXiv</a></li>
+<li><strong>Neon</strong>（2025.10，arXiv）以负外推自训练跨
+diffusion、flow、autoregressive 与 IMM 架构，在 ImageNet-256 把 xAR-L
+推到 FID <strong>1.02</strong>，额外训练计算仅
+<strong>0.36%</strong>；它提供另一条低成本后训练路线。<a href="https://arxiv.org/abs/2510.03597">arXiv</a></li>
+<li><strong>STARFlow-V</strong>（2025.11，arXiv）用全局—局部 normalizing
+flow 与 flow-score matching 做自回归视频生成；其原生 likelihood
+为奖励加权分布的密度评估提供了扩散模型不易获得的工具。<a href="https://arxiv.org/abs/2511.20462">arXiv</a></li>
+</ol>
+</section><section class="card" aria-labelledby="7-结论"><h2 id="7-结论">7. 结论</h2>
+<p>这篇预印本最值得保留的不是“又一个 T2I
+对齐器”，而是把扩散与流匹配放回同一个 reward-weighted
+distribution，清楚指出 score-gradient guidance 与 velocity-expectation
+guidance 的结构差异。定量上，92 GPU-hour 对 234 GPU-hour 是扎实的
+<strong>60.68%</strong> 成本优势；但它并非四项指标全胜、没有显著性 /
+人评 / 代码，flow
+分支也缺少强竞品。因此当前最合理的定位是：<strong>一份理论统一性强、工程证据尚待顶会级补全的对齐框架。</strong></p>
+<hr>
+<p><strong>可复核性脚注。</strong> 核心数字来自实际读取的 arXiv v1 表
+2–4、正文 §3–5 与附录
+C.1；本报告未补造标准差、显著性、硬件、推理成本或未公开代码。索引将在交付阶段追加；若持久化失败，最终消息会明确说明。</p>
+</section></main>
+
+  <footer>来源：arXiv:2602.00413v1 及经验证的正式论文 / 项目页面；生成于 2026-08-19。未报告的方差、硬件、推理成本与代码均未补造。</footer></div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

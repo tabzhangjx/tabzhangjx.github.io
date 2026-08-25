@@ -1,0 +1,913 @@
+---
+layout: null
+title: "LIMEFLDL"
+date: 2026-08-22
+topic: trustworthy-theory
+excerpt: "解析 LIMEFLDL 如何用受概率单纯形约束的归因矩阵，一次性解释结构化输出模型的完整标签分布。"
+permalink: /blog/2026/08/22/limefldl-label-distribution-explanations/
+blog_post: true
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>LIMEFLDL：把“解释一个标签”改写为“解释整条标签分布” · 2026-08-22</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ML/AI DAILY DEEP REPORT · ICML 2025</p>
+    <h1>LIMEFLDL：把“解释一个标签”改写为“解释整条标签分布”</h1>
+    <p class="subtitle">理论与可信 · 结构化输出、局部解释与稳定性</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">LIMEFLDL · ICML 2025</span>
+      <span class="chip">2026-08-22</span>
+      <span class="chip">Interpretability for Label Distributions</span>
+    </div>
+    <p class="lede">LIMEFLDL 不再为每个标签各拟合一个彼此独立的 LIME，而是用一个受概率单纯形约束的特征归因矩阵，一次性逼近黑盒模型的整条标签分布。</p>
+  </header>
+
+  <main><section class="card" aria-labelledby="section-1-title"><h2 id="section-1-title">0. 链接验证表</h2>
+<p>下表链接均在 2026-08-22 实际访问。版本日期以 arXiv submission history 为准；“未找到”表示在 PMLR/OpenReview、arXiv 与作者公开主页的检索中没有核实到，而不是断言资源不存在。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">论文</th>
+<th scope="col">会议主页 / 出版页</th>
+<th scope="col">arXiv（具体版本）</th>
+<th scope="col">Code 仓库</th>
+<th scope="col">数据集 / 权重</th>
+<th scope="col">项目主页 / 视频</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>LIMEFLDL（核心）</strong></td>
+<td><a href="https://proceedings.mlr.press/v267/jia25d.html">ICML 2025 / PMLR</a>；<a href="https://openreview.net/forum?id=kkSvncjUOq">OpenReview</a></td>
+<td><strong>未找到</strong></td>
+<td><strong>未公开 / 未找到</strong></td>
+<td>论文复用 LDL 数据；<a href="https://palm.seu.edu.cn/xgeng/LDL/index.htm">LDL 数据主页</a></td>
+<td><strong>未找到</strong></td>
+</tr>
+<tr>
+<td>Label Distribution Learning</td>
+<td><a href="https://palm.seu.edu.cn/xgeng/LDL/index.htm">IEEE TKDE 2016 对应作者主页</a></td>
+<td><a href="https://arxiv.org/abs/1408.6027v2">1408.6027v2，2016-04-05</a></td>
+<td><a href="https://palm.seu.edu.cn/xgeng/LDL/index.htm">作者 MATLAB 实现</a></td>
+<td><a href="https://palm.seu.edu.cn/xgeng/LDL/index.htm">14 个公开 LDL 数据集</a></td>
+<td>同左作者主页</td>
+</tr>
+<tr>
+<td>LIME</td>
+<td><a href="https://arxiv.org/abs/1602.04938">KDD 2016 / arXiv 论文页</a></td>
+<td><a href="https://arxiv.org/abs/1602.04938v3">1602.04938v3，2016-08-09</a></td>
+<td><a href="https://github.com/marcotcr/lime">marcotcr/lime</a></td>
+<td><strong>不适用 / 未单独发布</strong></td>
+<td><strong>未找到</strong></td>
+</tr>
+<tr>
+<td>SHAP</td>
+<td><a href="https://proceedings.neurips.cc/paper/7062-a-unified-approach-to-interpreting-model-predictions.pdf">NeurIPS 2017 论文 PDF</a></td>
+<td><a href="https://arxiv.org/abs/1705.07874v2">1705.07874v2，2017-11-25</a></td>
+<td><a href="https://github.com/shap/shap">shap/shap</a></td>
+<td><strong>不适用</strong></td>
+<td><a href="https://scottlundberg.com/publication/shap_nips/">作者论文页（含视频/代码入口）</a></td>
+</tr>
+<tr>
+<td>GLIME</td>
+<td><a href="https://proceedings.neurips.cc/paper_files/paper/2023/hash/71ed042903ed67c7f6355e5dd0539eec-Abstract-Conference.html">NeurIPS 2023</a></td>
+<td><a href="https://arxiv.org/abs/2311.15722v1">2311.15722v1，2023-11-27</a></td>
+<td><a href="https://github.com/thutzr/GLIME-General-Stable-and-Local-LIME-Explanation">thutzr/GLIME</a></td>
+<td><strong>不适用</strong></td>
+<td><a href="https://openreview.net/forum?id=3FJaFElIVN">OpenReview</a></td>
+</tr>
+</tbody></table></div>
+</section><section class="card" aria-labelledby="section-2-title"><h2 id="section-2-title">1. 检索、去重与随机选择</h2>
+<h3>1.1 去重</h3>
+<p>已检查本地 <code>ml-report-index.md</code>。最近 14 天的“理论与可信”核心工作是 2026-08-15 的 <em>Sparse Autoencoders Do Not Find Canonical Units of Analysis</em>，主题为 SAE 表征原子性；本期排除 SAE canonicality、dictionary width 与 meta-SAE 主题。LIMEFLDL 聚焦后验局部解释、标签分布约束与稳定性理论，不与该主题重复。</p>
+<h3>1.2 候选池（20 篇）</h3>
+<p>候选通过 ICML 2025 PMLR、NeurIPS 2025 proceedings、OpenReview 与 arXiv 交叉检索；核心候选均不超过 24 个月。</p>
+<ol>
+<li>Mechanistic Unlearning（ICML 2025）</li>
+<li>GaussMark（ICML 2025）</li>
+<li>Evaluating Neuron Explanations（ICML 2025）</li>
+<li>InfoCons（ICML 2025）</li>
+<li>Counterfactual Effect Decomposition（ICML 2025）</li>
+<li>RISE（ICML 2025）</li>
+<li><strong>LIMEFLDL（ICML 2025）</strong></li>
+<li>TIMING（ICML 2025）</li>
+<li>From Mechanistic Interpretability to Mechanistic Biology（ICML 2025）</li>
+<li>Layer-wise Alignment（ICML 2025）</li>
+<li>SafetyAnalyst（ICML 2025）</li>
+<li>Safety Neurons（NeurIPS 2025）</li>
+<li>Finding and Reactivating Post-Trained LLMs’ Hidden Safety Mechanisms（NeurIPS 2025）</li>
+<li>Refusal Direction is Universal Across Safety-Aligned Languages（NeurIPS 2025）</li>
+<li>Lifelong Safety Alignment for Language Models（NeurIPS 2025）</li>
+<li>JailBound（NeurIPS 2025）</li>
+<li>The VLLM Safety Paradox（NeurIPS 2025）</li>
+<li>COUPLE（NeurIPS 2025）</li>
+<li>CARES（NeurIPS 2025）</li>
+<li>CoP: Agentic Red-Teaming for LLMs（NeurIPS 2025）</li>
+</ol>
+<p>执行 <code>shuf -i 1-20 -n 1</code> 得到 <strong>7</strong>，因此选择 LIMEFLDL。论文主页、24 页全文、理论附录、四个黑盒模型上的实验及人评材料均可读取，资料充足，<strong>重抽次数为 0</strong>。</p>
+</section><section class="card" aria-labelledby="section-3-title"><h2 id="section-3-title">2. 核心论文深度解析</h2>
+<h3>2.1 Motivation：真正的痛点不是“LIME 不支持多标签”，而是独立解释会破坏分布</h3>
+<p>LDL 的输出不是互不相关的若干分类概率，而是描述度向量 (D_i=[d_{x_i}^{y_1},\ldots,d_{x_i}^{y_r}])，满足每个元素位于 ([0,1]) 且总和为 1。它表达“每个标签以多大程度描述样本”。例如，情绪图像可以同时呈现多种情绪的相对强度，疾病状态也可能具有共现与传播依赖。原始 LDL 工作在 1 个合成与 15 个真实数据集上验证了专门建模的必要性；作者公开主页又列出 14 个真实数据集，其中 Human Gene 达 30,542 个样本、68 个标签，说明这不是仅用于玩具任务的输出形式（Geng 2016 摘要与数据主页）。</p>
+<p>把 LIME 平行运行 (r) 次看似直接，却有三个结构性失败。第一，每个标签独立拟合，无法表达标签间依赖；第二，每个标签都重新采样和训练局部模型，计算随 (r) 线性放大；第三，各局部输出没有共同的单纯形约束，可能出现负描述度或总和不为 1。这个第三点在实验中不是抽象担忧：论文表 2、3、6、7 的 PULIME 多次出现<strong>负 KL divergence</strong>，如表 7 的数据集 6 为 (-0.6579\pm0.0160)。标准 KL 不应为负，因而该数值实际上是“解释输出已不是合法概率分布”的报警器，而不是更好的拟合。</p>
+<p>问题的新颖之处在于：传统单标签解释只需回答“哪些特征推动这个类别”，而 LDL 解释必须同时回答“一个特征如何在所有标签之间重新分配描述度”。于是解释对象从向量 (a\in\mathbb{R}^f) 升级为矩阵 (A\in\mathbb{R}^{r\times f})，每一列是一个特征对整条标签分布的作用。这使“解释有效性”同时包含局部逼真度、概率合法性、随机种子一致性与标签间耦合四个条件。</p>
+<h3>2.2 论文故事线：从并行 LIME 的反例，推到约束矩阵回归</h3>
+<p>论文的论证可压缩成四个转折。</p>
+<p>第一，作者保留 LIME 的核心假设：复杂函数在一个足够小的邻域内可由简单线性模型逼近。改变的不是“局部代理”思想，而是代理输出的几何空间。第二，把每个特征对每个标签的归因组合成矩阵 (A)，令一次局部采样同时服务所有标签。第三，给代理预测加入行和为 1、元素非负的约束，使解释仍落在概率单纯形中。第四，为避免“有约束但无法理解为何稳定”，作者进一步给出忽略部分正则项时的解析式、收敛样本复杂度与相近黑盒模型之间的稳定性界。</p>
+<p>关键权衡也很清晰：LIMEFLDL 用联合矩阵优化换取分布合法性和标签依赖，但优化不再是若干独立 ridge regression，而要处理线性与非负约束；论文选择 ADMM 式增广项配合 L-BFGS，换来可扩展实现，却使理论证明与实际求解器之间留下一道缝——最强收敛定理明确忽略正则项。</p>
+<h3>2.3 形式化定义与机制解剖</h3>
+<p>给定待解释实例 (x)，生成 (m) 个局部可解释表示，组成 (Z\in{0,1}^{m\times f})。加入偏置列后记为 (Z&#39;=[Z;1])。黑盒 LDL 模型对逆变换样本 (h(Z)) 输出 (F(h(Z))\in[0,1]^{m\times r})。局部线性代理为：</p>
+<p>[
+G(Z)=ZA^\top+b=Z&#39;A&#39;^\top. \tag{1–2，正文 p.3}
+]</p>
+<p>每个样本按距离赋权：</p>
+<p>[
+\pi(z_i)=\exp{-\sigma^{-2}\lVert 1-z_i\rVert_2^2},\quad
+\Pi=\operatorname{diag}(\pi(z_i)). \tag{3，正文 p.3}
+]</p>
+<p>核心目标是受约束的加权多输出 ridge regression：</p>
+<p>[
+\min_{A&#39;}\frac{1}{2m}\left\lVert\Pi(Z&#39;A&#39;^\top-F(h(Z)))\right\rVert_F^2
++\frac{\lambda}{2m}\lVert A&#39;\rVert_F^2,
+]</p>
+<p>[
+\text{s.t.}\quad Z&#39;A&#39;^\top\mathbf 1_r=\mathbf 1_m,\qquad Z&#39;A&#39;^\top\ge 0. \tag{4，正文 p.4}
+]</p>
+<p>这两个约束是整篇工作的核心：前者让每个局部预测和为 1，后者禁止负描述度。实际求解把和约束放入增广拉格朗日项，以 (u) 为乘子、(
+ho) 为惩罚系数；非负项另用惩罚 (v\sum\max(-Z&#39;A&#39;^\top,0))。梯度由式 (7) 给出，L-BFGS 更新 (A&#39;)，式 (6) 更新 (u)。</p>
+<p>特征选择不是对每个标签分别截断，而是比较选中特征后的整条分布：</p>
+<p>[
+S=1-\frac{KL(G(Z_c),F(h(Z)))}{KL(Y_{mean},F(h(Z)))}. \tag{8，正文 p.4}
+]</p>
+<p>分母以均匀分布作为“无信息”参照；因此 (S) 衡量所选特征相对于均匀基准恢复了多少分布信息。这里的隐含风险是，当黑盒输出接近均匀分布时分母很小，分数会变得数值敏感，论文没有单独报告这一边界。</p>
+<pre><code class="language-text">待解释样本 x
+   ├─ 图像：Quickshift → f 个 superpixel → Bernoulli 保留/遮蔽
+   └─ 表格：entropy 分箱 → Bernoulli 同箱/异箱 → 逆离散化
+                     ↓
+             m 个局部样本 Z 与权重 Π
+                     ↓
+        黑盒 LDL 输出 F(h(Z))：m × r 标签分布
+                     ↓
+      受约束矩阵代理 G(Z)=Z&#39;A&#39;^T
+      ├─ 每行和为 1
+      ├─ 每个元素非负
+      └─ Frobenius 正则 + L-BFGS/增广项
+                     ↓
+       A：f 个特征 × r 个标签的归因分布
+                     ↓
+        分布级 fidelity + Top-K Jaccard consistency
+</code></pre>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">机制 / 维度</th>
+<th scope="col">设计选择</th>
+<th scope="col">动机</th>
+<th scope="col">关键超参 / 实现</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>局部表示</td>
+<td>图像 superpixel；表格 entropy 分箱</td>
+<td>与 LIME 的人可读开关表示兼容</td>
+<td>Quickshift <code>kernel_size=4, max_dist=200, ratio=0.2</code>；seed=2024（附录 A.1，p.11）</td>
+</tr>
+<tr>
+<td>联合归因</td>
+<td>(A\in\mathbb{R}^{r\times f})</td>
+<td>一次解释整条标签分布与标签依赖</td>
+<td>均匀初始化；含偏置扩展为 (A&#39;)</td>
+</tr>
+<tr>
+<td>邻域权重</td>
+<td>图像 cosine；表格 L2</td>
+<td>避免图像 L2 使除目标外样本权重全为 0</td>
+<td>默认带宽写为 (0.75\sqrt f)（附录 A.3，p.12）</td>
+</tr>
+<tr>
+<td>合法性</td>
+<td>行和为 1 + 非负</td>
+<td>保证代理输出仍为标签分布</td>
+<td>(lambda=v=\rho=0.01)，(u^{(0)}=0)（附录 A.1）</td>
+</tr>
+<tr>
+<td>优化</td>
+<td>L-BFGS + 增广约束</td>
+<td>避免显式高阶闭式求逆，兼顾约束</td>
+<td>最大 50 次 L-BFGS 迭代（附录 A.1）</td>
+</tr>
+<tr>
+<td>fidelity</td>
+<td>4 距离 + 2 相似度；附录补 R²</td>
+<td>单标签 R² 不足以覆盖分布几何</td>
+<td>fidelity 实验 (m=100)，Top-10 特征</td>
+</tr>
+<tr>
+<td>consistency</td>
+<td>10 seed 的 Top-K Jaccard</td>
+<td>检查解释对随机性的稳定性</td>
+<td>consistency 实验 (m=1000)，不限制特征排名</td>
+</tr>
+</tbody></table></div>
+<h3>2.4 理论：有意义的界，但不是实际算法的完整保证</h3>
+<p>作者先在忽略正则约束的简化问题下得到近似解析式：</p>
+<p>[
+A&#39;^\top=(Z&#39;^\top\Pi Z&#39;)^{-1}\big[Z&#39;^\top\Pi F(h(Z))-Z&#39;^\top u\mathbf 1_{1\times r}\big]. \tag{11，正文 p.4}
+]</p>
+<p>定理 3.2 给出迭代映射成为压缩映射时 (
+ho) 的上界；定理 3.3 再用矩阵 Hoeffding 不等式给出样本复杂度。其主导项包含 (f^3e^{5/\sigma^2}\epsilon^{-2}\log(4f/\delta))，因此维度 (f) 与小带宽 (sigma) 会迅速放大所需样本量。定理 3.4 则说，若两个黑盒模型在局部样本上的每个输出差小于 (epsilon)，二者归因矩阵的 Frobenius 距离受一个随 (m,f,r,e^{1/\sigma^2}epsilon) 变化的界控制。</p>
+<p>这套理论的真正价值不是“证明实际实现一定稳定”，而是把三种直觉定量化：样本越多越接近固定点；邻域越窄越需要更多样本；黑盒局部输出越接近，解释越接近。附录 A.4 用 (m=100,500,1000,5000) 的序列对 AA-KNN、MEM 等模型做收敛可视化，但图中未给出可复算的逐点数值。<strong>相变线索</strong>来自附录 B.3：当 (sigma&lt;1) 且维度超过 10 时，定理所需样本的多项式阶数使实际应用困难；当 (sigma\to0) 时，归因甚至趋近 0，且系数符号可能随带宽改变。这是理论上的明确突变区，而不是经验曲线上的精确阈值。</p>
+<h3>2.5 数据集、指标与实验协议</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col" align="right">ID</th>
+<th scope="col">数据集</th>
+<th scope="col" align="right">样本数</th>
+<th scope="col" align="right">特征数</th>
+<th scope="col" align="right">标签数</th>
+<th scope="col">模态 / 来源</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="right">1</td>
+<td>Yeast alpha</td>
+<td align="right">2,465</td>
+<td align="right">24</td>
+<td align="right">18</td>
+<td>表格 / 生物</td>
+</tr>
+<tr>
+<td align="right">2</td>
+<td>Yeast cold</td>
+<td align="right">2,465</td>
+<td align="right">24</td>
+<td align="right">4</td>
+<td>表格 / 生物</td>
+</tr>
+<tr>
+<td align="right">3</td>
+<td>JAFFE</td>
+<td align="right">213</td>
+<td align="right">243</td>
+<td align="right">6</td>
+<td>表格化情绪</td>
+</tr>
+<tr>
+<td align="right">4</td>
+<td>SBU 3DFE</td>
+<td align="right">2,500</td>
+<td align="right">243</td>
+<td align="right">6</td>
+<td>表格化情绪</td>
+</tr>
+<tr>
+<td align="right">5</td>
+<td>Emotion6</td>
+<td align="right">1,980</td>
+<td align="right">168</td>
+<td align="right">7</td>
+<td>表格化情绪</td>
+</tr>
+<tr>
+<td align="right">6</td>
+<td>Natural Scene</td>
+<td align="right">2,000</td>
+<td align="right">294</td>
+<td align="right">9</td>
+<td>表格化场景</td>
+</tr>
+<tr>
+<td align="right">7</td>
+<td>Image-JAFFE</td>
+<td align="right">213</td>
+<td align="right">243</td>
+<td align="right">6</td>
+<td>图像</td>
+</tr>
+<tr>
+<td align="right">8</td>
+<td>Image-Emotion6</td>
+<td align="right">1,980</td>
+<td align="right">168</td>
+<td align="right">7</td>
+<td>图像</td>
+</tr>
+</tbody></table></div>
+<p>数据来自论文表 1（正文 p.6）。黑盒模型包括 RBF-LDL-LRR、LDL-SCL、AA-KNN 与 MEM。主 fidelity 报 Chebyshev、Clark、Canberra、KL（越低越好）和 Cosine、Intersection（越高越好）；consistency 报 10 个随机种子间 Top-K Jaccard（越高越稳定）。每个数据集做 10 折交叉验证，表 2、3、6、7给均值与标准差（正文 p.8）。但论文没有说明“标准差”是跨 fold、跨样本还是跨随机种子的聚合层级，不能将其直接解释为独立重复训练的置信区间。</p>
+<h3>2.6 主结果矩阵：8 数据集 × 4 解释器</h3>
+<p>附录表 5 用与 LIME 对齐的 R²，把 LIMEFLDL 与 LIME、DLIME、GLIME 放进同一矩阵；这是论文中最接近“多基准 × 多方法”的公平横向表。下表完整转录，并补算核心方法相对逐行最强竞品的绝对差与相对提升；“—”为原表未报告。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">黑盒</th>
+<th scope="col" align="right">数据集 ID</th>
+<th scope="col" align="right">LIME</th>
+<th scope="col" align="right">DLIME</th>
+<th scope="col" align="right">GLIME</th>
+<th scope="col" align="right"><strong>LIMEFLDL</strong></th>
+<th scope="col" align="right">对最强竞品差值</th>
+<th scope="col" align="right">相对变化</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>LDL-SCL</td>
+<td align="right">1</td>
+<td align="right">0.16</td>
+<td align="right">0.15</td>
+<td align="right">0.16</td>
+<td align="right"><strong>0.67</strong></td>
+<td align="right">+0.51</td>
+<td align="right">+318.8%</td>
+</tr>
+<tr>
+<td>LDL-SCL</td>
+<td align="right">2</td>
+<td align="right">0.15</td>
+<td align="right">0.15</td>
+<td align="right">0.16</td>
+<td align="right"><strong>0.67</strong></td>
+<td align="right">+0.51</td>
+<td align="right">+318.8%</td>
+</tr>
+<tr>
+<td>LDL-SCL</td>
+<td align="right">3</td>
+<td align="right">0.48</td>
+<td align="right">0.35</td>
+<td align="right">0.34</td>
+<td align="right"><strong>0.58</strong></td>
+<td align="right">+0.10</td>
+<td align="right">+20.8%</td>
+</tr>
+<tr>
+<td>LDL-SCL</td>
+<td align="right">4</td>
+<td align="right">0.39</td>
+<td align="right">0.33</td>
+<td align="right">0.34</td>
+<td align="right"><strong>0.40</strong></td>
+<td align="right">+0.01</td>
+<td align="right">+2.6%</td>
+</tr>
+<tr>
+<td>LDL-SCL</td>
+<td align="right">5</td>
+<td align="right"><strong>0.34</strong></td>
+<td align="right">0.25</td>
+<td align="right">0.25</td>
+<td align="right">0.30</td>
+<td align="right"><strong>−0.04</strong></td>
+<td align="right"><strong>−11.8%</strong></td>
+</tr>
+<tr>
+<td>LDL-SCL</td>
+<td align="right">6</td>
+<td align="right">0.37</td>
+<td align="right">0.34</td>
+<td align="right">0.32</td>
+<td align="right"><strong>0.38</strong></td>
+<td align="right">+0.01</td>
+<td align="right">+2.7%</td>
+</tr>
+<tr>
+<td>LDL-SCL</td>
+<td align="right">7</td>
+<td align="right">0.94</td>
+<td align="right">—</td>
+<td align="right">0.95</td>
+<td align="right"><strong>0.99</strong></td>
+<td align="right">+0.04</td>
+<td align="right">+4.2%</td>
+</tr>
+<tr>
+<td>LDL-SCL</td>
+<td align="right">8</td>
+<td align="right">0.89</td>
+<td align="right">—</td>
+<td align="right">0.89</td>
+<td align="right"><strong>0.98</strong></td>
+<td align="right">+0.09</td>
+<td align="right">+10.1%</td>
+</tr>
+<tr>
+<td>RBF-LDL-LRR</td>
+<td align="right">1</td>
+<td align="right">0.17</td>
+<td align="right">0.17</td>
+<td align="right">0.16</td>
+<td align="right"><strong>0.99</strong></td>
+<td align="right">+0.82</td>
+<td align="right">+482.4%</td>
+</tr>
+<tr>
+<td>RBF-LDL-LRR</td>
+<td align="right">2</td>
+<td align="right">0.16</td>
+<td align="right">0.15</td>
+<td align="right">0.17</td>
+<td align="right"><strong>0.99</strong></td>
+<td align="right">+0.82</td>
+<td align="right">+482.4%</td>
+</tr>
+<tr>
+<td>RBF-LDL-LRR</td>
+<td align="right">3</td>
+<td align="right">0.34</td>
+<td align="right">0.33</td>
+<td align="right">0.33</td>
+<td align="right"><strong>0.36</strong></td>
+<td align="right">+0.02</td>
+<td align="right">+5.9%</td>
+</tr>
+<tr>
+<td>RBF-LDL-LRR</td>
+<td align="right">4</td>
+<td align="right">0.25</td>
+<td align="right">0.31</td>
+<td align="right">0.29</td>
+<td align="right"><strong>0.36</strong></td>
+<td align="right">+0.05</td>
+<td align="right">+16.1%</td>
+</tr>
+<tr>
+<td>RBF-LDL-LRR</td>
+<td align="right">5</td>
+<td align="right">0.26</td>
+<td align="right">0.47</td>
+<td align="right">0.36</td>
+<td align="right"><strong>1.00</strong></td>
+<td align="right">+0.53</td>
+<td align="right">+112.8%</td>
+</tr>
+<tr>
+<td>RBF-LDL-LRR</td>
+<td align="right">6</td>
+<td align="right">0.52</td>
+<td align="right">0.49</td>
+<td align="right">0.47</td>
+<td align="right"><strong>0.99</strong></td>
+<td align="right">+0.47</td>
+<td align="right">+90.4%</td>
+</tr>
+<tr>
+<td>RBF-LDL-LRR</td>
+<td align="right">7</td>
+<td align="right">0.93</td>
+<td align="right">—</td>
+<td align="right">0.96</td>
+<td align="right"><strong>0.99</strong></td>
+<td align="right">+0.03</td>
+<td align="right">+3.1%</td>
+</tr>
+<tr>
+<td>RBF-LDL-LRR</td>
+<td align="right">8</td>
+<td align="right">0.67</td>
+<td align="right">—</td>
+<td align="right">0.94</td>
+<td align="right"><strong>0.99</strong></td>
+<td align="right">+0.05</td>
+<td align="right">+5.3%</td>
+</tr>
+</tbody></table></div>
+<p><strong>来源：附录表 5，p.14；相对变化为本报告复算。</strong> LDL-SCL 上四方法宏平均分别为 LIME 0.465、DLIME 0.262（仅 6 个有值项）、GLIME 0.426、LIMEFLDL <strong>0.621</strong>；RBF-LDL-LRR 上分别为 0.413、0.320（6 项）、0.460、<strong>0.834</strong>。最有说服力的证据是 RBF-LDL-LRR 的数据集 1/2：0.17 → 0.99，绝对 +0.82、相对 +482.4%。但同一张表也留下明确反例：LDL-SCL/Emotion6 表格版上 0.34 → 0.30，核心方法落后 11.8%。</p>
+<p>主文表 2 的 Jaccard 进一步显示联合解释通常更稳定：RBF-LDL-LRR 上数据集 2 从 0.3608 提至 0.6200（+0.2592，+71.84%），数据集 8 从 0.1591 提至 0.7903（+0.6312，+396.73%）。但数据集 1 反而从 0.6428 降至 0.5044（−21.53%）。因此“稳定性全面更好”不成立，更准确的结论是：在标签分布非近似均匀、尤其图像任务上优势明显；近均匀生物数据上并不稳定占优。</p>
+<h3>2.7 消融、敏感性与统计显著性</h3>
+<p><strong>逐层消融：论文未报告。</strong> 没有“仅矩阵联合回归”“+ 和为 1”“+ 非负”“+ 新特征评分”“+ L-BFGS”的阶梯式表，因此无法分离哪一模块贡献了 R² 或 Jaccard 的提升。表 5 扩充了基线，但不是机制消融。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">可用敏感性证据</th>
+<th scope="col">取值</th>
+<th scope="col">论文观察</th>
+<th scope="col">能否定位相变</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>样本数 (m)</td>
+<td>100、500、1000、5000</td>
+<td>Top-20 Jaccard 随 (m) 增长并趋稳（图 4，附录 A.4）</td>
+<td>只能看趋势；图未给精确逐点数值</td>
+</tr>
+<tr>
+<td>带宽 (sigma)</td>
+<td>理论分析 (sigma&lt;1)、(sigma\to0)</td>
+<td>(f&gt;10) 时收敛样本界恶化；极限下归因趋零、符号可变（附录 B.3，p.21）</td>
+<td>有理论突变区，无经验阈值表</td>
+</tr>
+<tr>
+<td>优化迭代</td>
+<td>最大 50</td>
+<td>作者称平衡准确与效率（附录 A.1）</td>
+<td>未扫描 10/20/50/100，不能验证最优性</td>
+</tr>
+<tr>
+<td>惩罚系数</td>
+<td>(lambda=v=\rho=0.01)</td>
+<td>全实验固定</td>
+<td>未做敏感性，不能证明稳健</td>
+</tr>
+</tbody></table></div>
+<p>统计方面，主表报告 10 折均值±标准差，这是优点；例如表 3/数据集 6 的 Chebyshev 从 (0.3584\pm0.0036) 降到 (0.1692\pm0.0030)，绝对下降 0.1892（52.79%）。然而没有 p 值、bootstrap CI、多重比较校正或独立训练种子。人评只报告均分：正确预测解释为 2.1 对 3.1，错误预测解释为 2.3 对 3.0（正文图 3 与 p.9），没有方差或显著性检验。</p>
+<h3>2.8 真正贡献、可复用设计与迁移潜力</h3>
+<p>真正贡献不是“把 LIME 用到 LDL”，而是指出<strong>解释器的输出空间必须尊重被解释任务的结构</strong>。单标签分类解释的标量代理不能安全地逐列复制到概率分布；类似地，排序、集合、图、序列与多任务输出都应把可行域约束写进解释代理，而不是解释后再做裁剪。</p>
+<p>可单独复用的设计有三项。其一，特征归因分布矩阵把“特征重要性”升级为“特征如何在输出维度间迁移质量”；可用于混合专家路由、多属性风险评分或多目标决策。其二，分布级 fidelity 同时报告多个距离/相似度，避免单一 R² 掩盖概率非法。其三，用黑盒输出扰动与解释矩阵扰动建立稳定性界，为模型更新后的解释漂移审计提供模板。</p>
+<p>迁移时应保留原则而非照搬实现：对于 compositional output，可以把单纯形换成排序锥、流守恒、多标签边际多面体或物理守恒约束；对于高维输出，应以低秩/稀疏结构降低 (A) 的 (fr) 参数量；对于连续在线数据，应把一次性局部采样改为可复用的邻域缓存与漂移触发更新。</p>
+<h3>2.9 局限性</h3>
+<h4>论文自述限制</h4>
+<ol>
+<li><strong>分箱不连续</strong>：附录 A.3（p.12）承认，两个非常接近的实例若落在同一箱会得到相同解释；若跨越箱边界，解释又可能显著不同。增加箱数或取消离散化只是缓解，并未解决边界不连续。</li>
+<li><strong>小带宽、高维收敛困难</strong>：附录 B.3（p.21）指出，当 (sigma&lt;1) 且 (f&gt;10) 时，定理 3.3 的样本需求在实践中很难满足，实际行为将由理论未纳入的正则项主导。</li>
+<li><strong>极端带宽导致解释退化</strong>：同一段指出 (sigma\to0) 时 (A\to0)，且系数符号会随带宽变化。这直接限制了“符号即促进/抑制”的语义稳定性。</li>
+</ol>
+<h4>补充批判</h4>
+<ol>
+<li><strong>[缺乏关键竞品对比]</strong> 因为主文表 2/3 只与作者构造的 PULIME 正面对比，GLIME、DLIME 仅在附录表 5 以 R²、默认参数出现，且没有标准差，所以不能证明联合约束优于最强稳定 LIME 变体的核心分布指标。应在相同采样、相同 (m)、同一求解器预算下比较 GLIME 的分布扩展。</li>
+<li><strong>[指标有效性问题]</strong> 因为 PULIME 在四张主表多次产生负 KL（如表 7/ID6 为 −0.6579），而合法 KL 必须非负，所以该列混合了“逼真度”与“输出非法性”；把异常值标圈但继续参与“领先多数指标”的叙事，会夸大约束方法的优势。更公平的做法是先把所有基线投影到单纯形，再比较 KL。</li>
+<li><strong>[失手的子任务]</strong> 因为附录表 5 的 LDL-SCL/ID5 上 LIMEFLDL=0.30、LIME=0.34，所以核心方法在这一基准相对落后 11.8%；这说明联合分布约束不是无条件提高局部 R²，尤其在表格化 Emotion6 上可能以某些局部自由度换合法性。</li>
+<li><strong>[实验设计问题]</strong> 因为 fidelity 用 (m=100)、consistency 用 (m=1000)，两类指标并非在同一采样预算下测量，所以“更稳定且更逼真”不能解释为同一配置的 Pareto 优势。需要固定 (m\in{100,500,1000,5000}) 同时报 fidelity、Jaccard、延迟。</li>
+<li><strong>[指标冲突]</strong> 因为表 2/ID8 的 Jaccard 从 0.1591 增至 0.7903，但 Chebyshev 从 0.0003 变为 0.0033、Clark 从 0.0032 变为 0.0116、Canberra 从 0.0069 变为 0.0236，所以一致性提高约 396.7% 的同时三种距离明显恶化。稳定地给出同一个解释不等于忠实地逼近黑盒，论文缺少多目标 Pareto 分析。</li>
+<li><strong>[人评有效性问题]</strong> 因为附录 A.2 只有 10 名研究生、每人 20 个案例，且 7 人专攻机器学习，样本既小又偏专家；正文又写“两部分各 10 人”，是否同一批参与者并不完全清楚。即使均分提升 1.0/0.7，也缺方差、盲法、顺序随机化与显著性，不能外推到终端用户。</li>
+<li><strong>[论证缺口]</strong> 因为定理 3.3 明确忽略正则项，而实际算法固定 (lambda=v=\rho=0.01) 并用 L-BFGS 50 步，所以理论固定点并不等于部署算法的固定点。应对“无正则解析版”和“实际优化版”做收敛差距实测。</li>
+<li><strong>[可复现性风险]</strong> 因为截至核验日没有找到核心论文代码仓库，表 5 又称 DLIME/GLIME 使用“默认参数”，所以无法核实基线是否在 LDL 场景经过合理调参，也无法复现图 4/5 的精确曲线。固定 seed=2024 只能降低一次运行随机性，不能代替公开代码与多 seed 验证。</li>
+</ol>
+</section><section class="card" aria-labelledby="section-4-title"><h2 id="section-4-title">3. 相关工作回溯：问题与技术如何传递</h2>
+<h3>3.1 Label Distribution Learning — 2016，IEEE TKDE</h3>
+<p><strong>解决了什么。</strong> Geng 将标签歧义从 0/1 相关性扩展为和为 1 的描述度分布，提出问题转换、算法适配与专门设计三类共 6 个算法，并在 1 个合成、15 个真实数据集上比较 6 类指标。它定义了 LIMEFLDL 要解释的对象：不是一个类别决策，而是一个有归一化约束的向量。</p>
+<p><strong>遗留缺口。</strong> 原始 LDL 的重点是预测性能与算法设计，公开主页也主要提供 BFGS/IIS/CPNN/LDSVR 与数据；“为什么某个样本得到这条分布”没有专用局部解释器。输出结构越丰富，逐标签解释越可能违反总和与非负约束。</p>
+<p><strong>核心论文如何回应。</strong> LIMEFLDL 直接把 LDL 的单纯形定义写入代理模型约束：(G(Z)\mathbf1=\mathbf1)、(G(Z)\ge0)。这不是附加后处理，而是优化问题本身。</p>
+<p><strong>设计传递。</strong> LDL 的多分布距离评估被迁移为解释 fidelity；论文沿用 Chebyshev、Clark、Canberra、KL、Cosine、Intersection，使预测评测语言转化为解释评测语言。</p>
+<h3>3.2 LIME — 2016，KDD</h3>
+<p><strong>解决了什么。</strong> LIME 用加权局部数据拟合稀疏可解释代理，使任何分类器都可在单个样本附近被解释；论文同时用人类实验讨论“是否应信任预测/模型”。其核心是局部性核 (pi_x)、可解释表示 (z) 与简单模型 (g) 的组合。</p>
+<p><strong>遗留缺口。</strong> 原始目标面向单输出解释；随机扰动导致稳定性问题，参考点和带宽也会改变解释。若独立运行于每个 LDL 标签，计算增至 (r) 次且输出不再是合法分布。</p>
+<p><strong>核心论文如何回应。</strong> LIMEFLDL 保留“采样—加权—局部线性代理”骨架，但把标量回归改为矩阵回归，并用一次黑盒批推理生成所有 (r) 个输出。</p>
+<p><strong>设计传递。</strong> Quickshift superpixel、entropy discretizer、cosine/L2 距离与局部核都直接继承；变化发生在目标空间和约束，而非输入扰动框架。</p>
+<h3>3.3 SHAP — 2017，NeurIPS</h3>
+<p><strong>解决了什么。</strong> SHAP 把 6 类解释方法统一为 additive feature attribution，并证明满足 local accuracy、missingness 与 consistency 的唯一解结构。它把“归因方法是否可靠”从视觉直觉推进到公理层。</p>
+<p><strong>遗留缺口。</strong> SHAP 的通用加性形式没有自动保证多输出向量满足任务特定可行域；逐输出 SHAP 值同样可能难以表达标签描述度之间的耦合与守恒。</p>
+<p><strong>核心论文如何回应。</strong> LIMEFLDL 的 Property 3.5 明确把矩阵代理写成每个特征归因向量的和，并证明与 additive feature attribution 兼容；Property 3.6/3.7讨论 dummy 与对称性。</p>
+<p><strong>设计传递。</strong> “局部准确性 + dummy + 对称性”的公理化检查被传递，但从标量归因扩展成 (r) 维归因向量。核心论文没有证明 Shapley 唯一性，而是选择可优化的局部线性矩阵。</p>
+<h3>3.4 GLIME — 2023，NeurIPS Spotlight</h3>
+<p><strong>解决了什么。</strong> GLIME 发现 LIME 的小样本权重会让正则项主导并导致慢收敛，提出把权重吸收到局部、无偏采样分布中，以提高稳定性、局部 fidelity 并减弱参考点依赖；其代码提供 binomial 等分布选项。</p>
+<p><strong>遗留缺口。</strong> GLIME 改进的是“在哪里采样、如何稳定收敛”，并未处理 LDL 的概率约束与标签间依赖；即便每列都稳定，组合起来仍可能不是分布。</p>
+<p><strong>核心论文如何回应。</strong> LIMEFLDL 从另一个正交维度推进：它主要改造输出结构而非采样分布，并给出依赖 (m,f,r,\sigma) 的收敛/稳定界。</p>
+<p><strong>设计传递。</strong> GLIME 对带宽、权重与正则主导效应的警告，在 LIMEFLDL 附录 B.3 中以小 (sigma) 样本复杂度爆炸重新出现。不过核心论文只在表 5 用默认 GLIME 做 R² 比较，尚未把 GLIME 的局部无偏采样与自己的单纯形约束真正合并。</p>
+</section>
+<figure class="figure" aria-labelledby="figure-r2-title">
+  <p class="fig-title" id="figure-r2-title">R² 宏平均：联合分布约束的收益依赖黑盒模型</p>
+  <p class="fig-sub">8 个数据集宏平均；DLIME 因图像项缺失，仅平均 6 个有值项。单一 Y 轴，越高越好。</p>
+  <div class="legend" aria-label="图例"><span><span class="swatch" style="background:var(--chart-primary)"></span>相关基线</span><span><span class="swatch" style="background:var(--chart-comparison)"></span>LIMEFLDL</span></div>
+  <svg class="chart" viewBox="0 0 900 370" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>LIMEFLDL 与 LIME、DLIME、GLIME 的 R² 宏平均</title>
+    <desc>LDL-SCL 上 LIMEFLDL 0.621，RBF-LDL-LRR 上 0.834，均高于其他方法宏平均。</desc>
+    <line x1="70" y1="290" x2="850" y2="290" stroke="var(--grid)" stroke-width="2"/>
+    <line x1="70" y1="50" x2="70" y2="290" stroke="var(--grid)" stroke-width="2"/>
+    <text x="35" y="295" fill="var(--muted)" font-size="13">0.0</text>
+    <text x="35" y="175" fill="var(--muted)" font-size="13">0.5</text>
+    <text x="35" y="56" fill="var(--muted)" font-size="13">1.0</text>
+    <rect x="110" y="178.4" width="58" height="111.6" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="LDL-SCL · LIME: 0.465"><title>LDL-SCL · LIME: 0.465</title></rect><text x="139" y="170.39999999999998" text-anchor="middle" fill="var(--text-primary)" font-size="13">0.465</text><text x="139" y="312" text-anchor="middle" fill="var(--text-secondary)" font-size="11">LIME</text><rect x="192" y="227.1" width="58" height="62.9" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="LDL-SCL · DLIME: 0.262"><title>LDL-SCL · DLIME: 0.262</title></rect><text x="221" y="219.12" text-anchor="middle" fill="var(--text-primary)" font-size="13">0.262</text><text x="221" y="312" text-anchor="middle" fill="var(--text-secondary)" font-size="11">DLIME</text><rect x="274" y="187.8" width="58" height="102.2" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="LDL-SCL · GLIME: 0.426"><title>LDL-SCL · GLIME: 0.426</title></rect><text x="303" y="179.76" text-anchor="middle" fill="var(--text-primary)" font-size="13">0.426</text><text x="303" y="312" text-anchor="middle" fill="var(--text-secondary)" font-size="11">GLIME</text><rect x="356" y="141.0" width="58" height="149.0" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="LDL-SCL · LIMEFLDL: 0.621"><title>LDL-SCL · LIMEFLDL: 0.621</title></rect><text x="385" y="132.96" text-anchor="middle" fill="var(--text-primary)" font-size="13">0.621</text><text x="385" y="312" text-anchor="middle" fill="var(--text-secondary)" font-size="11">LIMEFLDL</text><text x="250" y="342" text-anchor="middle" fill="var(--text-primary)" font-size="15" font-weight="700">LDL-SCL</text><rect x="500" y="190.9" width="58" height="99.1" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="RBF-LDL-LRR · LIME: 0.413"><title>RBF-LDL-LRR · LIME: 0.413</title></rect><text x="529" y="182.88" text-anchor="middle" fill="var(--text-primary)" font-size="13">0.413</text><text x="529" y="312" text-anchor="middle" fill="var(--text-secondary)" font-size="11">LIME</text><rect x="582" y="213.2" width="58" height="76.8" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="RBF-LDL-LRR · DLIME: 0.320"><title>RBF-LDL-LRR · DLIME: 0.320</title></rect><text x="611" y="205.2" text-anchor="middle" fill="var(--text-primary)" font-size="13">0.320</text><text x="611" y="312" text-anchor="middle" fill="var(--text-secondary)" font-size="11">DLIME</text><rect x="664" y="179.6" width="58" height="110.4" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="RBF-LDL-LRR · GLIME: 0.460"><title>RBF-LDL-LRR · GLIME: 0.460</title></rect><text x="693" y="171.6" text-anchor="middle" fill="var(--text-primary)" font-size="13">0.460</text><text x="693" y="312" text-anchor="middle" fill="var(--text-secondary)" font-size="11">GLIME</text><rect x="746" y="89.8" width="58" height="200.2" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="RBF-LDL-LRR · LIMEFLDL: 0.834"><title>RBF-LDL-LRR · LIMEFLDL: 0.834</title></rect><text x="775" y="81.84" text-anchor="middle" fill="var(--text-primary)" font-size="13">0.834</text><text x="775" y="312" text-anchor="middle" fill="var(--text-secondary)" font-size="11">LIMEFLDL</text><text x="640" y="342" text-anchor="middle" fill="var(--text-primary)" font-size="15" font-weight="700">RBF-LDL-LRR</text>
+  </svg>
+  <figcaption>来源：LIMEFLDL 附录表 5（p.14），本报告按有值项复算。完整逐数据集矩阵见正文。</figcaption>
+</figure><section class="card" aria-labelledby="section-5-title"><h2 id="section-5-title">4. 技术演进脉络</h2>
+<pre><code class="language-text">2016 LDL：输出从 one-hot / multi-hot → 标签描述度分布
+      │
+      └── 提出“必须尊重单纯形”的任务结构
+
+2016 LIME：任意黑盒 → 局部加权线性代理
+      ├── 局部采样、可解释开关、稀疏归因
+      └── 缺口：单输出、随机不稳、逐标签会破坏分布
+
+2017 SHAP：多类解释 → 加性归因统一公理
+      └── local accuracy / dummy / consistency
+
+2023 GLIME：重构采样分布 → 更快收敛、更稳、更局部
+      └── 解决输入邻域，却未解决结构化输出
+
+2025 LIMEFLDL：LIME 输入骨架 + SHAP 式性质 + LDL 单纯形
+      ├── 一个 f×r 归因矩阵联合解释所有标签
+      ├── 和为 1 / 非负约束保证输出合法
+      └── 尚待汇入 GLIME 无偏采样与完整正则理论
+</code></pre>
+<p>内在推动力是从“解释一个标量预测”走向“解释有结构的输出对象”。第一阶段关心可读性；第二阶段关心公理与稳定性；第三阶段开始把任务几何写进解释器。关键转折不是更复杂的可视化，而是承认后验解释本身也是一个预测模型，因此必须受与原任务相同的可行域约束。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">工作</th>
+<th scope="col">发表年月</th>
+<th scope="col">会议/出版</th>
+<th scope="col">核心贡献</th>
+<th scope="col">主要定量证据</th>
+<th scope="col">与核心工作的关系</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Label Distribution Learning</td>
+<td class="num">2016.07</td>
+<td>IEEE TKDE 28(7)</td>
+<td>定义描述度分布与 6 类算法</td>
+<td>1 合成 + 15 真实数据集（摘要）</td>
+<td>提供问题空间、数据与分布指标</td>
+</tr>
+<tr>
+<td>LIME</td>
+<td class="num">2016.08</td>
+<td>KDD 2016</td>
+<td>局部加权可解释代理</td>
+<td>文本、图像与人评多场景（论文摘要）</td>
+<td>提供采样—加权—线性代理骨架</td>
+</tr>
+<tr>
+<td>SHAP</td>
+<td class="num">2017.11</td>
+<td>NeurIPS 2017</td>
+<td>统一加性归因并给公理</td>
+<td>统一 6 类方法（摘要）</td>
+<td>提供 local accuracy/dummy 等性质来源</td>
+</tr>
+<tr>
+<td>GLIME</td>
+<td class="num">2023.11</td>
+<td>NeurIPS 2023 Spotlight</td>
+<td>局部无偏采样、提高稳定与 fidelity</td>
+<td>论文报告更快收敛；公开实现 (n=1024) 示例</td>
+<td>构成采样稳定性强基线，核心只做有限比较</td>
+</tr>
+<tr>
+<td><strong>LIMEFLDL</strong></td>
+<td><strong>2025.07</strong></td>
+<td><strong>ICML 2025</strong></td>
+<td><strong>单纯形约束的分布级归因矩阵</strong></td>
+<td><strong>表 5：RBF 两基准 0.17→0.99；人评 2.1→3.1</strong></td>
+<td><strong>汇聚输出结构、局部代理与公理分析</strong></td>
+</tr>
+</tbody></table></div>
+</section><section class="card" aria-labelledby="section-6-title"><h2 id="section-6-title">5. 开放挑战与可操作研究机会</h2>
+<h3>5.1 理论层面</h3>
+<ol>
+<li><strong>补齐正则化收敛理论。</strong> 在相同 (Z,Pi) 下，对比无正则闭式解、带 (lambda\lVert A\rVert_F^2) 的精确凸解与论文 L-BFGS 50 步解；报告 (lVert A_{closed}-A_{actual}\rVert_F) 随 (m,f,r,\sigma) 的曲线，从而判断定理界何时仍能预测实际算法。</li>
+<li><strong>寻找带宽—维度相变。</strong> 固定目标 fidelity，在 (f\in{8,16,32,64,128,256})、(sigma\in{0.25,0.5,0.75,1,1.5,2}) 网格上测达到 Jaccard 0.9 所需的最小 (m)，与定理的 (e^{5/\sigma^2}f^3) 缩放逐点比较。</li>
+<li><strong>建立结构化输出的唯一性公理。</strong> 比较“逐标签 Shapley 后投影”“守恒 Shapley”“LIMEFLDL 矩阵解”，检验 local accuracy、dummy、symmetry 与单纯形守恒能否同时满足，以及解是否唯一。</li>
+</ol>
+<h3>5.2 工程与应用层</h3>
+<ol>
+<li><strong>等预算 head-to-head。</strong> 在同一黑盒调用数、CPU/GPU 时间和内存下比较 PULIME、GLIME-LDL、KernelSHAP-LDL 与 LIMEFLDL；每个 (m) 同时报 6 个 fidelity、Jaccard、延迟，避免当前 100/1000 样本预算错位。</li>
+<li><strong>消融合法性来源。</strong> 依次比较无约束矩阵回归、仅和为 1、仅非负、两者同时、再加特征评分；统计非法输出率、负 KL 次数、R² 与 Jaccard，直接量化每个约束的收益和代价。</li>
+<li><strong>连续邻域替代分箱。</strong> 在 tabular 数据上比较 entropy bins、soft bins、normalizing-flow conditional sampler 和不离散化方案；专门构造跨分箱边界距离 (10^{-6}) 的样本对，测解释突变的 Lipschitz 比率。</li>
+<li><strong>部署级缓存实验。</strong> 对 30,542×36×68 的 Human Gene 数据流，比较逐请求采样与邻域缓存；在黑盒每 1,000 步更新一次时报告解释延迟、缓存命中率与漂移误差。</li>
+</ol>
+<h3>5.3 新兴方向</h3>
+<ol>
+<li><strong>医疗概率解释的校准一致性。</strong> 在相同病例与医生盲评下比较 LIMEFLDL、温度校准后的 LIME 投影和内生可解释模型；不仅报 fidelity，还报校准误差、医生诊断改变率与错误自信率。</li>
+<li><strong>VLM 多属性输出。</strong> 对图文模型的安全、事实性、相关性多维评分，用同一图像的局部 patch 与文本 token 联合扰动；比较分块独立解释与跨模态守恒矩阵，测跨模态归因是否随 prompt 改写保持稳定。</li>
+<li><strong>隐私与解释泄漏。</strong> 在成员推断攻击下比较公开完整 (A)、Top-K (A) 与差分隐私归因；横轴为 (epsilon_{DP})，纵轴分别为攻击 AUC 与 fidelity，得到可信解释的隐私 Pareto 前沿。</li>
+</ol>
+</section><section class="card" aria-labelledby="section-7-title"><h2 id="section-7-title">6. 其他值得关注的近期工作</h2>
+<p><strong>Mechanistic Unlearning</strong>（2025.07，ICML）<br>把知识编辑/遗忘定位到可预测中间机制而非仅保持输出的组件，强调“定位机制”比“定位相关参数”更抗重学攻击。<a href="https://proceedings.mlr.press/v267/guo25k.html">论文</a></p>
+<p><strong>GaussMark</strong>（2025.07，ICML）<br>把水印嵌入权重结构，并以高斯独立性检验提供有效性与功效界；值得关注其零生成延迟主张与模型腐蚀鲁棒性。<a href="https://proceedings.mlr.press/v267/block25a.html">论文</a></p>
+<p><strong>Evaluating Neuron Explanations</strong>（2025.07，ICML）<br>统一神经元解释评估并加入 sanity checks；关键提醒是一些常用指标在概念标签大幅改变后几乎不变，直接质疑“高分即忠实”。<a href="https://proceedings.mlr.press/v267/oikarinen25a.html">论文</a></p>
+<p><strong>InfoCons</strong>（2025.07，ICML）<br>用信息论把点云分成既忠实又语义连贯的关键概念，并在合成与真实 3D 数据上验证，适合关注结构化解释的人继续阅读。<a href="https://proceedings.mlr.press/v267/li25dw.html">论文</a></p>
+<p><strong>Counterfactual Effect Decomposition</strong>（2025.07，ICML）<br>把多智能体 MDP 中动作的反事实总效应拆成经代理行为与环境状态传播的两部分，再用 Shapley 归因到代理/变量。<a href="https://proceedings.mlr.press/v267/triantafyllou25a.html">论文</a></p>
+<p><strong>RISE</strong>（2025.07，ICML）<br>围绕影响半径提取 3D 分子 GNN 的解释子图，把几何邻域与模型输出联系起来；适合作为 LIMEFLDL 之外的结构化输入解释参照。<a href="https://proceedings.mlr.press/v267/qu25a.html">论文</a></p>
+</section><section class="card" aria-labelledby="section-8-title"><h2 id="section-8-title">7. 结论</h2>
+<p>LIMEFLDL 的最佳理解不是“LIME 的一个垂直版本”，而是一个可复用的可信 AI 原则：<strong>后验解释器必须继承预测任务的输出几何</strong>。定量上，它在附录表 5 的 RBF-LDL-LRR/数据集 1 与 2 把逐行最强竞品 R² 从 0.17 提至 0.99（+0.82，+482.4%），并在人评中把正确预测解释均分从 2.1 提到 3.1；但在 LDL-SCL/Emotion6 表格版又从 0.34 降到 0.30，且主结果存在稳定性与 fidelity 冲突。</p>
+<p>因此，这篇论文真正打开的是“结构守恒解释”的研究空间，而不是终结 LDL 可解释性。下一步最关键的不是再加一张热力图，而是用等预算、投影后合法基线、完整模块消融和带正则收敛理论，回答联合约束带来的收益究竟来自合法性、标签依赖，还是更大的联合拟合自由度。</p>
+<hr>
+<h3>核验与坦诚性说明</h3>
+<ul>
+<li>核心论文数字均来自实际读取的 ICML 2025/PMLR PDF：正文表 1–3、附录表 4–7、图 1–5 说明与附录 A/B；本报告对派生百分比重新计算。</li>
+<li>论文没有提供逐层模块消融、惩罚系数扫描、精确超参曲线坐标、p 值或置信区间；相关小节已明确保留并标注“未报告”，没有补造。</li>
+<li>截至 2026-08-22，未核实到核心论文 arXiv 条目或作者代码仓库；OpenReview 页面存在但访问时触发浏览器验证，PMLR 正文与 PDF 可达。</li>
+<li>HTML 已通过 Warm Editorial 静态验证器（0 warnings）；运行环境未提供 <code>/usr/bin/chromium</code> 或 <code>/opt/pw-browsers</code> 下的 Chromium 可执行文件，遵照“不运行 playwright install”的要求，无法完成浅色、深色与移动端截图复核。响应式表格滚动、主题变量与 SVG <code>viewBox</code> 已做确定性检查。</li>
+<li><code>ml-report-index.md</code> 已在本次生成流程中追加记录；若远端持久化失败，以本地索引为准。</li>
+</ul>
+</section></main>
+
+  <footer>核心来源：LIMEFLDL，ICML 2025 / PMLR 267。生成日期：2026-08-22。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

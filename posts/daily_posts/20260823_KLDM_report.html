@@ -1,0 +1,935 @@
+---
+layout: null
+title: "KLDM"
+date: 2026-08-23
+topic: ai4science
+excerpt: "解析 KLDM 如何引入欧氏辅助速度，将周期晶体坐标上的流形扩散改写为适合生成建模的动力系统。"
+permalink: /blog/2026/08/23/kldm-kinetic-diffusion-crystal-generation/
+blog_post: true
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>KLDM：把晶体坐标的扩散从环面“抬升”到欧氏速度空间 · 2026-08-23</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ML/AI DAILY DEEP REPORT · ICML 2025</p>
+    <h1>KLDM：把晶体坐标的扩散从环面“抬升”到欧氏速度空间</h1>
+    <p class="subtitle">AI4Science · 晶体生成、环面几何与动力学扩散</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">KLDM · ICML 2025</span>
+      <span class="chip">2026-08-23</span>
+      <span class="chip">Kinetic diffusion for crystals</span>
+    </div>
+    <p class="lede">KLDM 不再直接给周期分数坐标加环面噪声，而是引入欧氏辅助速度，把难处理的流形扩散变成“位置沿速度走、噪声只打在速度上”的动力系统。</p>
+  </header>
+
+  <main><section class="card" aria-labelledby="section-1-title"><h2 id="section-1-title">0. 链接验证表</h2>
+<p>下表链接均在 2026-08-23 实际访问；版本日期来自 arXiv submission history。OpenReview 若触发浏览器验证，仍仅列出由会议主页反向链接或论文明确给出的 URL；找不到独立资源时标注“未找到”，不据此断言资源不存在。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">论文</th>
+<th scope="col">会议主页 / 出版页</th>
+<th scope="col">arXiv（具体版本）</th>
+<th scope="col">Code 仓库</th>
+<th scope="col">数据集 / 权重</th>
+<th scope="col">项目主页 / 视频</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>KLDM（核心）</strong></td>
+<td><a href="https://proceedings.mlr.press/v267/cornet25a.html">ICML 2025 / PMLR</a>；<a href="https://openreview.net/forum?id=7J1kwZY72h">OpenReview</a></td>
+<td><a href="https://arxiv.org/abs/2507.03602v1">2507.03602v1，2025-07-04</a></td>
+<td><a href="https://github.com/frcnt/kldm">frcnt/kldm</a></td>
+<td><a href="https://github.com/frcnt/kldm/tree/main/data/mp_20">仓库 mp_20 数据目录</a>；预训练权重<strong>未找到</strong></td>
+<td><strong>未找到</strong></td>
+</tr>
+<tr>
+<td>CDVAE</td>
+<td><a href="https://openreview.net/forum?id=03RLpj-tc_">ICLR 2022 / OpenReview</a></td>
+<td><a href="https://arxiv.org/abs/2110.06197v3">2110.06197v3，2022-03-14</a></td>
+<td><a href="https://github.com/txie-93/cdvae">txie-93/cdvae</a></td>
+<td><a href="https://github.com/txie-93/cdvae/tree/main/data">仓库内 Perov-5、Carbon-24、MP-20</a></td>
+<td><strong>未找到</strong></td>
+</tr>
+<tr>
+<td>DiffCSP</td>
+<td><a href="https://proceedings.neurips.cc/paper_files/paper/2023/file/38b787fc530d0b31825827e2cc306656-Paper-Conference.pdf">NeurIPS 2023 PDF</a>；<a href="https://openreview.net/forum?id=DNdN26m2Jk">OpenReview</a></td>
+<td><a href="https://arxiv.org/abs/2309.04475v2">2309.04475v2，2024-03-07</a></td>
+<td><a href="https://github.com/jiaor17/DiffCSP">jiaor17/DiffCSP</a></td>
+<td>数据处理脚本见代码；独立权重<strong>未找到</strong></td>
+<td><strong>未找到</strong></td>
+</tr>
+<tr>
+<td>EquiCSP</td>
+<td><a href="https://proceedings.mlr.press/v235/lin24b.html">ICML 2024 / PMLR</a></td>
+<td><a href="https://arxiv.org/abs/2512.07289v1">2512.07289v1，2025-12-08</a></td>
+<td><a href="https://github.com/EmperorJia/EquiCSP">EmperorJia/EquiCSP</a></td>
+<td>数据配置见代码；独立权重<strong>未找到</strong></td>
+<td><strong>未找到</strong></td>
+</tr>
+<tr>
+<td>FlowMM</td>
+<td><a href="https://proceedings.mlr.press/v235/miller24a.html">ICML 2024 / PMLR</a></td>
+<td><a href="https://arxiv.org/abs/2406.04713v1">2406.04713v1，2024-06-07</a></td>
+<td><a href="https://github.com/facebookresearch/flowmm">facebookresearch/flowmm</a></td>
+<td>数据与评测入口见代码；独立权重<strong>未找到</strong></td>
+<td><strong>未找到</strong></td>
+</tr>
+<tr>
+<td>TDM</td>
+<td><a href="https://openreview.net/forum?id=DTatjJTDl1">ICLR 2025 / OpenReview</a></td>
+<td><a href="https://arxiv.org/abs/2405.16381v2">2405.16381v2，2025-02-12</a></td>
+<td><a href="https://github.com/yuchen-zhu-zyc/TDM">yuchen-zhu-zyc/TDM</a></td>
+<td>仓库含合成数据生成与部分结果；通用权重<strong>未找到</strong></td>
+<td><strong>未找到</strong></td>
+</tr>
+</tbody></table></div>
+</section><section class="card" aria-labelledby="section-2-title"><h2 id="section-2-title">1. 检索、去重与随机选择</h2>
+<h3>1.1 去重</h3>
+<p>已检查 <code>ml-report-index.md</code>。最近 14 天的 AI4Science 核心工作是 2026-08-16 的 <em>Elucidating the Design Space of Multimodal Protein Language Models</em>，主题是蛋白质序列—结构离散 token 的监督几何；本期排除蛋白多模态 token 化与 DPLM2.1。KLDM 研究的是晶体分数坐标的环面几何、动力学扩散和材料稳定性验证，问题对象与技术核心均不重复。</p>
+<h3>1.2 候选池（20 篇）与随机抽取</h3>
+<p>候选来自 ICML 2025 PMLR accepted papers，并用 arXiv、OpenReview、代码仓库及论文全文补充核验；全部属于运行日的 AI4Science/跨界范围，发表未超过 24 个月。</p>
+<ol>
+<li><a href="https://proceedings.mlr.press/v267/an25a.html">Raptor：3D 医学体积的免训练嵌入</a></li>
+<li><a href="https://proceedings.mlr.press/v267/bang25a.html">BounDr.E：药物相似性的一类边界学习</a></li>
+<li><a href="https://proceedings.mlr.press/v267/bao25b.html">专业级 Graph-of-Thought 医疗推理</a></li>
+<li><a href="https://proceedings.mlr.press/v267/bogensperger25a.html">生成式蛋白适应度优化的变分视角</a></li>
+<li><a href="https://proceedings.mlr.press/v267/bohde25a.html">DiffMS：质谱条件分子扩散生成</a></li>
+<li><a href="https://proceedings.mlr.press/v267/cao25b.html">SO(3)-averaged Flow Matching 与 Reflow 的构象生成</a></li>
+<li><a href="https://proceedings.mlr.press/v267/chang25d.html">LDMol：文本到分子的潜空间扩散</a></li>
+<li><a href="https://proceedings.mlr.press/v267/chen25bz.html">全原子蛋白复合物设计</a></li>
+<li><a href="https://proceedings.mlr.press/v267/chen25cf.html">分子—语言对齐的层次图 token 化</a></li>
+<li><a href="https://proceedings.mlr.press/v267/chen25cp.html">OmniArch：科学计算基础模型</a></li>
+<li><a href="https://proceedings.mlr.press/v267/cheng25f.html">用神经算子导数加速 PDE 约束优化</a></li>
+<li><strong><a href="https://proceedings.mlr.press/v267/cornet25a.html">KLDM：晶体材料的动理学 Langevin 扩散</a></strong></li>
+<li><a href="https://proceedings.mlr.press/v267/dai25b.html">CLIMB：大规模多模态临床基础数据</a></li>
+<li><a href="https://proceedings.mlr.press/v267/de-souza25a.html">面向医疗难样本的合成数据</a></li>
+<li><a href="https://proceedings.mlr.press/v267/deng25d.html">从折叠能预测蛋白结合突变效应</a></li>
+<li><a href="https://proceedings.mlr.press/v267/ding25a.html">旋转对齐驱动的可扩展非等变 3D 分子生成</a></li>
+<li><a href="https://proceedings.mlr.press/v267/donhauser25a.html">用字典学习从显微基础模型提取生物概念</a></li>
+<li><a href="https://proceedings.mlr.press/v267/eckmann25a.html">MF-LAL：多保真潜空间主动学习的药物生成</a></li>
+<li><a href="https://proceedings.mlr.press/v267/ekstrom-kelvinius25a.html">WyckoffDiff：晶体对称性的生成扩散</a></li>
+<li><a href="https://proceedings.mlr.press/v267/fallahpour25a.html">MedRAX：胸片医疗推理 Agent</a></li>
+</ol>
+<p>执行 <code>shuf -i 1-20 -n 1</code> 得到 <strong>12</strong>。KLDM 有 30 页会议全文、官方代码、四个公开数据集结果、三次或六次运行统计及多层消融，资料充足，<strong>重抽次数为 0</strong>。</p>
+</section><section class="card" aria-labelledby="section-3-title"><h2 id="section-3-title">2. 核心论文深度解析</h2>
+<h3>2.1 Motivation：周期坐标不是普通的三维向量</h3>
+<p>晶体单胞可记为 (x=(f,l,a))：(f\in[0,1)^{3\times K}) 是 (K) 个原子的分数坐标，(l) 是晶格，(a) 是元素类型。分数坐标的 0 与 1 表示同一点，因此它不是有边界的欧氏立方体，而是高维环面 (\mathbb T^{3K})。若直接在 (\mathbb R^{3K}) 加高斯噪声再裁剪，0.99 与 0.01 会被误判为相距很远；若在环面做 wrapped-normal/Riemannian diffusion，则前向核、score 与数值积分又变得复杂。论文第 1–3 页把这一点定位为晶体生成中最难的连续模态。</p>
+<p>现有方法已经意识到对称性。CDVAE 显式编码周期边界；DiffCSP 在分数坐标上采用周期 (E(3))-等变网络与 wrapped-normal diffusion；EquiCSP 进一步保证晶格置换和周期平移等变；FlowMM 用黎曼 flow matching 绕开扩散的分数预测。但这些路线仍直接在位置流形上定义生成过程。KLDM 的新问题是：<strong>能否保留环面上的正确运动，同时把学习目标放到固定的欧氏空间？</strong></p>
+<p>其价值不只是数学洁癖。MP-20 有 45,231 个晶体、每个至多 20 个原子；MPTS-52 有 40,476 个晶体、最多 52 个原子（论文附录表 6，第 25 页）。环面维数随原子数升至 156，边界与整体平移冗余都会放大。KLDM 在最难的 MPTS-52 @1 上把 FlowMM 的 match rate 17.54 提至 23.93，绝对 <strong>+6.39 pp</strong>、相对 <strong>+36.43%</strong>（表 1，第 7 页），证明“换一个扩散状态空间”可以转化为可观的结构预测收益。</p>
+<h3>2.2 故事线：先抬升，再约束，最后把速度初值压成零</h3>
+<p>论文的论证有四个关键转折。</p>
+<p>第一，把每个环面坐标看作 (SO(2)) 上的旋转。位置仍留在正确流形，但新增速度 (v) 位于其李代数；对环面而言，李代数就是固定欧氏空间。第二，前向过程只给速度注入噪声，位置通过速度自然移动。训练因此不再拟合一个带周期求和的坐标 score，而是拟合高斯速度的 score。第三，晶体的整体周期平移不改变结构，所以网络输出速度后要减去质量中心/黎曼均值，强制总平移速度为零。第四，也是最重要的经验转折：若初始速度直接设为零点质量，条件速度分布可以解析化，score 参数化由“网络同时学习均值与尺度”简化为“网络只预测干净坐标相关项”。图 1 与附录表 3 表明，这一简化不是装饰，而是主要增益来源。</p>
+<p>隐含权衡也很清楚。KLDM 把流形 score 的困难换成了扩展状态空间：采样时要同时积分位置与速度，并多引入摩擦系数 (\gamma)、终止时间 (T) 和预测—校正步骤。PC sampler 往往提升 @1 精度，却不总提升 @20；例如 MPTS-52 的 KLDM-(x_0) 从 EM 的 37.77 降到 PC 的 37.10（表 1），说明更多校正并不等于更高的候选覆盖率。</p>
+<h3>2.3 方法论与机制解剖</h3>
+<h4>2.3.1 形式化定义</h4>
+<p>将分数坐标映射为 (\hat f\in SO(2)^{3K})，并为每个位置引入李代数速度 (\hat v)。KLDM 的前向 kinetic Langevin SDE 为：</p>
+<p>[
+d\hat f_t=\hat f_t\hat v_t,dt,\qquad
+d\hat v_t=-\gamma\hat v_t,dt+\sqrt{2\gamma},dw_t^{\mathfrak g}.
+\tag{12，正文 p.4}
+]</p>
+<p>第一式是无噪声的输运，第二式是 Ornstein–Uhlenbeck 速度过程。反向过程保持位置动力学，但速度漂移需加入条件 score：</p>
+<p>[
+d\hat f_t=-\hat f_t\hat v_t,dt,
+\quad d\hat v_t={\gamma\hat v_t+2\gamma\nabla_{\hat v_t}
+\log p_t(\hat v_t\mid\hat f_t)},dt+\sqrt{2\gamma},d\bar w_t^{\mathfrak g}.
+\tag{13，正文 p.4}
+]</p>
+<p>训练损失是 velocity denoising score matching，并与晶格、元素模态损失相加：</p>
+<p>[
+\mathcal L=\lambda_v\mathcal L_v+\lambda_l\mathcal L_l+
+\lambda_a\mathcal L_a,\qquad \lambda_v=\lambda_l=1.
+]</p>
+<p>元素类型使用三种实现：连续 one-hot（C）、analog bits（C-AB）或离散 absorbing diffusion（D）；对应 (\lambda_a) 分别为 20、1、0.33（附录 E，第 24–25 页）。零初始速度 (v_0=0) 令高斯条件核的部分均值项消失，得到论文式 (19) 的 simplified parameterization；这比式 (18) 的 direct parameterization 更容易学习。</p>
+<h4>2.3.2 流程示意</h4>
+<pre><code class="language-text">晶体 x0=(分数坐标 f0, 晶格 l0, 元素 a0)
+       │
+       ├─ f0: T^(3K) ≅ SO(2)^(3K) ── 加入欧氏速度 v0=0
+       │                                  │
+       │                         kinetic forward SDE
+       │                     位置按速度移动；噪声只进速度
+       │                                  │
+       │                     网络预测 velocity score
+       │                                  │
+       │              减去均值 → 强制 zero-net velocity
+       │                                  │
+       │                EM 或 Predictor–Corrector 反演
+       │
+       ├─ l0: 普通欧氏扩散 ─────────────────────────┤
+       └─ a0: C / C-AB / D 元素扩散 ───────────────┤
+                                                  ↓
+                                  候选晶体 → 结构匹配 / MatterSim
+</code></pre>
+<h4>2.3.3 关键机制与工程细节</h4>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">机制 / 维度</th>
+<th scope="col">设计选择</th>
+<th scope="col">动机</th>
+<th scope="col">关键超参 / 实现</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>周期坐标</td>
+<td>(\mathbb T^{3K}\cong SO(2)^{3K})</td>
+<td>不把单胞边界误作真实边界</td>
+<td>每个分数坐标映射到圆群</td>
+</tr>
+<tr>
+<td>动量抬升</td>
+<td>欧氏辅助速度 (v)</td>
+<td>将 score 学习移到固定平坦空间</td>
+<td>(v_0=0)，(\gamma=1)，(T=2)</td>
+</tr>
+<tr>
+<td>平移约束</td>
+<td>输出速度减去原子均值</td>
+<td>整体周期平移应为零模</td>
+<td>zero-net velocity；图 1 显示边际增益</td>
+</tr>
+<tr>
+<td>score 参数化</td>
+<td>simplified (x_0)-style</td>
+<td>零速度初值消去多余条件项</td>
+<td>式 (19)，对比 direct 式 (18)</td>
+</tr>
+<tr>
+<td>采样</td>
+<td>EM 与 predictor–corrector</td>
+<td>PC 在速度空间做额外校正</td>
+<td>代码示例 PC 取 1,000 steps</td>
+</tr>
+<tr>
+<td>元素模态</td>
+<td>C / C-AB / D 三路线</td>
+<td>区分连续松弛与离散扩散</td>
+<td>(\lambda_a=20/1/0.33)</td>
+</tr>
+<tr>
+<td>网络</td>
+<td>DiffCSP 式 EGNN</td>
+<td>公平复用成熟晶体编码器</td>
+<td>4 层（Perov-5）或 6 层；hidden 512；time 256</td>
+</tr>
+<tr>
+<td>优化与硬件</td>
+<td>AdamW、early stopping</td>
+<td>控制多数据集训练</td>
+<td>单张 RTX 3090/A5000 24GB；论文未报 GPU-hour</td>
+</tr>
+</tbody></table></div>
+<h3>2.4 实验设计、基准与指标</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">数据集</th>
+<th scope="col" align="right">样本数</th>
+<th scope="col" align="right">最大原子数</th>
+<th scope="col" align="right">批量</th>
+<th scope="col">覆盖难点</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>PEROV-5</td>
+<td align="right">18,928</td>
+<td align="right">5</td>
+<td align="right">1,024</td>
+<td>固定小单胞钙钛矿，较易</td>
+</tr>
+<tr>
+<td>CARBON-24</td>
+<td align="right">10,153</td>
+<td align="right">24</td>
+<td align="right">256</td>
+<td>同一碳组成对应多结构，@1 含义弱</td>
+</tr>
+<tr>
+<td>MP-20</td>
+<td align="right">45,231</td>
+<td align="right">20</td>
+<td align="right">256</td>
+<td>多元素真实材料主基准</td>
+</tr>
+<tr>
+<td>MPTS-52</td>
+<td align="right">40,476</td>
+<td align="right">52</td>
+<td align="right">256</td>
+<td>原子数更大、环面维数最高</td>
+</tr>
+</tbody></table></div>
+<p>数据来自附录表 6（PDF 第 25 页）。CSP 给定组成预测结构：Match Rate（MR，越高越好）统计结构匹配率，RMSE（越低越好）只在匹配样本上计算；@1 是一次采样，@20 是每组成 20 个候选。DNG 同时生成组成与结构：RMSD 衡量 MatterSim 松弛前后位移，energy above hull 越低越稳定，stable 表示低于稳定阈值的比例，SUN 是 stable、unique、novel 的交集。</p>
+<h3>2.5 主结果：完整 CSP 数据矩阵</h3>
+<p>下表逐项转录论文表 1（PDF 第 7 页）；“—”表示原表未报告，绝不补造。KLDM 为 3 次采样的均值±标准误，基线为各自论文值。</p>
+<h4>@1：单候选结构预测</h4>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">方法</th>
+<th scope="col" align="right">PEROV-5 MR↑</th>
+<th scope="col" align="right">PEROV-5 RMSE↓</th>
+<th scope="col" align="right">MP-20 MR↑</th>
+<th scope="col" align="right">MP-20 RMSE↓</th>
+<th scope="col" align="right">MPTS-52 MR↑</th>
+<th scope="col" align="right">MPTS-52 RMSE↓</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>CDVAE</td>
+<td align="right">45.31</td>
+<td align="right">0.1138</td>
+<td align="right">33.90</td>
+<td align="right">0.1045</td>
+<td align="right">5.34</td>
+<td align="right">0.2106</td>
+</tr>
+<tr>
+<td>DiffCSP-PC</td>
+<td align="right">52.02</td>
+<td align="right">0.0760</td>
+<td align="right">51.49</td>
+<td align="right">0.0631</td>
+<td align="right">12.19</td>
+<td align="right">0.1786</td>
+</tr>
+<tr>
+<td>EquiCSP-PC</td>
+<td align="right">52.02</td>
+<td align="right">0.0707</td>
+<td align="right">57.59</td>
+<td align="right">0.0510</td>
+<td align="right">14.85</td>
+<td align="right"><strong>0.1169</strong></td>
+</tr>
+<tr>
+<td>FlowMM</td>
+<td align="right"><strong>53.15</strong></td>
+<td align="right">0.0992</td>
+<td align="right">61.39</td>
+<td align="right">0.0566</td>
+<td align="right">17.54</td>
+<td align="right">0.1726</td>
+</tr>
+<tr>
+<td>KLDM-ε EM</td>
+<td align="right">53.14±0.6</td>
+<td align="right">0.0758±0.002</td>
+<td align="right">61.72±0.2</td>
+<td align="right">0.0686±0.001</td>
+<td align="right">17.71±0.3</td>
+<td align="right">0.2023±0.005</td>
+</tr>
+<tr>
+<td>KLDM-ε PC</td>
+<td align="right">52.72±0.8</td>
+<td align="right">0.0678±0.002</td>
+<td align="right">65.37±0.1</td>
+<td align="right"><strong>0.0455±0.001</strong></td>
+<td align="right">21.46±0.2</td>
+<td align="right">0.1339±0.002</td>
+</tr>
+<tr>
+<td>KLDM-x₀ EM</td>
+<td align="right">52.44±0.7</td>
+<td align="right">0.0698±0.002</td>
+<td align="right">62.92±0.2</td>
+<td align="right">0.0833±0.002</td>
+<td align="right">21.13±0.2</td>
+<td align="right">0.1800±0.003</td>
+</tr>
+<tr>
+<td><strong>KLDM-x₀ PC</strong></td>
+<td align="right">52.14±0.9</td>
+<td align="right"><strong>0.0647±0.002</strong></td>
+<td align="right"><strong>65.83±0.2</strong></td>
+<td align="right">0.0517±0.001</td>
+<td align="right"><strong>23.93±0.2</strong></td>
+<td align="right">0.1276±0.002</td>
+</tr>
+</tbody></table></div>
+<p>最有说服力的定量证据出现在难数据集，而不是 PEROV-5：KLDM-x₀ PC 相对 FlowMM 在 MPTS-52 MR 上 <strong>+6.39 pp / +36.43%</strong>；相对 EquiCSP 则 <strong>+9.08 pp / +61.14%</strong>。但 RMSE 最优仍是 EquiCSP 的 0.1169，KLDM-x₀ PC 为 0.1276，差 <strong>9.15%</strong>。这说明 KLDM 更容易“命中更多样本”，却未让已命中的坐标误差达到最低。</p>
+<h4>@20：多候选覆盖</h4>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">方法</th>
+<th scope="col" align="right">PEROV-5 MR↑</th>
+<th scope="col" align="right">PEROV-5 RMSE↓</th>
+<th scope="col" align="right">MP-20 MR↑</th>
+<th scope="col" align="right">MP-20 RMSE↓</th>
+<th scope="col" align="right">MPTS-52 MR↑</th>
+<th scope="col" align="right">MPTS-52 RMSE↓</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>CDVAE</td>
+<td align="right">88.51</td>
+<td align="right">0.0464</td>
+<td align="right">66.95</td>
+<td align="right">0.1026</td>
+<td align="right">20.79</td>
+<td align="right">0.2085</td>
+</tr>
+<tr>
+<td>DiffCSP-PC</td>
+<td align="right">98.60</td>
+<td align="right"><strong>0.0128</strong></td>
+<td align="right">77.93</td>
+<td align="right">0.0492</td>
+<td align="right">34.02</td>
+<td align="right">0.1749</td>
+</tr>
+<tr>
+<td>FlowMM</td>
+<td align="right">98.60</td>
+<td align="right">0.0328</td>
+<td align="right">75.81</td>
+<td align="right">0.0479</td>
+<td align="right">34.05</td>
+<td align="right">0.1813</td>
+</tr>
+<tr>
+<td>KLDM-ε EM</td>
+<td align="right"><strong>99.97</strong></td>
+<td align="right">0.0152</td>
+<td align="right"><strong>83.68</strong></td>
+<td align="right">0.0532</td>
+<td align="right">39.04</td>
+<td align="right">0.1865</td>
+</tr>
+<tr>
+<td>KLDM-ε PC</td>
+<td align="right">99.94</td>
+<td align="right">0.0226</td>
+<td align="right">81.08</td>
+<td align="right"><strong>0.0440</strong></td>
+<td align="right"><strong>39.81</strong></td>
+<td align="right">0.1462</td>
+</tr>
+<tr>
+<td>KLDM-x₀ EM</td>
+<td align="right">99.89</td>
+<td align="right">0.0186</td>
+<td align="right">82.94</td>
+<td align="right">0.0575</td>
+<td align="right">37.77</td>
+<td align="right">0.1673</td>
+</tr>
+<tr>
+<td>KLDM-x₀ PC</td>
+<td align="right">99.92</td>
+<td align="right">0.0255</td>
+<td align="right">80.18</td>
+<td align="right">0.0453</td>
+<td align="right">37.10</td>
+<td align="right"><strong>0.1394</strong></td>
+</tr>
+</tbody></table></div>
+<p>@20 揭示参数化与采样器的交互：单样本最强的 x₀-PC 并非覆盖率最强；MPTS-52 上 ε-PC 为 39.81，x₀-PC 为 37.10，后者低 <strong>2.71 pp / 6.81%</strong>。因此不能把“简化 score 全面更优”外推到所有预算；它主要改善 @1 和匹配后的 RMSE，而候选集多样性可能下降。</p>
+<h3>2.6 DNG：稳定性提升与 SUN 回落同时存在</h3>
+<p>论文表 2（PDF 第 8 页）用 MatterSim 松弛评估每个 KLDM 变体的 10,000 个样本，三次采样。星号基线在重优化、过滤后的 MP-20 上训练，KLDM 却用原始未过滤 MP-20；这不是严格同数据对比。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">方法</th>
+<th scope="col" align="right">RMSD Å↓</th>
+<th scope="col" align="right">Above hull eV/atom↓</th>
+<th scope="col" align="right">Stable %↑</th>
+<th scope="col" align="right">SUN %↑</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>MatterGen-MP*</td>
+<td align="right"><strong>0.147</strong></td>
+<td align="right">0.201</td>
+<td align="right">47.05</td>
+<td align="right"><strong>25.76</strong></td>
+</tr>
+<tr>
+<td>DiffCSP*</td>
+<td align="right">0.413</td>
+<td align="right">0.189</td>
+<td align="right">41.25</td>
+<td align="right">20.13</td>
+</tr>
+<tr>
+<td>KLDM-x₀ C</td>
+<td align="right">0.371±0.01</td>
+<td align="right">0.269±0.01</td>
+<td align="right">38.62±0.1</td>
+<td align="right">16.67±0.1</td>
+</tr>
+<tr>
+<td>KLDM-x₀ C-AB</td>
+<td align="right">0.296±0.01</td>
+<td align="right">0.187±0.01</td>
+<td align="right">49.84±0.1</td>
+<td align="right">17.91±0.1</td>
+</tr>
+<tr>
+<td><strong>KLDM-x₀ D</strong></td>
+<td align="right">0.283±0.01</td>
+<td align="right"><strong>0.155±0.01</strong></td>
+<td align="right"><strong>59.21±0.1</strong></td>
+<td align="right">18.52±0.1</td>
+</tr>
+</tbody></table></div>
+<p>KLDM-D 相对 MatterGen 把 stable 从 47.05 提至 59.21，<strong>+12.16 pp / +25.84%</strong>，above-hull 从 0.201 降至 0.155，<strong>下降 22.89%</strong>；但 RMSD 从 0.147 增至 0.283，<strong>恶化 92.52%</strong>，SUN 从 25.76 降至 18.52，<strong>-7.24 pp / -28.11%</strong>。最关键的科学结论因此不是“KLDM 生成最好材料”，而是：<strong>离散元素扩散显著提高代理势能判定的稳定率，却没有同步解决新颖性、唯一性和几何松弛距离。</strong></p>
+<h3>2.7 多层消融、敏感性与相变</h3>
+<p>附录表 3（PDF 第 21 页）给出 direct 与 simplified score 的严格对比：</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">参数化 / 采样</th>
+<th scope="col" align="right">MP-20 MR↑</th>
+<th scope="col" align="right">MP-20 RMSE↓</th>
+<th scope="col" align="right">MPTS-52 MR↑</th>
+<th scope="col" align="right">MPTS-52 RMSE↓</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Direct EM</td>
+<td align="right">56.25±0.4</td>
+<td align="right">0.1071±0.001</td>
+<td align="right">11.55±0.2</td>
+<td align="right">0.2535±0.004</td>
+</tr>
+<tr>
+<td>Direct PC</td>
+<td align="right">63.29±0.2</td>
+<td align="right">0.0591±0.002</td>
+<td align="right">15.85±0.2</td>
+<td align="right">0.1666±0.004</td>
+</tr>
+<tr>
+<td>Simplified EM</td>
+<td align="right">61.72±0.2</td>
+<td align="right">0.0686±0.001</td>
+<td align="right">17.71±0.3</td>
+<td align="right">0.2023±0.005</td>
+</tr>
+<tr>
+<td>Simplified PC</td>
+<td align="right"><strong>65.37±0.1</strong></td>
+<td align="right"><strong>0.0455±0.001</strong></td>
+<td align="right"><strong>21.46±0.2</strong></td>
+<td align="right"><strong>0.1339±0.002</strong></td>
+</tr>
+</tbody></table></div>
+<p>在 PC 下，simplified 相对 direct：MP-20 MR <strong>+2.08 pp / +3.29%</strong>、RMSE <strong>下降 23.01%</strong>；MPTS-52 MR <strong>+5.61 pp / +35.39%</strong>、RMSE <strong>下降 19.63%</strong>。难度越高，简化参数化的 MR 收益越大，这支持“减少 score 学习负担比堆更复杂网络更关键”。</p>
+<p>图 1（正文第 9 页）使用 6 个训练种子，比较初始速度方差 (0,0.1,0.5,1)、是否 zero-net velocity 与两种 score。图只给曲线及均值±标准误，未给每个点的精确数字，因此本报告不从图像猜读数值。能够审慎推出的是：零速度明显优于非零方差，simplified 明显优于 direct，zero-net 仅边际改善。<strong>相变信号</strong>在 (\mathrm{Var}(v_0)=0) 与任何正方差之间，而论文没有更密的 ([0,0.1]) 扫描，无法判断是连续陡降还是理论上的真正突变。</p>
+<p>论文还<strong>未报告</strong> (\gamma)、(T)、PC corrector 步数、网络宽度和采样步数的系统敏感性曲线；也未给 accuracy–NFE 或 wall-clock Pareto 前沿。因此可以确认参数化敏感，却不能确认 KLDM 对动力学超参鲁棒。</p>
+<h3>2.8 统计显著性</h3>
+<p>主表中 KLDM 的 CSP 与 DNG 多数结果是 3 个采样种子的均值±标准误，图 1 是 6 个训练种子；这是比只报单点更好的证据。以 MPTS-52 @1 为例，x₀-PC 23.93±0.2 与 ε-PC 21.46±0.2 相差 2.47 pp，约为单侧标准误的 12 倍；但论文没有给原始样本、置信区间，也未执行配对检验。基线只报单点，无法做公平显著性比较。DNG 的 10,000 样本很多，但三次运行并不等于材料候选独立同分布；标准误很小不能替代化学有效性验证。</p>
+<h3>2.9 真正贡献、可复用设计与迁移潜力</h3>
+<p>KLDM 真正的贡献不是“又一个晶体扩散模型”，而是给出一种通用设计原则：<strong>当数据落在李群/环面而 score 难学时，可保留群上的位置动力学，把随机性与学习任务搬到固定李代数速度空间。</strong> 这比特定 EGNN 更可迁移。蛋白/RNA 扭转角、周期分子动力学、机器人关节角和相位数据都具有环面结构；TDM 已在更一般李群上证明该思想，KLDM 则补上晶体的周期平移、晶格和离散元素多模态耦合。</p>
+<p>可单独复用的模块包括：零初始速度导出的 simplified score、对网络输出做 zero-net 投影、连续结构与离散类型分开选扩散过程、同时报告 @1 与 @20 防止把精度误当覆盖、以及把 stable 与 SUN 并列以暴露“稳定但重复/不新颖”的失败。尤其是最后一项评测习惯，比单报稳定率更有科研价值。</p>
+</section>
+<figure class="figure" aria-labelledby="figure-dng-title">
+  <p class="fig-title" id="figure-dng-title">稳定率上升，不等于可发现样本（SUN）同步上升</p>
+  <p class="fig-sub">MP-20 de-novo generation；同一 0–60% 单 Y 轴。完整 RMSD 与 above-hull 数值见正文表 2。</p>
+  <div class="legend" aria-label="图例"><span><span class="swatch" style="background:var(--chart-primary)"></span>Stable %</span><span><span class="swatch" style="background:var(--chart-comparison)"></span>SUN %</span></div>
+  <svg class="chart" viewBox="0 0 900 345" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>五种材料生成方法的 Stable 与 SUN 百分比</title>
+    <desc>KLDM-D 稳定率最高 59.21%，但 SUN 18.52%，低于 MatterGen 的 25.76%。</desc>
+    <line x1="65" y1="285" x2="860" y2="285" stroke="var(--grid)" stroke-width="2"/>
+    <line x1="65" y1="69" x2="65" y2="285" stroke="var(--grid)" stroke-width="2"/>
+    <line x1="65" y1="177" x2="860" y2="177" stroke="var(--grid)" stroke-width="1"/>
+    <text x="24" y="290" fill="var(--muted)" font-size="13">0%</text>
+    <text x="18" y="182" fill="var(--muted)" font-size="13">30%</text>
+    <text x="18" y="74" fill="var(--muted)" font-size="13">60%</text>
+    <rect x="95" y="115.62" width="48" height="169.38" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="MatterGen · Stable: 47.05%"><title>MatterGen · Stable: 47.05%</title></rect><rect x="147" y="192.264" width="48" height="92.736" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="MatterGen · SUN: 25.76%"><title>MatterGen · SUN: 25.76%</title></rect><text x="145" y="310" text-anchor="middle" fill="var(--text-secondary)" font-size="12">MatterGen</text><rect x="250" y="136.5" width="48" height="148.5" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="DiffCSP · Stable: 41.25%"><title>DiffCSP · Stable: 41.25%</title></rect><rect x="302" y="212.53199999999998" width="48" height="72.468" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="DiffCSP · SUN: 20.13%"><title>DiffCSP · SUN: 20.13%</title></rect><text x="300" y="310" text-anchor="middle" fill="var(--text-secondary)" font-size="12">DiffCSP</text><rect x="405" y="145.96800000000002" width="48" height="139.03199999999998" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="KLDM-C · Stable: 38.62%"><title>KLDM-C · Stable: 38.62%</title></rect><rect x="457" y="224.988" width="48" height="60.01200000000001" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="KLDM-C · SUN: 16.67%"><title>KLDM-C · SUN: 16.67%</title></rect><text x="455" y="310" text-anchor="middle" fill="var(--text-secondary)" font-size="12">KLDM-C</text><rect x="560" y="105.576" width="48" height="179.424" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="KLDM-C-AB · Stable: 49.84%"><title>KLDM-C-AB · Stable: 49.84%</title></rect><rect x="612" y="220.524" width="48" height="64.476" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="KLDM-C-AB · SUN: 17.91%"><title>KLDM-C-AB · SUN: 17.91%</title></rect><text x="610" y="310" text-anchor="middle" fill="var(--text-secondary)" font-size="12">KLDM-C-AB</text><rect x="715" y="71.844" width="48" height="213.156" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="KLDM-D · Stable: 59.21%"><title>KLDM-D · Stable: 59.21%</title></rect><rect x="767" y="218.328" width="48" height="66.672" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="KLDM-D · SUN: 18.52%"><title>KLDM-D · SUN: 18.52%</title></rect><text x="765" y="310" text-anchor="middle" fill="var(--text-secondary)" font-size="12">KLDM-D</text>
+  </svg>
+  <figcaption>来源：KLDM 表 2（PDF p.8）。KLDM 为 10,000 样本、3 次采样的均值。</figcaption>
+</figure><section class="card" aria-labelledby="section-4-title"><h2 id="section-4-title">3. 局限性与补充批判</h2>
+<h3>3.1 论文自述限制</h3>
+<ol>
+<li><strong>缺少 DFT 最终验证。</strong> 结论段（正文第 9 页）明确称用 DFT 验证生成材料是自然下一步；当前表 2 依赖 MatterSim 机器学习势能，因此“稳定”是代理模型下的稳定。</li>
+<li><strong>动力学与架构仍可改进。</strong> 结论段提出 alternative velocity noising、对周期性更匹配的 score architecture、模态专属噪声日程；说明 (\gamma=1,T=2) 与现有 EGNN 并非完成态。</li>
+<li><strong>对称性覆盖不完整。</strong> 附录 I.4（PDF 第 29 页）承认没有处理 lattice permutation invariance；正文还把 space group/Wyckoff 信息、目标属性条件生成和 MOF 扩展列为未来工作。</li>
+</ol>
+<h3>3.2 独立批判（证据 → 推论）</h3>
+<ol>
+<li><strong>[实验设计问题] 训练数据不公平。</strong> 因为 MatterGen/DiffCSP 基线用重优化、过滤 MP-20，而 KLDM 用原始未过滤 MP-20（表 2 注释），所以 stable 59.21 对 47.05 的 +12.16 pp 同时混入数据版本效应；不能把全量差值归因于 kinetic lift。</li>
+<li><strong>[指标有效性问题] 稳定率与可发现性背离。</strong> 因为 KLDM-D stable 最高 59.21%，但 SUN 仅 18.52%，低 MatterGen 7.24 pp，所以多数额外“稳定”样本没有同时满足唯一与新颖；稳定率不是材料发现产出的充分替代指标。</li>
+<li><strong>[失手的子任务] 几何松弛距离显著更差。</strong> 因为 KLDM-D RMSD 0.283 Å，几乎是 MatterGen 0.147 Å 的 1.93 倍，所以其初始结构离势能极小值更远；这会增加后续松弛成本，并削弱“高质量直接生成”的主张。</li>
+<li><strong>[论证缺口] 没有等算力效率对比。</strong> 因为代码示例 PC 使用 1,000 步，而论文只说单卡 24GB、未报 GPU-hour、NFE、吞吐或 MatterSim 松弛成本，所以无法判断 +6.39 pp MPTS-52 MR 是否值得额外速度状态与 corrector 成本。</li>
+<li><strong>[指标有效性问题] RMSE 是条件指标。</strong> 因为 RMSE 只在结构匹配成功的样本上计算，而 EquiCSP MPTS-52 RMSE 0.1169、MR 14.85，KLDM-x₀ PC RMSE 0.1276、MR 23.93，所以两者的 RMSE 评估集合不同；不能据 9.15% 差距直接断言 EquiCSP 对同一批样本更准。</li>
+<li><strong>[超参可复现性风险] 相变未被定位。</strong> 因为图 1 只扫初始速度方差 0、0.1、0.5、1，没有 (10^{-4}) 到 (10^{-1}) 的密集区间，所以“零速度是特殊点”有证据，但“为什么”尚未与混合时间或 score 方差定量关联。</li>
+<li><strong>[缺乏关键竞品对比] 对称生成缺口未 head-to-head。</strong> 因为同会 WyckoffDiff 显式生成 Wyckoff/空间群信息，而 KLDM 未纳入空间群条件，表 1/2 也没有相同数据、预算下的 WyckoffDiff 对比，所以无法判断动量抬升与显式晶体对称先验哪一个更重要。</li>
+<li><strong>[可复现性风险] 代码公开但权重与环境证据有限。</strong> 因为仓库可访问且含训练/评估入口与 MP-20 目录，却未找到正式 release 或预训练权重；论文仅报 RTX 3090/A5000，未报驱动、完整运行时与随机种子清单，所以复现实验仍需从头训练。</li>
+</ol>
+</section><section class="card" aria-labelledby="section-5-title"><h2 id="section-5-title">4. 相关工作回溯：问题如何一步步传递</h2>
+<h3>4.1 CDVAE — 2022，ICLR</h3>
+<p><strong>解决了什么。</strong> CDVAE 把周期晶体生成从一般图 VAE 推向带物理归纳偏置的扩散解码器：原子坐标沿类似低能方向去噪，元素类型随邻域键合关系更新，并显式处理周期边界与置换、平移、旋转不变性。它还整理了 Perov-5、Carbon-24、MP-20 数据和评测，成为后续表 1 的共同基线。</p>
+<p><strong>遗留缺口。</strong> 其 VAE 潜变量负责晶格与组成，坐标去噪并未把分数坐标的环面几何作为首要状态空间；重构/生成链条也引入编码瓶颈。KLDM 表 1 中 CDVAE 在 MPTS-52 @1 只有 5.34 MR，显示原子数增大后覆盖不足。</p>
+<p><strong>KLDM 的回应与设计传递。</strong> KLDM 继承多模态拆分与数据/指标体系，但取消 VAE 作为核心坐标生成机制，直接在 ((f,v)) 扩展空间建模；从“周期边界是网络不变性”推进到“周期性决定随机过程本身”。</p>
+<h3>4.2 DiffCSP — 2023，NeurIPS</h3>
+<p><strong>解决了什么。</strong> DiffCSP 用分数坐标而非笛卡尔坐标联合生成晶格与原子位置，并以 periodic-(E(3))-equivariant denoiser 保证关键晶体对称；这是 KLDM 直接复用网络骨架和 CSP 评测协议的来源。</p>
+<p><strong>遗留缺口。</strong> 它直接在环面坐标做 wrapped-normal/Riemannian diffusion，需要学习位置 score；整体周期平移的冗余与坐标 score 参数化仍缠在一起。MPTS-52 @1 MR 12.19、@20 34.02（KLDM 表 1 转录）说明大单胞仍难。</p>
+<p><strong>KLDM 的回应与设计传递。</strong> KLDM 保留 fractional-coordinate 与 EGNN 表示，却把 score 从位置搬到欧氏速度，再用 zero-net velocity 消除整体平移模。于是 DiffCSP 的“表示选对空间”进化为 KLDM 的“扩散过程也选对空间”。</p>
+<h3>4.3 EquiCSP — 2024，ICML</h3>
+<p><strong>解决了什么。</strong> EquiCSP 指出已有扩散在晶格置换和周期平移等变性上不完整，设计始终保持这些对称的 noising algorithm；它证明前向噪声机制必须与网络对称性一致，而不只是末端数据增强。</p>
+<p><strong>遗留缺口。</strong> 等变 noising 仍直接作用于坐标流形，且“约束正确”不自动带来高覆盖：表 1 中 MPTS-52 @1 MR 14.85，虽 RMSE 0.1169 最低，命中率仍有限。</p>
+<p><strong>KLDM 的回应与设计传递。</strong> KLDM 吸收“训练与推理全程保持平移对称”的原则，用均值投影约束速度；但它没有继承 lattice permutation invariance，作者在附录 I.4 明确承认。两者因此是互补关系，不是简单替代。</p>
+<h3>4.4 FlowMM — 2024，ICML</h3>
+<p><strong>解决了什么。</strong> FlowMM 把晶体生成表述为黎曼 flow matching，可自由选择 base distribution，论文还用量子化学验证，并声称寻找稳定材料的积分步数约为既有开放方法的 1/3。它把社区注意力从“唯一的扩散噪声日程”转向“更简单的连续输运路径”。</p>
+<p><strong>遗留缺口。</strong> Flow matching 仍需在晶体乘积流形上构造向量场；表 1 的 MPTS-52 @1 MR 17.54，说明简单路径并未完全解决大单胞覆盖。其优势是积分效率，而 KLDM 没有在相同 NFE 下比较。</p>
+<p><strong>KLDM 的回应与设计传递。</strong> KLDM 没有改用 flow matching，而是用 kinetic lift 简化扩散 score；两者分别代表“简化路径”和“扩展状态”。核心论文超过 FlowMM 的 MPTS-52 MR，却缺失速度对比，因此技术胜负仍未闭合。</p>
+<h3>4.5 TDM — 2025，ICLR</h3>
+<p><strong>解决了什么。</strong> TDM 用 trivialized momentum 把李群上随位置变化的切空间速度改写到固定李代数，并配合保流形积分器，已在蛋白/RNA 扭转角、环面以及 (SO(N),U(N)) 上验证。它是 KLDM 最直接的技术来源。</p>
+<p><strong>遗留缺口。</strong> TDM 面向一般李群数据，不包含晶体的多原子整体平移冗余、晶格连续模态、元素离散模态，也没有 CSP/DNG 的材料评测链。</p>
+<p><strong>KLDM 的回应与设计传递。</strong> KLDM 把 TDM 的辅助动量具体化为每个原子的周期速度，加入 zero-net 投影，并联合晶格与三种元素扩散。最关键的传递不是照搬 SDE，而是发现晶体任务中 (v_0=0) 可导出更简洁、经验上更强的 score。</p>
+</section><section class="card" aria-labelledby="section-6-title"><h2 id="section-6-title">5. 技术演进脉络</h2>
+<pre><code class="language-text">2022 CDVAE [周期边界 + 扩散解码 + 共同数据/指标]
+       │
+       ├── 2023 DiffCSP [分数坐标 + joint equivariant diffusion]
+       │          │
+       │          ├── 2024 EquiCSP [补齐晶格置换/周期平移等变]
+       │          │
+       │          └── 2024 FlowMM [从 score diffusion 改为 Riemannian flow]
+       │
+2024→2025 TDM [李群位置 + 固定李代数动量 + 保流形积分]
+       │
+       └──────────────────────────────┐
+                                      ↓
+2025 KLDM [晶体环面位置 + 欧氏速度 + zero-net 投影
+           + 晶格扩散 + 连续/离散元素扩散 + CSP/DNG]
+</code></pre>
+<p>内在推动力是从“让网络看见周期性”走向“让整个随机过程尊重周期性”，再走向“用辅助变量改变学习问题的几何”。第一个转折是 DiffCSP 的 fractional coordinate：不再让笛卡尔坐标承担单胞选择；第二个是 EquiCSP，指出前向噪声也必须等变；第三个分叉中，FlowMM 简化输运目标，TDM/KLDM 则扩展状态空间。社区关注点也从 validity/coverage 转向 MatterSim/DFT 稳定性与 SUN，但 KLDM 的 stable–SUN 背离说明评测尚未收敛。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">工作</th>
+<th scope="col">发表年月</th>
+<th scope="col">会议</th>
+<th scope="col">核心贡献</th>
+<th scope="col">本报告可对齐的代表指标</th>
+<th scope="col">与 KLDM 的关系</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>CDVAE</td>
+<td class="num">2022.04</td>
+<td>ICLR</td>
+<td>周期材料的 VAE+扩散解码</td>
+<td>MPTS-52 @1 MR 5.34</td>
+<td>数据、指标与多模态起点</td>
+</tr>
+<tr>
+<td>DiffCSP</td>
+<td class="num">2023.12</td>
+<td>NeurIPS</td>
+<td>分数坐标 joint equivariant diffusion</td>
+<td>MPTS-52 @1 MR 12.19</td>
+<td>网络骨架与直接问题来源</td>
+</tr>
+<tr>
+<td>EquiCSP</td>
+<td class="num">2024.07</td>
+<td>ICML</td>
+<td>晶格置换、周期平移等变 noising</td>
+<td>MPTS-52 RMSE 0.1169</td>
+<td>对称性补丁，KLDM 未全继承</td>
+</tr>
+<tr>
+<td>FlowMM</td>
+<td class="num">2024.07</td>
+<td>ICML</td>
+<td>晶体黎曼 flow matching</td>
+<td>MPTS-52 @1 MR 17.54</td>
+<td>简化路径的平行路线</td>
+</tr>
+<tr>
+<td>TDM</td>
+<td class="num">2025.04</td>
+<td>ICLR</td>
+<td>李群上的 trivialized momentum</td>
+<td>论文任务不同，不硬拼数值</td>
+<td>KLDM 的动力学技术源头</td>
+</tr>
+<tr>
+<td><strong>KLDM</strong></td>
+<td><strong>2025.07</strong></td>
+<td><strong>ICML</strong></td>
+<td><strong>环面位置抬升到欧氏速度扩散</strong></td>
+<td><strong>MPTS-52 @1 MR 23.93</strong></td>
+<td><strong>几何与材料多模态的汇聚点</strong></td>
+</tr>
+</tbody></table></div>
+</section><section class="card" aria-labelledby="section-7-title"><h2 id="section-7-title">6. 开放挑战与可操作研究机会</h2>
+<h3>6.1 理论层面</h3>
+<ol>
+<li><strong>零速度“相变”定位。</strong> 固定网络和训练预算，在 (\mathrm{Var}(v_0)\in{0,10^{-5},10^{-4},10^{-3},10^{-2},10^{-1}}) 做 head-to-head，报告 score 方差、混合时间、MR 与 RMSE；检验零点优势来自解析参数化还是动力学退化。</li>
+<li><strong>扩展状态与直接流形 score 的样本复杂度。</strong> 在合成 (\mathbb T^d) 上令 (d=6,30,60,156)，比较 KLDM 与 wrapped-normal score 在相同参数量、相同函数评估次数下的误差上界和实测斜率。</li>
+<li><strong>对称投影的完整化。</strong> 将 zero-net velocity 与 EquiCSP 的 lattice permutation equivariance 组合，做四格消融：都无、仅速度投影、仅晶格置换、两者兼有；这直接补论文附录 I.4 的缺口。</li>
+</ol>
+<h3>6.2 工程与应用层</h3>
+<ol>
+<li><strong>等预算 KLDM vs FlowMM。</strong> 在同一 MP-20/MPTS-52 split、同一 EGNN、相同 NFE、GPU-hour 和峰值显存下画 MR–时间、SUN–时间 Pareto 曲线；这是判定 kinetic lift 是否优于 flow matching 的关键缺失实验。</li>
+<li><strong>MatterSim 到 DFT 的校准。</strong> 对每种方法随机抽取至少 500 个 MatterSim stable 样本做 DFT relaxation，报告 precision、能量排序 Spearman 相关与 false-stable rate；否则 59.21% 只是代理模型内的数字。</li>
+<li><strong>采样器与覆盖率。</strong> 在 @1/@5/@10/@20/@50 上对 EM、PC 以及不同 corrector 次数进行对比，同时报告 pairwise structure diversity，验证 x₀-PC 在 @20 的回落是否来自模式收缩。</li>
+<li><strong>可复现实验包。</strong> 发布固定容器、四数据集 hash、三/六种子 checkpoint 与训练日志；以公开权重推理结果和从头训练结果分别验收，降低“代码存在但不可复算表 1”的风险。</li>
+</ol>
+<h3>6.3 新兴方向</h3>
+<ol>
+<li><strong>显式空间群条件。</strong> 在相同 MP 数据和 MatterSim/DFT 流程下比较 KLDM、WyckoffDiff 与“KLDM+Wyckoff conditioning”，按 230 个空间群分层报告 validity、stable、SUN，观察动量机制是否能与符号对称先验叠加。</li>
+<li><strong>属性条件生成。</strong> 加入带隙、体积模量或磁性条件，比较 classifier-free guidance 与 reward guidance；用条件命中率、DFT 误差、SUN 三维 Pareto，而不是只报某个属性均值。</li>
+<li><strong>更大周期系统与缺陷。</strong> 从最多 52 原子扩至 MOF、表面和含空位/掺杂超胞，在相同原子数分桶下测试内存、NFE 与结构有效率，以确认环面维度扩张时收益是否继续增大。</li>
+</ol>
+</section><section class="card" aria-labelledby="section-8-title"><h2 id="section-8-title">7. 其他值得关注的近期工作</h2>
+<ol>
+<li><strong><a href="https://proceedings.mlr.press/v267/ekstrom-kelvinius25a.html">WyckoffDiff</a></strong>（ICML 2025）：显式把 Wyckoff 位置和晶体对称纳入生成，是 KLDM 未覆盖空间群先验的最直接 head-to-head 候选。</li>
+<li><strong><a href="https://proceedings.mlr.press/v267/cao25b.html">Efficient Molecular Conformer Generation with SO(3)-Averaged Flow Matching and Reflow</a></strong>（ICML 2025）：用群平均与 reflow 追求等变性和更短采样路径，可与 KLDM 的“扩状态”路线对照。</li>
+<li><strong><a href="https://proceedings.mlr.press/v267/ding25a.html">Scalable Non-Equivariant 3D Molecule Generation via Rotational Alignment</a></strong>（ICML 2025）：挑战“高性能 3D 生成必须全程等变”的默认假设，值得在参数/吞吐等预算下检验。</li>
+<li><strong><a href="https://proceedings.mlr.press/v267/bohde25a.html">DiffMS</a></strong>（ICML 2025）：将质谱条件映射到分子生成，代表实验观测条件约束比无条件分子先验更重要的方向。</li>
+<li><strong><a href="https://proceedings.mlr.press/v267/eckmann25a.html">MF-LAL</a></strong>（ICML 2025）：用多保真主动学习把昂贵实验/模拟反馈接入药物潜空间搜索，适合借鉴到 DFT-in-the-loop 晶体生成。</li>
+<li><strong><a href="https://proceedings.mlr.press/v267/chen25cp.html">OmniArch</a></strong>（ICML 2025）：以统一架构覆盖科学计算任务，值得关注其通用性与专门几何归纳偏置之间的边界。</li>
+<li><strong><a href="https://proceedings.mlr.press/v267/donhauser25a.html">Towards scientific discovery with dictionary learning</a></strong>（ICML 2025）：从显微基础模型抽取可解释生物概念，连接表示学习、机制解释与自动发现。</li>
+</ol>
+</section><section class="card" aria-labelledby="section-9-title"><h2 id="section-9-title">8. 结论</h2>
+<p>KLDM 最重要的启示是：材料生成的几何难题未必只能靠更复杂的等变网络解决，改变扩散状态——用欧氏速度承载噪声——也能显著减轻 score 学习。在 MPTS-52 上，单候选 MR 从 FlowMM 的 17.54 提至 23.93，是全文最强的几何建模证据；离散元素扩散又把 MatterSim stable 推到 59.21%。但后者伴随 SUN 低于 MatterGen 7.24 pp、RMSD 接近其 1.93 倍，加上训练数据版本不一致和缺少 DFT，意味着“更稳定”还不能等价为“发现更多可合成的新材料”。</p>
+<hr>
+<h3>核验与坦诚性说明</h3>
+<ul>
+<li>所有表格数字均转录自 KLDM 会议论文表 1–6 或由这些数字直接复算；派生百分比保留两位小数。</li>
+<li>OpenReview 页面在自动访问时触发浏览器验证；其 URL 由 PMLR Related Material 或论文/代码明确给出，未把无法读取的评审内容用于论证。</li>
+<li>未找到 KLDM 预训练权重、独立项目页或视频；未对图 1 曲线做像素猜数。</li>
+<li>本报告无法实际运行 KLDM 的完整训练与 DFT 松弛，复现性判断基于论文与公开仓库可见内容。</li>
+<li>HTML 已通过 Warm Editorial 结构与离线依赖验证（0 warnings）；运行环境未提供 <code>/usr/bin/chromium</code>、<code>/opt/pw-browsers</code> 浏览器二进制，因此无法完成 Playwright 的浅色、深色、移动端截图实渲染，未把静态校验冒充视觉验收。</li>
+<li>去重索引已在本次产出后更新。</li>
+</ul>
+</section></main>
+
+  <footer>核心来源：KLDM，ICML 2025 / PMLR 267。生成日期：2026-08-23。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

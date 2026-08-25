@@ -1,0 +1,1265 @@
+---
+layout: null
+title: "Alignment Potential"
+date: 2026-08-24
+topic: rl-peft
+excerpt: "解析 Alignment Potential 如何依据奖励模型与当前策略之间的教师—学生差距，为 LLM 对齐选择更有价值的偏好数据。"
+permalink: /blog/2026/08/24/alignment-potential-preference-data-selection/
+blog_post: true
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Alignment Potential 深度报告 · 2026-08-24</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #246fca;
+    --chart-comparison: #c95224;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  .card > h2:first-child { margin-top: 0; }
+  .card h3 { margin-top: 1.65em; }
+  .card blockquote { margin: 1rem 0; padding: .8rem 1rem; border-left: 4px solid var(--chart-comparison); background: var(--surface-2); }
+  .card pre { overflow-x: auto; padding: 16px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); }
+  .card code { overflow-wrap: anywhere; }
+  .card .math { overflow-x: auto; display: block; padding: 8px 0; }
+  .card ul, .card ol { padding-left: 1.4rem; }
+  .card li { margin: .45rem 0; }
+  .card table { min-width: 680px; }
+  .card p, .card li { text-align: justify; }
+  @media (max-width:640px){.card p,.card li{text-align:left}.hero{padding-top:56px}.toolbar{right:16px}.chart{min-width:700px}.figure{overflow-x:auto}}
+</style></head><body><div class="wrap">
+<div class="toolbar"><button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button></div>
+<header class="hero"><p class="eyebrow">ICML 2025 · LLM POST-TRAINING</p><h1>Alignment Potential：偏好数据价值取决于教师—学生差距</h1><p class="subtitle">Larger or Smaller Reward Margins to Select Preferences for LLM Alignment?</p><div class="meta"><span class="chip source">PMLR 267</span><span class="chip">2026-08-24</span><span class="chip">偏好数据选择</span></div><p class="lede">不是选奖励差最大或模型最犹豫的样本，而是选“奖励模型确信、当前策略尚未掌握”的样本。</p></header>
+<main><section class="card" aria-label="报告元信息">
+<blockquote>
+<p><strong>今日领域：LLM / NLP——post-training
+与偏好数据选择</strong><br />
+<strong>核心论文：Kexin Huang et al., “Larger or Smaller Reward Margins
+to Select Preferences for LLM Alignment?”, ICML 2025</strong><br />
+<strong>一句话定位：不是在“大显式奖励间隔”与“小策略间隔”之间二选一，而是用两者之差寻找“奖励模型确信、当前策略尚未学会”的偏好对。</strong></p>
+</blockquote>
+</section>
+<figure class="figure" aria-labelledby="figure-main-title">
+  <p class="fig-title" id="figure-main-title">40% 数据预算：随机抽样与 Alignment Potential</p>
+  <p class="fig-sub">六个模型×指标单元均提升；数值来自论文表 6，单位为胜率百分点。</p>
+  <div class="legend" aria-label="图例"><span><span class="swatch" style="background:#2a78d6"></span>Uniform</span><span><span class="swatch" style="background:#eb6834"></span>M_AP</span></div>
+  <svg class="chart" viewBox="0 0 900 400" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>Uniform 与 M_AP 在六个评测单元的对比</title><desc>M_AP 在 Llama 和 Gemma 的 AlpacaEval 2 与 Arena-Hard 指标上均高于随机抽样。</desc>
+    <g stroke="currentColor" opacity=".18"><line x1="92" y1="320" x2="870" y2="320"/><line x1="92" y1="245" x2="870" y2="245"/><line x1="92" y1="170" x2="870" y2="170"/><line x1="92" y1="95" x2="870" y2="95"/></g>
+    <g font-size="12"><text x="55" y="324">0</text><text x="45" y="249">25</text><text x="45" y="174">50</text><text x="45" y="99">75</text></g>
+    <g fill="#2a78d6">
+      <rect x="115" y="195.2" width="34" height="124.8" tabindex="0" data-tip="Llama AE2 LC · Uniform: 41.61"/><rect x="235" y="211.2" width="34" height="108.8" tabindex="0" data-tip="Llama AE2 WR · Uniform: 36.26"/><rect x="355" y="230.3" width="34" height="89.7" tabindex="0" data-tip="Llama Arena-Hard · Uniform: 29.9"/><rect x="475" y="116.2" width="34" height="203.8" tabindex="0" data-tip="Gemma AE2 LC · Uniform: 67.95"/><rect x="595" y="135.8" width="34" height="184.2" tabindex="0" data-tip="Gemma AE2 WR · Uniform: 61.40"/><rect x="715" y="152.9" width="34" height="167.1" tabindex="0" data-tip="Gemma Arena-Hard · Uniform: 55.7"/>
+    </g><g fill="#eb6834">
+      <rect x="151" y="176.5" width="34" height="143.5" tabindex="0" data-tip="Llama AE2 LC · M_AP: 47.83"/><rect x="271" y="184.6" width="34" height="135.4" tabindex="0" data-tip="Llama AE2 WR · M_AP: 45.14"/><rect x="391" y="216.2" width="34" height="103.8" tabindex="0" data-tip="Llama Arena-Hard · M_AP: 34.6"/><rect x="511" y="108.7" width="34" height="211.3" tabindex="0" data-tip="Gemma AE2 LC · M_AP: 70.45"/><rect x="631" y="108.7" width="34" height="211.3" tabindex="0" data-tip="Gemma AE2 WR · M_AP: 70.45"/><rect x="751" y="131.6" width="34" height="188.4" tabindex="0" data-tip="Gemma Arena-Hard · M_AP: 62.8"/>
+    </g>
+    <g font-size="11" text-anchor="middle"><text x="150" y="345">Llama LC</text><text x="270" y="345">Llama WR</text><text x="390" y="345">Llama AH</text><text x="510" y="345">Gemma LC</text><text x="630" y="345">Gemma WR</text><text x="750" y="345">Gemma AH</text></g>
+  </svg><figcaption>来源：核心论文表 6。单 Y 轴，范围 0–75；悬停或键盘聚焦柱体显示精确值。</figcaption>
+</figure><section class="card" aria-label="0. 链接验证表"><h2 id="链接验证表">0. 链接验证表</h2>
+<p>以下链接均在本次撰写时实际访问；“未公开/未找到”表示论文或官方页面未给出可核实入口，而不是断言资源绝不存在。</p>
+<table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">论文</th>
+<th scope="col">会议主页 / ACL</th>
+<th scope="col">arXiv（核验版本）</th>
+<th scope="col">Code</th>
+<th scope="col">数据 / 权重</th>
+<th scope="col">项目页 / 视频</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Larger or Smaller Reward Margins…（核心）</strong></td>
+<td><a href="https://proceedings.mlr.press/v267/huang25al.html">ICML
+2025 / PMLR 267</a></td>
+<td><a
+href="https://arxiv.org/abs/2503.01864">2503.01864v1</a>，2025-02-25</td>
+<td><a
+href="https://github.com/Hesse73/Alignment-Potential-Metric">Alignment-Potential-Metric</a></td>
+<td>仓库提供处理/选择脚本；独立权重未公开</td>
+<td><a
+href="https://openreview.net/forum?id=ncTwQagrj8">OpenReview</a>；视频未找到</td>
+</tr>
+<tr class="even">
+<td>Direct Preference Optimization（DPO）</td>
+<td><a
+href="https://proceedings.neurips.cc/paper_files/paper/2023/hash/a85b405ed65c6477a4fe8302b5e06ce7-Abstract-Conference.html">NeurIPS
+2023</a></td>
+<td><a
+href="https://arxiv.org/abs/2305.18290">2305.18290v3</a>，2024-07-29</td>
+<td><a
+href="https://github.com/eric-mitchell/direct-preference-optimization">参考实现</a></td>
+<td>仓库内配置；统一权重页未找到</td>
+<td>项目页 / 视频未找到</td>
+</tr>
+<tr class="odd">
+<td>Not All Preference Pairs Are Created Equal</td>
+<td><a href="https://aclanthology.org/2024.findings-emnlp.382/">Findings
+EMNLP 2024</a></td>
+<td><a
+href="https://arxiv.org/abs/2406.17312">2406.17312v2</a>，2024-10-11</td>
+<td>未找到官方仓库</td>
+<td>未公开</td>
+<td>项目页 / 视频未找到</td>
+</tr>
+<tr class="even">
+<td>SimPO</td>
+<td><a
+href="https://proceedings.neurips.cc/paper_files/paper/2024/hash/e099c1c9699814af0be873a175361713-Abstract-Conference.html">NeurIPS
+2024</a></td>
+<td><a
+href="https://arxiv.org/abs/2405.14734">2405.14734v3</a>，2024-11-01</td>
+<td><a
+href="https://github.com/princeton-nlp/SimPO">princeton-nlp/SimPO</a></td>
+<td><a href="https://huggingface.co/princeton-nlp">模型集合</a></td>
+<td>项目页 / 视频未找到</td>
+</tr>
+<tr class="odd">
+<td>Evolving Alignment via Asymmetric Self-Play（EVA）</td>
+<td><a
+href="https://openreview.net/forum?id=TMYe4rUuTc">OpenReview</a>（ICML
+2025）</td>
+<td><a
+href="https://arxiv.org/abs/2411.00062">2411.00062v3</a>，2025-04-09</td>
+<td>未找到独立官方仓库</td>
+<td>未公开</td>
+<td><a
+href="https://hazelye-bot.github.io/">作者主页条目</a>；视频未找到</td>
+</tr>
+</tbody>
+</table>
+<p><strong>版本说明。</strong> 核心论文的 arXiv 目前只有 v1；会议定稿以
+PMLR PDF 为准。OpenReview
+页面偶尔触发浏览器挑战，因此会议归属与页码以可直接访问的 PMLR
+页面为主。</p>
+</section><section class="card" aria-label="0.1 去重、候选池与随机选择记录"><h2 id="去重候选池与随机选择记录">0.1 去重、候选池与随机选择记录</h2>
+<p>运行日为星期一，领域固定为 LLM/NLP。检索前读取
+<code>ml-report-index.md</code>：最近 14 天已经覆盖扩散 LLM 的 test-time
+scaling（HEX）、KV cache
+压缩（DuoAttention）等主题，因此排除同一具体论文及高度重叠主题。本次候选池综合
+ICML 2025 PMLR、NeurIPS proceedings、ACL Anthology、OpenReview 与
+arXiv，保留最近 24 个月内、正文和实验材料足以深读的 20 篇工作：</p>
+<table>
+<colgroup>
+<col style="width: 40%" />
+<col style="width: 30%" />
+<col style="width: 30%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">#</th>
+<th scope="col">候选工作</th>
+<th scope="col">方向 / 出版</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td>Scaling LLM Test-Time Compute Optimally</td>
+<td>test-time scaling，ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td>RaLU: LLM Unlearning via Reinforcement Learning</td>
+<td>unlearning，ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td>Test-Time Learning for LLMs</td>
+<td>test-time adaptation，ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td>AMPO</td>
+<td>preference optimization，ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;"><strong>5</strong></td>
+<td><strong>Larger or Smaller Reward Margins…</strong></td>
+<td><strong>偏好数据选择，ICML 2025</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td>POROver</td>
+<td>post-training，ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td>Just Enough Shifts</td>
+<td>alignment data，ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">8</td>
+<td>Correlated Errors in LLM Evaluation</td>
+<td>evaluation，ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td>RBench</td>
+<td>reward model benchmark，ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td>LongRoPE2</td>
+<td>long context，ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td>Active Reward Modeling</td>
+<td>active preference labeling，ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">12</td>
+<td>AlphaPO</td>
+<td>preference optimization，ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td>From RAG to Memory</td>
+<td>memory，ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td>Explicit Preference Optimization</td>
+<td>preference optimization，ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td>Data Mixing Optimization</td>
+<td>post-training data，ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">16</td>
+<td>ROPO</td>
+<td>robust preference optimization，ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td>Token Cleaning</td>
+<td>data quality，ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td>Self-Consistency Preference Optimization</td>
+<td>preference optimization，ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">19</td>
+<td>Tokenized Bandit</td>
+<td>bandit / LLM，ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">20</td>
+<td>RLTHF</td>
+<td>human feedback，ICML 2025</td>
+</tr>
+</tbody>
+</table>
+<p>执行 <code>shuf -i 1-20 -n 1</code> 得到
+<strong>5</strong>，即本期核心论文。全文、附录、代码和评测表均可访问，因此<strong>重抽
+0 次</strong>。</p>
+</section><section class="card" aria-label="1. 核心论文深度解析"><h2 id="核心论文深度解析">1. 核心论文深度解析</h2>
+<h3 id="motivation偏好对的价值不是标签置信度一个维度">1.1
+Motivation：偏好对的价值不是“标签置信度”一个维度</h3>
+<p>偏好优化数据通常写成三元组 ((x,y_w,y_l))：同一提示 (x)
+下，奖励模型或人类认为 (y_w) 优于
+(y_l)。问题在于，训练预算有限时应该选哪些三元组。已有实践给出两个看似冲突的答案：一类方法选奖励差大的
+pair，因为标签更清楚、噪声更小；另一类主动学习方法选当前策略难以区分、隐式奖励差小的
+pair，因为它们更有信息量。</p>
+<p>论文的新颖处不是再提出第三种启发式，而是指出这两类信号描述不同对象：显式奖励间隔
+(M_r) 近似“外部监督认为差异有多大”，隐式奖励间隔 (M_)
+近似“当前策略已经把差异学到多少”。如果 (M_r) 大而 (M_)
+小，那么外部教师确信、学生却尚未掌握，才是高潜力样本；如果两者都大，模型可能已经学会；如果两者都小，监督本身也不明确；若显式间隔小而策略间隔大，还可能是错误标注或策略与奖励模型冲突。</p>
+<p>论文用三组定量事实支撑问题的重要性。第一，在离线 40%
+数据预算下，Llama-3-8B-Instruct 上组合指标相对随机抽样把 AlpacaEval 2
+长度控制胜率从 <strong>41.61 提升到 47.83</strong>（+6.22 pp，相对
++14.95%），原始胜率从 <strong>36.26 提升到 45.14</strong>（+8.88
+pp，相对 +24.49%），Arena-Hard 从 <strong>29.9 提升到
+34.6</strong>（+4.7 pp，相对 +15.72%）（论文表 6，Uniform 与 (M_{AP})
+行）。第二，Gemma-2-9B-it 用 30k 选择数据超过 60k 全量数据：AlpacaEval 2
+LC <strong>74.4 vs 72.1</strong>（+2.3 pp），Arena-Hard <strong>62.8 vs
+59.4</strong>（+3.4 pp）（图
+6）。这意味着“更多偏好对”不等同于“更多有效更新”。第三，组合指标选出的
+Gemma 数据与 GPT-4 的标签一致率为 <strong>72.5%</strong>、相等
+10.8%、不一致 16.7%（图
+3），说明绝对值设计在一定程度上过滤了奖励符号冲突，但仍留下近六分之一不一致样本。</p>
+<h3 id="论文故事线从冲突启发式到剩余可学习差距">1.2
+论文故事线：从冲突启发式到“剩余可学习差距”</h3>
+<p>论证分四步推进。第一步，作者把“大显式 margin”和“小隐式
+margin”放到同一个最优策略关系中。DPO 的奖励—策略映射说明，在理想 RLHF
+最优点，策略隐式奖励与真实奖励只差一个只依赖提示的常数，因此同一提示下的
+pair margin 应相等。第二步，从“最优点应相等”反推当前差距：两种 margin
+越不一致，当前策略距离奖励目标越远，训练潜力越大。</p>
+<p>第三步解决符号风险。若直接使用带符号差
+((r_w-r_l)-(r_w-r_l))，奖励模型一旦把 winner/loser
+标错，大负号和大策略分歧可能反而把噪声顶到前面。作者因此对两个 margin
+各自取绝对值，再相减。这个选择牺牲了方向信息，换取对错误偏好标签的鲁棒性。图
+3 的 GPT-4 审核是此处的经验论据，但 16.7%
+不一致也提醒我们：绝对值不是噪声消除器。</p>
+<p>第四步把静态选择嵌入 EVA 自博弈。EVA
+负责产生更难的新提示和响应，(M_{AP})
+负责从新偏好对里选当前模型最值得学的部分，于是“生成新分布”和“筛选剩余学习空间”形成闭环。这里隐含的重要权衡是：每轮先对候选响应做奖励推理和策略
+log-prob 推理，增加选择成本，以减少后续训练数据与无效梯度。</p>
+<h3 id="方法论与机制解剖">1.3 方法论与机制解剖</h3>
+<p>给定奖励模型 (r) 与当前语言模型 (_)，显式与隐式间隔定义为：</p>
+<p>[ M_r(x,y_w,y_l)=|r(x,y_w)-r(x,y_l)|, ]</p>
+<p>[ M_(x,y_w,y_l)=|r_(x,y_w)-r_(x,y_l)|. ]</p>
+<p>DPO 的 KL 正则最优策略满足</p>
+<p>[ ^*(y|x)=_{ref}(y|x)(), ]</p>
+<p>因此可把策略写成隐式奖励</p>
+<p>[ r_{}(x,y)=. ]</p>
+<p>在最优点 (r_{^*}(x,y)=r(x,y)+c(x))，同提示的常数相消，理想上
+(M_r=M_)。论文定义 alignment potential：</p>
+<p>[ M_{AP}=M_r-M_. ]</p>
+<p>实践中初始策略与 reference 相同时 DPO 隐式奖励差会退化为零，作者改用
+SimPO 的长度归一化 log-prob，并对两种 margin 用数据集标准差归一化：</p>
+<p>[ M_{AP}= - | -|. ]</p>
+<p>其中 () 控制“标签清晰度”和“模型不确定性”的相对权重，在
+({0.25,0.5,1,2.5,5}) 中调节。离线实验 PairRM 数据用 ()，另外两组用
+2.5；扩展实验又使用 0.5，说明它不是一次设定后跨环境通用的常数。</p>
+<pre class="text"><code>偏好候选 (x, yw, yl)
+      ├── 奖励模型打分 ──&gt; |rw-rl| / σr ──────────────┐
+      └── 当前策略 log-prob ─&gt; |ℓw/|yw|-ℓl/|yl|| / σπ ─┤
+                                                       ↓
+                             MAP = 显式间隔 - α·隐式间隔
+                                                       ↓
+                         按 MAP 排序，保留 top 20/40/60%
+                                                       ↓
+                     DPO / SimPO / IPO 训练或 EVA 自博弈</code></pre>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">机制 / 维度</th>
+<th scope="col">设计选择</th>
+<th scope="col">动机</th>
+<th scope="col">关键超参 / 实现</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>显式价值</td>
+<td>奖励模型绝对分差</td>
+<td>偏好标签清晰度</td>
+<td>ArmoRM 或 PairRM</td>
+</tr>
+<tr class="even">
+<td>隐式价值</td>
+<td>长度归一化平均 log-prob 分差</td>
+<td>当前模型是否已学会</td>
+<td>不需 reference model</td>
+</tr>
+<tr class="odd">
+<td>组合</td>
+<td>标准差归一后相减</td>
+<td>找“教师清楚、学生不清楚”</td>
+<td>({0.25,0.5,1,2.5,5})</td>
+</tr>
+<tr class="even">
+<td>鲁棒化</td>
+<td>两个间隔分别取绝对值</td>
+<td>避免符号错误被放大</td>
+<td>仍不能消除 RM 偏差</td>
+</tr>
+<tr class="odd">
+<td>选择率</td>
+<td>top 20% / 40% / 60%</td>
+<td>检验预算敏感性</td>
+<td>主离线实验 top 40%，约 24k</td>
+</tr>
+<tr class="even">
+<td>训练目标</td>
+<td>DPO、SimPO、IPO</td>
+<td>测试指标与目标解耦</td>
+<td>1 epoch，batch 128</td>
+</tr>
+<tr class="odd">
+<td>序列设置</td>
+<td>最大 2048 token，prompt 最大 1800</td>
+<td>与 SimPO 管线保持一致</td>
+<td>AdamW、cosine、10% warmup</td>
+</tr>
+<tr class="even">
+<td>自博弈采样</td>
+<td>每提示 5 个响应，RM 取最高/最低</td>
+<td>形成新偏好对</td>
+<td>top-p=.95，T=.8，max 4096</td>
+</tr>
+</tbody>
+</table>
+<p>理论部分把响应视为 contextual bandit
+的动作，定义最优策略与当前策略的距离，并让对抗采样器选择最大 gap 的
+pair。论文定理 3.1 证明，在其单上下文、特定学习率与奖励假设下，到达误差
+() 所需期望迭代满足 (T_{adv}()&lt;12T_u())。它解释“选模型尚未对齐的
+pair”为什么可能加快收敛，但证明中的最大 gap (M_1)
+与实际经标准化、绝对值、外部 RM 估计的 (M_{AP})
+并非完全同一对象；理论更像方向性支持，而非现实 LLM 的端到端保证。</p>
+<h3 id="实验设计基准数据与指标">1.4 实验设计：基准、数据与指标</h3>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">对象</th>
+<th scope="col">规模 / 设置</th>
+<th scope="col">测量能力</th>
+<th scope="col">指标与风险</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>UltraFeedback 派生偏好集</td>
+<td>Llama/Gemma，ArmoRM 或 PairRM 标注；主实验保留约 24k（40%）</td>
+<td>离线偏好质量</td>
+<td>RM 标签可能带入同源偏差</td>
+</tr>
+<tr class="even">
+<td>AlpacaEval 2</td>
+<td>开放式指令响应</td>
+<td>对强参考回答的偏好</td>
+<td>LC win rate 缓和长度偏差；raw WR 仍受长度影响</td>
+</tr>
+<tr class="odd">
+<td>Arena-Hard</td>
+<td>困难开放式提示</td>
+<td>模型相对强基线的对话质量</td>
+<td>LLM judge；不等同真人 Arena 排名</td>
+</tr>
+<tr class="even">
+<td>GPT-4 标签复核</td>
+<td>对选中偏好对判 agree/equal/disagree</td>
+<td>RM 标注可靠性</td>
+<td>不是盲法真人标注，样本量未形成显著性报告</td>
+</tr>
+<tr class="odd">
+<td>EVA 自博弈</td>
+<td>演化提示 + 每提示 5 响应</td>
+<td>分布扩张时的数据选择</td>
+<td>额外生成和打分成本未换算 GPU-hour</td>
+</tr>
+</tbody>
+</table>
+<h3 id="完整主结果矩阵">1.5 完整主结果矩阵</h3>
+<p>下表来自论文<strong>表 1</strong>（evolve-then-select，10k
+新数据）。粗体仅标每个训练目标、模型块内的最优值。<code>uf</code>
+是随机/原 UltraFeedback 新数据，<code>eva</code> 是 EVA
+选择，<code>ours</code> 是 (M_{AP}) 选择。</p>
+<table>
+<colgroup>
+<col style="width: 11%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">Llama AH WR</th>
+<th scope="col" style="text-align: right;">Llama AE2 LC</th>
+<th scope="col" style="text-align: right;">Llama AE2 WR</th>
+<th scope="col" style="text-align: right;">Gemma AH WR</th>
+<th scope="col" style="text-align: right;">Gemma AE2 LC</th>
+<th scope="col" style="text-align: right;">Gemma AE2 WR</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>SFT</td>
+<td style="text-align: right;">21.4</td>
+<td style="text-align: right;">23.25</td>
+<td style="text-align: right;">23.50</td>
+<td style="text-align: right;">40.7</td>
+<td style="text-align: right;">48.75</td>
+<td style="text-align: right;">36.49</td>
+</tr>
+<tr class="even">
+<td>DPO-uf-10k</td>
+<td style="text-align: right;">23.6</td>
+<td style="text-align: right;">29.80</td>
+<td style="text-align: right;">28.32</td>
+<td style="text-align: right;">46.0</td>
+<td style="text-align: right;">54.00</td>
+<td style="text-align: right;">46.11</td>
+</tr>
+<tr class="odd">
+<td>DPO + uf-10k</td>
+<td style="text-align: right;">35.0</td>
+<td style="text-align: right;">42.67</td>
+<td style="text-align: right;">41.67</td>
+<td style="text-align: right;">56.4</td>
+<td style="text-align: right;">62.56</td>
+<td style="text-align: right;">62.17</td>
+</tr>
+<tr class="even">
+<td>DPO + eva-10k</td>
+<td style="text-align: right;">31.4</td>
+<td style="text-align: right;">39.97</td>
+<td style="text-align: right;">40.74</td>
+<td style="text-align: right;">56.0</td>
+<td style="text-align: right;">63.32</td>
+<td style="text-align: right;">62.10</td>
+</tr>
+<tr class="odd">
+<td><strong>DPO + ours-10k</strong></td>
+<td style="text-align: right;"><strong>35.4</strong></td>
+<td style="text-align: right;"><strong>42.82</strong></td>
+<td style="text-align: right;"><strong>45.00</strong></td>
+<td style="text-align: right;"><strong>56.6</strong></td>
+<td style="text-align: right;"><strong>63.88</strong></td>
+<td style="text-align: right;"><strong>64.52</strong></td>
+</tr>
+<tr class="even">
+<td>SimPO-uf-10k</td>
+<td style="text-align: right;">24.2</td>
+<td style="text-align: right;">28.45</td>
+<td style="text-align: right;">26.23</td>
+<td style="text-align: right;">45.2</td>
+<td style="text-align: right;">56.90</td>
+<td style="text-align: right;">43.80</td>
+</tr>
+<tr class="odd">
+<td>SimPO + uf-10k</td>
+<td style="text-align: right;">28.5</td>
+<td style="text-align: right;">35.75</td>
+<td style="text-align: right;">32.82</td>
+<td style="text-align: right;">53.5</td>
+<td style="text-align: right;">66.43</td>
+<td style="text-align: right;">64.55</td>
+</tr>
+<tr class="even">
+<td>SimPO + eva-10k</td>
+<td style="text-align: right;">32.6</td>
+<td style="text-align: right;">41.12</td>
+<td style="text-align: right;">39.94</td>
+<td style="text-align: right;"><strong>61.0</strong></td>
+<td style="text-align: right;">66.78</td>
+<td style="text-align: right;">66.86</td>
+</tr>
+<tr class="odd">
+<td><strong>SimPO + ours-10k</strong></td>
+<td style="text-align: right;"><strong>34.6</strong></td>
+<td style="text-align: right;"><strong>43.76</strong></td>
+<td style="text-align: right;"><strong>42.00</strong></td>
+<td style="text-align: right;">60.9</td>
+<td style="text-align: right;"><strong>66.85</strong></td>
+<td style="text-align: right;"><strong>68.34</strong></td>
+</tr>
+</tbody>
+</table>
+<p>相对 EVA，DPO+ours 在 6/6 列提升：Llama 为 +4.0、+2.85、+4.26
+pp；Gemma 为 +0.6、+0.56、+2.42 pp。SimPO+ours 在 Llama 三列提升
++2.0、+2.64、+2.06 pp，Gemma 的 AE2 LC/WR 提升 +0.07/+1.48 pp，但
+Arena-Hard <strong>60.9 低于 61.0（-0.1 pp）</strong>。因此严格结论是
+<strong>11/12 项胜过 EVA</strong>，而不是无条件逐项全胜。</p>
+<p>全文最有说服力的定量证据并非这 0.07 pp
+的边际优势，而是“半量胜全量”：图 6 中 30k 选择样本对 60k 全量样本，Gemma
+的 AE2 LC 为 74.4 对 72.1，Arena-Hard 为 62.8 对
+59.4。这直接支持数据价值密度，而不是仅说明新方法比某个筛选器略好。</p>
+<h3 id="离线选择消融与敏感性">1.6 离线选择、消融与敏感性</h3>
+<p>论文表 6 给出 top-40% 离线选择的主对照：</p>
+<table>
+<colgroup>
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 15%" />
+<col style="width: 15%" />
+<col style="width: 15%" />
+<col style="width: 15%" />
+<col style="width: 15%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">模型</th>
+<th scope="col">指标</th>
+<th scope="col" style="text-align: right;">Uniform</th>
+<th scope="col" style="text-align: right;">大显式 (M_r)</th>
+<th scope="col" style="text-align: right;">小隐式 (M_)</th>
+<th scope="col" style="text-align: right;"><strong>组合 (M_{AP})</strong></th>
+<th scope="col" style="text-align: right;">相对最强单一 margin</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Llama</td>
+<td>AE2 LC</td>
+<td style="text-align: right;">41.61</td>
+<td style="text-align: right;">44.60</td>
+<td style="text-align: right;">47.15</td>
+<td style="text-align: right;"><strong>47.83</strong></td>
+<td style="text-align: right;">+0.68 pp / +1.44%</td>
+</tr>
+<tr class="even">
+<td>Llama</td>
+<td>AE2 WR</td>
+<td style="text-align: right;">36.26</td>
+<td style="text-align: right;">40.53</td>
+<td style="text-align: right;">41.22</td>
+<td style="text-align: right;"><strong>45.14</strong></td>
+<td style="text-align: right;">+3.92 pp / +9.51%</td>
+</tr>
+<tr class="odd">
+<td>Llama</td>
+<td>Arena-Hard</td>
+<td style="text-align: right;">29.9</td>
+<td style="text-align: right;">33.5</td>
+<td style="text-align: right;">33.0</td>
+<td style="text-align: right;"><strong>34.6</strong></td>
+<td style="text-align: right;">+1.1 pp / +3.28%</td>
+</tr>
+<tr class="even">
+<td>Gemma</td>
+<td>AE2 LC</td>
+<td style="text-align: right;">67.95</td>
+<td style="text-align: right;">68.63</td>
+<td style="text-align: right;">68.25</td>
+<td style="text-align: right;"><strong>70.45</strong></td>
+<td style="text-align: right;">+1.82 pp / +2.65%</td>
+</tr>
+<tr class="odd">
+<td>Gemma</td>
+<td>AE2 WR</td>
+<td style="text-align: right;">61.40</td>
+<td style="text-align: right;">68.64</td>
+<td style="text-align: right;">69.45</td>
+<td style="text-align: right;"><strong>70.45</strong></td>
+<td style="text-align: right;">+1.00 pp / +1.44%</td>
+</tr>
+<tr class="even">
+<td>Gemma</td>
+<td>Arena-Hard</td>
+<td style="text-align: right;">55.7</td>
+<td style="text-align: right;">59.6</td>
+<td style="text-align: right;">61.9</td>
+<td style="text-align: right;"><strong>62.8</strong></td>
+<td style="text-align: right;">+0.9 pp / +1.45%</td>
+</tr>
+</tbody>
+</table>
+<p><strong>多层级消融 1：换优化目标。</strong> 论文表 2 在 IPO
+下仍保留趋势。PairRM 数据上，Uniform / (M_r) / (M_) / (M_{AP}) 的 LC 为
+30.49 / 34.15 / 35.04 / <strong>35.44</strong>，WR 为 34.15 / 34.08 /
+35.40 / <strong>36.08</strong>；ArmoRM 数据相应 LC 为 33.17 / 33.92 /
+38.19 / <strong>40.35</strong>，WR 为 30.63 / 30.17 / 35.73 /
+<strong>38.14</strong>。说明收益不只来自 SimPO 目标与筛选指标共享同一种
+log-prob 结构。</p>
+<p><strong>多层级消融 2：选择比例。</strong> 论文表
+3（PairRM+SimPO）：</p>
+<table>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">选择率</th>
+<th scope="col">指标</th>
+<th scope="col" style="text-align: right;">Uniform</th>
+<th scope="col" style="text-align: right;">(M_r)</th>
+<th scope="col" style="text-align: right;">(M_)</th>
+<th scope="col" style="text-align: right;">(M_{AP})</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">20%</td>
+<td>AE2 LC</td>
+<td style="text-align: right;">26.02</td>
+<td style="text-align: right;"><strong>28.95</strong></td>
+<td style="text-align: right;">28.46</td>
+<td style="text-align: right;"><strong>30.66</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">20%</td>
+<td>AE2 WR</td>
+<td style="text-align: right;">28.06</td>
+<td style="text-align: right;">30.24</td>
+<td style="text-align: right;"><strong>31.01</strong></td>
+<td style="text-align: right;">30.62</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">40%</td>
+<td>AE2 LC</td>
+<td style="text-align: right;">30.72</td>
+<td style="text-align: right;">36.58</td>
+<td style="text-align: right;">33.53</td>
+<td style="text-align: right;"><strong>37.07</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">40%</td>
+<td>AE2 WR</td>
+<td style="text-align: right;">32.64</td>
+<td style="text-align: right;">36.12</td>
+<td style="text-align: right;">34.75</td>
+<td style="text-align: right;"><strong>36.58</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">60%</td>
+<td>AE2 LC</td>
+<td style="text-align: right;">33.94</td>
+<td style="text-align: right;">40.77</td>
+<td style="text-align: right;">38.29</td>
+<td style="text-align: right;"><strong>42.86</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">60%</td>
+<td>AE2 WR</td>
+<td style="text-align: right;">34.72</td>
+<td style="text-align: right;">38.14</td>
+<td style="text-align: right;">37.28</td>
+<td style="text-align: right;"><strong>39.60</strong></td>
+</tr>
+</tbody>
+</table>
+<p>这里出现一个明确边界：20% 极低预算下，(M_{AP}) 的 raw WR
+<strong>30.62</strong> 低于 (M_) 的 <strong>31.01</strong>（-0.39
+pp），虽然 LC 仍最好。不能由表 3
+推出“组合指标在任何预算、任何指标都占优”。</p>
+<p><strong>多层级消融 3：反向选择。</strong> 表 4 选最低分的 40%
+数据，LC 从 Uniform 41.61 依次降至 (M_r) 40.66、(M_) 37.07、(M_{AP})
+<strong>34.64</strong>；WR 从 36.26 降至
+33.36、32.95、<strong>29.37</strong>。这是一项很有辨识度的
+falsification：若排序只是随机噪声，反选不应稳定最差。</p>
+<p><strong>排序基线。</strong> 表 5 中，PairRM 的 Uniform / ranking /
+(M_{AP}) 为 LC 30.72 / 31.53 / <strong>37.07</strong>，WR 32.64 / 30.40
+/ <strong>36.58</strong>；ArmoRM 为 LC 41.61 / 43.48 /
+<strong>47.83</strong>，WR 36.26 / 38.47 /
+<strong>45.14</strong>。简单把奖励名次当质量不如显式—隐式差距。</p>
+<p><strong>超参敏感性与相变。</strong> 论文对 ({0.25,0.5,1,2.5,5})
+做选择，但未给出覆盖每个数据集、每个指标的完整数值表，仅给趋势图/所选值；因此不能可靠声称某个精确
+() 是“相变点”。可确认的结构性突变是选择方向：从 top-40% 改为 bottom-40%
+后，Llama LC 相对 top (M_{AP}) 从 47.83 跌至 34.64，下降 <strong>13.19
+pp</strong>；这比邻近 () 的常规波动更像排序信号被翻转后的相变。</p>
+<p><strong>统计显著性。</strong> 表 6 报告 AlpacaEval 2 的标准差：Llama
+四种选择约 1.43–1.46，Gemma 约 1.38–1.45；Arena-Hard 给出约 ±1.8 至 ±3.0
+的 95% 区间。论文未给正式配对检验或多重比较校正。于是 Gemma AE2 LC 的
++0.07 pp、Arena-Hard 的 -0.1 pp 显然不应被解释为稳定排序；更大的 3–9 pp
+差距更具实践意义，但仍不能替代独立多 seed 训练统计。</p>
+<h3 id="真正贡献可复用设计与迁移潜力">1.7
+真正贡献、可复用设计与迁移潜力</h3>
+<p>真正贡献是把偏好数据价值从“样本自身质量”改写为“样本—当前模型关系”。同一
+pair
+对一个初始模型可能很有价值，对已经掌握该差异的模型则趋于冗余。这使数据选择天然成为在线、状态依赖过程，也解释了为什么静态
+reward ranking 常失效。</p>
+<p>可脱离本文复用的设计有三项。其一，<strong>teacher confidence minus
+student mastery</strong>
+可以迁移到拒答、安全、代码测试或多模态偏好：显式教师信号负责可靠性，当前模型分歧负责新颖性。其二，两个量纲先用
+() 归一化再组合，是跨 reward model
+的实用校准步骤。其三，反向选择实验是低成本但强辨识度的评测设计，能检验排序器是否真正捕获因果相关信号。</p>
+<p>潜在迁移包括 token/step 级过程监督：把响应级 (r_w-r_l)
+改成步骤验证器差异，把序列平均 log-prob
+改成局部策略掌握度；以及多奖励场景：对 helpfulness、safety、factuality
+分别计算潜力，再做 Pareto 选择，而不是先压成一个标量。</p>
+<h3 id="局限性论文自述">1.8 局限性：论文自述</h3>
+<ol type="1">
+<li><strong>需要联合调 () 与训练侧 ()。</strong> 论文第 5 页方法与第 9
+页“Limitations and future work”承认组合权重依赖设置；附录表 8
+也显示不同模型/数据目标采用不同值。</li>
+<li><strong>模型规模与初始化有限。</strong> 第 9 页明确指出只评估
+Llama-3-8B-Instruct 与 Gemma-2-9B-it，而它们的 post-training
+数据未完整披露，难以判断基础模型先验如何影响 margin。</li>
+<li><strong>优化器覆盖仍窄。</strong> 主线集中 DPO/SimPO，虽以 IPO
+做补充，论文仍承认需要扩展到更广泛 alignment 方法与规模。</li>
+</ol>
+<h3 id="独立批判有证据的-8-个边界">1.9 独立批判：有证据的 8 个边界</h3>
+<ol type="1">
+<li><strong>[论证缺口] “持续优于”不是逐格事实。</strong> 因为表 1 的
+Gemma+SimPO Arena-Hard 为 60.9，低于 EVA 的 61.0，所以正确表述是 11/12
+项超过 EVA，而非每个单元格都胜出。</li>
+<li><strong>[超参/实验设计] 极低预算下组合并非最优。</strong> 因为表 3
+的 top-20% raw WR 为 30.62，低于小隐式间隔的 31.01，所以 (M_{AP})
+的互补优势受预算和指标影响。</li>
+<li><strong>[统计显著性] 小幅差距落在评估噪声内。</strong> 因为 AE2
+报告标准差约 1.4，而若干主表差距仅 0.07–0.6
+pp，所以不能把这些列作为确定性胜负；论文缺少训练 seed
+方差和配对显著性检验。</li>
+<li><strong>[指标有效性] 两个主基准都是 LLM judge。</strong> 因为
+AlpacaEval 2 与 Arena-Hard 都依赖自动裁判，且标签复核也用
+GPT-4，所以模型风格、长度和 judge
+偏好可能共同驱动结果；没有真人盲评作为独立轴。</li>
+<li><strong>[可复现性风险] 选择成本没有端到端预算。</strong>
+因为每个候选都需奖励模型前向和策略 log-prob，EVA 还需每提示 5 次、最长
+4096 token 生成，而论文未报告
+GPU-hour，所以“半量数据”不等于“半量总计算”。</li>
+<li><strong>[分布外泛化] 只验证 8B/9B 与开放式聊天。</strong> 因为没有
+70B、代码、数学、安全拒答或多语言任务，所以尚不能推出 margin
+差在不同能力区间保持校准。</li>
+<li><strong>[监督循环] RM 既构造标签又贡献筛选分数。</strong> 因为显式
+margin 直接来自 ArmoRM/PairRM，而数据标签也由这些 RM
+管线形成，所以收益可能部分来自强化特定 RM 的偏好；图 3 仍有 16.7% 与
+GPT-4 不一致，说明噪声未消失。</li>
+<li><strong>[理论—实践落差] 收敛定理不能直接覆盖 LLM 设置。</strong>
+因为定理 3.1 分析 contextual bandit 的最大 gap
+对抗采样，而实践指标加入长度归一、标准差、()、绝对值与估计
+RM，所以“少于一半迭代”不能转换成大模型训练的 2× wall-clock 保证。</li>
+</ol>
+</section><section class="card" aria-label="2.
+相关工作回溯：问题与技术来源链"><h2 id="相关工作回溯问题与技术来源链">2.
+相关工作回溯：问题与技术来源链</h2>
+<h3 id="dpo-2023.05-neurips-2023">2.1 DPO — 2023.05 / NeurIPS 2023</h3>
+<p><strong>解决了什么。</strong> DPO 通过 KL 正则 RLHF
+的闭式最优策略，把显式 reward-model-plus-PPO
+管线化为偏好二分类损失。它的关键价值不只是简化训练，而是提供
+(r(x,y)=(y|x)/_{ref}(y|x)+c(x)) 的奖励—策略对应。</p>
+<p><strong>遗留缺口。</strong> DPO
+默认给定偏好对都值得等量训练；它回答“如何学”，没有回答预算受限时“先学哪些”。此外，隐式
+reward 会随当前模型变化，数据价值不是静态属性。</p>
+<p><strong>核心论文如何回应。</strong> 核心论文直接利用 DPO
+的对应关系，把最优点的 margin 一致性转化为当前训练缺口。没有 DPO 的隐式
+reward 解释，(M_) 只会是任意置信度分数。</p>
+<p><strong>设计传递。</strong>
+从“策略等价于奖励模型”进化为“策略—外部奖励的差距可以当数据调度器”，DPO
+的理论桥梁由训练目标变成选择指标。</p>
+<h3
+id="not-all-preference-pairs-are-created-equal-2024.06-findings-emnlp-2024">2.2
+Not All Preference Pairs Are Created Equal — 2024.06 / Findings EMNLP
+2024</h3>
+<p><strong>解决了什么。</strong>
+该工作把主动学习引入迭代偏好标注，发现当前模型隐式 reward margin 小的
+pair
+通常更值得标注，并提出早期轮次分配更多预算。它明确了“模型不确定性”这一数据价值轴。</p>
+<p><strong>遗留缺口。</strong> 只偏向小 margin
+会把真正模糊、两答案都差不多甚至标签不可靠的 pair 一并选入。小 margin
+说明学生分不清，却不说明教师有明确答案。</p>
+<p><strong>核心论文如何回应。</strong> (M_{AP}) 保留“小隐式
+margin”的信息性，同时要求“大显式 margin”的可教性。表 6 中组合相对 (M_)
+在六个模型×指标单元均提升 0.68–3.92 pp。</p>
+<p><strong>设计传递。</strong> 从单轴 uncertainty sampling 进化为
+teacher–student
+discrepancy；主动学习的“不确定”条件被奖励模型的“标签清晰”条件约束。</p>
+<h3 id="simpo-2024.05-neurips-2024">2.3 SimPO — 2024.05 / NeurIPS
+2024</h3>
+<p><strong>解决了什么。</strong> SimPO 用长度归一平均 log-prob 作为
+reference-free 隐式奖励，并在 Bradley–Terry 目标中加入目标
+margin；官方结果报告相对 DPO 在 AlpacaEval 2 最高 +6.4、Arena-Hard 最高
++7.5。</p>
+<p><strong>遗留缺口。</strong> SimPO
+改善了训练目标，却仍默认数据已给定；并且长度归一 reward
+是模型掌握程度，不等价于外部质量。</p>
+<p><strong>核心论文如何回应。</strong> 核心论文采用 SimPO reward 计算
+(M_)，解决初始模型与 reference 相同导致 DPO ratio 为零的问题，再与显式
+RM 合并。表 2 的 IPO 迁移表明筛选收益不是仅与 SimPO 同构造成。</p>
+<p><strong>设计传递。</strong> “长度归一
+reward”从优化目标中的打分函数迁移成数据选择器的学生侧状态估计。</p>
+<h3 id="eva-2024.10-icml-2025">2.4 EVA — 2024.10 / ICML 2025</h3>
+<p><strong>解决了什么。</strong> EVA 把对齐写成 creator–solver
+非对称自博弈：creator 用奖励信号演化更有信息的提示，solver
+在新提示上提升。其 arXiv 摘要报告 Gemma-2-9B-it 的 Arena-Hard 在 DPO
+下由 51.6% 到 60.1%、SimPO 下由 52.3% 到 60.7%。</p>
+<p><strong>遗留缺口。</strong> 生成“更难提示”并不保证该提示下每个偏好
+pair 都适合当前 solver；演化解决分布覆盖，没完全解决 pair
+级梯度价值。</p>
+<p><strong>核心论文如何回应。</strong> 作者将 (M_{AP}) 插入 EVA
+的选择环节，区分 evolve-then-select 与 select-then-evolve。表 1 的 11/12
+对 EVA 改善表明两者互补，但 Gemma+SimPO Arena-Hard 的 -0.1
+也说明筛选不能保证每项提升。</p>
+<p><strong>设计传递。</strong> 从 prompt-level curriculum 进一步细化到
+pair-level curriculum，形成“创题—作答—评分—筛选—更新”的闭环。</p>
+</section><section class="card" aria-label="3. 技术演进脉络"><h2 id="技术演进脉络">3. 技术演进脉络</h2>
+<pre class="text"><code>2023 DPO [策略即隐式奖励；简化偏好优化]
+   ├──────────────────────────────────────┐
+   ↓                                      ↓
+2024 Small-margin selection            2024 SimPO
+[当前模型不确定性；省标注预算]          [长度归一隐式奖励；reference-free]
+   └──────────────┬───────────────────────┘
+                  │ 学生侧：尚未掌握什么
+2024 EVA          │
+[creator 扩展提示分布] ───────────────┐
+                  │                   │
+                  ↓                   ↓
+2025 Alignment Potential [教师侧大显式 margin − 学生侧小隐式 margin]
+                  │
+                  ├─ 离线：少数据提高价值密度
+                  └─ 在线：嵌入 EVA 做 pair-level curriculum</code></pre>
+<p>内在推动力是从“固定数据、改损失”转向“模型状态决定下一批数据”。关键转折发生在隐式
+reward 被视为可观测的学习状态，而不只是损失函数内部量；随后 EVA
+把提示分布也变成可演化对象。社区关注点因此从最终 win rate
+逐渐移动到标注效率、训练数据价值密度和在线 curriculum。</p>
+<table>
+<colgroup>
+<col style="width: 15%" />
+<col style="width: 15%" />
+<col style="width: 15%" />
+<col style="width: 15%" />
+<col style="width: 21%" />
+<col style="width: 15%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">发表年月</th>
+<th scope="col">会议 / 出版</th>
+<th scope="col">核心贡献</th>
+<th scope="col" style="text-align: right;">论文报告的代表数字</th>
+<th scope="col">与核心工作关系</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DPO</td>
+<td>2023.05</td>
+<td>NeurIPS 2023</td>
+<td>闭式策略—奖励映射</td>
+<td style="text-align: right;">论文报告多任务达到/超过 PPO-RLHF</td>
+<td>提供隐式 reward 理论基础</td>
+</tr>
+<tr class="even">
+<td>Not All Preference Pairs…</td>
+<td>2024.06</td>
+<td>Findings EMNLP 2024</td>
+<td>小隐式 margin 主动选 pair</td>
+<td style="text-align: right;">摘要：小 margin 通常优于大 / 随机</td>
+<td>提供学生不确定性轴</td>
+</tr>
+<tr class="odd">
+<td>SimPO</td>
+<td>2024.05</td>
+<td>NeurIPS 2024</td>
+<td>长度归一 reference-free reward</td>
+<td style="text-align: right;">对 DPO 最高 +6.4 / +7.5 pp</td>
+<td>提供可实践的 (M_)</td>
+</tr>
+<tr class="even">
+<td>EVA</td>
+<td>2024.10</td>
+<td>ICML 2025</td>
+<td>creator–solver 演化提示</td>
+<td style="text-align: right;">SimPO AH 52.3→60.7</td>
+<td>提供在线演化外壳</td>
+</tr>
+<tr class="odd">
+<td><strong>Alignment Potential</strong></td>
+<td><strong>2025.02</strong></td>
+<td><strong>ICML 2025</strong></td>
+<td><strong>显式—隐式间隔组合选择</strong></td>
+<td style="text-align: right;"><strong>30k 胜 60k：+2.3/+3.4
+pp</strong></td>
+<td><strong>汇聚点</strong></td>
+</tr>
+</tbody>
+</table>
+</section><section class="card" aria-label="4. 开放挑战与可操作研究机会"><h2 id="开放挑战与可操作研究机会">4. 开放挑战与可操作研究机会</h2>
+<h3 id="理论层面">4.1 理论层面</h3>
+<ol type="1">
+<li><strong>估计误差下的排序一致性。</strong> 固定相同 pair 池，对
+ArmoRM、PairRM、多个开源 judge 估计 (M_r)，测 (M_{AP}) top-k 的 Kendall
+() 与最终收益；推导 RM 方差多大时排序反转概率超过 5%。</li>
+<li><strong>从 bandit 到 token-MDP。</strong> 在相同数据与 GPU-hour
+下，比较响应级 (M_{AP}) 与 step-level verifier potential；测定理中的 gap
+是否能预测实际梯度范数、loss decrease 和最终 win rate。</li>
+<li><strong>自适应 () 而非网格搜索。</strong> 将固定 () 与基于两种
+margin 校准误差、噪声率或双臂 bandit 自动调权做
+head-to-head；评估跨模型迁移时是否无需重调。</li>
+</ol>
+<h3 id="工程与应用层">4.2 工程与应用层</h3>
+<ol type="1">
+<li><strong>等总算力比较。</strong> 在 8×A100 固定 200 GPU-hour
+下比较：60k 随机训练、30k (M_{AP})+打分、30k 小隐式
+margin、EVA+(M_{AP})。同时报告生成、RM
+推理、log-prob、训练四项成本，检验“数据减半”是否真正降低
+wall-clock。</li>
+<li><strong>真人盲评与 judge 交叉。</strong> 对表 1 差距最大的 Llama DPO
+raw WR（+4.26 pp）抽取至少 500 对响应，使用三名人类标注者，并与
+GPT-4、开源 judge 计算一致率；避免同一 judge 同时构造与评价。</li>
+<li><strong>跨域压力测试。</strong> 在数学、代码、安全拒答、多语言各固定
+20k 偏好对，比较统一 ()
+与逐域调参；报告总体与最差域，检验收益是否只属于开放聊天。</li>
+<li><strong>流式容量变化。</strong> 设置 memory buffer 由 5k→20k→5k
+动态变化，对比全量重排、增量分位数估计与 reservoir
+sampling；测吞吐、遗忘和选择稳定性。</li>
+</ol>
+<h3 id="新兴方向">4.3 新兴方向</h3>
+<ol type="1">
+<li><strong>多目标 Pareto potential。</strong>
+helpfulness/safety/factuality 三个 RM 分别计算
+potential，与加权单标量在相同数据预算下比较 Pareto
+front，观察安全是否被高 helpfulness margin 挤出。</li>
+<li><strong>多模态偏好。</strong> 对医疗 VLM
+或图文生成，把显式信号分成临床/视觉 grounding 分数，学生信号用条件
+log-prob；与只按 reward margin 选择做等预算对比，重点测幻觉子集。</li>
+<li><strong>隐私与遗忘。</strong> 若高 potential
+恰好来自稀有私人模式，选择器可能放大记忆。可在含 canary
+的偏好池中比较随机、(M_r)、(M_)、(M_{AP}) 的 exposure
+与效用，绘制隐私—性能边界。</li>
+</ol>
+</section><section class="card" aria-label="5. 其他值得关注的近期工作"><h2 id="其他值得关注的近期工作">5. 其他值得关注的近期工作</h2>
+<ol type="1">
+<li><strong>Active Reward Modeling</strong>（ICML 2025）：从“选训练
+pair”转向“选值得付标注成本的 pair”，适合与 (M_{AP}) 做同预算闭环比较。<a
+href="https://proceedings.mlr.press/v267/">PMLR 卷页</a></li>
+<li><strong>Pre-DPO</strong>（arXiv 2504.15843v3，2025-12-31）：用
+guiding reference model 预估哪些样本更适合当前模型，和本文的
+model-dependent value 思想高度相关。<a
+href="https://arxiv.org/abs/2504.15843">arXiv</a></li>
+<li><strong>Length-Controlled Margin-Based Preference
+Optimization</strong>（arXiv 2502.14643，2025-02）：把 margin
+与长度控制写进优化目标，可检验选择侧 margin 和训练侧 margin 是否互补。<a
+href="https://arxiv.org/abs/2502.14643">arXiv</a></li>
+<li><strong>Your Language Model is Secretly a Preference
+Classifier</strong>（arXiv
+2502.16182，2025-02）：探索模型自身做偏好分类，可能减少外部 RM
+依赖，但也会加强自举偏差。<a
+href="https://arxiv.org/abs/2502.16182">arXiv</a></li>
+<li><strong>DPO Unchained</strong>（arXiv
+2507.07855，2025-07）：从更一般的人类选择理论重审 DPO
+的规范假设，适合补充本文将 reward margin 当“真目标”的前提。<a
+href="https://arxiv.org/abs/2507.07855">arXiv</a></li>
+<li><strong>Asynchronous RLHF</strong>（arXiv
+2410.18252，2024-10）：把生成与学习解耦；若与在线 (M_{AP}) 合并，需处理
+stale policy 导致的隐式 margin 过期。<a
+href="https://arxiv.org/abs/2410.18252">arXiv</a></li>
+<li><strong>ORPO</strong>（arXiv
+2403.07691，2024-03）：reference-free、单阶段偏好训练，为检验 (M_{AP})
+是否跨 objective 通用提供另一条基线。<a
+href="https://arxiv.org/abs/2403.07691">arXiv</a></li>
+</ol>
+</section><section class="card" aria-label="6. 结论"><h2 id="结论">6. 结论</h2>
+<p>这篇论文最值得保留的思想是：<strong>训练数据的价值应由外部目标与当前模型状态共同定义。</strong>
+在其最强证据中，30k 选择样本超过 60k 全量样本（AE2 LC +2.3
+pp、Arena-Hard +3.4 pp），说明偏好数据存在显著冗余；但 11/12 而非 12/12
+胜 EVA、20% 预算下 -0.39 pp 的反例、约 1.4 的评估标准差和缺失
+GPU-hour，又要求我们把它视为有前景的数据调度原则，而不是已被证明普适的最优选择器。</p>
+<hr />
+<p><strong>数据追溯说明：</strong> 核心论文数字均来自实际读取的 PMLR
+正文与附录：表 1、2、3、4、5、6、7、8，以及图 3、6；由表内数字计算的 pp
+与相对百分比已明确标为复算。论文未报告的多 seed
+训练方差、正式显著性检验、GPU-hour 和完整 () 数值曲线未补造。<br />
+<strong>版式核验说明：</strong> HTML 已通过 Warm Editorial 结构校验（0
+errors / 0
+warnings），并按桌面、深色与移动端规则实现响应式布局；本次容器未提供
+<code>/usr/bin/chromium</code> 或 <code>/opt/pw-browsers</code>
+浏览器可执行文件，故无法完成 Playwright
+截图，未将静态校验冒充实际浏览器渲染。<br />
+<strong>索引状态：</strong> 本期记录已追加至
+<code>ml-report-index.md</code>。</p>
+</section></main>
+<footer>核心来源：<a href="https://proceedings.mlr.press/v267/huang25al.html">ICML 2025 / PMLR</a>。生成日期 2026-08-24；所有无法核实的资源已明确标注。</footer></div><div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

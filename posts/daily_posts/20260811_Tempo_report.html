@@ -1,0 +1,1199 @@
+---
+layout: null
+title: "Tempo"
+date: 2026-08-11
+topic: vlm-vision
+excerpt: "解析 Tempo 如何将视频压缩器设计为问题感知的小型 VLM，以相关性评分动态分配全局 token 预算并提升长视频理解效率。"
+permalink: /blog/2026/08/11/tempo-question-aware-video-token-compression/
+blog_post: true
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tempo：把压缩器本身变成一个会读问题的小模型 · 2026-08-11 · ECCV 2026</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --accent-soft: #cde2fb;
+    --good: #006300;
+    --crit: #d03b3b;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --accent-soft: #184f95;
+    --good: #0ca30c;
+    --crit: #e66767;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  header.hero {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 32px 34px;
+    margin-bottom: 34px;
+  }
+  .eyebrow {
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; margin: 0 0 10px;
+  }
+  h1 { font-size: 30px; line-height: 1.3; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .subtitle { font-size: 17px; color: var(--text-secondary); margin: 0 0 18px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    font-size: 12.5px; padding: 4px 11px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--text-secondary);
+    background: var(--page);
+  }
+  .chip.venue { border-color: var(--series-1); color: var(--series-1); font-weight: 600; }
+  .lede {
+    border-left: 3px solid var(--series-1);
+    padding: 4px 0 4px 18px; margin: 20px 0 0;
+    color: var(--text-secondary); font-size: 15.5px;
+  }
+  h2 {
+    font-size: 22px; margin: 52px 0 16px; padding-bottom: 10px;
+    border-bottom: 1px solid var(--border); letter-spacing: -0.01em;
+  }
+  h3 { font-size: 18px; margin: 34px 0 12px; }
+  h3:first-child { margin-top: 0; }
+  h4 { font-size: 15.5px; margin: 24px 0 8px; color: var(--text-secondary); }
+  p { margin: 0 0 14px; }
+  section.card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 26px 30px; margin-bottom: 20px;
+  }
+  a { color: var(--series-1); text-decoration: none; border-bottom: 1px solid transparent; }
+  a:hover { border-bottom-color: var(--series-1); }
+  code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px; background: var(--page); padding: 1.5px 5px;
+    border-radius: 4px; border: 1px solid var(--border);
+  }
+  .formula {
+    background: var(--page); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 16px; margin: 12px 0; font-family: ui-monospace, Menlo, monospace;
+    font-size: 13.5px; overflow-x: auto; color: var(--text-primary);
+  }
+  .tbl-scroll { overflow-x: auto; margin: 16px 0 20px; }
+  table { width: 100%; border-collapse: collapse; margin: 0; font-size: 14.5px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--grid); }
+  th { color: var(--muted); font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: .05em; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.best td { background: var(--accent-soft); font-weight: 600; }
+  :root[data-theme="dark"] tr.best td { background: rgba(57,135,229,.18); }
+  tr.grp td { background: var(--page); color: var(--muted); font-size: 12.5px; font-style: italic; }
+  .pos { color: var(--good); font-weight: 600; }
+  .neg { color: var(--crit); font-weight: 600; }
+  ol, ul { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 8px; }
+  .callout {
+    border-left: 3px solid var(--series-2); background: var(--page);
+    padding: 14px 18px; border-radius: 0 8px 8px 0; margin: 18px 0;
+    font-size: 15px; color: var(--text-secondary);
+  }
+  .callout strong { color: var(--text-primary); }
+  .callout.warn { border-left-color: var(--crit); }
+  .callout.ok { border-left-color: var(--good); }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  button.tgl {
+    font: inherit; font-size: 13px; padding: 6px 14px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface-1);
+    color: var(--text-secondary); cursor: pointer;
+  }
+  button.tgl:hover { color: var(--text-primary); }
+
+  /* chart */
+  .figure { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 24px 26px; margin: 24px 0; }
+  .fig-title { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+  .fig-sub { font-size: 13.5px; color: var(--muted); margin: 0 0 18px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 16px; font-size: 13.5px; color: var(--text-secondary); }
+  .legend span.sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 7px; vertical-align: -1px; }
+  svg.chart { width: 100%; height: auto; display: block; overflow: visible; }
+  svg.chart text { font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  .ax { font-size: 12px; fill: var(--muted); }
+  .axlbl { font-size: 12.5px; fill: var(--text-secondary); }
+  .vlbl { font-size: 11.5px; fill: var(--text-secondary); font-variant-numeric: tabular-nums; }
+  .dlbl { font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .gl { stroke: var(--grid); stroke-width: 1; }
+  .bl { stroke: var(--baseline); stroke-width: 1.5; }
+  [data-tip] { cursor: pointer; }
+  [data-tip]:hover { opacity: .82; }
+  .tip {
+    position: fixed; pointer-events: none; opacity: 0; transition: opacity .1s;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 12px; font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,.14);
+    z-index: 50; color: var(--text-primary); white-space: nowrap;
+  }
+  .flow {
+    background: var(--page); border: 1px solid var(--border); border-radius: 10px;
+    padding: 20px 22px; font-family: ui-monospace, Menlo, monospace;
+    font-size: 12.5px; line-height: 1.8; overflow-x: auto; color: var(--text-secondary);
+    white-space: pre;
+  }
+  footer { margin-top: 60px; padding-top: 22px; border-top: 1px solid var(--border); font-size: 13.5px; color: var(--muted); }
+  footer code { font-size: 12px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    h1 { font-size: 23px; }
+    h2 { font-size: 19px; margin-top: 40px; }
+    .subtitle { font-size: 15px; }
+    section.card { padding: 20px 17px; }
+    .figure { padding: 18px 15px; }
+    table { font-size: 12.5px; }
+    th, td { padding: 7px 8px; }
+    .flow { font-size: 10px; padding: 14px 12px; }
+    .legend { gap: 12px; font-size: 12.5px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="toolbar">
+    <button class="tgl" onclick="const r=document.documentElement; r.setAttribute('data-theme', r.getAttribute('data-theme')==='dark'?'light':'dark'); this.textContent = r.getAttribute('data-theme')==='dark'?'☀ 浅色':'☾ 深色';">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ECCV 2026 · 长视频理解 · 视觉与多模态</p>
+    <h1>Tempo：把「压缩器」本身变成一个会读问题的小模型</h1>
+    <p class="subtitle">ML/AI 每日深度论文追踪 · 2026-08-11（周二）· 领域轮转：视觉与多模态</p>
+    <div class="meta">
+      <span class="chip venue">ECCV 2026</span>
+      <span class="chip">Meta AI · KAUST</span>
+      <span class="chip">arXiv 2604.08120</span>
+      <span class="chip">6B · 0.5–16 tok/frame</span>
+      <span class="chip">候选池 24 篇 · 重抽 0 次</span>
+    </div>
+    <p class="lede"><strong>一句话定位</strong>：压缩不再是接在视觉编码器后面的一个无状态模块，而是一个会读用户问题、能自己判断「这段该看几眼」的小型 VLM——并且它顺手输出的相关性打分，直接成了全局 token 预算的分配依据。</p>
+  </header>
+
+  <section class="card">
+    <h3>0. 本期元信息与方法说明</h3>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>项目</th><th>内容</th></tr>
+      <tr><td>日期</td><td>2026-08-11（周二，<code>date +%u</code> = 2）</td></tr>
+      <tr><td>轮转领域</td><td>视觉与多模态（检测分割 / VLM / 视频理解 / 表示学习）</td></tr>
+      <tr><td>候选池规模</td><td>24 篇（CVPR 2026 Highlights 实测抓取 63 篇后，剔除生成模型类（属周三领域）与非视觉类，补入 3 篇近期高关注预印本）</td></tr>
+      <tr><td>抽取方式</td><td><code>shuf -i 1-24 -n 3</code> → 输出 <code>19, 20, 13</code>，首抽 <strong>#19</strong> 资料充分，<strong>重抽次数 0</strong></td></tr>
+      <tr class="best"><td>核心论文</td><td><strong>Tempo</strong>（ECCV 2026，Meta AI + KAUST）</td></tr>
+      <tr><td>去重索引</td><td>⚠️ <strong>未能访问</strong>。本次为云端定时任务，无桌面桥接，<code>ml-report-index.md</code> 不可达，本期无法执行 14 天去重校验；详见文末脚注</td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>坦诚性声明（前置）</strong>：本报告所有数字均来自实际抓取的 arXiv HTML 全文（<code>arxiv.org/html/2604.08120v1</code>）、项目主页与 GitHub README，并标注了表号。凡是我没有读到的（如延迟/FLOPs 实测、标准差、v2 版本日期），全部在正文中明确标注为「论文未提供」或「未找到」，没有任何一个数字来自记忆推断。
+    </div>
+  </section>
+
+  <h2>1. 链接验证表</h2>
+
+  <section class="card">
+    <h3>1.1 核心论文</h3>
+    <p>所有链接均经实际抓取验证。✅ 已确认可达，⚠️ 存在但抓取受限或信息不一致，❌ 未找到。</p>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>资源</th><th>链接</th><th>状态</th></tr>
+      <tr><td>arXiv 摘要页</td><td><a href="https://arxiv.org/abs/2604.08120">arxiv.org/abs/2604.08120</a></td><td>✅</td></tr>
+      <tr class="best"><td>arXiv 全文 HTML（v1）</td><td><a href="https://arxiv.org/html/2604.08120v1">arxiv.org/html/2604.08120v1</a></td><td>✅ 本报告数据主要来源</td></tr>
+      <tr><td>arXiv PDF</td><td><a href="https://arxiv.org/pdf/2604.08120">arxiv.org/pdf/2604.08120</a></td><td>✅</td></tr>
+      <tr><td>项目主页</td><td><a href="https://feielysia.github.io/tempo-page/">feielysia.github.io/tempo-page</a></td><td>✅</td></tr>
+      <tr><td>代码仓库</td><td><a href="https://github.com/FeiElysia/Tempo">github.com/FeiElysia/Tempo</a></td><td>✅ Apache-2.0</td></tr>
+      <tr><td>模型权重（最终）</td><td><a href="https://huggingface.co/Vision-CAIR/Tempo-6B">huggingface.co/Vision-CAIR/Tempo-6B</a></td><td>✅ 学术非商用</td></tr>
+      <tr><td>模型权重（分阶段）</td><td><code>Vision-CAIR/Tempo-6B-Stage0 / Stage1 / Stage2</code></td><td>✅ 三个中间 checkpoint 全部公开</td></tr>
+      <tr><td>HF 论文页</td><td><a href="https://huggingface.co/papers/2604.08120">huggingface.co/papers/2604.08120</a></td><td>✅ 21 upvotes</td></tr>
+      <tr><td>在线 Demo</td><td><code>huggingface.co/spaces/Vision-CAIR-Admin/Tempo</code></td><td>⚠️ 项目页写作 <code>Vision-CAIR/Tempo</code>，HF 论文页列出的实为 <code>Vision-CAIR-Admin/Tempo</code> 与 <code>SwingRain/Tempo</code>，<strong>两处不一致</strong></td></tr>
+      <tr><td>ECCV 2026 官方 proceedings</td><td>—</td><td>❌ <strong>未找到</strong>（ECVA 尚未上线；venue 信息来自 GitHub README 与项目页自我标注）</td></tr>
+      <tr><td>KAUST 机构仓库副本</td><td><a href="https://repository.kaust.edu.sa/server/api/core/bitstreams/859098f9-767a-49d0-abce-eb335ccfb127/content">repository.kaust.edu.sa/…</a></td><td>✅</td></tr>
+    </table>
+    </div>
+    <div class="callout warn">
+      <strong>版本日期说明</strong>：arXiv ID <code>2604.08120</code> 按 arXiv 编号规则对应 <strong>2026 年 4 月</strong>。HF 论文页渲染出的「April 10, 2024」与该规则矛盾，判定为 HF 页面解析错误，本报告采用 <strong>2026 年 4 月 v1</strong>。<strong>v2 是否存在及其日期：未找到</strong>（<code>export.arxiv.org</code> API 在本会话被出口策略拦截，返回 403）。
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>1.2 相关工作</h3>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>论文</th><th>会议主页 / Proceedings</th><th>arXiv</th><th>Code</th><th>权重</th><th>项目页</th></tr>
+      <tr><td><strong>LLaMA-VID</strong></td>
+        <td><a href="https://www.ecva.net/papers/eccv_2024/papers_ECCV/html/6290_ECCV_2024_paper.php">ECVA ECCV 2024</a> ✅ · <a href="https://link.springer.com/chapter/10.1007/978-3-031-72952-2_19">Springer</a> ✅ pp.323–340</td>
+        <td><a href="https://arxiv.org/abs/2311.17043">2311.17043</a> ✅<br>v1: 2023-11-28</td>
+        <td><a href="https://github.com/JIA-Lab-research/LLaMA-VID">JIA-Lab-research</a> ✅</td>
+        <td><a href="https://huggingface.co/YanweiLi/llama-vid-7b-full-224-long-video">HF</a> ✅</td>
+        <td><a href="https://llama-vid.github.io/">llama-vid.github.io</a> ✅</td></tr>
+      <tr><td><strong>LongVA</strong></td>
+        <td>❌ <strong>未找到</strong>（无 venue 声明，OpenReview 被 bot 墙拦截，按预印本处理）</td>
+        <td><a href="https://arxiv.org/abs/2406.16852">2406.16852</a> ✅<br>v1: 2024-06-24<br>v2: 2024-07-01</td>
+        <td><a href="https://github.com/EvolvingLMMs-Lab/LongVA">EvolvingLMMs-Lab</a> ✅</td>
+        <td><a href="https://huggingface.co/lmms-lab/LongVA-7B">HF</a> ✅</td>
+        <td><a href="https://www.lmms-lab.com/posts/longva/">lmms-lab.com</a> ✅</td></tr>
+      <tr><td><strong>LongVU</strong></td>
+        <td><a href="https://icml.cc/virtual/2025/poster/44939">ICML 2025 Poster 44939</a> ✅ 主会</td>
+        <td><a href="https://arxiv.org/abs/2410.17434">2410.17434</a> ✅<br>v1: 2024-10-22（仅 v1）</td>
+        <td><a href="https://github.com/Vision-CAIR/LongVU">Vision-CAIR</a> ✅</td>
+        <td><a href="https://huggingface.co/Vision-CAIR/LongVU_Qwen2_7B">HF</a> ✅</td>
+        <td><a href="https://vision-cair.github.io/LongVU/">vision-cair.github.io</a> ✅</td></tr>
+      <tr><td><strong>BIMBA</strong></td>
+        <td><a href="https://cvpr.thecvf.com/virtual/2025/poster/32662">CVPR 2025 Poster 32662</a> ✅ 主会 · <a href="https://openaccess.thecvf.com/content/CVPR2025/supplemental/Islam_BIMBA_Selective-Scan_Compression_CVPR_2025_supplemental.pdf">CVF 补充材料</a> ✅（正文 PDF 返回 403 ⚠️）</td>
+        <td><a href="https://arxiv.org/abs/2503.09590">2503.09590</a> ✅<br>v1: 2025-03-12<br>v2: 2025-03-13</td>
+        <td><a href="https://github.com/md-mohaiminul/BIMBA">md-mohaiminul</a> ✅</td>
+        <td><a href="https://huggingface.co/mmiemon/BIMBA-LLaVA-Qwen2-7B">HF</a> ✅</td>
+        <td>⚠️ <code>sites.google.com/view/bimba-mllm</code> 抓取被拦</td></tr>
+      <tr><td><strong>VideoChat-Flash</strong></td>
+        <td><a href="https://openreview.net/forum?id=MUjdNcfNPv">OpenReview ICLR 2026 Poster</a> ✅ 主会</td>
+        <td><a href="https://arxiv.org/abs/2501.00574">2501.00574</a> ✅<br>v1: 2024-12-31<br><strong>v4: 2025-07-13</strong></td>
+        <td><a href="https://github.com/OpenGVLab/VideoChat-Flash">OpenGVLab</a> ✅</td>
+        <td><a href="https://huggingface.co/OpenGVLab/VideoChat-Flash-Qwen2-7B_res448">HF</a> ✅</td>
+        <td><a href="https://internvideo.github.io/blog/2024-12-31-VideoChat-Flash/">InternVideo blog</a> ✅</td></tr>
+      <tr><td><strong>STORM</strong><br><span style="color:var(--muted);font-size:13px">（效率对照组）</span></td>
+        <td><a href="https://openaccess.thecvf.com/content/ICCV2025W/CLVL/html/Jiang_STORM_Token-Efficient_Long_Video_Understanding_for_Multimodal_LLMs_ICCVW_2025_paper.html">CVF ICCVW 2025 CLVL</a> ⚠️ <strong>Workshop，非主会</strong></td>
+        <td><a href="https://arxiv.org/abs/2503.04130">2503.04130</a> ✅<br>v1: 2025-03-06<br>v2 日期未找到</td>
+        <td>❌ <strong>未找到官方仓库</strong></td>
+        <td>❌ <strong>未找到</strong></td>
+        <td><a href="https://research.nvidia.com/labs/lpr/storm">research.nvidia.com</a> ✅</td></tr>
+    </table>
+    </div>
+    <div class="callout warn">
+      <strong>重要更正</strong>：LLaMA-VID 的原仓库 <code>github.com/dvlab-research/LLaMA-VID</code> 已迁移至 <code>JIA-Lab-research/LLaMA-VID</code>，旧链接虽仍重定向，引用时应使用新路径。
+    </div>
+  </section>
+
+  <h2>2. 核心论文深度解析</h2>
+
+  <section class="card">
+    <h3>Small Vision-Language Models are Smart Compressors for Long Video Understanding</h3>
+    <p style="color:var(--text-secondary);font-size:14.5px">Junjie Fei, Jun Chen, Zechun Liu, Yunyang Xiong, Chong Zhou, Wei Wen, Junlin Han, Mingchen Zhuge, Saksham Suri, Qi Qian, Shuming Liu, Lemeng Wu, Raghuraman Krishnamoorthi, Vikas Chandra, Mohamed Elhoseiny, Chenchen Zhu<br><strong>Meta AI · KAUST</strong> — ECCV 2026 — arXiv 2604.08120（2026 年 4 月）</p>
+
+    <h4>2.1 一句话定位</h4>
+    <div class="callout ok">
+      <strong>把「压缩器」从一个前馈模块升格为一个会读问题的小型 VLM，让它在同一次前向里同时吐出两样东西：压好的记忆 token，和「这段视频对这个问题有多重要」的打分——后者直接驱动全局预算分配。</strong>
+    </div>
+    <p>这句话的关键不在「用小模型压缩」（BIMBA、LongVU 都在做压缩），而在<strong>同一次前向、双输出</strong>：相关性打分不是外挂一个 retriever 算出来的，而是从压缩器本身的隐状态上截胡出来的，因此压缩与打分严格共享同一份多模态上下文，且路由开销是 O(1)。</p>
+
+    <h4>2.2 Motivation 与问题论证</h4>
+    <p>论文指向的痛点被表述为<strong>结构性错配</strong>：视频流是密集的、时长可变的，而 LLM 上下文是固定的、稀缺的。论文原文：稠密视觉流「quickly saturate input token budgets and exacerbate the lost-in-the-middle phenomenon」（引 Liu et al., 2024c）。</p>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>现有做法</th><th>论文的指控（原文）</th><th>失效的物理原因</th></tr>
+      <tr><td>稀疏采样</td><td>"risks skipping the transient yet decisive moments required to answer a specific query"</td><td>均匀采样与「答案在哪一秒」无关，是一个<strong>与查询独立的先验</strong></td></tr>
+      <tr><td>均匀池化</td><td>"blur fine-grained evidence in query-critical segments while wasting representational bandwidth on irrelevant backgrounds"</td><td>把带宽<strong>平均</strong>分给了信息密度极不均匀的片段</td></tr>
+    </table>
+    </div>
+    <p><strong>这个问题的新颖之处在哪？</strong> 不在于「长视频难」（老问题），而在于论文把它重新定义为一个<strong>带宽分配问题</strong>而非<strong>压缩率问题</strong>。此前的工作几乎全部在优化「每帧压到几个 token」这个标量（LLaMA-VID 压到 2，VideoChat-Flash 压到 16，BIMBA 压 16×），Tempo 主张：<strong>每帧压到几个 token 这件事本身就不应该是一个常数</strong>。</p>
+    <p><strong>为什么值得解决？</strong> 一个可量化的论据来自论文自己的表 1：Qwen2.5-VL-7B 用 <strong>1924 tokens/frame</strong> 在 Video-MME 上拿 65.1，而 Tempo 用<strong>实测均值约 2.8–3.6 tokens/frame</strong> 拿 67.8。这是约 <strong>687 倍</strong>的 token 差距换来 <strong>+2.7pp</strong> 的反向收益——说明现有系统投入的绝大部分视觉带宽是被浪费的，而这个浪费是可以被系统性回收的。</p>
+    <div class="callout warn">
+      <strong>⚠️ 坦诚补充</strong>：论文的 Introduction <strong>没有提供任何前人方法的失败率统计或定量诊断实验</strong>（例如「均匀采样在 X% 的 LVBench 样本上漏掉了 ground-truth 片段」）。上面这条 687× 的论据是我从表 1 反推的，不是论文自己给出的 motivation 证据。这是该文论证链上的第一个缺口。
+    </div>
+
+    <h4>2.3 论文的故事线（论证结构）</h4>
+    <p>论文的推进逻辑可拆成四步，每一步都是一个「观察 → 推断」：</p>
+    <ol>
+      <li><strong>观察</strong>：视频的信息密度对查询高度依赖；同一段视频，问「他什么时候拧螺丝」和「总结这个视频」需要的时间分布完全不同。<br><strong>推断</strong>：压缩必须是 query-aware 的。<span style="color:var(--muted)">（→ LongVU / BIMBA 已走到这里）</span></li>
+      <li><strong>观察</strong>：要做 query-aware 压缩，就需要一个能同时理解视觉和文本的模块；而「一个小 VLM」恰好就是这样一个模块，且它是现成的、预训练好的。<br><strong>推断</strong>：不要设计新的压缩算子，直接<strong>征用一个 SVLM 当压缩器</strong>。<span style="color:var(--series-2)">（→ 第一个关键转折）</span></li>
+      <li><strong>观察</strong>：这个 SVLM 在压缩的同时，其实「知道」这段视频跟问题有没有关系——它只是没被要求说出来。<br><strong>推断</strong>：可以从它的隐状态上<strong>免费截胡</strong>一个相关性分数。<span style="color:var(--series-2)">（→ 第二个关键转折，ATA 的地基）</span></li>
+      <li><strong>观察</strong>：有了逐段分数，全局 token 预算就不必均分了。<br><strong>推断</strong>：设计 ATA，把预算按分数<strong>连续地</strong>（而非 top-K 二值地）分配。</li>
+    </ol>
+    <p><strong>隐含的设计权衡</strong>（论文没明说，但从设计可读出）：</p>
+    <ul>
+      <li><strong>牺牲多轮对话效率，换取单轮压缩质量</strong>——压缩是 query-conditioned 的，换问题就得重压整段视频（论文第 6 节自承）。</li>
+      <li><strong>牺牲压缩的自适应深度，换取单次前向的延迟</strong>——每段固定 <code>k_max</code> 个 memory token，而不让 SVLM 自回归决定要写多少（论文承认这是「a profound optimization challenge」）。</li>
+      <li><strong>牺牲路由的可训练性，换取零额外成本</strong>——相关性打分完全零样本，无任何监督信号。既是优雅之处，也是最大的批判靶心（见 §2.7）。</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h3>2.4 方法论与机制解剖</h3>
+    <h4>2.4.1 架构总览</h4>
+    <div class="flow">
+                 ┌──────────────── 逐段并行 ────────────────┐
+视频 V           │                                          │
+ ├─ 段 S₁ ──┐    │  ┌─────────────────────────────────┐    │
+ ├─ 段 S₂ ──┼───▶│  │ 局部压缩器 C_φ = SVLM           │    │
+ ├─ ...     │    │  │ (Qwen3-VL-2B-Instruct)          │    │
+ └─ 段 S_N ─┘    │  │                                 │    │
+                 │  │ 因果序列构造（顺序至关重要）：   │    │
+用户查询 Q ──────┼─▶│  [system prompt]                │    │
+                 │  │  ↓                              │    │
+                 │  │  X_i  ← 视觉 token（段 S_i）    │    │
+                 │  │  ↓                              │    │
+                 │  │  Q    ← 用户查询                │    │
+                 │  │  ↓                              │    │
+                 │  │  M    ← 可学习 memory token     │    │
+                 │  │         （放最后！因果注意力下   │    │
+                 │  │          每个 M 都能看到 X_i+Q） │    │
+                 │  └───────┬──────────────┬──────────┘    │
+                 │          │              │               │
+                 │   H_i (k_max=128)    h_i^rel            │
+                 │   记忆 token          相关性隐状态       │
+                 └──────────┼──────────────┼───────────────┘
+                            │              │
+                            │              ▼
+                            │      s_i = σ((w_yes − w_no)ᵀ h_i^rel)
+                            │              │  ← O(1)，无自回归解码
+                            │              ▼
+                            │      ┌───────────────────┐
+                            └─────▶│  ATA 自适应分配    │
+                                   │  预算 B_max(4K/8K) │
+                                   └────────┬──────────┘
+                                            │ H_i[1:k_i] ← 头部截断，O(1) 切片
+                                            ▼
+                                   线性投影 → H̃_i + 时间戳 &lt;t=2.0s&gt;
+                                            ▼
+                            ┌───────────────────────────────┐
+                            │ 全局解码器 D_θ = Qwen3-LM-4B  │
+                            └───────────────┬───────────────┘
+                                            ▼
+                                          答案
+
+总参数 6B = 2B（SVLM）+ 4B（LLM）</div>
+
+    <h4>2.4.2 形式化定义</h4>
+    <p><strong>端到端目标</strong>——注意：<strong>没有任何辅助压缩损失、没有路由网络、没有蒸馏损失</strong>，只有一个标准自回归损失：</p>
+    <div class="formula">L_AR(θ, φ) = − Σ_{t=1}^{T} log p_θ( a_t | a_&lt;t, Q, {H̃_i}_{i=1}^{N} )</div>
+    <p>固定容量 <code>k_max</code> 本身充当<strong>结构性瓶颈</strong>，逼出压缩行为。这是本文方法上最「省」的一笔——压缩能力是训练目标的副产品，不是被显式监督出来的。</p>
+    <p><strong>零样本相关性先验</strong>——设 <code>h_i^rel</code> 为 SVLM 对「这段与查询相关吗」这一二元问题作答前的最后隐状态，<code>w_yes / w_no</code> 为<strong>冻结的</strong>语言头权重：</p>
+    <div class="formula">s_i = σ( (w_yes − w_no)ᵀ · h_i^rel )  ∈ (0, 1)</div>
+    <p>这是整篇论文最漂亮的一处工程设计：把一次本该自回归解码的判断，退化成<strong>一次向量内积</strong>。且论文强调 <code>s_i</code> 与 <code>H_i</code> 在<strong>同一次前向</strong>中提取（截胡隐状态后前向继续），保证两者条件于完全相同的多模态上下文。</p>
+    <p><strong>ATA 两阶段分配</strong>：</p>
+    <div class="formula">阶段一（对比线性分配）
+  ŝ_i       = (s_i − min(s)) / (max(s) − min(s) + ε)        # Min-Max 归一化
+  k_i^ideal = k_min + ⌊ (k_max − k_min) · ŝ_i ⌋              # 线性映射到容量
+
+阶段二（容量保护）
+  若 Σ_i k_i^ideal ≤ B_max :  k_i = k_i^ideal
+  否则                     :  B_res = B_max − N · k_min
+                              k_i   = k_min + [ B_res · ŝ_i / (Σ_j ŝ_j + ε) ]
+
+段内削减
+  H_i^ATA = H_i[1 : k_i]                                     # 头部截断，O(1) 张量切片</div>
+    <p>头部截断的合理性依据是论文提出的 <strong>「语义前置」（semantic front-loading）</strong> 假说：因果注意力会把最显著的证据压进最靠前的 memory token。这个假说在消融中被强证据支持（见 §2.5.3-C）。</p>
+
+    <h4>2.4.3 关键机制对照表</h4>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>机制 / 维度</th><th>设计选择</th><th>动机</th><th>关键超参</th></tr>
+      <tr><td>局部压缩器</td><td>Qwen3-VL-2B-Instruct（可训练）</td><td>现成的跨模态理解能力，无需新算子</td><td>SVLM lr = 2×10⁻⁶</td></tr>
+      <tr><td>全局解码器</td><td>Qwen3-LM-4B</td><td>只负责在稀疏序列上推理</td><td>lr = 1×10⁻⁵</td></tr>
+      <tr><td>记忆槽位</td><td>可学习 memory token，置于因果序列<strong>末尾</strong></td><td>保证每个 M 能看到全部视觉+查询上下文</td><td><code>k_max = 128</code></td></tr>
+      <tr class="best"><td>相关性打分</td><td>冻结语言头的 yes/no logit 差 + Sigmoid</td><td>O(1)，避免自回归开销</td><td>无（零样本，无训练）</td></tr>
+      <tr><td>预算分配</td><td>两阶段线性 + 比例回退</td><td>连续分配优于二值 top-K</td><td><code>B_max</code> ∈ {4K, 8K}；<code>k_min = 4</code></td></tr>
+      <tr><td>段内削减</td><td><strong>动态头部截断</strong> <code>H_i[1:k_i]</code></td><td>语义前置假说；O(1) 切片</td><td><code>k_i ∈ [4, 128]</code></td></tr>
+      <tr><td>时间锚点</td><td>最低保底 <code>k_min = 4</code> token</td><td>保持时间连续性，避免「断片」</td><td><code>k_min = 4</code></td></tr>
+      <tr><td>时间定位</td><td>显式时间戳前缀 <code>&lt;t=2.0s&gt;</code></td><td>保留段的时序身份与因果顺序</td><td>2 FPS 采样</td></tr>
+    </table>
+    </div>
+
+    <h4>2.4.4 工程细节</h4>
+    <ul>
+      <li><strong>采样</strong>：Decord，2 FPS。训练段窗口 4 帧，推理段窗口 <strong>8 帧</strong>（训练/推理不一致，论文未解释，见 §2.7 批判 ⑥）。</li>
+      <li><strong>分辨率</strong>：图像原生分辨率；视频长边最大 512。</li>
+      <li><strong>硬件</strong>：64 GPU 集群 + FSDP。<strong>未给出训练总时长与卡时。</strong></li>
+      <li><strong>评测框架</strong>：lmms-eval。</li>
+    </ul>
+    <p><strong>四阶段渐进课程</strong>（附录表 A，模块冻结状态是关键）：</p>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>配置</th><th>Stage 0 对齐</th><th>Stage 1 预训练</th><th>Stage 2 广域 SFT</th><th>Stage 3 长上下文 SFT</th></tr>
+      <tr><td>局部压缩器 SVLM</td><td>冻结</td><td>解冻</td><td>解冻</td><td><strong>冻结</strong></td></tr>
+      <tr><td>Memory token</td><td>解冻</td><td>解冻</td><td>解冻</td><td><strong>冻结</strong></td></tr>
+      <tr><td>线性投影层</td><td>解冻</td><td>解冻</td><td>解冻</td><td><strong>冻结</strong></td></tr>
+      <tr><td>全局解码器 LLM</td><td>冻结</td><td>解冻</td><td>解冻</td><td>解冻</td></tr>
+      <tr><td>LR（LLM/投影/记忆）</td><td class="num">1×10⁻³</td><td class="num">1×10⁻⁵</td><td class="num">1×10⁻⁵</td><td class="num">1×10⁻⁵</td></tr>
+      <tr><td>LR（SVLM）</td><td class="num">—</td><td class="num">2×10⁻⁶</td><td class="num">2×10⁻⁶</td><td class="num">—</td></tr>
+      <tr><td>全局 batch size</td><td class="num">128</td><td class="num">256</td><td class="num">128</td><td class="num">64</td></tr>
+      <tr><td>最大采样帧数 f_max</td><td class="num">1（纯图）</td><td class="num">8</td><td class="num">128</td><td class="num"><strong>384</strong></td></tr>
+      <tr><td>段容量 k_max</td><td class="num">128</td><td class="num">128</td><td class="num">128</td><td class="num">128</td></tr>
+      <tr><td>LLM 最大上下文</td><td class="num">8192</td><td class="num">8192</td><td class="num">8192</td><td class="num"><strong>16384</strong></td></tr>
+      <tr><td>Warmup / Epoch</td><td>3% / 1</td><td>3% / 1</td><td>3% / 1</td><td>3% / 1</td></tr>
+    </table>
+    </div>
+    <p><strong>数据混合</strong>（附录表 B）：</p>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>模态</th><th class="num">Stage 0</th><th class="num">Stage 1</th><th class="num">Stage 2</th><th class="num">Stage 3</th><th class="num">合计</th></tr>
+      <tr><td>图像</td><td class="num">~558K</td><td class="num">~2.00M</td><td class="num">~0.93M</td><td class="num">—</td><td class="num">~3.49M</td></tr>
+      <tr><td>视频</td><td class="num">—</td><td class="num">~1.38M</td><td class="num">~2.25M</td><td class="num">~384K</td><td class="num">~4.01M</td></tr>
+      <tr><td>文本</td><td class="num">—</td><td class="num">~143K</td><td class="num">~71K</td><td class="num">—</td><td class="num">~214K</td></tr>
+      <tr class="best"><td>小计</td><td class="num">~558K</td><td class="num">~3.52M</td><td class="num">~3.25M</td><td class="num">~384K</td><td class="num">~7.71M</td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>Stage 3 的设计意图值得单独指出</strong>：<strong>冻住整个压缩侧，只让 LLM 学会在稀疏长序列上推理。</strong>这是一个干净的解耦——压缩能力和长上下文推理能力被分开训练。
+    </div>
+  </section>
+
+  <h2>2.5 实验设计与定量结果</h2>
+
+  <section class="card">
+    <h3>2.5.1 基准与数据集</h3>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>基准</th><th class="num">平均时长</th><th>侧重能力</th></tr>
+      <tr><td>LongVideoBench</td><td class="num">473 s</td><td>参照式推理，需定位到具体帧</td></tr>
+      <tr><td>MLVU</td><td class="num">651 s</td><td>多任务综合长视频理解</td></tr>
+      <tr><td>Video-MME (w/o sub.)</td><td class="num">1010 s</td><td>综合，含短/中/长三档</td></tr>
+      <tr><td>Video-MME Long</td><td class="num">2386 s</td><td>长视频子集</td></tr>
+      <tr class="best"><td>LVBench</td><td class="num"><strong>4101 s</strong></td><td>极端长视频（&gt;1 小时），本文主战场</td></tr>
+    </table>
+    </div>
+    <p>这个基准梯度设计得很好：<strong>时长从 473s 单调递增到 4101s</strong>，可以直接读出方法随时长的退化曲线。</p>
+  </section>
+
+  <section class="card">
+    <h3>2.5.2 主结果矩阵（论文表 1）</h3>
+    <p>单位 pp = percentage point。<strong>粗体</strong>为该列最优。</p>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>方法</th><th>规模</th><th class="num">tok/frame</th><th class="num">LongVB<br>473s</th><th class="num">MLVU<br>651s</th><th class="num">VMME<br>1010s</th><th class="num">VMME-L<br>2386s</th><th class="num">LVBench<br>4101s</th><th class="num">5 项均值</th></tr>
+      <tr class="grp"><td colspan="9">— 闭源模型 —</td></tr>
+      <tr><td>GPT-4o</td><td>—</td><td class="num">—</td><td class="num">66.7</td><td class="num">64.6</td><td class="num">71.9</td><td class="num"><strong>65.3</strong></td><td class="num">30.8</td><td class="num">59.86</td></tr>
+      <tr><td>Gemini 1.5 Pro</td><td>—</td><td class="num">—</td><td class="num">64.0</td><td class="num">—</td><td class="num"><strong>75.0</strong></td><td class="num"><strong>67.4</strong></td><td class="num">33.1</td><td class="num">—</td></tr>
+      <tr class="grp"><td colspan="9">— 通用开源 MLLM —</td></tr>
+      <tr><td>VideoChat2-HD</td><td>7B</td><td class="num">72</td><td class="num">—</td><td class="num">47.9</td><td class="num">45.3</td><td class="num">39.8</td><td class="num">—</td><td class="num">—</td></tr>
+      <tr><td>LLaVA-OneVision</td><td>7B</td><td class="num">196</td><td class="num">56.4</td><td class="num">64.7</td><td class="num">58.2</td><td class="num">—</td><td class="num">—</td><td class="num">—</td></tr>
+      <tr><td>LLaVA-Video</td><td>7B</td><td class="num">676</td><td class="num">58.2</td><td class="num">70.8</td><td class="num">63.3</td><td class="num">—</td><td class="num">—</td><td class="num">—</td></tr>
+      <tr><td>VideoLLaMA3</td><td>7B</td><td class="num">≤91</td><td class="num">59.8</td><td class="num">73.0</td><td class="num">66.2</td><td class="num">54.9</td><td class="num">45.3</td><td class="num">59.84</td></tr>
+      <tr><td>InternVL3.5</td><td>8B</td><td class="num">256</td><td class="num">62.1</td><td class="num">70.2</td><td class="num">66.0</td><td class="num">—</td><td class="num">—</td><td class="num">—</td></tr>
+      <tr><td>Molmo2</td><td>8B</td><td class="num">83</td><td class="num"><strong>67.5</strong></td><td class="num">—</td><td class="num">69.9</td><td class="num">—</td><td class="num">52.8</td><td class="num">—</td></tr>
+      <tr><td>Qwen2.5-VL</td><td>7B</td><td class="num"><strong>1924</strong></td><td class="num">56.0</td><td class="num">70.2</td><td class="num">65.1</td><td class="num">—</td><td class="num">45.3</td><td class="num">—</td></tr>
+      <tr><td>Qwen3-VL <span style="color:var(--muted)">← Tempo 的压缩器底座</span></td><td>2B</td><td class="num">≤640</td><td class="num">—</td><td class="num">68.3</td><td class="num">61.9</td><td class="num">—</td><td class="num">47.4</td><td class="num">—</td></tr>
+      <tr><td>Qwen3-VL <span style="color:var(--crit)">← 见批判 ③</span></td><td>8B</td><td class="num">≤640</td><td class="num">—</td><td class="num"><strong>78.1</strong></td><td class="num"><strong>71.4</strong></td><td class="num">—</td><td class="num"><strong>58.0</strong></td><td class="num">—</td></tr>
+      <tr class="grp"><td colspan="9">— 长视频专用 MLLM —</td></tr>
+      <tr><td>LLaMA-VID</td><td>7B</td><td class="num"><strong>2</strong></td><td class="num">—</td><td class="num">33.2</td><td class="num">25.9</td><td class="num">—</td><td class="num">23.9 <span style="color:var(--muted)">(13B)</span></td><td class="num">—</td></tr>
+      <tr><td>LongVA</td><td>7B</td><td class="num">144</td><td class="num">—</td><td class="num">56.3</td><td class="num">52.6</td><td class="num">46.2</td><td class="num">—</td><td class="num">—</td></tr>
+      <tr><td>Kangaroo</td><td>8B</td><td class="num">256</td><td class="num">54.8</td><td class="num">61.0</td><td class="num">56.0</td><td class="num">46.7</td><td class="num">39.4</td><td class="num">51.58</td></tr>
+      <tr><td>LongLLaVA</td><td>13B</td><td class="num">144</td><td class="num">53.5</td><td class="num">—</td><td class="num">53.8</td><td class="num">46.4</td><td class="num">—</td><td class="num">—</td></tr>
+      <tr><td>LongVILA</td><td>7B</td><td class="num">196</td><td class="num">57.1</td><td class="num">—</td><td class="num">60.1</td><td class="num">47.0</td><td class="num">—</td><td class="num">—</td></tr>
+      <tr><td>LongVU <span style="color:var(--crit)">← 见批判 ④</span></td><td>7B</td><td class="num">64</td><td class="num">—</td><td class="num">65.4</td><td class="num">60.6</td><td class="num"><strong>59.5</strong></td><td class="num">—</td><td class="num">—</td></tr>
+      <tr><td>Storm</td><td>7B</td><td class="num">64</td><td class="num">60.5</td><td class="num">72.9</td><td class="num">63.4</td><td class="num">53.4</td><td class="num">—</td><td class="num">—</td></tr>
+      <tr><td>BIMBA</td><td>7B</td><td class="num">36</td><td class="num">59.5</td><td class="num">71.4</td><td class="num">64.7</td><td class="num">—</td><td class="num">—</td><td class="num">—</td></tr>
+      <tr><td>VideoChat-Flash</td><td>7B</td><td class="num">16</td><td class="num">64.7</td><td class="num">74.7</td><td class="num">65.3</td><td class="num">55.4</td><td class="num">48.2</td><td class="num">61.66</td></tr>
+      <tr class="best"><td><strong>Tempo（4K 预算）</strong></td><td><strong>6B</strong></td><td class="num"><strong>0.5–16<br><span style="font-weight:400;font-size:12px">实测 2.8–3.6</span></strong></td><td class="num">64.5</td><td class="num"><strong>75.6</strong></td><td class="num"><strong>67.8</strong></td><td class="num">57.8</td><td class="num"><strong>52.7</strong></td><td class="num"><strong>63.68</strong></td></tr>
+      <tr class="best"><td><strong>Tempo（8K 预算）</strong></td><td><strong>6B</strong></td><td class="num"><strong>0.5–16<br><span style="font-weight:400;font-size:12px">实测 3.1–4.3</span></strong></td><td class="num">65.1</td><td class="num">75.2</td><td class="num">67.7</td><td class="num">57.0</td><td class="num">52.3</td><td class="num">63.46</td></tr>
+    </table>
+    </div>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">图 1 · Tempo 相对最强开源竞品的优势随视频时长单调放大</p>
+    <p class="fig-sub">数据来源：论文表 1。横轴按基准平均时长升序排列（473s → 4101s）。柱顶数字为 Δ（Tempo 4K − VideoChat-Flash）。悬浮查看具体数值。</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-1)"></span>VideoChat-Flash 7B（16 tok/frame，ICLR 2026）</span>
+      <span><span class="sw" style="background:var(--series-2)"></span>Tempo 6B（4K 预算，实测 2.8–3.6 tok/frame）</span>
+    </div>
+    <svg class="chart" viewBox="0 0 900 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Tempo 与 VideoChat-Flash 在五个长视频基准上的分数对比条形图">
+      <!-- gridlines -->
+      <line class="gl" x1="70" y1="300" x2="870" y2="300"/>
+      <line class="gl" x1="70" y1="232.5" x2="870" y2="232.5"/>
+      <line class="gl" x1="70" y1="165" x2="870" y2="165"/>
+      <line class="gl" x1="70" y1="97.5" x2="870" y2="97.5"/>
+      <line class="gl" x1="70" y1="30" x2="870" y2="30"/>
+      <text class="ax" x="60" y="304" text-anchor="end">40</text>
+      <text class="ax" x="60" y="236.5" text-anchor="end">50</text>
+      <text class="ax" x="60" y="169" text-anchor="end">60</text>
+      <text class="ax" x="60" y="101.5" text-anchor="end">70</text>
+      <text class="ax" x="60" y="34" text-anchor="end">80</text>
+      <text class="axlbl" x="18" y="165" text-anchor="middle" transform="rotate(-90 18 165)">基准得分</text>
+      <line class="bl" x1="70" y1="300" x2="870" y2="300"/>
+
+      <!-- group 1: LongVideoBench 473s : 64.7 / 64.5 -->
+      <rect data-tip="VideoChat-Flash · LongVideoBench (473s)：64.7" x="103" y="63.7" width="44" height="236.3" fill="var(--series-1)" rx="2"/>
+      <rect data-tip="Tempo 4K · LongVideoBench (473s)：64.5" x="153" y="65.1" width="44" height="234.9" fill="var(--series-2)" rx="2"/>
+      <text class="vlbl" x="125" y="57" text-anchor="middle">64.7</text>
+      <text class="vlbl" x="175" y="57" text-anchor="middle">64.5</text>
+      <text class="dlbl" x="150" y="38" text-anchor="middle" fill="var(--crit)">−0.2</text>
+      <text class="axlbl" x="150" y="322" text-anchor="middle">LongVideoBench</text>
+      <text class="ax" x="150" y="340" text-anchor="middle">473 s</text>
+
+      <!-- group 2: MLVU 651s : 74.7 / 75.6 -->
+      <rect data-tip="VideoChat-Flash · MLVU (651s)：74.7" x="263" y="65.5" width="44" height="234.5" fill="var(--series-1)" rx="2"/>
+      <rect data-tip="Tempo 4K · MLVU (651s)：75.6" x="313" y="59.7" width="44" height="240.3" fill="var(--series-2)" rx="2"/>
+      <text class="vlbl" x="285" y="59" text-anchor="middle">74.7</text>
+      <text class="vlbl" x="335" y="53" text-anchor="middle">75.6</text>
+      <text class="dlbl" x="310" y="34" text-anchor="middle" fill="var(--good)">+0.9</text>
+      <text class="axlbl" x="310" y="322" text-anchor="middle">MLVU</text>
+      <text class="ax" x="310" y="340" text-anchor="middle">651 s</text>
+
+      <!-- group 3: Video-MME 1010s : 65.3 / 67.8 -->
+      <rect data-tip="VideoChat-Flash · Video-MME (1010s)：65.3" x="423" y="129.7" width="44" height="170.3" fill="var(--series-1)" rx="2"/>
+      <rect data-tip="Tempo 4K · Video-MME (1010s)：67.8" x="473" y="112.9" width="44" height="187.1" fill="var(--series-2)" rx="2"/>
+      <text class="vlbl" x="445" y="123" text-anchor="middle">65.3</text>
+      <text class="vlbl" x="495" y="106" text-anchor="middle">67.8</text>
+      <text class="dlbl" x="470" y="88" text-anchor="middle" fill="var(--good)">+2.5</text>
+      <text class="axlbl" x="470" y="322" text-anchor="middle">Video-MME</text>
+      <text class="ax" x="470" y="340" text-anchor="middle">1010 s</text>
+
+      <!-- group 4: VMME-Long 2386s : 55.4 / 57.8 -->
+      <rect data-tip="VideoChat-Flash · Video-MME Long (2386s)：55.4" x="583" y="195.9" width="44" height="104.1" fill="var(--series-1)" rx="2"/>
+      <rect data-tip="Tempo 4K · Video-MME Long (2386s)：57.8" x="633" y="179.7" width="44" height="120.3" fill="var(--series-2)" rx="2"/>
+      <text class="vlbl" x="605" y="189" text-anchor="middle">55.4</text>
+      <text class="vlbl" x="655" y="173" text-anchor="middle">57.8</text>
+      <text class="dlbl" x="630" y="155" text-anchor="middle" fill="var(--good)">+2.4</text>
+      <text class="axlbl" x="630" y="322" text-anchor="middle">Video-MME Long</text>
+      <text class="ax" x="630" y="340" text-anchor="middle">2386 s</text>
+
+      <!-- group 5: LVBench 4101s : 48.2 / 52.7 -->
+      <rect data-tip="VideoChat-Flash · LVBench (4101s)：48.2" x="743" y="244.7" width="44" height="55.3" fill="var(--series-1)" rx="2"/>
+      <rect data-tip="Tempo 4K · LVBench (4101s)：52.7 —— 全表最大优势 +4.5pp (+9.34%)" x="793" y="214.3" width="44" height="85.7" fill="var(--series-2)" rx="2"/>
+      <text class="vlbl" x="765" y="238" text-anchor="middle">48.2</text>
+      <text class="vlbl" x="815" y="208" text-anchor="middle">52.7</text>
+      <text class="dlbl" x="790" y="190" text-anchor="middle" fill="var(--good)">+4.5</text>
+      <text class="axlbl" x="790" y="322" text-anchor="middle">LVBench</text>
+      <text class="ax" x="790" y="340" text-anchor="middle">4101 s</text>
+
+      <text class="axlbl" x="470" y="368" text-anchor="middle">← 视频平均时长递增 →</text>
+    </svg>
+  </div>
+
+  <section class="card">
+    <p><strong>相对提升计算</strong>（Tempo 4K vs. 最强开源长视频专用基线 VideoChat-Flash）：</p>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>基准</th><th class="num">VideoChat-Flash</th><th class="num">Tempo 4K</th><th class="num">Δ</th><th class="num">相对提升</th></tr>
+      <tr><td>LongVideoBench (473s)</td><td class="num">64.7</td><td class="num">64.5</td><td class="num neg">−0.2 pp</td><td class="num neg">−0.31%</td></tr>
+      <tr><td>MLVU (651s)</td><td class="num">74.7</td><td class="num">75.6</td><td class="num pos">+0.9 pp</td><td class="num pos">+1.20%</td></tr>
+      <tr><td>Video-MME (1010s)</td><td class="num">65.3</td><td class="num">67.8</td><td class="num pos">+2.5 pp</td><td class="num pos">+3.83%</td></tr>
+      <tr><td>Video-MME Long (2386s)</td><td class="num">55.4</td><td class="num">57.8</td><td class="num pos">+2.4 pp</td><td class="num pos">+4.33%</td></tr>
+      <tr class="best"><td><strong>LVBench (4101s)</strong></td><td class="num">48.2</td><td class="num"><strong>52.7</strong></td><td class="num pos"><strong>+4.5 pp</strong></td><td class="num pos"><strong>+9.34%</strong></td></tr>
+      <tr><td><strong>5 项均值</strong></td><td class="num">61.66</td><td class="num"><strong>63.68</strong></td><td class="num pos"><strong>+2.02 pp</strong></td><td class="num pos"><strong>+3.28%</strong></td></tr>
+    </table>
+    </div>
+    <div class="callout ok">
+      <strong>📈 关键趋势（本文最有说服力的定量证据之一）</strong>：Tempo 相对 VideoChat-Flash 的增益与视频时长<strong>严格单调正相关</strong>——473s 时 −0.2pp，651s 时 +0.9pp，1010s 时 +2.5pp，2386s 时 +2.4pp，4101s 时 <strong>+4.5pp</strong>。这不是随机波动，这正是「自适应带宽分配」该有的形状：视频越长、信息越稀疏，均匀分配浪费得越多，自适应的收益越大。反过来说，<strong>在 473s 这个尺度上 Tempo 是净负的</strong>——论文没有讨论这个交叉点，但它恰恰界定了该方法的适用边界。
+    </div>
+    <h4>与 LLaMA-VID 的闭环对比（技术脉络上最重要的一组数字）</h4>
+    <p>在<strong>几乎相同的 token 预算</strong>下（LLaMA-VID 固定 2 tokens/frame vs. Tempo 实测均值 2.8 tokens/frame）：</p>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>基准</th><th class="num">LLaMA-VID (2 tok/f)</th><th class="num">Tempo 4K (~2.8 tok/f)</th><th class="num">Δ</th></tr>
+      <tr><td>MLVU</td><td class="num">33.2</td><td class="num">75.6</td><td class="num pos"><strong>+42.4 pp</strong></td></tr>
+      <tr><td>Video-MME</td><td class="num">25.9</td><td class="num">67.8</td><td class="num pos"><strong>+41.9 pp</strong></td></tr>
+      <tr><td>LVBench</td><td class="num">23.9 (13B)</td><td class="num">52.7 (6B)</td><td class="num pos"><strong>+28.8 pp</strong></td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      这组数字说明：<strong>「2 tokens/frame 不够用」从来不是 token 数量的问题，而是这 2 个 token 怎么选的问题。</strong>两年半的技术演进把同一个预算下的性能翻了一倍多。
+    </div>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">图 2 · token 预算与性能的帕累托前沿：一条「向左上折返」的演进轨迹</p>
+    <p class="fig-sub">横轴为每帧视觉 token 数（对数刻度），纵轴为 MLVU 得分。数据来源：论文表 1。虚线连接技术脉络的时间顺序，可见轨迹先向右上（增加 token 换性能），再<strong>向左上折返</strong>（token 大幅下降、性能继续上升）。单一纵轴，无双 Y 轴。</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-1)"></span>脉络中的前驱工作</span>
+      <span><span class="sw" style="background:var(--series-2)"></span>Tempo（核心论文）</span>
+      <span><span class="sw" style="background:var(--baseline)"></span>其他对照模型</span>
+    </div>
+    <svg class="chart" viewBox="0 0 900 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="每帧token数与MLVU得分的散点图，展示帕累托前沿的折返轨迹">
+      <!-- y gridlines: 30..80 -->
+      <line class="gl" x1="80" y1="340" x2="870" y2="340"/>
+      <line class="gl" x1="80" y1="280" x2="870" y2="280"/>
+      <line class="gl" x1="80" y1="220" x2="870" y2="220"/>
+      <line class="gl" x1="80" y1="160" x2="870" y2="160"/>
+      <line class="gl" x1="80" y1="100" x2="870" y2="100"/>
+      <line class="gl" x1="80" y1="40" x2="870" y2="40"/>
+      <text class="ax" x="70" y="344" text-anchor="end">30</text>
+      <text class="ax" x="70" y="284" text-anchor="end">40</text>
+      <text class="ax" x="70" y="224" text-anchor="end">50</text>
+      <text class="ax" x="70" y="164" text-anchor="end">60</text>
+      <text class="ax" x="70" y="104" text-anchor="end">70</text>
+      <text class="ax" x="70" y="44" text-anchor="end">80</text>
+      <text class="axlbl" x="24" y="190" text-anchor="middle" transform="rotate(-90 24 190)">MLVU 得分</text>
+      <!-- x gridlines log10 -->
+      <line class="gl" x1="80" y1="40" x2="80" y2="340" stroke-dasharray="3 4"/>
+      <line class="gl" x1="309" y1="40" x2="309" y2="340" stroke-dasharray="3 4"/>
+      <line class="gl" x1="539" y1="40" x2="539" y2="340" stroke-dasharray="3 4"/>
+      <line class="gl" x1="768" y1="40" x2="768" y2="340" stroke-dasharray="3 4"/>
+      <line class="bl" x1="80" y1="340" x2="870" y2="340"/>
+      <text class="ax" x="80" y="360" text-anchor="middle">1</text>
+      <text class="ax" x="309" y="360" text-anchor="middle">10</text>
+      <text class="ax" x="539" y="360" text-anchor="middle">100</text>
+      <text class="ax" x="768" y="360" text-anchor="middle">1000</text>
+      <text class="axlbl" x="475" y="384" text-anchor="middle">每帧视觉 token 数（对数刻度）</text>
+
+      <!-- trajectory dashed line: LLaMA-VID -> LongVA -> LongVU -> VideoChat-Flash -> Tempo -->
+      <polyline points="149,321 575,182 494,128 356,72 183,66" fill="none" stroke="var(--series-1)" stroke-width="1.6" stroke-dasharray="6 5" opacity="0.5"/>
+      <!-- arrow at end -->
+      <polygon points="183,66 194,73 192,60" fill="var(--series-2)" opacity="0.7"/>
+
+      <!-- other models (baseline gray) -->
+      <circle data-tip="Qwen2.5-VL 7B：1924 tok/frame，MLVU 70.2" cx="833" cy="99" r="6" fill="var(--baseline)"/>
+      <text class="vlbl" x="833" y="88" text-anchor="middle">Qwen2.5-VL</text>
+      <circle data-tip="BIMBA 7B (CVPR 2025)：~36 tok/frame，MLVU 71.4" cx="437" cy="92" r="6" fill="var(--baseline)"/>
+      <text class="vlbl" x="429" y="110" text-anchor="end">BIMBA</text>
+      <circle data-tip="Storm 7B (ICCVW 2025)：64 tok/frame，MLVU 72.9" cx="494" cy="83" r="6" fill="var(--baseline)"/>
+      <text class="vlbl" x="506" y="97" text-anchor="start">Storm</text>
+
+      <!-- lineage points (series-1) -->
+      <circle data-tip="LLaMA-VID 7B (ECCV 2024)：2 tok/frame，MLVU 33.2" cx="149" cy="321" r="7" fill="var(--series-1)"/>
+      <text class="vlbl" x="163" y="325" text-anchor="start">LLaMA-VID (2023.11)</text>
+      <circle data-tip="LongVA 7B (2024.06)：144 tok/frame，MLVU 56.3" cx="575" cy="182" r="7" fill="var(--series-1)"/>
+      <text class="vlbl" x="589" y="186" text-anchor="start">LongVA (2024.06)</text>
+      <circle data-tip="LongVU 7B (ICML 2025)：64 tok/frame，MLVU 65.4" cx="494" cy="128" r="7" fill="var(--series-1)"/>
+      <text class="vlbl" x="508" y="132" text-anchor="start">LongVU (2024.10)</text>
+      <circle data-tip="VideoChat-Flash 7B (ICLR 2026)：16 tok/frame，MLVU 74.7" cx="356" cy="72" r="7" fill="var(--series-1)"/>
+      <text class="vlbl" x="348" y="88" text-anchor="end">VideoChat-Flash (2024.12)</text>
+
+      <!-- Tempo -->
+      <circle data-tip="★ Tempo 6B (ECCV 2026)：实测均值 2.8 tok/frame，MLVU 75.6 —— 全图左上角" cx="183" cy="66" r="9" fill="var(--series-2)"/>
+      <text class="dlbl" x="196" y="52" text-anchor="start" fill="var(--series-2)">★ Tempo (2026.04)</text>
+
+      <text class="ax" x="86" y="406" text-anchor="start">← token 更少（更省）</text>
+      <text class="ax" x="864" y="406" text-anchor="end">token 更多（更贵）→</text>
+    </svg>
+  </div>
+
+  <section class="card">
+    <div class="callout">
+      <strong>图 2 的读法</strong>：轨迹从右下（LLaMA-VID，token 极少但性能极差）向右上（LongVA，用 144 tok/frame 换性能），再持续<strong>向左上折返</strong>——LongVU 64、VideoChat-Flash 16、Tempo 2.8。<strong>横轴走了一个来回，纵轴单调上升 42.4pp。</strong>这就是这个子领域过去 30 个月最凝练的概括：token 预算不是性能的瓶颈，token 的选择方式才是。
+    </div>
+  </section>
+
+  <h2>2.5.3 消融研究（论文表 2，五个层级）</h2>
+
+  <section class="card">
+    <h3>A. 渐进训练课程</h3>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>配置</th><th class="num">预算</th><th class="num">LongVB</th><th class="num">MLVU</th><th class="num">VMME</th><th class="num">VMME-L</th><th class="num">LVBench</th><th class="num">均值</th></tr>
+      <tr><td>w/o Stage 3（长上下文 SFT）</td><td class="num">16K</td><td class="num">61.4</td><td class="num">67.2</td><td class="num">66.1</td><td class="num">56.3</td><td class="num">47.3</td><td class="num">59.66</td></tr>
+      <tr><td>w/o ATA</td><td class="num">16K</td><td class="num">62.8</td><td class="num">73.5</td><td class="num">67.0</td><td class="num">56.2</td><td class="num">51.1</td><td class="num">62.12</td></tr>
+      <tr class="best"><td><strong>Tempo 默认</strong></td><td class="num"><strong>8K</strong></td><td class="num"><strong>65.1</strong></td><td class="num"><strong>75.2</strong></td><td class="num"><strong>67.7</strong></td><td class="num"><strong>57.0</strong></td><td class="num"><strong>52.3</strong></td><td class="num"><strong>63.46</strong></td></tr>
+    </table>
+    </div>
+    <div class="callout ok">
+      <strong>🔥 相变级证据</strong>：<code>w/o ATA</code> 用 <strong>16K 预算</strong>只拿到 62.12，而完整 Tempo 用 <strong>8K 预算</strong>（一半）拿到 63.46。<strong>预算减半、性能反升 1.34pp。</strong>这是全文对 ATA 最强的辩护——它证明「分配方式」的价值超过了「分配总量」的价值。Stage 3 的贡献同样巨大：MLVU 上 67.2 → 75.2，<strong>+8.0pp</strong>，是全表最大单项落差。
+    </div>
+    <div class="callout warn">
+      <strong>⚠️ 但请注意</strong>：这两个对照行用的是 <strong>16K 预算</strong>，默认行用 <strong>8K</strong>。这是一个<strong>非受控对比</strong>——预算变量和被消融的组件同时变化了。论文没有提供 8K 预算下的 <code>w/o ATA</code> 结果。见 §2.7 批判 ②。
+    </div>
+
+    <h3>B. 段级预算分配策略（ATA 的核心辩护）</h3>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>策略</th><th class="num">LongVB</th><th class="num">MLVU</th><th class="num">VMME</th><th class="num">VMME-L</th><th class="num">LVBench</th><th class="num">均值</th><th class="num">vs. ATA</th></tr>
+      <tr><td>对抗式路由（保留<strong>最低</strong>分片段）</td><td class="num">50.7</td><td class="num">59.3</td><td class="num">52.4</td><td class="num">47.8</td><td class="num">36.9</td><td class="num">49.42</td><td class="num neg"><strong>−14.04 pp</strong></td></tr>
+      <tr><td>随机丢弃</td><td class="num">59.3</td><td class="num">70.9</td><td class="num">63.6</td><td class="num">55.2</td><td class="num">49.8</td><td class="num">59.76</td><td class="num neg">−3.70 pp</td></tr>
+      <tr><td>均匀子采样</td><td class="num">61.9</td><td class="num">74.0</td><td class="num">66.3</td><td class="num">55.2</td><td class="num">49.9</td><td class="num">61.46</td><td class="num neg">−2.00 pp</td></tr>
+      <tr><td>硬 Top-K 路由（保留<strong>最高</strong>分片段）</td><td class="num">63.5</td><td class="num">73.9</td><td class="num">66.7</td><td class="num">56.2</td><td class="num"><strong>52.7</strong></td><td class="num">62.60</td><td class="num neg">−0.86 pp</td></tr>
+      <tr class="best"><td><strong>ATA（连续分配）</strong></td><td class="num"><strong>65.1</strong></td><td class="num"><strong>75.2</strong></td><td class="num"><strong>67.7</strong></td><td class="num"><strong>57.0</strong></td><td class="num">52.3</td><td class="num"><strong>63.46</strong></td><td class="num">—</td></tr>
+    </table>
+    </div>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">图 3 · 对抗式路由的崩塌：相关性分数确实携带真实信息</p>
+    <p class="fig-sub">五种段级预算分配策略的 5 基准均值（数据来源：论文表 2-B，均值由本报告计算）。关键在于<strong>对抗式路由低于随机丢弃 10.34pp</strong>——若分数是噪声，反向使用应等于随机。悬浮查看数值。</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-1)"></span>对照策略</span>
+      <span><span class="sw" style="background:var(--series-2)"></span>ATA（论文方案）</span>
+      <span><span class="sw" style="background:var(--crit)"></span>对抗式路由（反向使用分数）</span>
+    </div>
+    <svg class="chart" viewBox="0 0 900 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="五种段级预算分配策略的平均得分横向条形图">
+      <!-- x gridlines 45..65 -->
+      <line class="gl" x1="220" y1="30" x2="220" y2="255"/>
+      <line class="gl" x1="380" y1="30" x2="380" y2="255"/>
+      <line class="gl" x1="540" y1="30" x2="540" y2="255"/>
+      <line class="gl" x1="700" y1="30" x2="700" y2="255"/>
+      <line class="gl" x1="860" y1="30" x2="860" y2="255"/>
+      <text class="ax" x="220" y="274" text-anchor="middle">45</text>
+      <text class="ax" x="380" y="274" text-anchor="middle">50</text>
+      <text class="ax" x="540" y="274" text-anchor="middle">55</text>
+      <text class="ax" x="700" y="274" text-anchor="middle">60</text>
+      <text class="ax" x="860" y="274" text-anchor="middle">65</text>
+      <text class="axlbl" x="540" y="296" text-anchor="middle">五基准平均得分</text>
+      <line class="bl" x1="220" y1="30" x2="220" y2="255"/>
+
+      <rect data-tip="对抗式路由（保留最低分片段）：49.42 —— 比随机丢弃还低 10.34pp" x="220" y="42" width="141" height="26" fill="var(--crit)" rx="2"/>
+      <text class="axlbl" x="212" y="60" text-anchor="end">对抗式路由</text>
+      <text class="vlbl" x="371" y="60" text-anchor="start">49.42</text>
+
+      <rect data-tip="随机丢弃（均匀随机选段）：59.76" x="220" y="87" width="472" height="26" fill="var(--series-1)" rx="2"/>
+      <text class="axlbl" x="212" y="105" text-anchor="end">随机丢弃</text>
+      <text class="vlbl" x="702" y="105" text-anchor="start">59.76</text>
+
+      <rect data-tip="均匀子采样（每段等量 token）：61.46" x="220" y="132" width="527" height="26" fill="var(--series-1)" rx="2"/>
+      <text class="axlbl" x="212" y="150" text-anchor="end">均匀子采样</text>
+      <text class="vlbl" x="757" y="150" text-anchor="start">61.46</text>
+
+      <rect data-tip="硬 Top-K 路由（保留最高分片段）：62.60 —— 但在 LVBench 上 52.7 &gt; ATA 的 52.3" x="220" y="177" width="563" height="26" fill="var(--series-1)" rx="2"/>
+      <text class="axlbl" x="212" y="195" text-anchor="end">硬 Top-K 路由</text>
+      <text class="vlbl" x="793" y="195" text-anchor="start">62.60</text>
+
+      <rect data-tip="★ ATA 连续自适应分配（论文方案）：63.46" x="220" y="222" width="592" height="26" fill="var(--series-2)" rx="2"/>
+      <text class="axlbl" x="212" y="240" text-anchor="end" style="font-weight:600">★ ATA</text>
+      <text class="dlbl" x="822" y="240" text-anchor="start" fill="var(--series-2)">63.46</text>
+
+      <!-- annotation bracket between adversarial and random -->
+      <line x1="371" y1="55" x2="640" y2="55" stroke="var(--crit)" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.65"/>
+      <line x1="640" y1="55" x2="640" y2="100" stroke="var(--crit)" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.65"/>
+      <text class="dlbl" x="648" y="78" text-anchor="start" fill="var(--crit)">−10.34pp vs 随机</text>
+    </svg>
+  </div>
+
+  <section class="card">
+    <div class="callout ok">
+      <strong>🔥 全文最有说服力的定量证据</strong>：对抗式路由（故意保留相关性最低的片段）比<strong>随机丢弃</strong>还低 <strong>10.34pp</strong>（49.42 vs 59.76）。这是一个极其干净的因果论证——如果 <code>s_i</code> 是噪声，反向使用它的性能应当<em>等于</em>随机；实际上反向使用<strong>显著劣于</strong>随机，说明 <code>s_i</code> 中确实编码了真实的查询-片段相关性信息。<strong>这一条比任何正向 SOTA 数字都更能证明零样本相关性先验是有效的。</strong>
+    </div>
+    <div class="callout warn">
+      <strong>⚠️ 但同一张表埋着一枚地雷</strong>：在 <strong>LVBench（4101s，本文的主战场）</strong>上，硬 Top-K 路由拿到 <strong>52.7</strong>，<strong>高于 ATA 的 52.3</strong>。也就是说，在最需要自适应分配的极端长视频上，ATA 反而输给了最简单的二值 top-K。见 §2.7 批判 ①。
+    </div>
+
+    <h3>C. 段内 token 削减方案（「语义前置」假说的验证）</h3>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>方案</th><th class="num">LongVB</th><th class="num">MLVU</th><th class="num">VMME</th><th class="num">VMME-L</th><th class="num">LVBench</th><th class="num">均值</th></tr>
+      <tr><td>均匀<strong>尾部</strong>截断（固定 64）</td><td class="num">59.5</td><td class="num">71.6</td><td class="num">64.1</td><td class="num">54.8</td><td class="num">41.8</td><td class="num">58.36</td></tr>
+      <tr><td>动态<strong>尾部</strong>截断（保留后 k_i 个）</td><td class="num">61.9</td><td class="num">73.4</td><td class="num">64.8</td><td class="num">54.2</td><td class="num">50.5</td><td class="num">60.96</td></tr>
+      <tr><td>均匀<strong>头部</strong>截断（固定 64）</td><td class="num">63.2</td><td class="num">73.4</td><td class="num">66.9</td><td class="num">56.2</td><td class="num">51.5</td><td class="num">62.24</td></tr>
+      <tr><td>Token Merging（合并到 k_i 个）</td><td class="num">63.6</td><td class="num">74.9</td><td class="num">66.3</td><td class="num">55.4</td><td class="num"><strong>53.0</strong></td><td class="num">62.64</td></tr>
+      <tr class="best"><td><strong>动态头部截断（默认）</strong></td><td class="num"><strong>65.1</strong></td><td class="num"><strong>75.2</strong></td><td class="num"><strong>67.7</strong></td><td class="num"><strong>57.0</strong></td><td class="num">52.3</td><td class="num"><strong>63.46</strong></td></tr>
+    </table>
+    </div>
+    <div class="callout ok">
+      <strong>「语义前置」假说被强证据支持</strong>：在<strong>完全相同的固定预算 64</strong> 下，头部截断比尾部截断高 <strong>3.88pp</strong>（62.24 vs 58.36）；在 LVBench 上这个差距扩大到 <strong>+9.7pp</strong>（51.5 vs 41.8）。因果注意力确实把关键证据压进了靠前的 memory token。这是一个<strong>可脱离本文单独复用的发现</strong>——任何用因果 LM 做 token 压缩的工作都可以直接采纳「截头不截尾」。
+      <br><br>⚠️ 但 Token Merging 在 LVBench 上拿到 <strong>53.0 &gt; 默认的 52.3</strong>，再次在极端长视频上击败默认配置。
+    </div>
+
+    <h3>D. 相关性打分来源与零样本先验</h3>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>打分来源</th><th class="num">LongVB</th><th class="num">MLVU</th><th class="num">VMME</th><th class="num">VMME-L</th><th class="num">LVBench</th><th class="num">均值</th></tr>
+      <tr class="best"><td><strong>基座模型先验（显式路由 prompt）</strong></td><td class="num"><strong>65.7</strong></td><td class="num"><strong>76.3</strong></td><td class="num">67.6</td><td class="num"><strong>57.3</strong></td><td class="num">52.7</td><td class="num"><strong>63.92</strong></td></tr>
+      <tr><td>Tempo SVLM 先验（标准 prompt）</td><td class="num">64.1</td><td class="num">75.4</td><td class="num">67.2</td><td class="num">57.0</td><td class="num"><strong>53.4</strong></td><td class="num">63.42</td></tr>
+      <tr><td>基座模型先验（标准 prompt）</td><td class="num">64.6</td><td class="num">75.1</td><td class="num">67.2</td><td class="num">56.1</td><td class="num">52.6</td><td class="num">63.12</td></tr>
+      <tr><td>外部稠密检索器（Qwen3-VL Reranker）</td><td class="num">64.3</td><td class="num">75.4</td><td class="num">67.2</td><td class="num">57.0</td><td class="num">51.8</td><td class="num">63.14</td></tr>
+      <tr><td>Tempo SVLM 先验（显式路由 prompt）<strong>← 论文默认</strong></td><td class="num">65.1</td><td class="num">75.2</td><td class="num"><strong>67.7</strong></td><td class="num">57.0</td><td class="num">52.3</td><td class="num">63.46</td></tr>
+    </table>
+    </div>
+    <div class="callout warn">
+      <strong>🚨 这是全文最尴尬的一张表，也是我认为最值得指出的问题</strong>：论文采用的默认配置（63.46）<strong>不是这一组的最优解</strong>。「基座模型先验 + 显式路由 prompt」拿到 <strong>63.92</strong>，高出 <strong>+0.46pp</strong>，并且在 <strong>5 个基准里赢了 4 个</strong>（65.7&gt;65.1、76.3&gt;75.2、57.3&gt;57.0、52.7&gt;52.3；仅 Video-MME 总分以 67.6&lt;67.7 微弱落后）。
+      <br><br>这意味着：<strong>微调后的 SVLM 作为路由器，反而不如未经 Tempo 训练的原始基座模型。</strong>论文没有对这个反直觉现象作出任何解释，也没有据此调整默认配置。一个合理的推测是：Stage 1/2 的压缩训练让 SVLM 的表征偏向「压缩友好」，反而损害了它作为判别器的校准度——但这只是我的假设，论文未验证。
+    </div>
+    <div class="callout ok">
+      <strong>一个干净的正面论据</strong>：<strong>外部稠密检索器（63.14）几乎没有优势</strong>，甚至低于基座模型的免费先验（63.92）。这条有力支持了论文「不需要外挂 retriever」的核心主张。
+    </div>
+
+    <h3>E. 时间连续性（最低 token 保底）</h3>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>方案</th><th class="num">LongVB</th><th class="num">MLVU</th><th class="num">VMME</th><th class="num">VMME-L</th><th class="num">LVBench</th><th class="num">均值</th></tr>
+      <tr><td>硬剪枝（无关片段给 0 token）</td><td class="num">63.9</td><td class="num">74.8</td><td class="num">67.4</td><td class="num">56.3</td><td class="num">52.3</td><td class="num">62.94</td></tr>
+      <tr class="best"><td><strong>最小时间锚点 k_min = 4</strong></td><td class="num"><strong>65.1</strong></td><td class="num"><strong>75.2</strong></td><td class="num"><strong>67.7</strong></td><td class="num"><strong>57.0</strong></td><td class="num">52.3</td><td class="num"><strong>63.46</strong></td></tr>
+    </table>
+    </div>
+    <p><code>k_min = 4</code> 的贡献仅 <strong>+0.52pp</strong>，是五组消融里最小的。设计上它是必要的（防止时间轴断裂），但定量收益远小于 ATA（+2.00pp vs 均匀）和头部截断（+2.50pp vs 尾部）。</p>
+  </section>
+
+  <section class="card">
+    <h3>2.5.4 预算敏感性分析：一个被论文轻描淡写的相变</h3>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>基准</th><th class="num">Tempo 4K</th><th class="num">Tempo 8K</th><th class="num">Δ(8K − 4K)</th></tr>
+      <tr><td>LongVideoBench (473s)</td><td class="num">64.5</td><td class="num"><strong>65.1</strong></td><td class="num pos">+0.6</td></tr>
+      <tr><td>MLVU (651s)</td><td class="num"><strong>75.6</strong></td><td class="num">75.2</td><td class="num neg">−0.4</td></tr>
+      <tr><td>Video-MME (1010s)</td><td class="num"><strong>67.8</strong></td><td class="num">67.7</td><td class="num neg">−0.1</td></tr>
+      <tr><td>Video-MME Long (2386s)</td><td class="num"><strong>57.8</strong></td><td class="num">57.0</td><td class="num neg">−0.8</td></tr>
+      <tr><td>LVBench (4101s)</td><td class="num"><strong>52.7</strong></td><td class="num">52.3</td><td class="num neg">−0.4</td></tr>
+      <tr class="best"><td><strong>均值</strong></td><td class="num"><strong>63.68</strong></td><td class="num">63.46</td><td class="num neg"><strong>−0.22</strong></td></tr>
+    </table>
+    </div>
+    <div class="callout warn">
+      <strong>⚡ 相变现象高亮</strong>：<strong>把预算翻倍，平均性能反而下降 0.22pp，5 个基准里 4 个变差。</strong>唯一受益的是最短的 LongVideoBench。论文对此的解释（图 3 说明）是「严格的 4K 预算对标准长视频任务起到了最优过滤作用，更大的预算带来边际噪声」，并声称在 LVBench 上「12K 等更大容量在更高帧密度下单调解锁新峰值」。
+      <br><br>但表 1 的 8K 行<strong>并不支持后半句</strong>——8K 在 LVBench 上是 52.3，低于 4K 的 52.7。论文的图 3 论断与表 1 数据之间存在张力。这里存在一个未说明的混淆变量：图 3 同时扫描了<strong>帧数上限</strong>和<strong>预算</strong>两个轴，而表 1 固定了帧数。<strong>论文没有给出固定帧数下的预算单调性曲线</strong>，因此「更大预算更好」这一说法在本文中并未被干净地证明。
+    </div>
+    <div class="callout">
+      <strong>跨论文引证</strong>：这个「更多不等于更好」的现象与 LongVA 的观察精确呼应——LongVA 在 Video-MME 上 128 帧得 52.6，384 帧反降至 <strong>51.8</strong>（LongVA 表 4）。两篇独立工作、两种完全相反的技术路线（扩上下文 vs. 压上下文），都撞上了同一堵墙：<strong>LLM 在长视觉序列上的有效上下文远小于名义上下文。</strong>这恰好也是 STORM 论文唯一自承的局限（"pretrained LLMs operate with a smaller effective context length in practice"）。<strong>三篇论文的三处独立观察指向同一个尚未被解决的根本问题</strong>（详见 §6.1①）。
+    </div>
+
+    <h3>2.5.5 统计显著性</h3>
+    <div class="callout warn">
+      <strong>⚠️ 论文全文未提供任何标准差、置信区间或多次运行结果。</strong>表 1 和表 2 的所有数字均为单次运行。这一点必须严肃看待：表 2 中大量关键对比的差距在 <strong>0.2–0.9pp</strong> 量级（ATA vs 硬 Top-K 的 0.86pp、默认 vs 基座先验的 0.46pp、k_min 的 0.52pp、4K vs 8K 的 0.22pp），而长视频基准的单次运行波动通常就在这个量级。<strong>在没有误差棒的前提下，这些结论都应被视为「方向性提示」而非「已证实」。</strong>唯一在统计上无可争议的是对抗式路由那 14pp 的落差。
+    </div>
+
+    <h3>2.5.6 效率分析：一个显著的缺失</h3>
+    <p>论文反复强调 ATA 的 <strong>O(1)</strong> 复杂度、"single forward pass"、"避免自回归开销"。但——</p>
+    <div class="callout warn">
+      <strong>❌ 论文没有提供任何实测效率数字</strong>：没有 wall-clock 延迟、没有 TFLOPs、没有 GPU 显存占用、没有吞吐量对比、没有与 VideoChat-Flash / STORM 的端到端速度 head-to-head。
+      <br><br>这对一篇<strong>以效率为核心卖点</strong>的论文是严重缺口。特别是：Tempo 的 SVLM 需要对<strong>每一个段</strong>跑一次 2B 模型前向，段数随时长线性增长。对一个 4101s 的 LVBench 视频，2 FPS × 4101s ÷ 8 帧/段 ≈ <strong>1025 段</strong>，即 <strong>1025 次 2B 模型前向</strong>。这个成本是否真的低于 VideoChat-Flash 的一次性分层压缩？<strong>论文没有回答，我也无法从公开材料核实。</strong>对比之下，STORM 明确给出了 4.31s → 1.82s（<strong>−58.4%</strong>）的实测延迟。这是 Tempo 在论证严密性上明显弱于对照工作的地方。
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>2.6 价值分析</h3>
+    <h4>真正的贡献是什么</h4>
+    <p>不是「用小模型压缩视频」（BIMBA 已在做学习式压缩），也不是「query-aware」（LongVU 已在做）。<strong>Tempo 真正的贡献是把「压缩」和「路由」合并成同一次前向的两个输出。</strong></p>
+    <p>这一点的关键性在于：此前所有 query-aware 方法都面临一个两难——要么用启发式打分（LongVU 的 DINOv2 相似度 + 注意力，便宜但与语义脱节），要么用外部检索器（准确但昂贵，且与压缩器的表征空间不一致）。Tempo 指出第三条路：<strong>压缩器在压缩的过程中已经「想过」这个问题了，只需要把它的想法读出来</strong>。论文表 2-D 用一个干净的对照证明了这一点——外部稠密检索器（63.14）并不优于免费截胡的内部先验（63.46）。</p>
+    <h4>哪些设计可以脱离本文单独复用</h4>
+    <ol>
+      <li><strong>Logit 差投影作为零样本相关性打分</strong> <code>s = σ((w_yes − w_no)ᵀh)</code>。完全通用：任何基于因果 LM 的系统，只要需要一个二元判断的连续置信度，都可以用它替代自回归解码，代价 O(1)。可直接迁移到 RAG 重排、Agent 工具选择、数据清洗打分。</li>
+      <li><strong>「截头不截尾」（semantic front-loading）</strong>。表 2-C 的 +3.88pp（LVBench 上 +9.7pp）是一个可复用的经验定律：因果注意力下的压缩表征是前重后轻的。任何做 KV cache 淘汰、token 剪枝的工作都应默认从尾部丢弃。</li>
+      <li><strong>memory token 置于因果序列末尾</strong>的构造。简单但关键——它把「压缩」变成一个纯粹的注意力读取问题，无需任何新算子。</li>
+      <li><strong>连续分配 &gt; 二值 top-K</strong> 的一般原则（表 2-B，+0.86pp）。幅度不大但方向明确。</li>
+      <li><strong>压缩侧与推理侧解耦训练</strong>（Stage 3 冻住整个压缩栈只训 LLM）。这个课程设计本身就是一个可迁移配方。</li>
+    </ol>
+    <h4>对后续工作的启发</h4>
+    <p>Tempo 打开的研究空间是「<strong>分层路由</strong>」：论文自己在第 6 节点出方向——让全局 LLM 变成一个<strong>主动路由 agent</strong>，按需向下请求某些片段的高分辨率表征。这实际上是把当前的「一次性压缩 + 一次性解码」变成「多轮 agentic 检索」。如果这条路走通，长视频理解会从「压缩问题」彻底转型为「Agent 检索问题」，与当前 LLM 侧的 deep research / agentic RAG 潮流合流。</p>
+  </section>
+
+  <h2>2.7 局限性</h2>
+
+  <section class="card">
+    <h3>第一类：论文自述的局限（第 6 节 Discussion and Future Works）</h3>
+    <ol>
+      <li><strong>路由完全零样本，未经任何后训练</strong>。原文："it operates entirely in a zero-shot manner"，作者提出未来可用 SFT 或 RL 显式激发这一能力。</li>
+      <li><strong>压缩深度固定，无法自适应分配「思考量」</strong>。原文承认受推理模型 test-time compute 启发，但 "adapting this autoregressive extraction without severely bottlenecking inference latency remains a profound optimization challenge"。</li>
+      <li><strong>多轮对话需要重新提取全部视觉特征</strong>。因为压缩是 query-conditioned 的，用户追问一句就得重跑整段视频。</li>
+    </ol>
+
+    <h3>第二类：补充批判（独立观察，共 8 点）</h3>
+
+    <h4>① 【失手的子任务 + 论证缺口】ATA 在本文的主战场 LVBench 上并非最优，且被三种更简单的方案击败</h4>
+    <p>表 2-B 中硬 Top-K 路由在 LVBench 拿 <strong>52.7 &gt; ATA 的 52.3</strong>；表 2-C 中 Token Merging 拿 <strong>53.0 &gt; 52.3</strong>；表 2-D 中 Tempo SVLM 标准 prompt 拿 <strong>53.4 &gt; 52.3</strong>——后者是全表 LVBench 最高分，比论文主表宣称的 SOTA（52.7）还高 0.7pp。论文的核心叙事是「自适应连续分配对极端长视频最关键」，但<strong>恰恰在时长最长的基准上，连续分配输给了二值分配</strong>。这与论文的主张不一致。</p>
+    <p>合理的机制解释是：LVBench 视频长达 4101s，段数 N 极大，此时 ATA 的比例回退公式 <code>k_i = k_min + [B_res · ŝ_i / Σŝ_j]</code> 会因 <code>Σŝ_j</code> 过大而把每段压到接近 <code>k_min</code>，退化成近似均匀分配；而硬 top-K 至少保证被选中的段拿到满容量。<strong>论文未讨论 ATA 在大 N 极限下的退化行为，这是一个明确的论证缺口。</strong></p>
+
+    <h4>② 【实验设计问题】消融对比未控制预算变量</h4>
+    <p>表 2-A 中 <code>w/o Stage 3</code> 与 <code>w/o ATA</code> 均在 <strong>16K 预算</strong>下测量，而默认行在 <strong>8K</strong>。这使得「Stage 3 贡献 +3.80pp」和「ATA 贡献 +1.34pp」两个结论都是<strong>预算与组件混淆</strong>的产物。论文没有提供 8K 下的 <code>w/o ATA</code> 对照，也没有提供 16K 下的完整 Tempo。严格地说，表 2-A 无法单独归因。</p>
+
+    <h4>③ 【缺乏关键竞品的公平对比】与同族最强模型 Qwen3-VL-8B 的差距被表格结构淡化了</h4>
+    <p>Tempo 的两个组件都来自 Qwen3 family（Qwen3-VL-2B + Qwen3-LM-4B），但表 1 中 Qwen3-VL-8B 在三个共享基准上全面领先：</p>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>基准</th><th class="num">Qwen3-VL-8B</th><th class="num">Tempo 4K (6B)</th><th class="num">Δ</th></tr>
+      <tr><td>MLVU</td><td class="num">78.1</td><td class="num">75.6</td><td class="num neg"><strong>−2.5 pp</strong></td></tr>
+      <tr><td>Video-MME</td><td class="num">71.4</td><td class="num">67.8</td><td class="num neg"><strong>−3.6 pp</strong></td></tr>
+      <tr><td>LVBench</td><td class="num">58.0</td><td class="num">52.7</td><td class="num neg"><strong>−5.3 pp</strong></td></tr>
+      <tr><td><strong>三项均值</strong></td><td class="num">69.17</td><td class="num">65.37</td><td class="num neg"><strong>−3.80 pp</strong></td></tr>
+    </table>
+    </div>
+    <p>一个<strong>参数更多但架构更简单</strong>的同族模型，在所有共享基准上都比 Tempo 好，且差距同样随时长扩大（−2.5 → −3.6 → −5.3）。论文正确地把 Tempo 定位为 6B 规模下的 SOTA，但没有讨论：<strong>如果把 Tempo 的框架套在 8B 底座上会怎样？或者反过来，Qwen3-VL-8B 在同等 token 预算约束下会怎样？</strong>缺少这个 head-to-head，「压缩优于扩容」这一核心命题就没有被真正证明。</p>
+    <div class="callout ok">
+      作为参照，Tempo 相对其<strong>自己的压缩器底座</strong> Qwen3-VL-2B 的增益是 +7.3 / +5.9 / +5.3pp（三项均值 <strong>+6.17pp</strong>）——这是一个诚实且积极的数字，论文本可以更突出地呈现它。
+    </div>
+
+    <h4>④ 【失手的子任务】在 Video-MME Long 上被 2024 年的启发式方法 LongVU 击败</h4>
+    <p>LongVU（ICML 2025，64 tokens/frame，纯启发式无学习）在 Video-MME Long 上拿 <strong>59.5</strong>，高于 Tempo 4K 的 <strong>57.8</strong>（−1.7pp）和 Tempo 8K 的 57.0（−2.5pp）。这是本文唯一一处被更早、更简单的方法反超的子任务，论文未作讨论。考虑到 Video-MME Long 平均 2386s，正处在 Tempo 的优势区间内，这个反例削弱了「自适应分配在长视频上普遍占优」的强主张。</p>
+
+    <h4>⑤ 【论证缺口 + 反直觉未解释】默认配置不是消融表的最优解</h4>
+    <p>如 §2.5.3-D 所述，「基座模型先验 + 显式路由 prompt」均值 63.92，在 5 个基准里赢 4 个，高于论文默认的 63.46。<strong>论文既未解释「为什么微调后的 SVLM 作为路由器反而变差」，也未据此更新默认配置。</strong>这是一个方法论上的红旗：如果 Tempo 训练损害了 SVLM 的判别校准，那么「压缩器与路由器共享同一次前向」这一核心设计就存在内在张力——<strong>压缩训练的目标与路由判别的目标可能是竞争关系</strong>。这个假设完全可以用一个简单实验验证（测量 Stage 0/1/2/3 各阶段 checkpoint 的路由 AUC），但论文没有做。</p>
+
+    <h4>⑥ 【实验设计问题】训练与推理的段窗口不一致，且未消融</h4>
+    <p>训练用 <strong>4 帧/段</strong>，推理用 <strong>8 帧/段</strong>（§4.1）。这是一个 2× 的分布偏移，论文既未解释动机（推测是为了在固定 <code>B_max</code> 下覆盖更多帧），也未提供推理段窗口的敏感性分析。考虑到 <code>k_max = 128</code> 在两种设置下都不变，8 帧/段意味着推理时每帧实际只分到训练时一半的记忆容量。<strong>这可能正是 4K 预算优于 8K 的隐藏原因之一</strong>（更小的预算迫使 ATA 更激进地区分片段，部分补偿了这个偏移），但论文没有把这两件事联系起来。</p>
+
+    <h4>⑦ 【可复现性风险 + 指标有效性】效率主张无实测支撑，且成本随时长线性增长</h4>
+    <p>如 §2.5.6 所述，全文零延迟/FLOPs/显存数据。更具体的担忧：LVBench 上约 1025 次 2B 前向的开销可能抵消掉全局 LLM 侧的 token 节省。论文用 "O(1)" 描述的仅是<strong>路由打分</strong>这一步，而非整个压缩流程。<strong>把局部的 O(1) 表述用在以效率为卖点的论文标题语境中，存在误导风险。</strong>建议后续工作补一张 (延迟, 显存, 精度) 三维帕累托前沿图，与 VideoChat-Flash、STORM 直接对比。</p>
+
+    <h4>⑧ 【统计有效性】无误差棒，而多数关键结论落在噪声量级内</h4>
+    <p>表 2 中至少 5 组关键对比的差距 ≤ 0.9pp（ATA vs Top-K：0.86；默认 vs 基座先验：0.46；k_min=4 vs 硬剪枝：0.52；4K vs 8K：0.22；Token Merging vs 默认：0.82）。单次运行、无 seed 方差报告的前提下，这些差异不足以支撑「设计 X 优于设计 Y」的强结论。论文本可以只在 MLVU 和 LVBench 上跑 3 个 seed 就大幅提升可信度。</p>
+
+    <h3>我自己分析的不完备之处（坦诚披露）</h3>
+    <ul>
+      <li>我读到的是 <strong>arXiv HTML v1 渲染版</strong>。表 1 中「Actual avg. toks/frame」一行的列对齐在两次独立抓取中呈现不一致（一次 6 个单元格、一次 7 个），因此 <strong>2.8 / 3.6 / 3.4 / 2.9 这四个数与具体基准的对应关系我无法 100% 确定</strong>，本报告统一表述为「4K 预算下实测均值 2.8–3.6 tokens/frame」。</li>
+      <li>论文的 <strong>图 3（预算×帧数扫描）与图 C（定性分配可视化）只有说明文字可读，坐标轴具体数值无法从 HTML 中提取</strong>，因此 §2.5.4 中关于 12K 预算的讨论仅基于图注文字，未能核实曲线本身。</li>
+      <li><strong>ECCV 2026 官方 proceedings 尚未上线</strong>，「ECCV 2026」这一 venue 信息来自 GitHub README 与项目主页的自我标注，我无法从第三方权威源交叉验证。</li>
+      <li>我<strong>没有运行代码</strong>，所有性能数字均为论文自报，未做任何独立复现。</li>
+    </ul>
+  </section>
+
+  <h2>3. 相关工作回溯</h2>
+  <p style="color:var(--text-secondary)">以下五篇沿 Tempo 的引用脉络选出，构成一条清晰的<strong>问题传递链</strong>，而非平行罗列。</p>
+
+  <section class="card">
+    <h3>3.1 LLaMA-VID — 2023.11（arXiv）/ ECCV 2024 主会（pp. 323–340）</h3>
+    <p><strong>① 解决了什么问题。</strong> 长视频塞不进 LLM 上下文。LLaMA-VID 给出了当时最激进的答案：<strong>每帧只用 2 个 token</strong>。具体是一个 Q-Former 从用户指令生成查询 <code>Q_t</code>，经 context attention 聚合出 1 个<strong>上下文 token</strong>；再由自适应池化产出 1 个<strong>内容 token</strong>。视觉编码器用 EVA-G。凭这个设计，64K 上下文可容纳超过 3 小时的视频。核心贡献一句话：<strong>证明了「每帧 2 token」在工程上是可行的</strong>。</p>
+    <p><strong>② 遗留了什么缺口。</strong> 作者自己在结论中承认得非常明确：</p>
+    <div class="callout">
+      "Although LLaMA-VID succeeds to represent hour-long videos in LLMs, it focuses more on temporal consistency and <strong>may lose spatial details in each frame</strong>. In the future work, we plan to maintain dense spatial information for each frame outside the LLM..."
+    </div>
+    <p>更根本的缺口在于：<strong>这 2 个 token 的分配是静态的</strong>。无论这一秒是关键动作还是空镜头，都是 2 个 token。论文表 5 自己量化了代价——把内容压到 1 个 token 损失 2%–6%。缺口是：<strong>压缩率被当作全局常数而非局部变量。</strong></p>
+    <p><strong>③ 核心工作如何回应。</strong> Tempo 直接回到了同一个 token 量级（实测均值 2.8 vs LLaMA-VID 的 2），但把 MLVU 从 33.2 抬到 75.6（<strong>+42.4pp</strong>）、Video-MME 从 25.9 抬到 67.8（<strong>+41.9pp</strong>）。<strong>Tempo 对这个缺口的回应可以概括为一句话：不是「2 个 token 不够」，而是「每帧都恰好 2 个 token」这件事错了。</strong> ATA 让某些段拿 128 个 token、某些段只拿 4 个，均值仍在 2.8。</p>
+    <p><strong>④ 关键设计的传递。</strong> LLaMA-VID 的 <strong>context token</strong>（由用户指令驱动、聚合文本相关视觉线索）正是 Tempo 的 <strong>query-conditioned memory token</strong> 的直系祖先。技术迁移路径是：<strong>外挂 Q-Former 生成查询 → 直接把查询写进 SVLM 的因果序列</strong>。前者需要额外训练一个 Q-Former，后者复用 SVLM 自身的注意力机制，更简洁也更强。</p>
+  </section>
+
+  <section class="card">
+    <h3>3.2 LongVA（Long Context Transfer from Language to Vision）— 2024.06，arXiv 预印本（venue 未找到）</h3>
+    <p><strong>① 解决了什么问题。</strong> LongVA 走的是<strong>完全相反</strong>的路：既然压缩会丢信息，那就别压，直接把上下文扩大。核心主张是「长上下文迁移」——把 Qwen2-7B-Instruct 的<strong>文本</strong>上下文续训到 224K（RoPE base 提到 1B，900M tokens / 1000 步），这个能力会<strong>零样本迁移到视觉</strong>，"without any video training"。配套的 UniRes 编码把视频直接当成一张 336×(336·N) 的长图，N 帧 = 144N 个 token。V-NIAH 上到约 2000 帧（≈288K token）仍近乎满分，<strong>超出了训练长度</strong>。核心贡献：<strong>证明了长上下文能力可以跨模态零样本迁移</strong>。</p>
+    <p><strong>② 遗留了什么缺口。</strong> 三个缺口，前两个是作者自承的：</p>
+    <ul>
+      <li><strong>帧数非单调</strong>：Video-MME 上 128 帧 52.6，384 帧反降到 <strong>51.8</strong>（LongVA 表 4）。「更多帧」不等于「更好」。</li>
+      <li><strong>UniRes 有代价</strong>：在 AI2D、ChartQA 等低分辨率图像基准上不如 AnyRes。</li>
+      <li><strong>成本爆炸</strong>（我的补充观察）：2000 帧推理的 KV cache 需要高达 <strong>100GB</strong> 显存。224K 的上限是被 8×A100-80G 的显存卡死的，不是方法上限。</li>
+    </ul>
+    <p>最根本的缺口：<strong>扩上下文没有解决「带宽该给谁」的问题，只是把问题推给了硬件。</strong>144 tokens/frame 对每一帧一视同仁，与 LLaMA-VID 的 2 tokens/frame 在「均匀性」上是同构的，只是常数不同。</p>
+    <p><strong>③ 核心工作如何回应。</strong> Tempo 用表 1 直接回应了这条路线的性价比：LongVA 用 144 tokens/frame 拿 Video-MME 52.6，Tempo 用约 3.6 tokens/frame 拿 67.8——<strong>token 少 40 倍，分数高 15.2pp</strong>。更深的回应在 §2.5.4：Tempo 自己也观测到了「预算翻倍性能反降」（4K 63.68 → 8K 63.46），与 LongVA 的 128→384 帧退化是同一个现象。<strong>Tempo 的立场是：既然名义上下文的边际收益会转负，那么正确的方向是提高每个 token 的信息密度，而不是增加 token 数。</strong></p>
+    <p><strong>④ 关键设计的传递。</strong> LongVA 的贡献不在被 Tempo 继承的机制上，而在于它<strong>用一个干净的反例划定了「扩上下文」路线的天花板</strong>。它提供的 V-NIAH 评测范式（反事实问题 + 困惑度打分，防止语言先验作弊）也成为后续长视频工作的标准诊断工具，VideoChat-Flash 的 10000 帧 NIAH 实验就是这一范式的延续。</p>
+  </section>
+
+  <section class="card">
+    <h3>3.3 LongVU — 2024.10（arXiv）/ ICML 2025 主会 Poster</h3>
+    <p><strong>① 解决了什么问题。</strong> 第一次把「query-aware」真正落地成一个完整的时空压缩流水线。三步：(i) <strong>DINOv2</strong> 在 J=8 帧窗口内算平均特征相似度，丢掉与邻帧高度冗余的帧，帧数大致减半；(ii) <strong>跨模态文本引导</strong>——按帧特征与文本查询的注意力打分，top-<code>N_h</code> 帧保留 144 tokens/frame（12×12），其余降采样到 64 tokens/frame（8×8）；(iii) <strong>STC 空间 token 压缩</strong>，在 K=8 帧滑窗内剪掉与时序相邻 token 余弦相似度 &gt;θ=0.8 的空间 token，平均再削 <strong>40.4%</strong>。最终一小时视频塞进 8K 上下文，<strong>平均约 2 tokens/frame</strong>。核心贡献：<strong>证明了「按查询分配不同分辨率」是有效的</strong>（表 3：自适应 67.62 vs 均匀 8k@64 的 66.84 与 8k@144 的 66.28）。</p>
+    <p><strong>② 遗留了什么缺口。</strong> 这是整条链上最关键的一个缺口：<strong>LongVU 的压缩是启发式且训练无关（training-free）的</strong>。θ=0.8、J=8、K=8 全是手调阈值，没有任何东西是从数据中学出来的。DINOv2 的特征相似度衡量的是<strong>视觉冗余</strong>，而不是<strong>对当前问题的有用性</strong>——两段画面完全不同的空镜头，DINOv2 会认为都值得保留，但对「他什么时候拧螺丝」这个问题两段都是废的。此外作者自承：视频 SFT 后<strong>图像理解能力下降</strong>（表 10），因 GPU 资源限制未做混合数据训练。</p>
+    <p><strong>③ 核心工作如何回应。</strong> Tempo 把这三个手工模块<strong>整体替换成一个可学习的 SVLM</strong>：不再有 DINOv2 相似度阈值，不再有 top-<code>N_h</code> 硬选择，不再有 STC 余弦阈值——压缩行为完全由 <code>L_AR</code> 这一个自回归损失隐式学出。表 2-B 的对照直接量化了「学出来」相对「手调」的价值：ATA 比均匀子采样高 <strong>2.00pp</strong>，比随机高 <strong>3.70pp</strong>。而 Tempo 的四阶段课程（图像/视频/文本混合，共 ~7.71M 样本）也正面回应了 LongVU 自承的图像能力退化问题。</p>
+    <p><strong>④ 关键设计的传递。</strong> 两项直接传递：(i) <strong>「不同片段给不同 token 数」这一核心思想</strong>，LongVU 是二档（144/64），Tempo 推广成连续区间 [4, 128]；(ii) <strong>文本引导的相关性打分</strong>，LongVU 用跨模态注意力算，Tempo 用 SVLM 的 yes/no logit 差算——技术迁移的具体形式是「<strong>外部注意力打分 → 模型内部的判别置信度</strong>」。</p>
+    <div class="callout ok">
+      <strong>值得一提的作者重合</strong>：LongVU 与 Tempo 共享 Jun Chen、Zechun Liu、Yunyang Xiong、Lemeng Wu、Chenchen Zhu、Raghuraman Krishnamoorthi、Vikas Chandra、Mohamed Elhoseiny 等多位作者，且都出自 Meta AI + KAUST，<strong>Tempo 可视为同一团队对 LongVU 的直接迭代</strong>——这也是我认为这条传递链最可靠的一环。
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>3.4 BIMBA — 2025.03（arXiv）/ CVPR 2025 主会 Poster</h3>
+    <p><strong>① 解决了什么问题。</strong> LongVU 是启发式的，BIMBA 给出了「<strong>学习式压缩</strong>」的答案。它在视觉编码器与 LLM 之间插入一个 <strong>Mamba 选择性扫描</strong>模块：把逐帧 patch 特征展平成一条时空长序列，一组 query token 随选择性扫描前进，由输入相关的门控在每一步决定「写入状态还是丢弃」——压缩因此是内容相关的而非均匀池化。三个关键设计：query 由时空 token 的<strong>自适应 3D 平均池化</strong>初始化（而非可学习 embedding）、query <strong>交错插入</strong>视频 token 之间（而非追加在尾部，以消除位置偏置）、<strong>双向扫描</strong>恢复 1D 扫描丢失的空间结构。问题条件化通过把 LLM 分词后的问题前置实现：<code>Z' = [X; Z; Q]</code>。压缩比 &gt;16×（36,864 → 2,304 token）。核心贡献：<strong>证明了压缩策略可以被端到端学出来，且能做到亚二次复杂度</strong>。</p>
+    <p><strong>② 遗留了什么缺口。</strong> BIMBA <strong>没有 Limitations 章节</strong>（这本身值得记一笔）。从缺失处推断的缺口有三个：(i) <strong>压缩后的 token 数 M 与池化比例是固定超参</strong>（1×2×2 / 2×2×2 / 4×2×2 按帧数档位切换），不随视频内容或问题难度自适应；(ii) 问题条件化被描述为<strong>可选的</strong>、且是 prepend 式而非架构级，因此「同一视频多个问题」无法复用单次前向；(iii) 效率只给了<strong>曲线，没有绝对数字</strong>（无 FLOPs、无 ms、无 GB）。缺口一句话概括：<strong>学会了「怎么压」，但没学会「压多少」。</strong></p>
+    <p><strong>③ 核心工作如何回应。</strong> Tempo 正是补上了 (i)：ATA 让每段的 <code>k_i</code> 随相关性在 [4, 128] 连续变化。表 2-B 中「均匀子采样」这一行（61.46）在概念上就是 BIMBA 式固定比例压缩的代理，ATA 相对它 <strong>+2.00pp</strong>。而 (iii) 这个缺口 Tempo <strong>没有补上</strong>——如 §2.7 批判 ⑦ 所述，Tempo 同样只给了 O(1) 的定性表述，没给实测数字。<strong>这是整条演进链上唯一一个连续两代都未被填补的缺口。</strong></p>
+    <p><strong>④ 关键设计的传递。</strong> BIMBA 的<strong>组件消融方法论</strong>被 Tempo 明显继承（BIMBA 表 1：可学习 query 67.67 → 平均池化初始化 68.61 → +norm 69.85 → +双向 71.68 → +交错 73.57，逐层累加的呈现方式，与 Tempo 表 2 的五分组结构同源）。更实质的传递是「<strong>在视觉编码器与 LLM 之间插入一个可学习的压缩瓶颈</strong>」这一架构位点——BIMBA 放的是 Mamba 层，Tempo 放的是一整个 2B VLM。技术迁移的形式是「<strong>专用序列算子 → 通用预训练模型</strong>」，这也是过去两年整个领域的宏观趋势。</p>
+  </section>
+
+  <section class="card">
+    <h3>3.5 VideoChat-Flash — 2024.12（arXiv v1）/ ICLR 2026 主会 Poster（v4: 2025-07-13）</h3>
+    <p><strong>① 解决了什么问题。</strong> 把 token 效率推到当时的极致，同时保住长上下文能力。<strong>HiCo（分层视觉 token 压缩）</strong>分两级：clip 级用视频编码器的时空注意力 + 相似 token 合并，把每帧压到均值 <strong>16 tokens</strong>；video 级在 LLM 推理时做渐进式视觉 dropout（浅层丢约 50%，深层用注意力引导选择），总压缩比约 <strong>1/50</strong>。配套一个<strong>四阶段 short-to-long</strong> 训练方案（4 帧 → 8 帧 → 64–512 帧 → 448 高分辨率后微调）。上下文扩到 128K，支持约 <strong>10,000 帧</strong>。核心贡献：<strong>NIAH 单跳检索在 10,000 帧上达到 99.1%</strong>（对比 LongVA 3,000 帧 92%、LLaMA-VID 55%）——长视频的「检索」问题基本被解决。</p>
+    <p><strong>② 遗留了什么缺口。</strong> 一个漂亮的、由论文自己数据揭示的缺口：<strong>检索接近满分，推理却远未解决</strong>。同一篇论文的多跳 NIAVH（图 6）在 10k 帧上 CAP 仅 <strong>31.3%</strong>、QA 仅 <strong>25.4%</strong>。即「能找到那一帧」和「能把几帧串起来推理」之间存在巨大鸿沟。机制上的原因是：<strong>HiCo 的 clip 级压缩是 query-agnostic 的</strong>——16 tokens/frame 对所有帧一视同仁，压缩时并不知道用户要问什么，于是多跳推理所需的那些「看似不重要但组合起来关键」的细节在压缩阶段就已被丢弃。此外作者自承 video 级压缩<strong>只能用于推理</strong>，因与序列并行等训练加速策略不兼容。</p>
+    <p><strong>③ 核心工作如何回应。</strong> Tempo 的整个设计就是对「clip 级压缩 query-agnostic」这一条的正面回应：<strong>把查询提前注入到压缩的最内层</strong>。效果在表 1 上体现为随时长单调扩大的优势（LongVideoBench −0.2pp → LVBench <strong>+4.5pp</strong>）——正是在最需要跨段组合推理的极长视频上，query-aware 压缩的价值最大。同时 Tempo 的压缩在训练和推理中是一致的（不像 HiCo 的 video 级压缩仅推理可用），这消除了训练-推理不匹配。</p>
+    <p><strong>④ 关键设计的传递。</strong> 两项：(i) <strong>short-to-long 渐进课程</strong>几乎被 Tempo 一比一继承（VideoChat-Flash：4→8→64–512 帧 + 高分辨率后微调；Tempo：1→8→128→384 帧，四阶段结构完全同构）；(ii) <strong>「极低 tokens/frame 也能做 SOTA」这一存在性证明</strong>——VideoChat-Flash 用 16 tokens/frame 打平了用 1924 tokens/frame 的 Qwen2.5-VL，直接为 Tempo 把预算再降一个数量级（到均值 2.8）铺平了心理与经验基础。技术迁移形式是「<strong>固定的极低预算 → 均值更低但可动态起伏的预算</strong>」。</p>
+  </section>
+
+  <h2>4. 技术演进脉络</h2>
+
+  <section class="card">
+    <h3>4.1 ASCII 演进树（非线性，含平行分支与汇聚点）</h3>
+    <div class="flow">2023.11  LLaMA-VID  [ECCV 2024 主会]
+         「压缩到极致」  2 tokens/frame · Q-Former 上下文token · EVA-G
+         MLVU 33.2 · Video-MME 25.9 · 3小时视频 @64K上下文
+              │
+              │ ✗ 遗留：压缩率是全局常数；作者自承丢失空间细节
+              │
+              ├────────────────────────┐
+              ▼                        ▼
+   ┌──── 路线A：不压，扩上下文 ────┐   └──── 路线B：压得更聪明 ────────────┐
+   │                              │                                       │
+2024.06  LongVA  [arXiv]          │                                       │
+   「长上下文跨模态零样本迁移」     │                                       │
+   224K文本上下文 → 外推288K视觉    │                                       │
+   144 tok/frame · V-NIAH@2000帧   │                                       │
+   Video-MME 52.6 @128帧           │                                       │
+         │                        │                                       │
+         │ ✗ 384帧反降至51.8       │                                       │
+         │ ✗ KV cache 100GB       │                                       │
+         │ ✗ 仍是均匀分配          │                                       │
+         │                        │                                       │
+         └──── 路线A 撞墙 ─────────┘                                       │
+              （有效上下文 &lt;&lt; 名义上下文）                                  │
+                        ╲                                                 │
+                         ╲                                                ▼
+                          ╲                    2024.10  LongVU  [ICML 2025 主会]
+                           ╲                   「查询感知，但全是手调阈值」
+                            ╲                   DINOv2去冗余(J=8) + 文本引导选帧
+                             ╲                  + STC空间压缩(θ=0.8,K=8) → ~2 tok/f
+                              ╲                 MLVU 65.4 · VMME 60.6 · VMME-L 59.5
+                               ╲                        │
+                                ╲                       │ ✗ 遗留：无一处是学出来的
+                                 ╲                      │   视觉冗余 ≠ 对问题有用
+                                  ╲                     │
+                                   ╲          ┌─────────┴─────────┐
+                                    ╲         ▼                   ▼
+                                     ╲  2025.03 BIMBA        2024.12 VideoChat-Flash
+                                      ╲ [CVPR 2025 主会]      [ICLR 2026 主会]
+                                       ╲「学习式压缩」        「分层压缩，极致效率」
+                                        ╲Mamba选择性扫描       HiCo: clip级16 tok/f
+                                         ╲交错query+双向扫描    + video级推理期dropout
+                                          ╲36864→2304 (16×)    128K上下文 · 10000帧
+                                           ╲MLVU 71.4          NIAH单跳 99.1% @10k帧
+                                            ╲VMME 64.7         MLVU 74.7 · LVBench 48.2
+                                             ╲    │                 │
+                                              ╲   │✗ 压缩比M固定     │✗ clip级压缩查询无关
+                                               ╲  │  「会压，不会    │  多跳推理仅25.4%
+                                                ╲ │   决定压多少」   │  video级压缩仅推理可用
+                                                 ╲│                 │
+                                                  └────────┬────────┘
+                                                           ▼
+                              2026.04  ★ Tempo  [ECCV 2026] ← 汇聚点
+                              「压缩器本身就是一个会读问题的小模型」
+                              SVLM(Qwen3-VL-2B) 端到端学压缩 + 同一次前向截胡相关性
+                              + ATA 全局自适应预算，0.5–16 tok/f（实测均值 2.8–3.6）
+                              MLVU 75.6 · VMME 67.8 · VMME-L 57.8 · LVBench 52.7
+                              ↑ 回到 LLaMA-VID 的 token 量级，MLVU 性能 +42.4pp</div>
+
+    <h3>4.2 演进的内在逻辑</h3>
+    <p><strong>推动力一条线</strong>：<code>静态常数 → 手工规则 → 学习算子 → 预训练模型 → 自适应分配</code></p>
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>阶段</th><th>压缩由什么决定</th><th>代表工作</th><th>关键转折</th></tr>
+      <tr><td>一、静态压缩</td><td>一个全局超参（2 / 144 / 16 tok/f）</td><td>LLaMA-VID, LongVA, VideoChat-Flash</td><td>—</td></tr>
+      <tr><td>二、手工规则</td><td>人工阈值（θ=0.8, J=8, K=8）</td><td>LongVU</td><td><strong>首次引入「不同片段给不同预算」</strong></td></tr>
+      <tr><td>三、学习算子</td><td>一个被端到端训练的专用模块（Mamba）</td><td>BIMBA</td><td><strong>压缩策略从手写变成学出来</strong></td></tr>
+      <tr><td>四、预训练模型</td><td>一整个预训练 VLM</td><td>Tempo</td><td><strong>压缩器不再是算子，而是模型</strong></td></tr>
+      <tr class="best"><td>五、自适应分配</td><td>模型自己输出的相关性打分</td><td>Tempo (ATA)</td><td><strong>「压多少」也变成了模型的输出</strong></td></tr>
+    </table>
+    </div>
+    <p><strong>三个关键转折点：</strong></p>
+    <ol>
+      <li><strong>LongVU 的转折（2024.10）</strong>：从「所有帧一视同仁」到「按查询分配不同分辨率」。这是<strong>问题定义的转折</strong>——第一次承认带宽应该是不均匀的。</li>
+      <li><strong>BIMBA 的转折（2025.03）</strong>：从「手写规则」到「端到端学习」。这是<strong>方法论的转折</strong>——压缩策略成为可微目标的一部分。</li>
+      <li><strong>Tempo 的转折（2026.04）</strong>：从「学习压缩什么」到「同时学习压缩多少」。这是<strong>输出空间的转折</strong>——压缩率从超参变成了模型的一个输出维度。</li>
+    </ol>
+    <p><strong>社区关注点的转移：</strong></p>
+    <ul>
+      <li><strong>2023–2024 上半年：能不能塞进去。</strong>指标是最大帧数、最大上下文长度（LLaMA-VID 的 3 小时、LongVA 的 2000 帧）。</li>
+      <li><strong>2024 下半年–2025：塞进去之后能不能找到。</strong>指标是 NIAH 检索准确率（VideoChat-Flash 的 99.1%@10k 帧）。这个问题在 2025 年基本被解决。</li>
+      <li><strong>2025 下半年–2026：找到之后能不能推理。</strong>指标转向多跳推理与极长视频综合理解（VideoChat-Flash 自曝的多跳 25.4%、LVBench 的 4101s）。<strong>Tempo 正处在这个转折点上——它的所有增益都集中在最长的基准上，而在最短的 LongVideoBench 上是净负的。</strong></li>
+    </ul>
+    <div class="callout warn">
+      <strong>一个尚未被任何一代解决的问题</strong>：LongVA（128→384 帧退化）、STORM（"有效上下文远小于名义上下文"）、Tempo（4K 优于 8K 预算）——<strong>三篇独立工作、三条不同技术路线，都撞上了「给 LLM 更多视觉 token 会变差」这堵墙。</strong>五代工作过去了，没有一篇正面攻击这个问题。这是我认为整个领域当下最值得投入的空白（详见 §6.1①）。
+    </div>
+  </section>
+
+  <h2>5. 相关工作表格对标</h2>
+
+  <section class="card">
+    <div class="tbl-scroll">
+    <table>
+      <tr><th>工作</th><th class="num">发表年月</th><th>会议 / 出版</th><th>核心贡献</th><th class="num">tok/frame</th><th>关键指标</th><th>与核心工作的关系</th></tr>
+      <tr><td>LLaMA-VID</td><td class="num">2023.11</td><td><strong>ECCV 2024</strong> 主会</td><td>每帧 2 token 的极限压缩；Q-Former 上下文 token</td><td class="num">2</td><td>MLVU 33.2 · VMME 25.9</td><td><strong>token 预算的起点</strong>；Tempo 在同量级下 +42.4pp</td></tr>
+      <tr><td>LongVA</td><td class="num">2024.06</td><td>arXiv（venue 未找到）</td><td>长上下文跨模态零样本迁移；UniRes</td><td class="num">144</td><td>VMME 52.6 @128帧</td><td><strong>反例与边界</strong>；证明扩上下文会撞墙</td></tr>
+      <tr><td>LongVU</td><td class="num">2024.10</td><td><strong>ICML 2025</strong> 主会 Poster</td><td>启发式时空自适应压缩；文本引导选帧</td><td class="num">~2<br><span style="font-size:12px;color:var(--muted)">(自适应 144/64)</span></td><td>MLVU 65.4 · VMME 60.6 · <strong>VMME-L 59.5</strong></td><td><strong>直系前作</strong>（同团队 Meta+KAUST，多位共同作者）；Tempo 把手工规则换成学习式</td></tr>
+      <tr><td>BIMBA</td><td class="num">2025.03</td><td><strong>CVPR 2025</strong> 主会 Poster</td><td>Mamba 选择性扫描学习式压缩；交错 query + 双向扫描</td><td class="num">~36<br><span style="font-size:12px;color:var(--muted)">(16× 压缩)</span></td><td>MLVU 71.4 · VMME 64.7 · NExT-QA 83.73</td><td><strong>学习式压缩的源头</strong>；Tempo 继承其架构位点，补上「压多少」的自适应</td></tr>
+      <tr><td>VideoChat-Flash</td><td class="num">2024.12</td><td><strong>ICLR 2026</strong> 主会 Poster</td><td>HiCo 分层压缩；short-to-long 课程；128K/10000 帧</td><td class="num">16</td><td>MLVU 74.7 · VMME 65.3 · LVBench 48.2 · NIAH 99.1%@10k</td><td><strong>最强直接竞品</strong>；Tempo 继承其训练课程，回应其 query-agnostic 缺口</td></tr>
+      <tr><td>STORM<br><span style="font-size:12px;color:var(--muted)">（对照）</span></td><td class="num">2025.03</td><td>ICCVW 2025（<strong>Workshop</strong>）</td><td>Mamba 时序投影器；训练/测试期时空池化</td><td class="num">64<br><span style="font-size:12px;color:var(--muted)">(25%→12.5%)</span></td><td>MLVU 72.9 · LVB 60.5 · <strong>延迟 −65.5%</strong></td><td><strong>效率论证的正面样板</strong>；唯一给出实测延迟的对照工作</td></tr>
+      <tr class="best"><td><strong>★ Tempo</strong></td><td class="num"><strong>2026.04</strong></td><td><strong>ECCV 2026</strong></td><td><strong>SVLM 作压缩器 + 同前向截胡相关性 + ATA 自适应预算</strong></td><td class="num"><strong>0.5–16<br><span style="font-weight:400;font-size:12px">实测 2.8–3.6</span></strong></td><td><strong>MLVU 75.6 · VMME 67.8 · VMME-L 57.8 · LVBench 52.7</strong></td><td><strong>汇聚点</strong></td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>表格读法</strong>：沿 tok/frame 一列可以读出一条清晰的下降-再分化曲线：144（LongVA）→ 64（LongVU/STORM）→ 36（BIMBA）→ 16（VideoChat-Flash）→ <strong>动态 0.5–16</strong>（Tempo）。而性能一列（以 MLVU 为例）单调上升：33.2 → 56.3 → 65.4 → 71.4 → 74.7 → <strong>75.6</strong>。<strong>两条曲线反向而行，正是这个子领域过去 30 个月最凝练的概括</strong>（见图 2）。
+      <br><br>但也要注意<strong>最后一跳的边际收益已经很小</strong>（MLVU 74.7 → 75.6，+0.9pp），而 LVBench 那一跳仍很大（48.2 → 52.7，+4.5pp）——说明中等长度视频上的压缩红利已近枯竭，剩下的空间在极长视频。
+    </div>
+  </section>
+
+  <h2>6. 开放挑战与研究机会</h2>
+
+  <section class="card">
+    <h3>6.1 理论层面</h3>
+    <h4>① 视觉 token 的「有效上下文」上界是什么？<span style="color:var(--series-2)">（本报告认为最高价值、最低门槛的空白）</span></h4>
+    <p>不是泛泛地「研究长上下文」，而是一个具体的测量问题：LongVA（128→384 帧退化 0.8pp）、Tempo（4K→8K 预算退化 0.22pp）、STORM（自承有效上下文小于名义上下文）三处独立观察指向同一现象，但<strong>没有任何一篇给出这个拐点的定量刻画</strong>。</p>
+    <p><strong>具体可操作的实验设计</strong>：固定模型、固定视频集，只扫描注入的视觉 token 数 <code>B ∈ {1K, 2K, 4K, 8K, 16K, 32K}</code>，在每个 B 上分别测量 (a) 端到端任务准确率、(b) 一个纯检索探针（NIAH 式）的准确率、(c) 注意力熵在视觉 token 区间上的分布。<strong>假设是</strong>：(b) 会持续上升而 (a) 在某个 <code>B*</code> 后转降，说明退化发生在<strong>推理</strong>而非<strong>检索</strong>环节。若成立，则「有效上下文」可以被定义为 <code>B* = argmax_B accuracy(B)</code>，并可进一步问：<code>B*</code> 是否随 LLM 规模缩放？<strong>这是一个单模型、单周实验就能做完的高价值空白。</strong></p>
+
+    <h4>② ATA 在大 N 极限下的退化界</h4>
+    <p>如 §2.7 批判 ① 所推断，当段数 <code>N → B_max / k_min</code> 时，ATA 的比例回退公式会退化为近似均匀分配。<strong>具体问题</strong>：给定 <code>B_max</code>、<code>k_min</code>、段数 <code>N</code> 和分数分布 <code>{ŝ_i}</code> 的熵 <code>H(ŝ)</code>，能否给出 ATA 相对硬 top-K 的性能差的解析界？这直接解释了 LVBench 上 ATA 输给 top-K 的现象，且可导出一个<strong>自适应切换规则</strong>（当 <code>N</code> 超过阈值时自动退化为 top-K）。</p>
+
+    <h4>③ 压缩目标与判别目标是否内在竞争？</h4>
+    <p>表 2-D 显示微调后的 SVLM 作路由器<strong>不如</strong>未微调的基座（63.46 vs 63.92）。<strong>具体实验</strong>：取 Tempo 公开的 Stage0/1/2/3 四个 checkpoint，在同一批 (片段, 查询, 相关性标签) 数据上测量各自的路由 AUC。若 AUC 随训练阶段单调下降，就证实了「压缩训练损害判别校准」这一假设，并直接指向一个多任务损失的修复方案。<strong>四个 checkpoint 已全部公开，这个实验的门槛极低。</strong></p>
+
+    <h3>6.2 工程与应用层</h3>
+    <h4>④ 建立 (延迟, 显存, 精度) 三维帕累托前沿基准</h4>
+    <p>这是整条演进链上连续两代（BIMBA、Tempo）都未填补的缺口。现状是每篇论文各报各的定性效率主张（BIMBA 只给曲线、Tempo 只给 O(1) 表述），无法横向比较。<strong>具体建议</strong>：在固定硬件（如单张 A100-80G）、固定视频集（LVBench 全集）下，对 LongVU / BIMBA / VideoChat-Flash / STORM / Tempo 统一测量端到端 wall-clock、峰值显存、准确率三元组。特别需要回答 §2.7 批判 ⑦ 提出的问题：<strong>Tempo 在 4101s 视频上约 1025 次 2B 前向的开销，是否真的低于 VideoChat-Flash 的一次性分层压缩？</strong>这是一个纯工程、无需新方法的高价值工作。</p>
+
+    <h4>⑤ 多轮对话下的压缩复用</h4>
+    <p>Tempo 自承的第三个局限。当前每换一个问题就要重压整段视频，成本 O(轮数 × 视频长度)。<strong>具体问题</strong>：能否设计一种「查询无关的粗压缩 + 查询相关的细化」两级缓存？粗压缩只做一次并缓存，细化在每轮只对 top-k 个候选段做。<strong>关键的实验空白</strong>：这种两级方案相对 Tempo 单级方案的精度损失是多少？在几轮之后能摊薄成本？</p>
+
+    <h4>⑥ 在线 / 流式设置</h4>
+    <p>现有全部五代工作都是<strong>离线</strong>的——假设整段视频可以被一次性访问。但真实的具身智能与视频助手场景是<strong>流式</strong>的：视频还在生成，且未来的问题尚未提出。<strong>具体问题</strong>：当 <code>s_i</code> 必须在看到未来片段之前就决定时，ATA 的 Min-Max 归一化（依赖全局 <code>max(s)</code> 与 <code>min(s)</code>）<strong>完全失效</strong>。需要设计一个在线版本——用滑动窗口分位数替代全局 Min-Max？还是用一个可学习的绝对阈值？<strong>这是一个定义清晰、当前完全空白的方向。</strong></p>
+
+    <h3>6.3 新兴方向</h3>
+    <h4>⑦ 从「一次性压缩」到「Agent 主动路由」</h4>
+    <p>Tempo 自己在第 6 节点出：让全局 LLM 成为主动路由 agent，按需向下请求高分辨率片段。<strong>具体化这个想法</strong>：这实际上是把长视频理解转化为一个<strong>工具调用问题</strong>——LLM 的工具是 <code>zoom_in(segment_id, resolution)</code>。关键的对比实验空白是：<strong>「一次性最优分配」（Tempo）vs「多轮自适应检索」（Agent），在相同的总 token 预算下谁更优？</strong>这个 head-to-head 目前完全没人做，但它决定了整个子领域未来两年的走向。</p>
+
+    <h4>⑧ 路由能力的后训练：SFT 还是 RL？</h4>
+    <p>Tempo 自承路由完全零样本。论文提出可用 SFT 或 RL 增强，但<strong>没有论证哪一个更合适，这本身就是一个明确的对比实验空白</strong>。SFT 需要 (片段, 查询, 相关性) 三元组标注——可以用现有的时序定位数据集（如 Charades-STA、QVHighlights）的 ground-truth 区间自动构造。RL 则可以用最终答案正确性作为奖励，无需中间标注但信号更稀疏。<strong>建议在相同硬件预算、相同数据预算下 head-to-head 对比这两种策略</strong>，并特别关注：RL 路由是否会学到「多要 token 总没错」的退化策略（因为奖励不惩罚 token 消耗）？如果会，就需要在奖励中显式加入预算惩罚项——这直接连回了 §6.1① 的有效上下文问题。</p>
+
+    <h4>⑨ 与音频、字幕的多模态联合路由</h4>
+    <p>当前所有工作的相关性打分都只基于视觉+文本查询。但 Video-MME 的「w/ subtitles」设置普遍带来数 pp 提升（VideoChat-Flash：65.3 → 69.7，<strong>+4.4pp</strong>）。<strong>具体问题</strong>：字幕/音频轨道是否可以作为一个<strong>廉价的路由先验</strong>？即先用纯文本的字幕检索粗筛出候选段，再对候选段跑昂贵的视觉压缩。这可能把 §6.2④ 的 1025 次 SVLM 前向砍掉一个数量级。<strong>对齐目标是什么</strong>——是让音频相关性分数与视觉相关性分数在同一标度上可比，还是让它们各自路由后取并集？这是一个尚未被定义清楚的问题。</p>
+  </section>
+
+  <h2>7. 其他值得关注的近期工作</h2>
+
+  <section class="card">
+    <p style="color:var(--text-secondary)">本期未展开详述，均为 CVPR 2026 Highlights 或近期高关注度预印本（同属本周二「视觉与多模态」轮转领域）。</p>
+
+    <h4>A Mixed Diet Makes DINO An Omnivorous Vision Encoder <span style="color:var(--muted);font-weight:400">（2026，CVPR 2026 Highlight）</span></h4>
+    <p>DeepMind 系团队（Kabra, Ovsjanikov, Hudson, Carreira, Mitra 等）重新审视自监督视觉编码器的数据配方。<strong>值得看的原因</strong>：在 DINO 系列已成为几乎所有视频压缩工作（含 LongVU）的默认冗余度量工具的当下，改进 DINO 本身的通用性会向下游整条链传导。<br><a href="https://cvpr.thecvf.com/virtual/2026/events/Highlights2026">CVPR 2026 Highlights</a></p>
+
+    <h4>ViCA: Efficient Multimodal LLMs with Vision-Only Cross-Attention <span style="color:var(--muted);font-weight:400">（arXiv 2602.07574）</span></h4>
+    <p>与 Tempo 正交的效率路线：不压缩 token，而是改变视觉 token 进入 LLM 的方式（交叉注意力而非拼接）。<strong>值得看的原因</strong>：与 Tempo 放在一起读可以看清「减少 token」与「改变 token 消费方式」两条独立轴。<br><a href="https://arxiv.org/abs/2602.07574">arXiv</a></p>
+
+    <h4>Video Generation Models are General-Purpose Vision Learners <span style="color:var(--muted);font-weight:400">（arXiv 2607.09024）</span></h4>
+    <p>主张视频生成模型的表征可以直接迁移到判别任务。<strong>值得看的原因</strong>：若成立，长视频理解的编码器侧可能会被生成式预训练整体替换——这是对本报告整条演进链的一个潜在颠覆。<br><a href="https://arxiv.org/abs/2607.09024">arXiv</a></p>
+
+    <h4>PersonaVLM: Long-Term Personalized Multimodal LLMs <span style="color:var(--muted);font-weight:400">（CVPR 2026 Highlight）</span></h4>
+    <p>长期个性化多模态 LLM。<strong>值得看的原因</strong>：与 Tempo 自承的「多轮对话需重压视频」局限直接相关——个性化记忆与查询感知压缩如何共存是一个自然的交叉点。<br><a href="https://cvpr.thecvf.com/virtual/2026/events/Highlights2026">CVPR 2026 Highlights</a></p>
+
+    <h4>VS-Bench: Evaluating VLMs for Strategic Abilities in Multi-Agent Environments <span style="color:var(--muted);font-weight:400">（CVPR 2026 Oral）</span></h4>
+    <p>评测向工作，考察 VLM 在多智能体环境中的策略能力。<strong>值得看的原因</strong>：代表了 §4.2 中提到的「从检索转向推理」这一社区关注点转移。<br><a href="https://vs-bench.github.io/">项目页</a></p>
+
+    <h4>Perceptual-Evidence Anchored Reinforced Learning for Multimodal Reasoning <span style="color:var(--muted);font-weight:400">（CVPR 2026）</span></h4>
+    <p>用感知证据锚定多模态推理的 RL 方法。<strong>值得看的原因</strong>：与 §6.3⑧ 提出的「路由能力后训练」直接相关——如何用 RL 让模型学会「该看哪里」。<br><a href="https://openaccess.thecvf.com/content/CVPR2026/html/Zhang_Perceptual-Evidence_Anchored_Reinforced_Learning_for_Multimodal_Reasoning_CVPR_2026_paper.html">CVF Open Access</a></p>
+
+    <h4>Unified Generation and Self-Verification for VLMs via Advantage Decoupled Preference Optimization <span style="color:var(--muted);font-weight:400">（CVPR 2026 Highlight）</span></h4>
+    <p>统一生成与自验证。<strong>值得看的原因</strong>：其「优势解耦」思想与 Tempo 表 2-D 揭示的「压缩目标 vs 判别目标可能竞争」问题（见 §6.1③）有潜在联系。<br><a href="https://cvpr.thecvf.com/virtual/2026/events/Highlights2026">CVPR 2026 Highlights</a></p>
+  </section>
+
+  <footer>
+    <p><strong>领域轮转依据</strong>：<code>date +%u</code> = 2（周二）→ 视觉与多模态。</p>
+    <p><strong>核心论文抽取过程</strong>：候选池 24 篇（来源：CVPR 2026 Highlights 实测抓取 63 篇 → 剔除生成模型类（归周三轮转）与非视觉类 → 补入 3 篇近期高关注 arXiv 预印本）。<code>shuf -i 1-24 -n 3</code> 输出 <code>19, 20, 13</code>，首选 #19 资料充分（arXiv 全文 HTML + 项目页 + GitHub + HF 权重全部可达），<strong>重抽次数 0</strong>。</p>
+    <p><strong>⚠️ 去重索引未更新</strong>：本次运行为云端定时任务，无桌面桥接可用，因此 (1) 无法读取 <code>ml-report-index.md</code> 执行 14 天去重校验——<strong>本期主题是否与最近两周重复未经验证</strong>；(2) 无法向索引追加本期记录。若需持久化索引，建议在本机运行一次本地定时任务，或手动追加如下行：</p>
+    <p><code>| 2026-08-11 | 视觉与多模态 | Tempo: Small VLMs are Smart Compressors for Long Video Understanding | ECCV 2026 | 把压缩器升格为会读问题的小型VLM，同一次前向同时输出记忆token与相关性分数驱动自适应预算分配；增益随视频时长单调放大（473s上−0.2pp → 4101s上+4.5pp） |</code></p>
+    <p><strong>数据来源声明</strong>：本报告全部性能数字来自 <a href="https://arxiv.org/html/2604.08120v1">arXiv:2604.08120v1 全文 HTML</a> 的表 1、表 2 及附录表 A/B，相关工作数字来自各自 arXiv / CVF / OpenReview / ICML / ECVA 页面，均已在正文中标注表号与行位。所有派生指标（Δ、均值、相对提升百分比）由本报告计算得出，计算过程在正文中给出。未经核实的内容已明确标注为「未找到」或「论文未提供」。</p>
+    <p>生成时间：2026-08-11 · 模型 <code>claude-opus-5</code> · 样式：Warm Editorial Report Style</p>
+  </footer>
+
+</div>
+<div class="tip" id="tip"></div>
+<script>
+(function(){
+  var tip = document.getElementById('tip');
+  function show(e){
+    var t = e.currentTarget.getAttribute('data-tip');
+    if(!t) return;
+    tip.textContent = t;
+    tip.style.opacity = '1';
+    move(e);
+  }
+  function move(e){
+    var pad = 14;
+    var w = tip.offsetWidth, h = tip.offsetHeight;
+    var x = e.clientX + pad, y = e.clientY - h - pad;
+    if (x + w > window.innerWidth - 8) x = e.clientX - w - pad;
+    if (y < 8) y = e.clientY + pad;
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
+  }
+  function hide(){ tip.style.opacity = '0'; }
+  var nodes = document.querySelectorAll('[data-tip]');
+  for (var i = 0; i < nodes.length; i++){
+    nodes[i].addEventListener('mouseenter', show);
+    nodes[i].addEventListener('mousemove', move);
+    nodes[i].addEventListener('mouseleave', hide);
+  }
+})();
+</script>
+</body>
+</html>

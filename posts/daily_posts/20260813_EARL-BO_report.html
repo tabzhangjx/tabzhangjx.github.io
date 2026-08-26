@@ -1,0 +1,1202 @@
+---
+layout: null
+title: "EARL-BO"
+date: 2026-08-13
+topic: rl-peft
+excerpt: "解析 EARL-BO 如何在高斯过程世界模型中用强化学习训练多步查询策略，使高维非短视贝叶斯优化避免显式展开场景树。"
+permalink: /blog/2026/08/13/earl-bo-reinforcement-learning-bayesian-optimization/
+blog_post: true
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>EARL-BO 深度返工版 · 2026-08-13 · 返工于 2026-08-24</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #246fca;
+    --chart-comparison: #c95224;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  blockquote { margin: 18px 0; padding: 14px 18px; border-left: 3px solid var(--chart-comparison); border-radius: 0 8px 8px 0; background: var(--page); color: var(--text-secondary); }
+  blockquote > :last-child { margin-bottom: 0; }
+  strong { color: var(--text-primary); }
+  .card h2 { scroll-margin-top: 18px; }
+  .card h3 { padding-top: 4px; border-top: 1px solid var(--grid); }
+  .card > h3:first-of-type { border-top: 0; }
+  table th:first-child, table td:first-child { min-width: 9rem; }
+  table td { vertical-align: top; }
+  pre code { white-space: pre; }
+  .figure { overflow: hidden; }
+  @media (max-width: 640px) {
+    .chart { min-width: 760px; }
+    .figure { overflow-x: auto; }
+    .figure .fig-title, .figure .fig-sub, .figure .legend, .figure figcaption { min-width: 0; position: sticky; left: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">强化学习 × 贝叶斯优化 · ICML 2025</p>
+    <h1>EARL-BO 深度返工版</h1>
+    <p class="subtitle">当多步贝叶斯优化变成“在不完美世界模型里训练规划器”</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">ICML 2025 / PMLR 267</span>
+      <span class="chip">2026-08-13 · 返工于 2026-08-24</span>
+      <span class="chip">Non-myopic BO · PPO · GP world model</span>
+    </div>
+    <p class="lede">EARL-BO 把显式 scenario tree 换成 GP 世界模型中的策略训练，使 30D 多步规划可运行；但 14–27 分钟/步、TuRBO 回退与 posterior 失配限定了它真正适用的工程区间。</p>
+  </header>
+
+  <main>
+<section class="card" aria-label="报告说明"><blockquote>
+<p><strong>一句话定位</strong>：EARL-BO 不再显式计算随前瞻深度指数膨胀的 rollout acquisition，而是把当前高斯过程当作临时世界模型，用 Attention–DeepSets 压缩不断增长的观测集，再让 PPO 在这个世界模型里学习多步查询策略。</p>
+</blockquote>
+<p><strong>日期</strong>：2026-08-13<br />
+<strong>今日领域</strong>：强化学习 / Agent / 具身智能（周四轮转）<br />
+<strong>核心论文</strong>：Mujin Cheon, Jay H. Lee, Dong-Yeun Koh, Calvin Tsay. <em>EARL-BO: Reinforcement Learning for Multi-Step Lookahead, High-Dimensional Bayesian Optimization</em>. ICML 2025, PMLR 267:10182–10198.<br />
+<strong>抽样记录</strong>：候选池 24 篇；执行 <code>shuf -i 1-24 -n 1</code> 抽中第 10 篇；全文、正式会议页和 v2 版本均可访问，无重抽。<br />
+<strong>证据口径</strong>：正文数字来自论文 v2/ICML 版本。论文的性能主结果只以曲线给出，没有发布逐点数值表；本报告不从像素估算曲线终点，因此不会伪造“五基准×六方法”的精确矩阵，而以“论文实际报告矩阵 + 唯一精确运行时间表”替代。</p>
+<blockquote>
+<p><strong>返工版核心判断</strong>：EARL-BO 的贡献不是“RL 比 BO 更强”，而是把多步 BO 的计算瓶颈从<strong>在线展开一棵指数增长的 scenario tree</strong>，换成<strong>在当前 GP 后验中反复训练一个有限时域 policy</strong>。这使 30D 非短视规划第一次在本文设置中可运行，但代价是每次真实查询前仍需 14–27 分钟 CPU 规划，而且策略会放大 GP 的模型偏差；所以其适用区间是“单次真实实验远贵于规划、且 posterior 已足够可信”，而不是一般 HPO。</p>
+</blockquote></section>
+<section class="card" aria-labelledby="section-1" data-section="0.0 决策摘要：先看这张证据表"><h2 id="section-1">0.0 决策摘要：先看这张证据表</h2>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">关键问题</th>
+<th scope="col">论文能支持的答案</th>
+<th scope="col">证据强度</th>
+<th scope="col">证据位置</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>是否把多步 BO 推到更高维？</td>
+<td><strong>是，在 30D 合成函数与 19D HPO-B 上展示可运行性</strong></td>
+<td>中</td>
+<td>图 3、图 4；但无高维非短视强基线</td>
+</tr>
+<tr class="even">
+<td>是否比传统 rollout 快？</td>
+<td><strong>是；8D/H=3 为 840±147s，Rollout-EI 超过 3600s timeout</strong></td>
+<td>强</td>
+<td>附录表 2</td>
+</tr>
+<tr class="odd">
+<td>是否计算高效？</td>
+<td><strong>相对 rollout 高效，相对 TuRBO 极慢</strong></td>
+<td>强</td>
+<td>840s vs 0.27s，即约 3111×</td>
+</tr>
+<tr class="even">
+<td>horizon 是否越长越好？</td>
+<td><strong>否；H=3/5 最好，H=7 多数阶段更差</strong></td>
+<td>中</td>
+<td>图 A6，仅 8D Ackley</td>
+</tr>
+<tr class="odd">
+<td>稀疏高维数据下是否可靠？</td>
+<td><strong>否；19D 初始点从 50 降到 5 后优势消失</strong></td>
+<td>中</td>
+<td>图 A2，仅一个 HPO-B search space</td>
+</tr>
+<tr class="even">
+<td>是否证明“near-optimal”策略？</td>
+<td><strong>没有</strong></td>
+<td>弱 / 缺失</td>
+<td>无理论最优性界、无 exact DP gap</td>
+</tr>
+<tr class="odd">
+<td>是否能独立复现？</td>
+<td><strong>目前不能完整复现</strong></td>
+<td>弱 / 缺失</td>
+<td>核心代码、主曲线 CSV、seed 未公开</td>
+</tr>
+</tbody>
+</table></div>
+<p>这张表也给出返工版的阅读方式：<strong>精确数字只在论文提供精确数字时报告；曲线只用于有边界的顺序判断；作者的因果解释与图上现象分开写。</strong></p></section>
+<section class="card" aria-labelledby="section-2" data-section="0. 链接验证表"><h2 id="section-2">0. 链接验证表</h2>
+<p>下列链接均在本次报告生成时实际访问。arXiv 当前可读版本为 <strong>2411.00171v2，2026-04-23</strong>；v1 为 2024-10-31。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">论文</th>
+<th scope="col">会议主页 / 正式出版</th>
+<th scope="col">arXiv</th>
+<th scope="col">Code 仓库</th>
+<th scope="col">数据集 / 权重</th>
+<th scope="col">项目主页 / 视频</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>EARL-BO（核心）</strong></td>
+<td><a href="https://proceedings.mlr.press/v267/cheon25a.html">ICML 2025 / PMLR</a></td>
+<td><a href="https://arxiv.org/abs/2411.00171">2411.00171v2</a>，2026-04-23</td>
+<td><strong>未公开/未找到</strong></td>
+<td><a href="https://github.com/machinelearningnuremberg/HPO-B">HPO-B 官方仓库</a>；模型权重不适用</td>
+<td><a href="https://icml.cc/media/icml-2025/Slides/44958.pdf">ICML slides</a></td>
+</tr>
+<tr class="even">
+<td>Efficient Rollout Strategies for BO</td>
+<td><a href="https://proceedings.mlr.press/v124/lee20a.html">UAI 2020 / PMLR</a></td>
+<td><a href="https://arxiv.org/abs/2002.10539">2002.10539v3</a>，2020-06-19</td>
+<td><a href="https://github.com/erichanslee/lookahead_release">官方代码</a></td>
+<td>未单独发布</td>
+<td>未找到</td>
+</tr>
+<tr class="odd">
+<td>One-Shot Multi-Step Trees</td>
+<td><a href="https://proceedings.neurips.cc/paper/2020/hash/d1d5923fc822531bbfd9d87d4760914b-Abstract.html">NeurIPS 2020</a></td>
+<td><a href="https://arxiv.org/abs/2006.15779">2006.15779v1</a>，2020-06-29</td>
+<td><a href="https://github.com/pytorch/botorch/blob/main/botorch/acquisition/multi_step_lookahead.py">BoTorch qMultiStepLookahead 源码</a></td>
+<td>不适用</td>
+<td>未找到</td>
+</tr>
+<tr class="even">
+<td>TuRBO</td>
+<td><a href="https://proceedings.neurips.cc/paper/2019/hash/6c990b7aca7bc7058f5e98ea909e924b-Abstract.html">NeurIPS 2019</a></td>
+<td><a href="https://arxiv.org/abs/1910.01739">1910.01739v4</a>，2020-02-24</td>
+<td><a href="https://github.com/uber-research/TuRBO">官方代码</a></td>
+<td>仓库含 benchmark</td>
+<td><a href="https://botorch.org/docs/v0.17.1/tutorials/turbo_1">BoTorch 教程</a></td>
+</tr>
+<tr class="odd">
+<td>SAASBO</td>
+<td><a href="https://proceedings.mlr.press/v161/eriksson21a.html">UAI 2021 / PMLR</a></td>
+<td><a href="https://arxiv.org/abs/2103.00349">2103.00349v2</a>，2021-06-10</td>
+<td><a href="https://botorch.org/docs/tutorials/saasbo">BoTorch 实现</a></td>
+<td>教程含示例</td>
+<td><a href="https://research.facebook.com/blog/2021/7/high-dimensional-bayesian-optimization-with-sparsity-inducing-priors/">Meta 介绍</a></td>
+</tr>
+<tr class="even">
+<td>RL-BO（Cheon et al., 2024）</td>
+<td><a href="https://www.sciencedirect.com/science/article/abs/pii/S0098135424000425">期刊页面</a></td>
+<td>未找到</td>
+<td>未公开/未找到</td>
+<td>未公开</td>
+<td>未找到</td>
+</tr>
+<tr class="odd">
+<td>HPO-B benchmark</td>
+<td><a href="https://datasets-benchmarks-proceedings.neurips.cc/paper_files/paper/2021/hash/ec8956637a99787bd197eacd77acce5e-Abstract-round2.html">NeurIPS 2021 Datasets &amp; Benchmarks</a></td>
+<td><a href="https://arxiv.org/abs/2106.06257">2106.06257v2</a>，2021-10-11</td>
+<td><a href="https://github.com/machinelearningnuremberg/HPO-B">官方仓库与数据入口</a></td>
+<td>HPO-B v1/v2/v3</td>
+<td>未找到</td>
+</tr>
+</tbody>
+</table></div></section>
+
+<figure class="figure" aria-labelledby="runtime-chart-title">
+  <p class="fig-title" id="runtime-chart-title">单次 BO 决策时间：EARL-BO 只相对显式 rollout 更便宜</p>
+  <p class="fig-sub">横轴为对数秒数；Rollout_EI 是论文的 3,600 秒 timeout 下界，而非完成时间。</p>
+  <div class="legend" aria-label="图例">
+    <span><span class="swatch" style="background:var(--chart-primary)"></span>EARL-BO</span>
+    <span><span class="swatch" style="background:var(--chart-comparison)"></span>显式 rollout 下界</span>
+    <span><span class="swatch" style="background:var(--muted)"></span>短视/高维基线</span>
+  </div>
+  <svg class="chart" viewBox="0 0 900 410" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>8 维 Ackley 单次 BO 决策时间对比</title>
+    <desc>EI 0.28 秒，TuRBO 0.27 秒，SAASBO 168.6 秒，EARL-BO 三步 840 秒，五步 1075 秒，Rollout EI 三步超过 3600 秒。横轴采用对数刻度。</desc>
+    <g font-size="12">
+      <line x1="170" y1="350" x2="850" y2="350" stroke="var(--grid)"/>
+      <line x1="170" y1="42" x2="170" y2="350" stroke="var(--grid)"/>
+      <g fill="var(--text-secondary)" text-anchor="middle">
+        <text x="170" y="374">0.1 s</text><text x="319" y="374">1 s</text><text x="468" y="374">10 s</text>
+        <text x="617" y="374">100 s</text><text x="766" y="374">1,000 s</text><text x="850" y="374">3,600 s</text>
+      </g>
+      <g stroke="var(--grid)" stroke-dasharray="3 5">
+        <line x1="319" y1="42" x2="319" y2="350"/><line x1="468" y1="42" x2="468" y2="350"/>
+        <line x1="617" y1="42" x2="617" y2="350"/><line x1="766" y1="42" x2="766" y2="350"/>
+      </g>
+    </g>
+    <g font-size="13">
+      <text x="158" y="78" text-anchor="end">EI</text>
+      <rect x="170" y="60" width="67" height="24" rx="4" fill="var(--muted)" tabindex="0" data-tip="EI：0.28±0.05 秒"/>
+      <text x="245" y="78">0.28 s</text>
+      <text x="158" y="126" text-anchor="end">TuRBO</text>
+      <rect x="170" y="108" width="65" height="24" rx="4" fill="var(--muted)" tabindex="0" data-tip="TuRBO：0.27±0.20 秒"/>
+      <text x="243" y="126">0.27 s</text>
+      <text x="158" y="174" text-anchor="end">SAASBO</text>
+      <rect x="170" y="156" width="481" height="24" rx="4" fill="var(--muted)" tabindex="0" data-tip="SAASBO：168.6±27.6 秒"/>
+      <text x="659" y="174">168.6 s</text>
+      <text x="158" y="222" text-anchor="end">EARL-BO H=3</text>
+      <rect x="170" y="204" width="585" height="24" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="EARL-BO H=3：840±147 秒；约 14 分钟"/>
+      <text x="763" y="222">840 s</text>
+      <text x="158" y="270" text-anchor="end">EARL-BO H=5</text>
+      <rect x="170" y="252" width="602" height="24" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="EARL-BO H=5：1075±134 秒；约 17.9 分钟"/>
+      <text x="780" y="270">1,075 s</text>
+      <text x="158" y="318" text-anchor="end">Rollout_EI H=3</text>
+      <rect x="170" y="300" width="680" height="24" rx="4" fill="var(--chart-comparison)" tabindex="0" data-tip="Rollout_EI H=3：超过 3600 秒后 timeout；1,000 次 MC"/>
+      <text x="842" y="318" text-anchor="end" fill="white">&gt;3,600 s</text>
+    </g>
+  </svg>
+  <figcaption>来源：EARL-BO 附录表 2，8D Ackley，AMD EPYC 7742、16 CPU。图形长度为 log10 秒，仅辅助比较；精确数值见正文表。</figcaption>
+</figure>
+
+<section class="card" aria-labelledby="section-3" data-section="0.1 候选池（24 篇）"><h2 id="section-3">0.1 候选池（24 篇）</h2>
+<p>候选池优先采用 ICML 2025、ICLR 2026 与 2025 年后高质量预印本，均不超过 24 个月。昨日已覆盖 EPG（生成模型），与本期主题不重复。</p>
+<ol type="1">
+<li>Sleeping Reinforcement Learning（ICML 2025）</li>
+<li>Flow Q-Learning（ICML 2025）</li>
+<li>Enhancing Cooperative MARL with State Modelling and Adversarial Exploration（ICML 2025）</li>
+<li>Meta-RL with Adaptation from Human Feedback（ICML 2025）</li>
+<li>Test-time Adapted RL with Action Entropy Regularization（ICML 2025）</li>
+<li>Policy Regularization on Globally Accessible States in Cross-Dynamics RL（ICML 2025）</li>
+<li>Multi-objective Linear RL with Lexicographic Rewards（ICML 2025）</li>
+<li>Logarithmic Regret for Online KL-Regularized RL（ICML 2025）</li>
+<li>Unveiling Markov Heads in Pretrained Language Models for Offline RL（ICML 2025）</li>
+<li><strong>EARL-BO（ICML 2025，抽中）</strong></li>
+<li>Adaptive Sample Sharing for Multi-Agent Linear Bandits（ICML 2025）</li>
+<li>BiAssemble（ICML 2025）</li>
+<li>Embodied Lifelong Learning Agents with Non-Parametric Memory（ICLR 2026）</li>
+<li>ERA: Transforming VLMs into Embodied Agents via RL（ICLR 2026）</li>
+<li>MEAL: Continual MARL Benchmark（2025）</li>
+<li>Balancing Specialization and Centralization（2025）</li>
+<li>Active Reward Modeling（ICML 2025）</li>
+<li>Reducing Tool Hallucination via Reliability Alignment（ICML 2025）</li>
+<li>SAC-GLAM（ICML 2025）</li>
+<li>RL Finetunes Small Subnetworks in LLMs（ICML 2025）</li>
+<li>Efficient Online RL Fine-Tuning Need Not Retain Offline Data（ICML 2025）</li>
+<li>The Power of Context in Image-based RL（ICML 2025）</li>
+<li>Decoupling Exploration and Exploitation in RL（ICML 2025）</li>
+<li>Robust Reward Modeling via Causal Rubrics（ICML 2025）</li>
+</ol></section>
+<section class="card" aria-labelledby="section-4" data-section="1. 核心论文深度解析"><h2 id="section-4">1. 核心论文深度解析</h2>
+<h3 id="motivation真正的问题不是bo-是否能看未来而是看未来的计算是否还能承受">1.1 Motivation：真正的问题不是“BO 是否能看未来”，而是“看未来的计算是否还能承受”</h3>
+<p>经典贝叶斯优化（BO）对昂贵黑盒函数建立高斯过程（GP）后，用 Expected Improvement（EI）等 acquisition function 决定下一次查询。它的优点是样本效率，缺点是每次只优化下一步收益。论文把这一缺点说得更精确：当当前一步的选择会改变后续 GP 后验时，下一步最优并不等于有限预算内最优，BO 本质上是有限时域随机动态规划。</p>
+<p>多步 rollout 可以把当前动作之后的未来查询也纳入期望累计收益，但代价来自两层嵌套：每一个候选动作要采样可能的观测，每个观测又改变后验并触发下一步 acquisition 优化。论文引用的前驱只在约 1–4 维展示，Rollout_VR 虽可做到 6 步，却无法在本文高维实验中运行。最硬的量化证据在附录表 2：8D Ackley 上，3-step Rollout_EI 即使只用 1,000 次 Monte Carlo，仍超过 <strong>3,600 秒/BO 迭代</strong>；EARL-BO 3-step 为 <strong>840±147 秒</strong>，5-step 为 <strong>1,075±134 秒</strong>。换言之，3-step 至少节省 <strong>76.7%</strong> 时间（因为 rollout 是超时下界，真实节省只会更大），但相对 TuRBO 的 0.27 秒仍慢约 <strong>3,111 倍</strong>。</p>
+<p>因此论文处理的是一个明确的三角矛盾：</p>
+<ul>
+<li>非短视性需要多步规划；</li>
+<li>高维性使状态、动作与 rollout 分支迅速膨胀；</li>
+<li>黑盒评估昂贵，RL 又不能靠真实环境大量试错。</li>
+</ul>
+<p>EARL-BO 的回答是：在每一个真实 BO 迭代内部重新训练一个策略，让策略只与当前 GP 后验构成的“虚拟世界”交互。这样真实函数仍只查询一次，RL 的大量轨迹都来自 surrogate。</p>
+<h3 id="论文故事线四次关键转折">1.2 论文故事线：四次关键转折</h3>
+<p><strong>转折一：把 acquisition function 选择改写成 MDP。</strong> 状态是当前数据集 (D_t)，动作是下一查询点 (x_{t+1})，转移是加入新观测，奖励是 improvement。于是“设计 acquisition”变成“学习 policy”。</p>
+<p><strong>转折二：原始状态不能直接喂给 RL。</strong> (D_t) 随迭代增长，而且集合顺序不应改变决策。论文用 Attention–DeepSets 把任意大小、任意排列的观测集合编码成固定 16 维向量。这里牺牲了逐点可逆信息，换取状态维度固定与排列不变性。</p>
+<p><strong>转折三：真实函数不能作为 RL 环境。</strong> 论文把当前 GP posterior 当世界模型，从 (N(<sup>k(x),K</sup>k(x,x))) 采样虚拟观测，生成 4,000 episodes 的训练经验。代价是策略最优性被绑定到 GP 校准程度，而非真实函数；这正是后文“planning delusion”的根源。</p>
+<p><strong>转折四：纯 on-policy 起步太慢。</strong> 前 400 episodes 用 TuRBO 给动作，预训练 actor/critic，然后冻结 2 层，再用 PPO 与 encoder 端到端更新。这不是从零学习 acquisition，而是“先模仿强单步基线，再超越它的短视性”。</p>
+<h3 id="形式化定义与机制解剖">1.3 形式化定义与机制解剖</h3>
+<p>给定观测集 (D_k={(x_i,y_i)}_{i=1}^k)，GP 后验为：</p>
+<p>[ <sup>k(x)=(x)+k(x)</sup>(K+<sup>2I)</sup>{-1}(y-(x)), ]</p>
+<p>[ K<sup>k(x,x)=K(x,x)-k(x)</sup>(K+<sup>2I)</sup>{-1}k(x). ]</p>
+<p>有限时域 policy 的目标（论文式 3–4）是：</p>
+<p>[ V_h^(s_0)=E, ^*=_{}V_h^(s_0). ]</p>
+<p>常用即时奖励为正 improvement：</p>
+<p>[ R(D_t,x_{t+1},D_{t+1})=(0,y_{t+1}-y_t^*). ]</p>
+<p>若把剩余步数写进价值函数，动态规划递推应为：</p>
+<p>[ Q_h(D,x)= E_{yp(x,D)} , ]</p>
+<p>[ V_h(D)=_{xX}Q_h(D,x),V_0=0. ]</p>
+<p>传统 rollout/one-shot tree 试图在每次真实查询前显式近似这个 expectation 与嵌套 maximization；EARL-BO 则训练 (_(x(D))) 来<strong>摊销</strong>这个 argmax。它没有消除 Bellman 难题，而是把“每个候选点都展开未来”的计算改成“在 GP 中生成 4,000 条有限时域 episode 并做策略优化”。这一区别很关键：前者的误差主要来自 scenario tree/MC 与内部优化，后者还新增 representation error、policy optimization error 和 model exploitation。</p>
+<p>论文的符号口径还有一个复现时必须处理的细节：方法式以 ((0,y_{t+1}-y_t^<em>)) 表述最大化，但合成实验文字又说“目标是最小化这些函数”，simple regret 写成 (y_{opt}-y_k^</em>)。实现必须明确是否先对目标取负、或将 improvement 改成 ((0,y_t^*-y_{t+1}))；正文与附录没有给出该转换代码。</p>
+<p>Attention–DeepSets（论文式 6–8）先对每个点编码，再用归一化注意力做不变聚合：</p>
+<p>[ <em>i=(f</em>{att}((x_i,y_i))), _{att}(D_t)=(_i_i(x_i,y_i)). ]</p>
+<p>PPO 采用 clipped surrogate（论文式 5），critic 使用 MSE（式 10）。预训练损失（式 11）联合 PPO、value 与 entropy：</p>
+<p>[ L_{pre}=E_{D_{baseline}}[L<sup>{PPO}+c_1L</sup>{VF}-c_2H(_)]. ]</p>
+<p>算法流程可压缩为：</p>
+<pre class="text"><code>真实数据 D_k ──拟合──&gt; GP posterior（临时世界模型）
+     │                         │
+     └─&gt; Attention–DeepSets ─&gt; PPO actor/critic
+                                 │
+           前 400 episode: TuRBO 动作（off-policy warm start）
+           后续 episode: PPO 动作 + GP 虚拟观测（on-policy）
+                                 │
+                         输出一个真实查询 x_{k+1}</code></pre>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">机制 / 维度</th>
+<th scope="col">设计选择</th>
+<th scope="col">动机</th>
+<th scope="col">关键超参（论文附录表 1）</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>状态编码</td>
+<td>Attention–DeepSets</td>
+<td>固定维度、排列/规模不变，并强调关键观测</td>
+<td>hidden 64；output 16；LR 0.01</td>
+</tr>
+<tr class="even">
+<td>策略学习</td>
+<td>PPO actor–critic</td>
+<td>连续动作、限制更新幅度</td>
+<td>LR 0.001；clip 0.2；()</td>
+</tr>
+<tr class="odd">
+<td>初始策略</td>
+<td>TuRBO off-policy</td>
+<td>避免从随机策略起步</td>
+<td>400 episodes；冻结 2 层</td>
+</tr>
+<tr class="even">
+<td>世界模型</td>
+<td>RBF + WhiteKernel GP</td>
+<td>不消耗真实黑盒评估生成轨迹</td>
+<td>length-scale [1e-2,1e2]；noise [1e-10,1e1]</td>
+</tr>
+<tr class="odd">
+<td>规划</td>
+<td>有限 horizon</td>
+<td>获得非短视收益</td>
+<td>主结果 H=3；8D 额外 H=5；表 1 却列 Horizon=5，存在文档口径不一致</td>
+</tr>
+<tr class="even">
+<td>训练预算</td>
+<td>每次 BO 内部重新学习</td>
+<td>随新数据更新策略</td>
+<td>最多 4,000 episodes；每 50 更新</td>
+</tr>
+<tr class="odd">
+<td>失败回退</td>
+<td>训练无改进或 reward 太小则返回 TuRBO</td>
+<td>防止完全失效</td>
+<td>15 次更新无改善；reward &lt;1e-5</td>
+</tr>
+</tbody>
+</table></div>
+<h4 id="更精确的训练时序">更精确的训练时序</h4>
+<pre class="text"><code>外层：真实 BO 第 k 轮
+  1. 用真实观测集 D_k 重新拟合 RBF+WhiteKernel GP
+  2. 初始化 encoder、actor、critic、buffer
+  3. 运行最多 4,000 个虚拟 episode；每个 episode 从同一 D_k 重置
+       前 400 episode：动作由 TuRBO 给出
+       后 3,600 episode：动作由 PPO actor 给出
+       每个 episode 内重复 H 次：
+           a_t ← policy / TuRBO
+           y~ ← 当前虚拟数据条件下的 GP posterior
+           D_virtual ← D_virtual ∪ {(a_t, y~)}
+           r_t ← improvement
+       每 50 episode 更新一次网络；off-policy 后冻结 actor/critic 前 2 层
+  4. 若连续 15 次更新平均 reward=0，或最终平均 reward&lt;1e-5：返回 TuRBO 建议
+     否则：最终 actor 在真实 D_k 编码上输出 x_{k+1}
+  5. 只在此处查询一次真实黑盒，得到 y_{k+1}，进入下一轮</code></pre>
+<p>“每轮都初始化”是算法 1 的字面流程；论文没有报告跨 BO 轮是否复用网络权重。若确实完全重训，840 秒是每个真实样本都要承担的重复成本；若实现复用了权重，则伪代码缺少关键状态传递。核心代码未公开使这一点无法独立消歧。</p>
+<h3 id="实验设计">1.4 实验设计</h3>
+<p><strong>合成任务。</strong> Ackley、Levy、Rosenbrock、Sum Squares；维度 2、5、8、30；统一域 ([-15,15]^d)；30 个随机初始点；每个设置 10 次重复；指标为 simple regret。Random、EI、TuRBO、SAASBO 均参与低中维比较；Rollout_VR 只在 2D 可行；30D 图为可读性移除 Random。</p>
+<p><strong>真实 HPO。</strong> HPO-B search space ID 5889（6D）、5968（8D）、7200（19D）。6D/8D 使用 5 个初始点，19D 主实验使用 50 个；10 次重复；基线增加 PI。附录额外把 19D 初始点降到 5，用来检验 surrogate 稀疏时的 planning delusion。</p>
+<p>这里有两处旧版没有充分指出的报告口径问题。第一，图 4 图例列的是 <strong>UCB、EI、PI、EARL-BO、TuRBO、SAASBO</strong>，正文却写“random search、EI、PI、TuRBO、SAASBO”，所以第一条曲线究竟是 UCB 还是 Random 需要代码澄清。第二，附录 A.2 的 synthetic baseline 列表写 EI、Random、TuRBO、Rollout-VR，却漏写主图实际出现的 SAASBO。两处都不改变图上 EARL-BO 曲线，但会影响严格复现配置。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 12%" />
+<col style="width: 16%" />
+<col style="width: 12%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">评估块</th>
+<th scope="col" style="text-align: right;">任务数</th>
+<th scope="col">维度</th>
+<th scope="col" style="text-align: right;">初始点</th>
+<th scope="col" style="text-align: right;">重复</th>
+<th scope="col">指标</th>
+<th scope="col">主要基线</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>合成低/中维</td>
+<td style="text-align: right;">12</td>
+<td>2/5/8D × 4 函数</td>
+<td style="text-align: right;">30</td>
+<td style="text-align: right;">10</td>
+<td>simple regret</td>
+<td>Random, EI, TuRBO, SAASBO；2D 加 Rollout_VR</td>
+</tr>
+<tr class="even">
+<td>合成高维</td>
+<td style="text-align: right;">4</td>
+<td>30D × 4 函数</td>
+<td style="text-align: right;">30</td>
+<td style="text-align: right;">10</td>
+<td>simple regret</td>
+<td>EI, TuRBO, SAASBO</td>
+</tr>
+<tr class="odd">
+<td>HPO-B</td>
+<td style="text-align: right;">3</td>
+<td>6/8/19D</td>
+<td style="text-align: right;">5/5/50</td>
+<td style="text-align: right;">10</td>
+<td>simple regret</td>
+<td>Random, EI, PI, TuRBO, SAASBO</td>
+</tr>
+<tr class="even">
+<td>稀疏压力测试</td>
+<td style="text-align: right;">1</td>
+<td>19D</td>
+<td style="text-align: right;">5</td>
+<td style="text-align: right;">10</td>
+<td>simple regret</td>
+<td>同上</td>
+</tr>
+</tbody>
+</table></div>
+<p>总计可数为 <strong>16 个合成设置（4 函数×4 维度）+3 个 HPO-B search spaces+1 个稀疏压力设置</strong>。然而实验“广度”不应与“独立真实任务数”混为一谈：16 个合成设置共享四种解析函数；HPO-B 只选三个 search-space ID，论文没有列出其具体 learner/task 名、task ID 或离散候选规模。HPO-B 官方仓库说明同一 search space 下可有多个 dataset/task，EARL-BO 仅给 search-space ID，不足以唯一复现实验对象。</p>
+<h3 id="主结果论文实际报告矩阵">1.5 主结果：论文实际报告矩阵</h3>
+<p>论文没有把曲线终点、AUC 或平均排名整理成数值表，也没有提供机器可读 CSV/代码，因此以下矩阵严格保留“图 2–4 明确支持的排序性结论”，不把视觉读数伪装成精确数值。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table>
+<colgroup>
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">场景</th>
+<th scope="col">Random</th>
+<th scope="col">EI / PI</th>
+<th scope="col">TuRBO</th>
+<th scope="col">SAASBO</th>
+<th scope="col">Rollout_VR</th>
+<th scope="col">EARL-BO 结论</th>
+<th scope="col">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>2D Ackley/Levy/Rosenbrock</td>
+<td>较弱</td>
+<td>差距不大</td>
+<td>竞争</td>
+<td>竞争</td>
+<td>接近</td>
+<td>接近或略优 Rollout_VR</td>
+<td>图 2；§4.1</td>
+</tr>
+<tr class="even">
+<td>2D/5D/8D Sum Squares</td>
+<td>较弱</td>
+<td>非最优</td>
+<td>非最优</td>
+<td><strong>最优</strong></td>
+<td>仅 2D</td>
+<td>不是最优</td>
+<td>图 2；§4.1</td>
+</tr>
+<tr class="odd">
+<td>5D/8D 三个复杂函数</td>
+<td>较弱</td>
+<td>较弱</td>
+<td>较弱</td>
+<td>因函数而异</td>
+<td>不可运行</td>
+<td><strong>持续优于 Random/EI/TuRBO</strong></td>
+<td>图 2；§4.1</td>
+</tr>
+<tr class="even">
+<td>30D 四个函数</td>
+<td>图中未画</td>
+<td>较弱</td>
+<td>较弱</td>
+<td>较弱</td>
+<td>不可运行</td>
+<td><strong>四个任务均显著领先</strong></td>
+<td>图 3；§4.1</td>
+</tr>
+<tr class="odd">
+<td>HPO-B 5889/5968/7200</td>
+<td>较弱</td>
+<td>早期可竞争</td>
+<td>早期可竞争</td>
+<td>早期可竞争</td>
+<td>不可运行</td>
+<td><strong>早期相当或更差，随后三任务均反超</strong></td>
+<td>图 4；§4.2</td>
+</tr>
+<tr class="even">
+<td>HPO-B 7200，只有 5 初始点</td>
+<td>竞争</td>
+<td>竞争</td>
+<td>竞争</td>
+<td>竞争</td>
+<td>不可运行</td>
+<td><strong>只与部分基线相当，优势消失</strong></td>
+<td>图 A2；附录 B</td>
+</tr>
+</tbody>
+</table></div>
+<h4 id="结论证据审计矩阵">结论—证据审计矩阵</h4>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">作者/常见转述</th>
+<th scope="col">论文直接观察</th>
+<th scope="col">本报告判定</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>“EARL-BO 学会了三步 lookahead policy”</td>
+<td>2D 上接近或略优 Rollout-VR；没有与 exact DP policy 的 action/value gap</td>
+<td><strong>只能说行为结果相容，不能证明 policy 被正确识别</strong></td>
+</tr>
+<tr class="even">
+<td>“维度越高，多步规划越重要”</td>
+<td>30D 四函数均领先三个 myopic baseline</td>
+<td><strong>支持相关性；未控制模型/encoder 容量，也缺高维非短视基线，因果归因不足</strong></td>
+</tr>
+<tr class="odd">
+<td>“Attention–DeepSets 更有效利用高维信息”</td>
+<td>仅 8D Ackley 比 attention-only 更好</td>
+<td><strong>支持 permutation-invariant encoder 有益，不支持‘高维信息关系’这一更强机制解释</strong></td>
+</tr>
+<tr class="even">
+<td>“HPO 长期优势来自非短视”</td>
+<td>早期相当/较差，后期反超</td>
+<td><strong>与非短视解释一致；也可能来自 4,000-episode policy search 或 TuRBO warm-start，未做等算力/teacher ablation</strong></td>
+</tr>
+<tr class="odd">
+<td>“计算 scaling 优于 myopic 方法”</td>
+<td>8D→30D 相对增幅更小</td>
+<td><strong>只说明维度扩展比例；绝对时间仍比 TuRBO 高三个数量级</strong></td>
+</tr>
+<tr class="even">
+<td>“near-optimal 地求解动态规划”</td>
+<td>没有最优性界、oracle DP、policy regret 或 approximation ratio</td>
+<td><strong>证据不足；应改写为 learned approximation</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>全文最有说服力的精确证据不是性能终点，而是运行时间：</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 22%" />
+<col style="width: 22%" />
+<col style="width: 22%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">方法（8D Ackley）</th>
+<th scope="col" style="text-align: right;">平均秒/迭代</th>
+<th scope="col" style="text-align: right;">标准差</th>
+<th scope="col" style="text-align: right;">相对 TuRBO</th>
+<th scope="col">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>EI</td>
+<td style="text-align: right;">0.28</td>
+<td style="text-align: right;">0.05</td>
+<td style="text-align: right;">1.04×</td>
+<td>附录表 2</td>
+</tr>
+<tr class="even">
+<td>TuRBO</td>
+<td style="text-align: right;"><strong>0.27</strong></td>
+<td style="text-align: right;">0.20</td>
+<td style="text-align: right;">1.00×</td>
+<td>附录表 2</td>
+</tr>
+<tr class="odd">
+<td>SAASBO</td>
+<td style="text-align: right;">168.6</td>
+<td style="text-align: right;">27.6</td>
+<td style="text-align: right;">624×</td>
+<td>附录表 2</td>
+</tr>
+<tr class="even">
+<td>Rollout_EI, H=3</td>
+<td style="text-align: right;">&gt;3600</td>
+<td style="text-align: right;">未报告</td>
+<td style="text-align: right;">&gt;13,333×</td>
+<td>附录表 2，1,000 MC 后超时</td>
+</tr>
+<tr class="odd">
+<td>EARL-BO, H=3</td>
+<td style="text-align: right;">840</td>
+<td style="text-align: right;">147</td>
+<td style="text-align: right;">3,111×</td>
+<td>附录表 2</td>
+</tr>
+<tr class="even">
+<td>EARL-BO, H=5</td>
+<td style="text-align: right;">1075</td>
+<td style="text-align: right;">134</td>
+<td style="text-align: right;">3,981×</td>
+<td>附录表 2</td>
+</tr>
+</tbody>
+</table></div>
+<p>从 H=3 到 H=5，运行时间增加 <strong>235 秒 / 28.0%</strong>；相对 rollout 超时下界，H=3 至少快 <strong>4.29×</strong>。这证明它解决的是“传统多步 rollout 不可运行”，并不证明它已达到“生产级高吞吐 BO”。论文 slides 也直接承认单步约 850 秒。</p>
+<p>若把表 2 的 10 次重复视为独立样本，可仅用于解释波动地复算近似 95% t 区间（(t_{0.975,9}=2.262)）：EI 为 0.28±0.036s，TuRBO 为 0.27±0.143s，SAASBO 为 168.6±19.7s，EARL-BO H=3 为 840±105s，H=5 为 1075±96s。论文没有做 runtime 显著性检验；这里的区间是本报告复算，不是论文原报。</p>
+<h4 id="成本盈亏平衡什么时候-14-分钟规划才值得">成本盈亏平衡：什么时候 14 分钟规划才值得？</h4>
+<p>相对 TuRBO，EARL-BO H=3 每轮额外花约 (840-0.27=839.73) 秒，即 <strong>13.996 分钟</strong>；H=5 额外 <strong>17.912 分钟</strong>。若 EARL-BO 相比 TuRBO 能稳定节省至少一次真实评估，那么只有当一次真实评估成本大于上述门槛时，墙钟时间才可能回本。论文没有报告“达到同一 regret 所需的 evaluation 数”或 hitting time 数值，因此不能计算实际 break-even，只能得到这个必要条件。</p>
+<p>30D 部分只报告 EARL-BO 约 1600 秒，以及 EI/TuRBO 相对 8D 增加 533%/215%。按表 2 基数复算，它们约为 1.77s 与 0.85s；即使 EARL-BO 的维度 scaling ratio 更平缓，绝对开销仍约为 EI 的 <strong>903×</strong>、TuRBO 的 <strong>1881×</strong>。因此“scales better”与“is faster”必须严格区分。</p>
+<p>更现实的总成本应写成：</p>
+<p>[ T_{total}(B)=_{k=1}^{B}. ]</p>
+<p>EARL-BO 只在 (T_{realeval}T_{policy}) 时具有工程吸引力；HPO-B 的查表式 benchmark 并不满足这一前提，所以图 4 证明的是<strong>样本序列质量</strong>，不是端到端 HPO wall-clock 优势。</p>
+<h3 id="消融敏感性与相变">1.6 消融、敏感性与相变</h3>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">消融</th>
+<th scope="col">实际观察</th>
+<th scope="col">可推论</th>
+<th scope="col">不能推论</th>
+<th scope="col">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>LR：RL/encoder = 0.001/0.01 vs 反转</td>
+<td>反转后性能更低、标准差随时间增大</td>
+<td>encoder 可快学，policy 需慢更新</td>
+<td>未给精确终点，不能量化贡献 pp</td>
+<td>图 A1</td>
+</tr>
+<tr class="even">
+<td>初始数据：19D 50 → 5</td>
+<td>EARL-BO 优势消失，可能落后</td>
+<td>世界模型不确定性是关键 failure mode</td>
+<td>未分离 GP kernel 与数据量影响</td>
+<td>图 A2</td>
+</tr>
+<tr class="odd">
+<td>Encoder：Attention–DeepSets vs attention-only</td>
+<td>H=3、H=5 均由前者持续领先</td>
+<td>显式 permutation invariance 有价值</td>
+<td>未与 mean pooling/Set Transformer 对比</td>
+<td>图 A5</td>
+</tr>
+<tr class="even">
+<td>Horizon：1/3/5/7</td>
+<td>H=1 早期强、终局最差；H=3/5 最好；H=7 多数阶段较差</td>
+<td>存在中等 horizon 的最佳区间</td>
+<td>未跨函数完整验证相同拐点</td>
+<td>图 A6</td>
+</tr>
+<tr class="odd">
+<td>RL 训练随 BO 迭代</td>
+<td>1/11/21 步 loss 平滑；后期初始/收敛 loss 更低</td>
+<td>数据积累可能改善 GP 与表示</td>
+<td>loss 低不等于真实 regret 更低</td>
+<td>图 A4</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>相变现象。</strong> 本文最值得高亮的不是“horizon 越大越好”，而是非单调曲线：H=1 短期占优但终局最差；H=3/5 形成甜点区；H=7 因模型误差累积而恶化。另一个更尖锐的相变由信息密度触发：19D 从 50 个初始点降到 5 个后，多步策略优势消失。这说明有效规划深度不是固定超参，而应由 posterior calibration / uncertainty 决定。</p>
+<p><strong>统计显著性。</strong> 论文所有主要曲线是 10 次重复的均值 ±1 标准差；附录运行时间也给出标准差。但论文未报告置信区间、配对检验、p 值、effect size 或跨任务平均排名，因此“significantly”主要是视觉意义而非统计检验意义。</p>
+<h3 id="真正贡献与可复用设计">1.7 真正贡献与可复用设计</h3>
+<p>真正贡献不是简单“把 PPO 用于 BO”。较早 RL-BO 已这样做过；本文的关键是把三个接口同时接通：集合状态编码、GP 虚拟环境、强 BO 策略 warm-start。三者共同把原本只能在规则网格/低维上运行的 RL planner 推到 30D，并在每个 BO iteration 内对当前 posterior task-specific 地学习，而不要求跨任务离线元训练数据。</p>
+<p>可单独复用的设计有三项：</p>
+<ol type="1">
+<li><strong>集合型 belief state。</strong> 任何以“不断增长的无序观测集”为状态的 agent，都可用 attention + invariant pooling，避免 padding 到固定历史长度。</li>
+<li><strong>强启发式 warm-start + 可学习 residual policy。</strong> 先用 TuRBO 行为避免随机策略，再让 on-policy 学习长期收益，适用于昂贵环境中的 planning agent。</li>
+<li><strong>模型可信度控制规划深度。</strong> 论文虽未实现，但 planning delusion 的证据直接指向 uncertainty-adaptive horizon：posterior 不可靠时退化为 H=1/TuRBO，可靠时升到 H=3/5。</li>
+</ol>
+<h3 id="局限性">1.8 局限性</h3>
+<h4 id="论文自述或直接承认">论文自述或直接承认</h4>
+<ol type="1">
+<li><strong>计算成本高。</strong> 附录 C 与 slides 明示单步约 840–1,075 秒；每个完整实验约 25 小时（AMD EPYC 7742，16 CPU、最多 100GB）。</li>
+<li><strong>planning delusion。</strong> §4.1 指出长 horizon 会累积 GP 误差；图 A2 进一步显示 19D/5 initial points 时优势消失。</li>
+<li><strong>长 horizon 并非单调收益。</strong> H=3 与 H=5 接近，H=7 变差；论文承认 policy 对错误世界模型可能比启发式 rollout 更敏感。</li>
+</ol>
+<h4 id="补充批判独立观察10-点">补充批判（独立观察，10 点）</h4>
+<ol type="1">
+<li><strong>实验设计问题：性能矩阵不可审计。</strong> 因为图 2–4 没有发布终点数值、AUC、hitting time 或 CSV，所以无法复算平均提升、paired test 或跨任务 rank；“显著领先”目前只能理解为曲线视觉分离，而不是统计显著。</li>
+<li><strong>论证缺口：低维与高维竞品集合不同。</strong> 因为 Rollout_VR 只在 2D 出现，高维只比较 myopic 方法，所以“优于多步方法且可扩展”没有高维 head-to-head。表 2 的 timeout 证明一个 rollout 实现慢，不等于所有近似非短视方法都被排除。</li>
+<li><strong>缺乏关键竞品：One-Shot Multi-Step Trees 未实验。</strong> Jiang et al. 2020 可用联合 scenario-tree 优化与 GP fantasization 做 2–4 步非短视 BO；既然 EARL-BO 的核心主张是替代树式计算，就应在相同 H、MC/CPU budget 下直接比较，而不是只在 related work 提及。</li>
+<li><strong>计算预算不对称。</strong> 因为 EARL-BO 每个真实查询前使用最多 4,000 episodes，H=3 为 840s，而 TuRBO 是 0.27s，所以只控制 evaluation 数会系统性偏向规划器。当单次黑盒成本低于约 14 分钟时，EARL-BO 即使少用一次 evaluation 也未必减少总时间。</li>
+<li><strong>失手子任务：Sum Squares 结构性落后。</strong> 因为 SAASBO 在 2/5/8D Sum Squares 均优于 EARL-BO，所以“维度越高，非短视越有价值”不能脱离函数结构成立。可加、轴对齐景观中，合适的结构先验比更深规划重要。</li>
+<li><strong>归因污染：失败时回退 TuRBO。</strong> 因为连续 15 次更新无 reward 或最终平均 reward&lt;1e-5 时，EARL-BO 直接返回 TuRBO query，而论文未报告每个任务/seed 的 fallback 次数，所以 EARL 曲线是 learned policy 与 teacher policy 的未知混合；不能把全部收益或稳定性归因于 PPO。</li>
+<li><strong>可复现性风险：核心代码与算法状态传递未公开。</strong> 因为 actor 分布、action bounds/squashing、网络层数、advantage/return 计算、reward normalization、GP refit、随机种子及“每轮是否从头初始化”都会显著影响结果，仅凭算法 1 和表 1 不足以复现 25 小时实验。</li>
+<li><strong>文档内部不一致。</strong> 因为主实验明确用 H=3、8D 另测 H=5，而附录表 1 单列 Horizon=5；图 4 图例写 UCB、正文写 Random；附录 baseline 列表又漏 SAASBO，所以复现者无法仅靠论文确定统一配置。</li>
+<li><strong>指标有效性问题：只看 simple regret。</strong> 因为真实应用还关心 cumulative regret、wall-clock regret、失败率、并行 batch 效率与约束违反，而论文只画 simple regret；3,111× TuRBO 延迟没有进入综合效用，HPO-B 查表任务也没有真实训练成本。</li>
+<li><strong>理论与模型风险：’near-optimal’缺少可检验定义。</strong> 因为没有 oracle DP、policy value gap、approximation ratio 或 regret bound，同时世界模型只用 RBF+White GP，稀疏 19D 压力测试已显示模型误差可逆转优势，所以“near-optimal”更像动机性措辞，而非经证明性质。</li>
+</ol></section>
+<section class="card" aria-labelledby="section-5" data-section="2. 相关工作回溯：问题如何传递到 EARL-BO"><h2 id="section-5">2. 相关工作回溯：问题如何传递到 EARL-BO</h2>
+<h3 id="efficient-rollout-strategies-for-bayesian-optimization-uai-2020">2.1 Efficient Rollout Strategies for Bayesian Optimization — UAI 2020</h3>
+<p><strong>解决什么。</strong> Lee et al. 把 rollout 中昂贵的高维积分通过 quasi-Monte Carlo、common random numbers 与 control variates 降方差，并用 policy search 避免直接优化 rollout acquisition。它把“非短视 BO”从概念推向可运行实现。</p>
+<p><strong>遗留缺口。</strong> 即便减方差，计算仍随维度和 horizon 急剧上升。EARL-BO 表 2 中其 3-step 实现用 1,000 MC 仍超过 3,600 秒，而且无法进入 5/8/30D 的主比较。</p>
+<p><strong>核心回应。</strong> EARL-BO 不再对每个候选动作显式展开未来树，而是训练一个 amortized policy，在 GP 环境里通过轨迹更新近似动态规划解。</p>
+<p><strong>设计传递。</strong> “多步累计 improvement + GP 后验模拟未来”的骨架保持不变；数值积分/启发式 base policy 被 actor–critic 替换。</p>
+<h3 id="efficient-nonmyopic-bo-via-one-shot-multi-step-trees-neurips-2020">2.2 Efficient Nonmyopic BO via One-Shot Multi-Step Trees — NeurIPS 2020</h3>
+<p><strong>解决什么。</strong> Jiang et al. 把嵌套的未来 action/observation 优化重参数化成一个完整 scenario tree 上的联合优化；配合 GP fantasization 和自动微分，在不逐层反复求内层 argmax 的情况下实现一般多步 EI。它代表“仍求 acquisition，但把嵌套结构一次性摊平”的另一条路线。</p>
+<p><strong>遗留缺口。</strong> 分支数仍由各层 fantasy sample 数的乘积决定，优化变量和 GP 更新随 horizon 增长；NeurIPS 评审记录显示实验最高约四步，而且 branching factor、warm start、optimizer 选择会影响结果。它缓解树计算，却没有把任意大小历史压成固定状态，也没有学习可直接复用的连续策略。</p>
+<p><strong>核心回应。</strong> EARL-BO 用 actor 取代每次 candidate tree 的联合优化：scenario tree 不再显式保留，未来样本只作为 PPO 训练轨迹进入 buffer。因此计算对维度/horizon 的经验 scaling 更平缓，但近似误差从数值积分转成 policy/representation/model 三重误差。</p>
+<p><strong>设计传递。</strong> 两者都使用 GP posterior fantasies 表达未来不确定性；one-shot 方法把所有未来 action 当一次优化变量，EARL-BO 把 action rule 参数化为 (_)。这正是本论文最应该做、却没有做的 head-to-head 对比。</p>
+<h3 id="turbo-neurips-2019">2.3 TuRBO — NeurIPS 2019</h3>
+<p><strong>解决什么。</strong> TuRBO 用局部 trust regions 和 bandit 式全局分配避免单一全局 GP 在高维中过度探索，论文前驱报告可到 200D，并在机器人控制等任务胜过传统全局 BO。</p>
+<p><strong>遗留缺口。</strong> 它仍以单步 acquisition 为主，局部性增强了高维效率，却没有显式优化当前选择对后续 posterior 的长期影响。</p>
+<p><strong>核心回应。</strong> EARL-BO 把 TuRBO 作为前 400 episodes 的 teacher，而不是把它当作必须抛弃的竞品；随后用 PPO 学习多步累计 reward。</p>
+<p><strong>设计传递。</strong> trust-region 查询策略从“最终算法”变成“行为先验/安全回退”。这是一种强基线蒸馏式的传递。</p>
+<h3 id="saasbo-uai-2021">2.4 SAASBO — UAI 2021</h3>
+<p><strong>解决什么。</strong> SAASBO 对逆长度尺度施加强稀疏先验，通过 HMC 找到少量相关轴对齐维度，从而在上百维搜索中保持样本效率，不需问题特定超参。</p>
+<p><strong>遗留缺口。</strong> 稀疏轴对齐假设不适合所有耦合复杂景观，而且 acquisition 依然短视。</p>
+<p><strong>核心回应。</strong> EARL-BO 不直接选择相关子空间，而让 attention encoder 在观测级学习权重、PPO 在动作级规划；它在 30D 四函数胜出，但在可加 Sum Squares 上反而输给 SAASBO。</p>
+<p><strong>设计传递。</strong> 两者都将高维难点转为“只关注相关信息”，但 SAASBO 在坐标维度上做贝叶斯稀疏化，EARL-BO 在数据点集合上做注意力压缩。</p>
+<h3 id="non-myopic-bo-using-model-free-rl-2024">2.5 Non-myopic BO using model-free RL — 2024</h3>
+<p><strong>解决什么。</strong> Cheon et al. 直接用 model-free RL 学多步 BO policy，并在 2D 与电化学优化展示可行性，绕过 rollout base policy 的近似偏差。</p>
+<p><strong>遗留缺口。</strong> 它把 GP 在规则格点上离散/栅格化作为状态；网格规模随维度指数增长，难以超过低维。</p>
+<p><strong>核心回应。</strong> EARL-BO 用固定维度 Attention–DeepSets 表示 (D_t)，以连续动作 actor 输出查询点，把“RL 可非短视”推进到“RL 可高维”。</p>
+<p><strong>设计传递。</strong> RL policy 与 improvement reward 被保留；状态从显式 GP 网格进化为可学习集合表示，环境从 model-free 试错转为 GP model-based simulation。</p></section>
+<section class="card" aria-labelledby="section-6" data-section="3. 技术演进脉络"><h2 id="section-6">3. 技术演进脉络</h2>
+<pre class="text"><code>2016 近似动态规划 BO [有限预算；Gauss–Hermite；低维]
+   ├── 2019/2020 rollout / one-shot trees [多步；降方差或可微树]
+   │          └── 缺口：树和积分随维度、horizon 膨胀
+   ├── 2019 TuRBO [局部 trust region；可到百维；仍短视]
+   ├── 2021 SAASBO [稀疏轴对齐子空间；仍短视]
+   └── 2024 RL-BO [策略学习替代 base policy；GP 网格限制在低维]
+                  ↓
+2025 EARL-BO [集合状态编码 + TuRBO warm-start + GP 世界模型 + PPO 多步策略]
+                  ↓
+下一步：posterior-calibrated adaptive horizon + wall-clock-aware reward</code></pre>
+<p>内在推动力是从“每一步求一个 acquisition 最大值”转向“学习一个跨未来状态复用的决策规则”。第一阶段解决非短视定义，第二阶段分别解决高维局部性与稀疏性，第三阶段用 RL 消除显式 rollout 树。关键转折在于 GP 从单纯 surrogate 变成 RL world model；因此优化能力上升的同时，model bias 也从预测误差升级为策略误差。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">发表年月</th>
+<th scope="col">会议/出版</th>
+<th scope="col">核心贡献</th>
+<th scope="col">主要可核验指标/边界</th>
+<th scope="col">与核心工作的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>TuRBO</td>
+<td>2019.12</td>
+<td>NeurIPS</td>
+<td>局部 GP + trust region</td>
+<td>前驱报告到 200D</td>
+<td>EARL-BO 的 teacher、baseline、fallback</td>
+</tr>
+<tr class="even">
+<td>Efficient Rollout</td>
+<td>2020.08</td>
+<td>UAI</td>
+<td>QMC/CRN/control variate 降低 rollout 方差</td>
+<td>本文复现 3-step &gt;3600s</td>
+<td>多步目标来源，被 learned policy 替换</td>
+</tr>
+<tr class="odd">
+<td>One-Shot Multi-Step Trees</td>
+<td>2020.12</td>
+<td>NeurIPS</td>
+<td>联合优化 scenario-tree 全部决策变量</td>
+<td>论文展示最高约 4 步</td>
+<td>最直接缺失竞品：显式树 vs learned policy</td>
+</tr>
+<tr class="even">
+<td>SAASBO</td>
+<td>2021.07</td>
+<td>UAI</td>
+<td>稀疏轴对齐 GP</td>
+<td>可处理数百维；本文 168.6±27.6s</td>
+<td>高维强基线；Sum Squares 上胜 EARL-BO</td>
+</tr>
+<tr class="odd">
+<td>RL-BO</td>
+<td>2024.04</td>
+<td>C&amp;CE</td>
+<td>model-free RL 学非短视 BO</td>
+<td>主要在 2D</td>
+<td>RL 直接前驱；状态编码被重做</td>
+</tr>
+<tr class="even">
+<td><strong>EARL-BO</strong></td>
+<td><strong>2025.07</strong></td>
+<td><strong>ICML</strong></td>
+<td><strong>集合 encoder + GP world model + PPO</strong></td>
+<td><strong>30D；HPO-B 19D；840±147s/步</strong></td>
+<td><strong>汇聚点</strong></td>
+</tr>
+</tbody>
+</table></div></section>
+<section class="card" aria-labelledby="section-7" data-section="3.1 可复现性蓝图：如果要真正重做这篇论文"><h2 id="section-7">3.1 可复现性蓝图：如果要真正重做这篇论文</h2>
+<p>论文没有核心代码，因此下面不是“作者实现”，而是依据算法 1、附录 A 与表 1整理的<strong>最小复现实验协议</strong>；每个无法从论文确定的字段都显式标注。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">模块</th>
+<th scope="col">论文已确定</th>
+<th scope="col">仍缺失、必须记录</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>输入缩放</td>
+<td>合成域 ([-15,15]^d)</td>
+<td>(x/y) 是否标准化；minimization 是否取负</td>
+</tr>
+<tr class="even">
+<td>GP</td>
+<td>RBF+WhiteKernel；length-scale bounds ([10<sup>{-2},10</sup>2])；noise ([10<sup>{-10},10</sup>1])</td>
+<td>ARD 还是共享 length-scale；optimizer/restarts；每个 virtual step 是否 refit</td>
+</tr>
+<tr class="odd">
+<td>Encoder</td>
+<td>hidden 64，output 16，LR 0.01</td>
+<td>(,,f_{att}) 层数、激活、归一化、padding/batching</td>
+</tr>
+<tr class="even">
+<td>Actor</td>
+<td>PPO LR 0.001，clip 0.2，(=.95)</td>
+<td>分布族、方差参数、边界 squashing、动作初始化</td>
+</tr>
+<tr class="odd">
+<td>Critic</td>
+<td>value coefficient .5</td>
+<td>GAE ()、return normalization、bootstrap 规则</td>
+</tr>
+<tr class="even">
+<td>训练</td>
+<td>100 epochs；4,000 episodes；每 50 episode 更新；前 400 off-policy；冻结 2 层</td>
+<td>batch/minibatch、shuffle、梯度裁剪、网络是否跨真实 BO 轮复用</td>
+</tr>
+<tr class="odd">
+<td>Reward</td>
+<td>positive improvement</td>
+<td>最小化转换、scale/clip、terminal reward 与中间 reward 口径</td>
+</tr>
+<tr class="even">
+<td>回退</td>
+<td>15 次无改善或最终 reward&lt;1e-5 则 TuRBO</td>
+<td>“平均 reward=0”的窗口定义；各实验 fallback 频率</td>
+</tr>
+<tr class="odd">
+<td>评估</td>
+<td>10 replications；simple regret；mean±1 std</td>
+<td>10 个 seed、逐轮 CSV、同初始点配对检验、timeout seed</td>
+</tr>
+</tbody>
+</table></div>
+<p>建议复现不只画原图，而应输出四个 machine-readable 表：</p>
+<ol type="1">
+<li><code>regret_by_seed.csv</code>：task、dimension、method、seed、iteration、simple_regret；</li>
+<li><code>runtime_breakdown.csv</code>：GP fit、TuRBO warm-start、PPO rollout、PPO update、final action；</li>
+<li><code>fallback_log.csv</code>：每轮触发原因、teacher query、actor query、最终采用者；</li>
+<li><code>calibration.csv</code>：GP posterior coverage、NLL、horizon、最终 regret。</li>
+</ol>
+<p>其中第 3 张表尤其关键：没有 fallback 日志，就无法判断 EARL-BO 是独立规划器，还是“TuRBO 安全网 + 偶尔启用 PPO”的混合算法。</p></section>
+<section class="card" aria-labelledby="section-8" data-section="4. 开放挑战与可操作研究机会"><h2 id="section-8">4. 开放挑战与可操作研究机会</h2>
+<h3 id="理论层面">4.1 理论层面</h3>
+<ol type="1">
+<li><strong>校准误差到策略 regret 的界。</strong> 固定真实 evaluation budget，在已知 GP miscalibration () 下比较 H=1/3/5/7，推导 model bias 随 horizon 的累积上界；实证应同时报告 posterior coverage 与终局 regret。</li>
+<li><strong>自适应 horizon。</strong> 以 posterior entropy、calibration error 或 ensemble disagreement 决定 H，并与固定 H=1/3/5/7 做同 CPU、同 evaluation 数的 head-to-head；检验 19D/5 初始点是否自动退化为短视策略。</li>
+<li><strong>teacher 依赖。</strong> 在完全相同网络与随机种子下，用 EI、PI、TuRBO、SAASBO、Random 替代前 400 episodes，测最终 policy 是否只是 teacher 的局部延伸。</li>
+</ol>
+<h3 id="工程与应用层">4.2 工程与应用层</h3>
+<ol type="1">
+<li><strong>wall-clock-aware objective。</strong> 将 reward 改为 improvement /（黑盒成本 + planner 成本），在单次评估成本从 1 秒到 1 天的扫描中找 EARL-BO 的盈亏平衡点；与 TuRBO 的 0.27 秒和 EARL-BO 的 840 秒直接对齐。</li>
+<li><strong>复用而非每步重训。</strong> 比较“每个 BO step 4,000 episodes 重训”“上一轮 checkpoint 增量训练”“跨任务 meta-policy + 少量适配”，控制总梯度步，报告延迟与 regret 双指标。</li>
+<li><strong>更强世界模型。</strong> 在同数据预算下比较 RBF GP、Matérn GP、deep kernel、heteroscedastic GP 与 ensemble；尤其在非平稳/不连续任务上检验 planning delusion 是否加剧。</li>
+<li><strong>代码与数据协议。</strong> 发布所有曲线的逐迭代 CSV、10 个 seed、timeout 规则和机器配置；报告 mean、95% CI、paired test、AUC-regret 与 wall-clock regret。</li>
+</ol>
+<h3 id="新兴方向">4.3 新兴方向</h3>
+<ol type="1">
+<li><strong>Agent 工具选择。</strong> 把“查询黑盒点”替换成“调用昂贵工具/实验”，状态仍是无序经验集；比较 Attention–DeepSets 与 trajectory transformer，测试集合不变性是否丢失因果顺序。</li>
+<li><strong>批量与异步 BO。</strong> 在同硬件下比较 q-EI、异步 TuRBO 与多 agent EARL-BO，显式建模并行实验返回时间；单动作 PPO 尚不能回答真实实验室并行调度。</li>
+<li><strong>安全规划。</strong> 加入约束违反概率，比较 penalty reward、Lagrangian PPO 与 safe acquisition；报告 cumulative violations，而不只报最终最优值。</li>
+</ol></section>
+<section class="card" aria-labelledby="section-9" data-section="5. 其他值得关注的近期工作"><h2 id="section-9">5. 其他值得关注的近期工作</h2>
+<p><strong>Flow Q-Learning</strong>（2025.07，ICML）<br />
+用 flow-matching policy 表达离线数据中的多峰动作分布，是“生成策略 + value optimization”的高质量结合；与 EARL-BO 相比，它优化的是固定离线 MDP 而非每轮变化的 GP 世界模型。<br />
+<a href="https://proceedings.mlr.press/v267/park25f.html">PMLR</a></p>
+<p><strong>Sleeping Reinforcement Learning</strong>（2025.07，ICML）<br />
+把动作集合随时间可用/不可用纳入 RL；对工具型 agent、资源受限调度和动态 action space 很有参考价值。<br />
+<a href="https://proceedings.mlr.press/v267/drago25a.html">PMLR</a></p>
+<p><strong>Enhancing Cooperative MARL with State Modelling and Adversarial Exploration</strong>（2025.07，ICML）<br />
+用状态建模与对抗式探索缓解 cooperative MARL 的部分可观测性与探索不足，代表从纯 value decomposition 向 learned state model 的延伸。<br />
+<a href="https://proceedings.mlr.press/v267/kontogiannis25a.html">PMLR</a></p>
+<p><strong>ERA: Transforming VLMs into Embodied Agents via Reinforcement Learning</strong>（2026，ICLR）<br />
+两阶段把紧凑 VLM 训练为具身推理 agent，值得观察视觉推理能力如何通过 RL 转成闭环行动能力。<br />
+<a href="https://openreview.net/forum?id=hqFNqVQEUd">OpenReview</a></p>
+<p><strong>MEAL: A Benchmark for Continual Multi-Agent Reinforcement Learning</strong>（2025.06，预印本）<br />
+把 continual learning 引入 MARL，强调环境/队友变化下的长期适应，而不只是单一训练分布中的协作性能。<br />
+<a href="https://arxiv.org/abs/2506.14990">arXiv</a></p>
+<p><strong>Balancing Specialization and Centralization</strong>（2025.10，预印本）<br />
+面向顺序工业控制比较多智能体分工与集中控制，是将 MARL 架构选择落到真实控制约束的近期 benchmark。<br />
+<a href="https://arxiv.org/abs/2510.20408">arXiv</a></p></section>
+<section class="card" aria-labelledby="section-10" data-section="6. 最终判断"><h2 id="section-10">6. 最终判断</h2>
+<p>EARL-BO 的研究价值很明确：它把“高维”和“非短视”两条长期相对分离的 BO 路线接在了一起，并给出了一个可迁移到昂贵工具调用/实验规划 agent 的结构模板。但工程成熟度仍有限：它相对传统 rollout 至少快 4.29×，同时相对 TuRBO 慢约 3,111×；代码与主曲线数值未公开又使“性能收益是否值得计算成本”无法被独立复算。</p>
+<p>最关键的科学发现不是 RL 一定胜过 acquisition function，而是 <strong>规划深度必须与世界模型可信度匹配</strong>：H=3/5 优于 H=1，H=7 又变差；19D 的初始点从 50 降到 5 后优势消失。下一篇真正推进该路线的工作，应当让 horizon、teacher 与算力预算随 posterior calibration 自适应，而不是继续把固定 4,000 episodes 当作默认答案。</p>
+<hr />
+<p><strong>索引状态</strong>：已读取并更新 <code>ml-report-index.md</code>。<br />
+<strong>坦诚说明</strong>：核心论文未公开代码及逐点性能数据，本报告没有对曲线做像素估值；无法完成精确性能百分比矩阵是源论文报告粒度造成的限制，而不是以推测数字填补。HTML 已做结构验证；当前执行环境未发现 <code>/usr/bin/chromium</code> 或 <code>/opt/pw-browsers</code> 中的可执行 Chromium，因此不能声称完成浏览器截图 QA，已改用 HTML validator 与静态溢出规则检查。</p></section>
+  </main>
+
+  <footer></footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

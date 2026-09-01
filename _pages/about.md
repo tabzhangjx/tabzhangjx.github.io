@@ -8,7 +8,7 @@ redirect_from:
   - /about.html
 ---
 
-I'm Jiaxing Zhang, a Research Scientist at TikTok in Bellevue, WA.
+I'm Jiaxing Zhang, a Senior Research Scientist at TikTok in Bellevue, WA.
 
 I received my PhD in Informatics from New Jersey Institute of Technology in May 2025, where I was advised by [Prof. Hua Wei](https://www.public.asu.edu/~hwei27/) and [Prof. Michael Lee](https://people.njit.edu/profile/mjlee). I obtained my bachelor's degree in Computer Science (Honored Science Program) from Xi'an Jiaotong University in 2020.
 

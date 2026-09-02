@@ -1,0 +1,1080 @@
+---
+layout: null
+title: "Q-VDiT"
+date: 2026-08-26
+topic: vlm-vision
+excerpt: "解析 Q-VDiT 如何通过 token-aware 低秩补偿与全视频关系蒸馏，缓解低比特视频扩散 Transformer 的质量崩溃。"
+permalink: /blog/2026/08/26/q-vdit-low-bit-video-diffusion-transformer/
+blog_post: true
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Q-VDiT 深度报告 · 2026-08-26</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #246fca;
+    --chart-comparison: #c95224;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  blockquote { margin: 18px 0; padding: 14px 18px; border-left: 3px solid var(--chart-comparison); border-radius: 0 8px 8px 0; background: var(--page); color: var(--text-secondary); }
+  blockquote > :last-child { margin-bottom: 0; }
+  strong { color: var(--text-primary); }
+  .card h3 { padding-top: 7px; border-top: 1px solid var(--grid); }
+  .card h4 { color: var(--text-secondary); margin-top: 1.35rem; }
+  table th:first-child, table td:first-child { min-width: 8rem; }
+  table td { vertical-align: top; }
+  pre code { white-space: pre; }
+  .figure { overflow: hidden; }
+  @media (max-width: 640px) {
+    .chart { min-width: 680px; }
+    .figure { overflow-x: auto; }
+    .figure .fig-title, .figure .fig-sub, .figure .legend, .figure figcaption { position: sticky; left: 0; min-width: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">生成模型 · ICML 2025</p>
+    <h1>Q-VDiT 深度报告</h1>
+    <p class="subtitle">低比特视频生成不能只拟合单帧误差</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">ICML 2025 / PMLR 267</span>
+      <span class="chip">2026-08-26</span>
+      <span class="chip">Video DiT · Quantization · Relational distillation</span>
+    </div>
+    <p class="lede">Q-VDiT 用 rank-1 token-aware 补偿与全视频关系蒸馏阻止 W3A6 质量崩溃，但小样本自动指标与消融标注冲突仍限制结论强度。</p>
+  </header>
+
+  <main>
+<section class="card" aria-label="报告元信息与核心判断"><p><strong>日期</strong>：2026-08-26<br />
+<strong>今日领域</strong>：生成模型——视频扩散 Transformer 的量化与蒸馏<br />
+<strong>核心论文</strong>：<em>Q-VDiT: Towards Accurate Quantization and Distillation of Video-Generation Diffusion Transformers</em><br />
+<strong>发表</strong>：ICML 2025，PMLR 267<br />
+<strong>随机选择记录</strong>：候选池共 24 篇；执行 <code>shuf -i 1-24 -n 1</code> 抽中第 23 篇；正式全文、代码与评测细节可访问，无重抽。</p>
+<blockquote>
+<p><strong>一句话核心定位</strong>：Q-VDiT 把视频 DiT 的低比特退化从“逐层数值误差”重新定义为“token/feature 信息损失 + 跨帧关系错位”，再用秩 1 误差旁路与全视频关系蒸馏分别补偿两者。</p>
+</blockquote></section>
+<section class="card" aria-labelledby="section-1" data-section="0. 链接验证表"><h2 id="section-1">0. 链接验证表</h2>
+<p>下列链接均于 2026-08-26 实际访问。版本日期以 arXiv submission history 为准；“数据/权重”只列作者或基准维护方公开的资源，不把基础模型下载地址误写成 Q-VDiT 量化权重。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">论文</th>
+<th scope="col">会议主页 / 正式出版</th>
+<th scope="col">arXiv（具体版本日期）</th>
+<th scope="col">Code 仓库</th>
+<th scope="col">数据集 / 权重</th>
+<th scope="col">项目主页 / 视频</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Q-VDiT（核心）</strong></td>
+<td><a href="https://proceedings.mlr.press/v267/feng25q.html">ICML 2025 / PMLR</a>；<a href="https://openreview.net/forum?id=Oeo53q93iP">OpenReview</a></td>
+<td><a href="https://arxiv.org/abs/2505.22167v1">2505.22167v1</a>，2025-05-28</td>
+<td><a href="https://github.com/wlfeng0509/Q-VDiT">官方仓库</a></td>
+<td><a href="https://github.com/Vchitect/VBench">VBench prompts / evaluator</a>；Q-VDiT 量化权重<strong>未公开</strong></td>
+<td>独立项目页/视频<strong>未找到</strong>；仓库含定性样例</td>
+</tr>
+<tr class="even">
+<td>Scalable Diffusion Models with Transformers（DiT）</td>
+<td><a href="https://openaccess.thecvf.com/content/ICCV2023/html/Peebles_Scalable_Diffusion_Models_with_Transformers_ICCV_2023_paper.html">ICCV 2023</a></td>
+<td><a href="https://arxiv.org/abs/2212.09748v2">2212.09748v2</a>，2023-03-02</td>
+<td><a href="https://github.com/facebookresearch/DiT">官方仓库</a></td>
+<td><a href="https://huggingface.co/facebook/DiT-XL-2-256">DiT-XL/2-256 权重</a></td>
+<td><a href="https://www.wpeebles.com/DiT.html">项目主页</a></td>
+</tr>
+<tr class="odd">
+<td>EfficientDM</td>
+<td><a href="https://openreview.net/forum?id=UmMa3UNDAz">ICLR 2024 / OpenReview</a></td>
+<td><a href="https://arxiv.org/abs/2310.03270v4">2310.03270v4</a>，2024-04-13</td>
+<td><a href="https://github.com/ThisisBillhe/EfficientDM">官方仓库</a></td>
+<td>使用 CIFAR-10 / ImageNet 等公开数据；专用权重<strong>未找到</strong></td>
+<td>独立项目页/视频<strong>未找到</strong></td>
+</tr>
+<tr class="even">
+<td>PTQ4DiT</td>
+<td><a href="https://proceedings.neurips.cc/paper_files/paper/2024/hash/72d32f4fe0b7af03732bd227bf1c4a5f-Abstract-Conference.html">NeurIPS 2024</a>；<a href="https://openreview.net/forum?id=NLmAGkN6nn">OpenReview</a></td>
+<td><a href="https://arxiv.org/abs/2405.16005v3">2405.16005v3</a>，2024-10-17</td>
+<td><a href="https://github.com/adreamwu/PTQ4DiT">官方仓库</a></td>
+<td>使用 ImageNet；量化权重<strong>未找到</strong></td>
+<td>独立项目页/视频<strong>未找到</strong></td>
+</tr>
+<tr class="odd">
+<td>ViDiT-Q</td>
+<td><a href="https://openreview.net/forum?id=E1N1oxd63b">ICLR 2025 / OpenReview</a></td>
+<td><a href="https://arxiv.org/abs/2406.02540v3">2406.02540v3</a>，2025-02-22</td>
+<td><a href="https://github.com/thu-nics/ViDiT-Q">官方仓库</a></td>
+<td>基于 Open-Sora、Latte、PixArt；量化权重见仓库说明</td>
+<td><a href="https://a-suozhang.xyz/viditq.github.io/">项目主页与视频样例</a></td>
+</tr>
+</tbody>
+</table></div></section>
+<section class="card" aria-labelledby="section-2" data-section="0.1 候选池与去重"><h2 id="section-2">0.1 候选池与去重</h2>
+<p>候选均为 ICML 2025 主会论文，处于最近 12 个月优先范围。已排除近 14 天深度覆盖的 EPG（pixel-space 生成）、DM/Flow Matching alignment（奖励对齐）与 KLDM（晶体生成），也未把它们的同主题变体放进核心抽签。</p>
+<ol type="1">
+<li>SITCOM: Step-wise Triple-Consistent Diffusion Sampling For Inverse Problems</li>
+<li>FlexTok: Resampling Images into 1D Token Sequences of Flexible Length</li>
+<li>Impossible Videos</li>
+<li>Highly Compressed Tokenizer Can Generate Without Training</li>
+<li>Simple and Critical Iterative Denoising: A Recasting of Discrete Diffusion in Graph Generation</li>
+<li>Mechanisms of Projective Composition of Diffusion Models</li>
+<li>Ergodic Generative Flows</li>
+<li>Accurate and Efficient World Modeling with Masked Latent Transformers</li>
+<li>Efficient Molecular Conformer Generation with SO(3)-Averaged Flow Matching and Reflow</li>
+<li>Vector Grimoire: Codebook-based Shape Generation under Raster Image Supervision</li>
+<li>Accelerated Diffusion Models via Speculative Sampling</li>
+<li>Distributional Diffusion Models with Scoring Rules</li>
+<li>FireFlow: Fast Inversion of Rectified Flow for Image Semantic Editing</li>
+<li>Scalable Non-Equivariant 3D Molecule Generation via Rotational Alignment</li>
+<li>Harmonizing Geometry and Uncertainty: Diffusion with Hyperspheres</li>
+<li>Controlled Generation with Equivariant Variational Flow Matching</li>
+<li>WyckoffDiff: A Generative Diffusion Model for Crystal Symmetry</li>
+<li>Visual Generation Without Guidance</li>
+<li>Fundamental Limits of Visual Autoregressive Transformers</li>
+<li>Subobject-level Image Tokenization</li>
+<li>VideoJAM: Joint Appearance-Motion Representations for Enhanced Motion Generation in Video Models</li>
+<li>FlexControl: Computation-Aware Conditional Control with Differentiable Router for Text-to-Image Generation</li>
+<li><strong>Q-VDiT: Towards Accurate Quantization and Distillation of Video-Generation Diffusion Transformers</strong></li>
+<li>CHATS: Combining Human-Aligned Optimization and Test-Time Sampling for Text-to-Image Generation</li>
+</ol></section>
+<section class="card" aria-labelledby="section-3" data-section="1. 核心论文深度解析"><h2 id="section-3">1. 核心论文深度解析</h2>
+<h3 id="motivation视频量化不是图像量化乘以帧数">1.1 Motivation：视频量化不是图像量化乘以帧数</h3>
+<p>视频扩散 Transformer 同时面对三个放大器。第一，DiT 的参数和矩阵乘法规模本来就大；ViDiT-Q 在正文第 2 页给出的部署例子是，Open-Sora 生成仅 <strong>16 帧、512×512</strong> 的视频就占用超过 <strong>10 GB GPU memory</strong>。第二，视频 latent token 数不是空间 token 数 (s)，而是 (n=st)，帧数 (t) 直接扩展序列，因而量化误差会沿空间、时间与迭代 denoising 三个方向传播。第三，视频质量不是逐帧质量的简单平均：主体、背景、运动与语义必须在帧间保持可追踪关系。</p>
+<p>传统 PTQ 往往最小化全精度层输出与量化层输出的 MSE。这一目标能回答“同一位置的向量是否接近”，却不能回答“第 3 帧相对第 1、2、4 帧的关系是否还像教师”。Q-VDiT 用实验把这一缺口量化：W3A6 的 PTQ4DiT 在 VBench scene consistency 只有 <strong>7.85</strong>，EfficientDM 为 <strong>12.04</strong>，而 Q-VDiT 达 <strong>23.40</strong>；相对逐列最强既有方法提升 <strong>11.36 分、94.35%</strong>（核心论文表 1，W3A6 行）。在 Open-Sora 10-prompt 评测上，W3A6 的 VQA-Technical 从既有最优 EfficientDM 的 <strong>29.58</strong> 上升到 <strong>59.10</strong>，绝对增幅 <strong>29.52 分</strong>、相对增幅 <strong>99.80%</strong>（表 2）。这两项是全文最强证据：低比特极限下，忽略 token 与时间关系会出现近乎灾难性的质量断崖。</p>
+<p>问题的新颖处不在“给扩散模型做量化”，而在量化目标的对象发生了变化。EfficientDM 优化去噪知识，PTQ4DiT 建模 timestep-wise salient channel，ViDiT-Q 进一步处理 DiT 的 token/channel/timestep 分布和敏感层；Q-VDiT 则提出：即便这些局部统计被处理，<strong>视频的关系结构</strong>仍可能丢失。因此它把误差恢复放在 token/feature 两个正交方向，把蒸馏放在帧间关系分布上。</p>
+<h3 id="论文故事线两个失败模式对应两个模块">1.2 论文故事线：两个失败模式对应两个模块</h3>
+<p>论文的论证链可以压缩成四个转折。</p>
+<p><strong>转折一：量化等价于对每层权重施加扰动。</strong> 设第 (i) 层权重为 (W_i)，反量化权重为 Q(W_i))，则 Q(W_i)=W_i+_i。作者先把部署问题改写为“如何用少量参数估计 _i”。</p>
+<p><strong>转折二：低熵不等于零误差，但提示可压缩表示。</strong> 论文定理 3.2 声称 (H(_i)H(W_i))，据此采用 rank-1 分支估计矩阵乘法误差。关键权衡是保留一个高精度、极低秩旁路：牺牲严格的全整数纯度，换取低位宽下的信息恢复。</p>
+<p><strong>转折三：feature-only 旁路不够。</strong> 视频 token (n=st) 中，不同帧的激活量化损失不同；作者用每帧一个缩放量 (M_i) 对 token 侧进行预缩放，再用向量 (,) 在输入/输出 feature 侧做低秩校正。这形成 TQE。</p>
+<p><strong>转折四：MSE 看不到全视频关系。</strong> 逐帧 MSE 的梯度只连接学生第 (i) 帧与教师第 (i) 帧；TMD 改为匹配每帧与全部帧的相似度分布。这样第 (i) 帧梯度同时受所有 (j) 帧影响，蒸馏目标从点对点回归升级为关系保持。</p>
+<p>隐含权衡也很清晰：Q-VDiT 不做端到端视频再训练，只用少量 calibration prompts 和层级蒸馏，训练成本较低；代价是它对全精度教师、基础模型中间激活、特定 prompt/step 采样和校准 GPU memory 有依赖，因此不是“直接量化即可部署”的纯 PTQ。</p>
+<h3 id="形式化定义与机制解剖">1.3 形式化定义与机制解剖</h3>
+<h4 id="均匀量化">均匀量化</h4>
+<p>对浮点向量 (x_f)，(N)-bit 仿射量化与反量化为（核心论文式 3–4，第 3 页）：</p>
+<p>[ x_q=((x_f/s)+z,0,2^N-1), s=,z=-(l/s), ]</p>
+<p>[ x_f=(x_q-z)s. ]</p>
+<p>Q-VDiT 仅量化 linear weights；权重采用 channel-wise quantization，激活采用 dynamic token-wise quantization（附录 B，第 14 页）。这意味着论文标题下的 W3A6 不是全模型每个算子都变为 3/6 bit；仓库运行说明还保留计算量占比小于 1% 的若干层为 FP。</p>
+<h4 id="tqetoken-aware-的秩-1-误差旁路">TQE：token-aware 的秩 1 误差旁路</h4>
+<p>对 (XR<sup>{nd_{in}})、(WR</sup>{d_{out}d_{in}})，基础低秩近似是（式 7，第 4 页）：</p>
+<p>[ =X, XW<sup>XQ(W)</sup>+, ]</p>
+<p>其中 (R<sup>{d_{in}})、(R</sup>{d_{out}})。原误差若直接表示需 (d_{out}d_{in}) 个参数，而 rank-1 分支只需 (d_{in}+d_{out})。若 (d_{in}=d_{out}=d)，参数比约为 (2/d)：在 (d=1152) 时仅约 <strong>0.174%</strong>，但论文没有按 Open-Sora 各层宽度汇总真实总参数比例。</p>
+<p>视频 token 被分为 (t) 帧、每帧 (s) 个空间 token，(f_i=is)。TQE 在第 (i) 帧块上引入 (M_i)：</p>
+<p>[ <em>{[f_i+1:f_i+s,:]}= M_iQ(X)</em>{[f_i+1:f_i+s,:]}, ]</p>
+<p>[ XW<sup>Q(X)Q(W)</sup>+. ]</p>
+<p>(M_i=_i/_i)。其中 (_i) 由原激活与量化激活的序列相似度损失经 softmax 得到，(_i) 用该帧 token 显著性归一化（式 9，第 4 页）。直觉是：误差更大、但自身幅值不占优势的帧，应获得更强补偿。(M) 按误差/显著性初始化，() 用 Kaiming 初始化，() 初始化为 0。</p>
+<h4 id="tmd匹配帧间关系分布">TMD：匹配帧间关系分布</h4>
+<p>令教师与量化学生的层输出分别为 (S<sup>{FP},S</sup>QR^{nd})。基础任务损失是（式 10–11，第 5 页）：</p>
+<p>[ L_{task}=S<sup>{FP}-S</sup>Q<em>2^2 =</em>{i=0}<sup>{t-1}S</sup>{FP}_{i}-S^Q_i_2^2. ]</p>
+<p>TMD 先计算帧 (i,j) 的相似度 (T_{i,j}=(S_i,S_j))，再形成每帧面向全视频的关系分布（式 13–15）：</p>
+<p>[ D_i=([T_{i,1},,T_{i,t}]),  L_{temporal}=_{i=1}<sup>{t}(D_i</sup>{FP}D_i^Q). ]</p>
+<p>最终目标为（式 19，第 6 页）：</p>
+<p>[ L_{total}=L_{task}+L_{temporal}, . ]</p>
+<p>论文式 16–18 展示了关键性质：学生第 (i) 帧的梯度不再只由教师第 (i) 帧决定，而通过 (T_{i,j}) 接收所有帧的关系信号。它优化的是“关系拓扑像不像教师”，不是单纯压低每个 token 的欧氏距离。</p>
+<h4 id="流程示意">流程示意</h4>
+<pre class="text"><code>10 个 calibration prompts × 均匀抽取 50 个 denoising steps
+                         │
+        ┌────────────────┴────────────────┐
+        │                                 │
+  全精度 V-DiT 教师                  低比特学生 WbAq
+        │                                 │
+  保存层输出 S^FP          Q(X)Q(W)^T + [M·Q(X)α]β
+        │                                 │
+        └────逐帧 MSE──────┬────帧关系 KL─┘
+                           │
+                 L_task + γ L_temporal
+                           │
+        5k/10k/15k calibration iterations
+                           │
+                 量化 checkpoint + TQE</code></pre>
+<h3 id="关键机制与工程细节">1.4 关键机制与工程细节</h3>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">机制 / 维度</th>
+<th scope="col">设计选择</th>
+<th scope="col">动机</th>
+<th scope="col">关键超参或实现</th>
+<th scope="col">论文来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>权重量化</td>
+<td>linear weight channel-wise</td>
+<td>每个输出通道范围不同</td>
+<td>3/4/6/8 bit；少量层保持 FP</td>
+<td>附录 B，第 14 页；代码 README</td>
+</tr>
+<tr class="even">
+<td>激活量化</td>
+<td>dynamic token-wise</td>
+<td>token、condition、timestep 分布变化</td>
+<td>6/8 bit</td>
+<td>附录 B，第 14 页</td>
+</tr>
+<tr class="odd">
+<td>TQE feature 分支</td>
+<td>(R<sup>{d_{in}},R</sup>{d_{out}}) 的 rank-1 旁路</td>
+<td>用低参数量恢复权重量化误差</td>
+<td>() Kaiming，()</td>
+<td>式 7–9，第 4 页</td>
+</tr>
+<tr class="even">
+<td>TQE token 分支</td>
+<td>每帧缩放 (M_i=_i/_i)</td>
+<td>补偿不同帧的激活损失差异</td>
+<td>(MR^t)</td>
+<td>式 8–9，第 4 页</td>
+</tr>
+<tr class="odd">
+<td>TMD</td>
+<td>教师/学生帧间相似度分布 KL</td>
+<td>MSE 不编码全视频关系</td>
+<td>()</td>
+<td>式 13–19，第 5–6 页；图 6</td>
+</tr>
+<tr class="even">
+<td>校准数据</td>
+<td>10 个 Open-Sora prompts，均匀采 50 steps</td>
+<td>极小数据预算覆盖去噪过程</td>
+<td>batch=4</td>
+<td>附录 B，第 14 页</td>
+</tr>
+<tr class="odd">
+<td>校准步数</td>
+<td>位宽越低迭代越多</td>
+<td>极低位宽更难拟合</td>
+<td>6–8 bit 5k；4-bit 10k；3-bit 15k</td>
+<td>附录 B，第 14 页</td>
+</tr>
+<tr class="even">
+<td>学习率</td>
+<td>权重量化参数与 TQE 分开</td>
+<td>新增旁路需要更快适应</td>
+<td>(10^{-6}) / (10^{-5})</td>
+<td>附录 B，第 14 页</td>
+</tr>
+<tr class="odd">
+<td>Open-Sora 采样</td>
+<td>100-step DDIM，CFG 4.0</td>
+<td>对齐 ViDiT-Q</td>
+<td>16×512×512 配置</td>
+<td>第 7 页、仓库</td>
+</tr>
+<tr class="even">
+<td>Latte 采样</td>
+<td>20-step DDIM，CFG 7.0</td>
+<td>UCF-101 class-conditional 迁移</td>
+<td>101 类各 1 prompt</td>
+<td>第 7 页、附录 C</td>
+</tr>
+<tr class="odd">
+<td>推理 kernel</td>
+<td>复用 SVDQuant LoRunner 融合旁路</td>
+<td>避免额外 activation memory access</td>
+<td>TQE 等价 rank=1</td>
+<td>附录 F，第 16 页</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="实验设计基准数据与指标">1.5 实验设计：基准、数据与指标</h3>
+<p>核心实验使用两个基础模型：Open-Sora v1.0 做 text-to-video；Latte 在 UCF-101 上做 class-conditioned video generation。三组位宽是 W4A6、W3A8、W3A6，另补充 W8A8、W6A6、W4A8。W/A 分别表示 weight/activation bits。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table>
+<colgroup>
+<col style="width: 18%" />
+<col style="width: 25%" />
+<col style="width: 18%" />
+<col style="width: 18%" />
+<col style="width: 18%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">评测集</th>
+<th scope="col" style="text-align: right;">样本规模</th>
+<th scope="col">能力维度</th>
+<th scope="col">指标</th>
+<th scope="col">主要风险</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>VBench overall prompts</td>
+<td style="text-align: right;">93</td>
+<td>图像质量、审美、整体一致性</td>
+<td>MUSIQ、LAION aesthetic、ViCLIP 等</td>
+<td>每 prompt 仅 1 视频，未报随机种子</td>
+</tr>
+<tr class="even">
+<td>VBench subject prompts</td>
+<td style="text-align: right;">72</td>
+<td>主体一致、动态程度、运动平滑</td>
+<td>CLIP/DINO/光流派生指标</td>
+<td>dynamic degree 并非越高越好于所有 prompt</td>
+</tr>
+<tr class="odd">
+<td>VBench scene prompts</td>
+<td style="text-align: right;">86</td>
+<td>场景与背景一致性</td>
+<td>scene consistency、background consistency</td>
+<td>自动指标可能偏好静态或教师风格</td>
+</tr>
+<tr class="even">
+<td>Open-Sora prompt set</td>
+<td style="text-align: right;">10</td>
+<td>文本对齐、相邻帧一致、技术/审美质量、光流</td>
+<td>CLIPSIM、CLIP-Temp、DOVER VQA、()FLOW、Warping Error</td>
+<td><strong>仅 10 个视频</strong>，统计功效弱</td>
+</tr>
+<tr class="odd">
+<td>UCF-101</td>
+<td style="text-align: right;">101 prompts；每类 1 个真实视频参考</td>
+<td>类条件视频质量、教师保真</td>
+<td>FVD、FVD-FP16、CLIP、VQA、Flicker</td>
+<td>FVD 参考样本仅 101，论文自认不稳定</td>
+</tr>
+</tbody>
+</table></div>
+<p>评价方向并不完全一致。CLIPSIM、CLIP-Temp、VQA、VBench consistency 通常越高越好；Warping Error、()FLOW、FVD、FVD-FP16 越低越好。Dynamic Degree 是“动得多不多”，并非普适的质量单调指标；报告只在相同 prompt 集内把它作为作者定义的对比维度。</p>
+<h3 id="主结果矩阵w3a6-是最有辨识度的压力测试">1.6 主结果矩阵：W3A6 是最有辨识度的压力测试</h3>
+<p>下表完整抄录核心论文表 2 的 W3A6 区块。粗体为量化方法中的逐列最优；括号是 Q-VDiT 相对此前逐列最强方法的绝对变化与相对变化。所有比例均由原表数字复算。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table>
+<colgroup>
+<col style="width: 11%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">CLIPSIM ↑</th>
+<th scope="col" style="text-align: right;">CLIP-Temp ↑</th>
+<th scope="col" style="text-align: right;">VQA-Aesthetic ↑</th>
+<th scope="col" style="text-align: right;">VQA-Technical ↑</th>
+<th scope="col" style="text-align: right;">ΔFLOW ↓</th>
+<th scope="col" style="text-align: right;">Warping Error ↓</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>FP16（参考）</td>
+<td style="text-align: right;">0.1797</td>
+<td style="text-align: right;">0.9986</td>
+<td style="text-align: right;">66.91</td>
+<td style="text-align: right;">53.49</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">0.016</td>
+</tr>
+<tr class="even">
+<td>Q-DiT</td>
+<td style="text-align: right;">0.1681</td>
+<td style="text-align: right;">0.9961</td>
+<td style="text-align: right;">11.90</td>
+<td style="text-align: right;">0.69</td>
+<td style="text-align: right;">1.412</td>
+<td style="text-align: right;">0.028</td>
+</tr>
+<tr class="odd">
+<td>PTQ4DiT</td>
+<td style="text-align: right;">0.1765</td>
+<td style="text-align: right;">0.9947</td>
+<td style="text-align: right;">26.35</td>
+<td style="text-align: right;">5.42</td>
+<td style="text-align: right;">1.185</td>
+<td style="text-align: right;">0.042</td>
+</tr>
+<tr class="even">
+<td>SmoothQuant</td>
+<td style="text-align: right;">0.1768</td>
+<td style="text-align: right;">0.9959</td>
+<td style="text-align: right;">18.07</td>
+<td style="text-align: right;">1.33</td>
+<td style="text-align: right;">1.286</td>
+<td style="text-align: right;">0.068</td>
+</tr>
+<tr class="odd">
+<td>Quarot</td>
+<td style="text-align: right;">0.1762</td>
+<td style="text-align: right;">0.9950</td>
+<td style="text-align: right;">25.89</td>
+<td style="text-align: right;">3.95</td>
+<td style="text-align: right;">1.084</td>
+<td style="text-align: right;">0.042</td>
+</tr>
+<tr class="even">
+<td>EfficientDM</td>
+<td style="text-align: right;">0.1747</td>
+<td style="text-align: right;">0.9982</td>
+<td style="text-align: right;">43.54</td>
+<td style="text-align: right;">29.58</td>
+<td style="text-align: right;">1.217</td>
+<td style="text-align: right;">0.020</td>
+</tr>
+<tr class="odd">
+<td>SVDQuant</td>
+<td style="text-align: right;">0.1712</td>
+<td style="text-align: right;">0.9975</td>
+<td style="text-align: right;">40.75</td>
+<td style="text-align: right;">16.51</td>
+<td style="text-align: right;">1.656</td>
+<td style="text-align: right;">0.026</td>
+</tr>
+<tr class="even">
+<td>ViDiT-Q</td>
+<td style="text-align: right;">0.1716</td>
+<td style="text-align: right;">0.9984</td>
+<td style="text-align: right;">39.82</td>
+<td style="text-align: right;">10.26</td>
+<td style="text-align: right;">1.695</td>
+<td style="text-align: right;">0.020</td>
+</tr>
+<tr class="odd">
+<td><strong>Q-VDiT</strong></td>
+<td style="text-align: right;"><strong>0.1785</strong> (+0.0017；+0.96%)</td>
+<td style="text-align: right;"><strong>0.9986</strong> (+0.0002；+0.02%)</td>
+<td style="text-align: right;"><strong>53.53</strong> (+9.99；+22.94%)</td>
+<td style="text-align: right;"><strong>59.10</strong> (+29.52；+99.80%)</td>
+<td style="text-align: right;"><strong>0.914</strong> (−0.170；−15.68%)</td>
+<td style="text-align: right;"><strong>0.012</strong> (−0.008；−40.00%)</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>全文最有说服力的定量证据</strong>不是 CLIP-Temp 的 0.0002，而是 VQA-Technical 的近翻倍：在相同 Open-Sora、相同 W3A6、相同 prompt 设置下，59.10 对 29.58 表明 Q-VDiT 避免了极低位宽基线的画面崩溃。不过它甚至比 FP16 的 53.49 高 5.61 分，这同时提醒我们：DOVER VQA 可能受量化正则化、样本波动或指标偏好影响，不能单独等同于“比教师更真实”。</p>
+<p>VBench W3A6 的六方法×八维矩阵如下（核心论文表 1）。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table>
+<colgroup>
+<col style="width: 8%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">Imaging ↑</th>
+<th scope="col" style="text-align: right;">Aesthetic ↑</th>
+<th scope="col" style="text-align: right;">Motion Smooth ↑</th>
+<th scope="col" style="text-align: right;">Dynamic Degree ↑</th>
+<th scope="col" style="text-align: right;">BG Consist. ↑</th>
+<th scope="col" style="text-align: right;">Subject Consist. ↑</th>
+<th scope="col" style="text-align: right;">Scene Consist. ↑</th>
+<th scope="col" style="text-align: right;">Overall Consist. ↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>FP16</td>
+<td style="text-align: right;">63.68</td>
+<td style="text-align: right;">57.12</td>
+<td style="text-align: right;">96.28</td>
+<td style="text-align: right;">56.94</td>
+<td style="text-align: right;">96.13</td>
+<td style="text-align: right;">90.28</td>
+<td style="text-align: right;">39.61</td>
+<td style="text-align: right;">26.21</td>
+</tr>
+<tr class="even">
+<td>PTQ4DiT</td>
+<td style="text-align: right;">45.31</td>
+<td style="text-align: right;">40.20</td>
+<td style="text-align: right;">93.43</td>
+<td style="text-align: right;">19.45</td>
+<td style="text-align: right;">91.59</td>
+<td style="text-align: right;">83.15</td>
+<td style="text-align: right;">7.85</td>
+<td style="text-align: right;">16.55</td>
+</tr>
+<tr class="odd">
+<td>EfficientDM</td>
+<td style="text-align: right;">48.82</td>
+<td style="text-align: right;">42.11</td>
+<td style="text-align: right;">95.04</td>
+<td style="text-align: right;">34.72</td>
+<td style="text-align: right;">95.17</td>
+<td style="text-align: right;">88.17</td>
+<td style="text-align: right;">12.04</td>
+<td style="text-align: right;">15.85</td>
+</tr>
+<tr class="even">
+<td>SVDQuant</td>
+<td style="text-align: right;">43.67</td>
+<td style="text-align: right;">32.32</td>
+<td style="text-align: right;">90.28</td>
+<td style="text-align: right;">23.61</td>
+<td style="text-align: right;">94.18</td>
+<td style="text-align: right;">83.09</td>
+<td style="text-align: right;">3.56</td>
+<td style="text-align: right;">10.30</td>
+</tr>
+<tr class="odd">
+<td>ViDiT-Q</td>
+<td style="text-align: right;">48.76</td>
+<td style="text-align: right;">42.70</td>
+<td style="text-align: right;">95.51</td>
+<td style="text-align: right;">37.50</td>
+<td style="text-align: right;">95.34</td>
+<td style="text-align: right;">86.86</td>
+<td style="text-align: right;">11.99</td>
+<td style="text-align: right;">18.38</td>
+</tr>
+<tr class="even">
+<td><strong>Q-VDiT</strong></td>
+<td style="text-align: right;"><strong>53.60</strong></td>
+<td style="text-align: right;"><strong>49.66</strong></td>
+<td style="text-align: right;"><strong>96.98</strong></td>
+<td style="text-align: right;"><strong>55.56</strong></td>
+<td style="text-align: right;"><strong>95.41</strong></td>
+<td style="text-align: right;"><strong>89.06</strong></td>
+<td style="text-align: right;"><strong>23.40</strong></td>
+<td style="text-align: right;"><strong>22.58</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>Q-VDiT 在八维均胜过这些强基线，但离 FP16 的剩余差距不均匀：Imaging −10.08 分、Aesthetic −7.46、BG −0.72、Subject −1.22、Scene −16.21、Overall −3.63；Motion Smooth 反而 +0.70。最难恢复的是 scene semantics，而不是局部平滑。所谓“几乎无损”更适用于部分维度，不应广播到全部视频质量。</p>
+<p>UCF-101/Latte 的跨模型结果进一步验证迁移（核心论文表 6，W3A6）：ViDiT-Q 到 Q-VDiT 的 FVD 从 <strong>100.05 降至 98.15</strong>（−1.90，−1.90%），FVD-FP16 从 <strong>84.79 降至 82.09</strong>（−2.70，−3.18%），VQA-Aesthetic 从 <strong>16.83 升至 19.79</strong>（+2.96，+17.59%），VQA-Technical 从 <strong>19.61 升至 25.81</strong>（+6.20，+31.62%）。增益仍一致，但远小于 Open-Sora 表 2 的 +99.80%，说明效果量依赖基础模型和评测协议。</p>
+<h3 id="消融tqe-是主增益tmd-负责补齐关系维度">1.7 消融：TQE 是主增益，TMD 负责补齐关系维度</h3>
+<p>核心论文表 4 的标题写“W3A8”，表内 Bit-width 却全部写 <strong>3/6</strong>；以下忠实保留表内数值并把该矛盾列入复现风险。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table>
+<colgroup>
+<col style="width: 8%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">配置</th>
+<th scope="col" style="text-align: right;">Imaging</th>
+<th scope="col" style="text-align: right;">Aesthetic</th>
+<th scope="col" style="text-align: right;">Motion Smooth</th>
+<th scope="col" style="text-align: right;">Dynamic</th>
+<th scope="col" style="text-align: right;">BG</th>
+<th scope="col" style="text-align: right;">Subject</th>
+<th scope="col" style="text-align: right;">Scene</th>
+<th scope="col" style="text-align: right;">Overall</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>PTQ4DiT</td>
+<td style="text-align: right;">45.31</td>
+<td style="text-align: right;">40.20</td>
+<td style="text-align: right;">93.43</td>
+<td style="text-align: right;">19.45</td>
+<td style="text-align: right;">91.59</td>
+<td style="text-align: right;">83.15</td>
+<td style="text-align: right;">7.85</td>
+<td style="text-align: right;">16.55</td>
+</tr>
+<tr class="even">
+<td>+TQE（无 token M）</td>
+<td style="text-align: right;">51.36</td>
+<td style="text-align: right;">47.69</td>
+<td style="text-align: right;">96.14</td>
+<td style="text-align: right;">47.22</td>
+<td style="text-align: right;">94.86</td>
+<td style="text-align: right;">88.21</td>
+<td style="text-align: right;">21.94</td>
+<td style="text-align: right;">21.65</td>
+</tr>
+<tr class="odd">
+<td>+TQE（有 token M）</td>
+<td style="text-align: right;">52.35</td>
+<td style="text-align: right;">48.97</td>
+<td style="text-align: right;">96.77</td>
+<td style="text-align: right;">51.39</td>
+<td style="text-align: right;">95.12</td>
+<td style="text-align: right;">88.86</td>
+<td style="text-align: right;">22.38</td>
+<td style="text-align: right;">22.00</td>
+</tr>
+<tr class="even">
+<td>+TMD</td>
+<td style="text-align: right;">53.46</td>
+<td style="text-align: right;">48.70</td>
+<td style="text-align: right;">96.00</td>
+<td style="text-align: right;">52.78</td>
+<td style="text-align: right;">95.24</td>
+<td style="text-align: right;">89.01</td>
+<td style="text-align: right;">22.87</td>
+<td style="text-align: right;">22.31</td>
+</tr>
+<tr class="odd">
+<td><strong>Q-VDiT（TQE+TMD）</strong></td>
+<td style="text-align: right;"><strong>53.60</strong></td>
+<td style="text-align: right;"><strong>49.66</strong></td>
+<td style="text-align: right;"><strong>96.98</strong></td>
+<td style="text-align: right;"><strong>55.56</strong></td>
+<td style="text-align: right;"><strong>95.41</strong></td>
+<td style="text-align: right;"><strong>89.06</strong></td>
+<td style="text-align: right;"><strong>23.40</strong></td>
+<td style="text-align: right;"><strong>22.58</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>从 PTQ4DiT 到 feature-only TQE，八维绝对增益依次为 <strong>+6.05、+7.49、+2.71、+27.77、+3.27、+5.06、+14.09、+5.10</strong>；说明 rank-1 误差旁路是主驱动力。加入 token scaling (M) 再带来 <strong>+0.99、+1.28、+0.63、+4.17、+0.26、+0.65、+0.44、+0.35</strong>，对 Dynamic Degree 最敏感。单独 +TMD 相比 PTQ4DiT 的 scene 增益为 +15.02，略高于 feature-only TQE 的 +14.09；而完整组合比单独 +TMD 仅多 +0.53 scene、+0.27 overall。这表明两个模块部分重叠，论文没有提供二因素交互统计，不能据表直接断言严格协同。</p>
+<h3 id="超参敏感性相变与统计显著性">1.8 超参敏感性、相变与统计显著性</h3>
+<p>图 6 比较 ({50,100,200}) 与 PTQ4DiT，作者称三者均优于 baseline，并选 () 作为平衡值。<strong>论文未给图 6 的精确数字表</strong>，因此本报告不从柱高反推数值，也不能计算敏感区间或相变点。就可核验信息而言，只能说在 50–200 范围内没有报告性能崩塌；不能推出区间外稳定性，也不能证明 100 是统计最优。</p>
+<p>位宽本身出现明显非线性。在 Open-Sora 表 2 中，Q-VDiT 从 W4A6 到 W3A6 的 VQA-Aesthetic 由 67.05 降至 53.53（−13.52），但 VQA-Technical 由 53.75 升至 59.10（+5.35）。这不是统一的“bit 越低越差”曲线，而是不同自动指标对量化噪声、平滑和样本的响应不一致。真正可称为相变的是多数基线在 3-bit weight 下 technical quality 接近崩溃，而 Q-VDiT 没有随之崩溃；但其阈值只在 3/4 bit 两个离散点间被观测，尚无连续位宽或 layer-wise phase diagram。</p>
+<p><strong>统计显著性：论文未报告。</strong> 主表未给标准差、置信区间、重复 seed 或 bootstrap；Open-Sora multi-aspect 表仅 10 个 prompts。CLIP-Temp 的 +0.0002 与 CLIPSIM 的 +0.0017 很可能对采样 seed 敏感，现有证据不足以判断显著性。scene consistency +11.36 与 VQA-Technical +29.52 的量级更大，但仍需要 paired prompt bootstrap 才能将“本次样本优势”提升为稳健结论。</p>
+<h3 id="效率量化确实省推理资源但校准并不免费">1.9 效率：量化确实省推理资源，但校准并不免费</h3>
+<p>核心论文表 7 报告 W4A8 Open-Sora：Q-VDiT 相对 FP16 的 memory saving <strong>2.40×</strong>、inference acceleration <strong>1.35×</strong>，VQA-Aesthetic 71.32、Technical 55.56；ViDiT-Q 分别为 2.42×、1.38×、60.62、49.38。Q-VDiT 用约 <strong>0.83% 更少的内存收益</strong>和 <strong>2.17% 更低的加速比</strong>换来 +10.70 / +6.18 的两项 VQA 提升，说明 TQE 的推理代价小但不是零。</p>
+<p>校准侧则相反。表 5 的 W8A8 实验中，Q-VDiT 使用 <strong>18,770 MB、12.9 GPU-hours</strong>，ViDiT-Q 为 <strong>16,600 MB、12.5 hours</strong>；前者多 <strong>2,170 MB（13.07%）</strong>、<strong>0.4 hours（3.20%）</strong>。相比 PTQ4DiT，Q-VDiT memory 多 1,120 MB（6.35%）、time 多 0.1 h（0.78%）。所以更准确的工程结论是：<strong>推理端获得约 2.4× memory 与 1.35× latency 改善，但校准端为关系蒸馏支付约 13% 峰值 memory 增量</strong>。</p>
+<h3 id="真正贡献可复用设计与迁移潜力">1.10 真正贡献、可复用设计与迁移潜力</h3>
+<p>第一项真正贡献是把“视频量化”从静态权重误差转为<strong>结构保持问题</strong>。TMD 的思想可以脱离量化使用：剪枝、低秩分解、蒸馏、缓存压缩乃至 few-step video diffusion，只要学生可能逐帧接近却全局漂移，都可以匹配帧间关系分布。</p>
+<p>第二项是 token-aware rank-1 compensation。TQE 把 SVDQuant 的高精度低秩旁路进一步压到 rank 1，并用视频帧级 (M) 改造旁路输入。这种“低秩 feature 修复 + 结构化 token gating”的组合可迁移到长上下文 VLM、时序 Transformer 与 audio diffusion；前提是 token 分组有明确语义，且运行时 kernel 能融合旁路。</p>
+<p>第三项是把极低位宽作为诊断器。W4A6 时许多方法尚能维持部分指标，W3A6 才暴露不同机制的真实差异。后续方法评测不应只报一个温和位宽，而应绘制 bit budget—质量—延迟 Pareto，并明确哪些维度先崩溃。</p>
+<p>可直接复用的设计包括：按结构组初始化 token compensation；以教师关系矩阵代替或补充 pointwise MSE；把 calibration iterations 随 bit-width 自适应增加；在 low-bit kernel 内融合 low-rank branch，避免单独读取 activation。</p>
+<h3 id="局限性">1.11 局限性</h3>
+<h4 id="a.-论文自述或正文明确承认的限制">A. 论文自述或正文明确承认的限制</h4>
+<ol type="1">
+<li><strong>FVD 小样本不稳定。</strong> 附录 D.2 第 15 页明确指出，仅用 101 个真实视频时，FVD 不能充分覆盖数据多样性，结果可能不准确、不稳定；作者因此提出以 FP16 生成视频为 reference 的 FVD-FP16。这一修补测的是“学生像不像教师”，不是“生成分布像不像真实数据”。</li>
+<li><strong>TQE 有额外推理计算。</strong> 附录 F 第 16 页承认 rank-1 branch 带来开销，并引用 SVDQuant 的 LoRunner kernel 论证可融合；表 7 仍显示 Q-VDiT 的 1.35× acceleration 略低于 ViDiT-Q 的 1.38×。</li>
+<li><strong>没有正式 Limitations 章节。</strong> 第 9 页 Impact Statement 只称无特别需要强调的社会后果；论文没有讨论深度伪造、部署设备、能耗、数据偏差或自动指标失效。因此可确认的自述限制少于要求的 2–3 个完整研究边界，本报告不补写成作者观点。</li>
+</ol>
+<h4 id="b.-补充批判独立观察">B. 补充批判（独立观察）</h4>
+<ol type="1">
+<li><p><strong>[理论论证缺口] 低熵不推出低秩。</strong> 因为定理 3.2 只给出 (H()H(W))，即使在离散 Shannon entropy 设定中成立，也不能推出误差矩阵存在 rank-1 近似；“信息量少”与“线性代数秩低”是不同命题。所以 TQE 的 rank=1 选择主要由消融表 4 支持，而不是被定理证明。</p></li>
+<li><p><strong>[理论定义风险] 连续权重的熵类型未被澄清。</strong> 因为神经网络权重通常视为连续变量，deterministic mapping 的离散熵单调性不能无条件套到 differential entropy；量化 scale 又依赖权重范围。论文附录 A 的证明使用映射与离散求和直觉，却没有清楚限定随机变量、分桶或经验分布，因此所谓“theoretical proof”对真实浮点矩阵的外推范围有限。</p></li>
+<li><p><strong>[实验设计问题] 10-prompt 主矩阵没有重复采样。</strong> 因为表 2 只由 10 个 Open-Sora prompts 各生成一个视频，且未报 seed/CI，所以 CLIP-Temp +0.0002、CLIPSIM +0.0017 无法与采样方差区分；即使 VQA-Technical +29.52 很大，也不能给出显著性概率。</p></li>
+<li><p><strong>[可复现性风险] 消融位宽自相矛盾。</strong> 因为表 4 caption 写 W3A8，而每一行 Bit-width 写 3/6，所以读者无法仅凭论文确定消融对应激活 8-bit 还是 6-bit；而表 1 显示 W3A8 与 W3A6 的 Q-VDiT scene 分别 25.07、23.40，差 <strong>1.67 分</strong>，该差异足以影响消融解释。</p></li>
+<li><p><strong>[指标有效性问题] “超过 FP16”可能是 metric gaming 或样本波动。</strong> 因为 W4A8 Q-VDiT 的 VQA-Aesthetic 71.32 高于 FP16 66.91（+4.41，+6.59%），W3A6 的 VQA-Technical 59.10 也高于 FP16 53.49（+5.61，+10.49%），但论文无人工偏好测试，所以不能把自动指标超教师直接解释为生成质量超教师。</p></li>
+<li><p><strong>[工程论证缺口] TQE kernel 代价没有独立测量。</strong> 因为附录 F 用 SVDQuant rank=16 “约 5% latency”推断 rank=1 几乎无成本，而表 7 只给完整 Q-VDiT 与 ViDiT-Q 的综合差异，所以无法拆分 token scaling、rank-1 branch 与其他量化设置各自的真实 kernel latency。</p></li>
+<li><p><strong>[缺乏关键竞品对比] 评价协议继承了 ViDiT-Q，但未覆盖更新、更大 V-DiT。</strong> 因为主模型仍是 Open-Sora v1.0 与 Latte，且代码只支持 Open-Sora v1.0；后续 S²Q-VDiT 已在 HunyuanVideo 上报告 W4A6、3.9× compression、1.3× acceleration。Q-VDiT 的“edge deployment”结论尚未在更大 text-to-video backbone 或真实边缘设备验证。</p></li>
+<li><p><strong>[失手子任务] scene semantics 仍远离教师。</strong> 因为 W3A6 scene consistency 虽从 12.04 升到 23.40，却仍低于 FP16 39.61 <strong>16.21 分（40.92%）</strong>；Imaging Quality 也低 10.08 分。因此“几乎无损”只适用于部分技术/运动指标，不能覆盖语义场景完整性。</p></li>
+<li><p><strong>[公平性边界] 校准预算与方法范式不完全同类。</strong> 因为 ViDiT-Q 是 no-calibration baseline，Q-VDiT 用 5k–15k iterations、教师中间输出和 18,770 MB calibration memory；虽然论文称对 calibration-based baselines 使用相同设置，但“更准”与“更多校准优化”无法完全分离。公平 Pareto 应同时固定 calibration GPU-hours。</p></li>
+</ol></section>
+
+<figure class="figure" aria-labelledby="vqa-chart-title">
+  <p class="fig-title" id="vqa-chart-title">W3A6 压力测试：Q-VDiT 的收益集中在感知质量</p>
+  <p class="fig-sub">Q-VDiT 与此前逐列最强量化方法对比；单位为 DOVER VQA 分数，单一 0–65 纵轴。</p>
+  <div class="legend" aria-label="图例">
+    <span><span class="swatch" style="background:#2a78d6"></span>此前最强量化方法</span>
+    <span><span class="swatch" style="background:#eb6834"></span>Q-VDiT</span>
+  </div>
+  <svg class="chart" viewBox="0 0 760 430" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>W3A6 下 VQA-Aesthetic 与 VQA-Technical 对比</title>
+    <desc>此前最佳量化方法在审美与技术质量上分别为 43.54 和 29.58；Q-VDiT 分别为 53.53 和 59.10。</desc>
+    <g font-size="12">
+      <line x1="80" y1="350" x2="710" y2="350" stroke="var(--grid)"/>
+      <line x1="80" y1="40" x2="80" y2="350" stroke="var(--grid)"/>
+      <g stroke="var(--grid)" stroke-dasharray="3 5">
+        <line x1="80" y1="278.5" x2="710" y2="278.5"/><line x1="80" y1="207" x2="710" y2="207"/>
+        <line x1="80" y1="135.5" x2="710" y2="135.5"/><line x1="80" y1="64" x2="710" y2="64"/>
+      </g>
+      <g text-anchor="end"><text x="70" y="354">0</text><text x="70" y="282.5">15</text><text x="70" y="211">30</text><text x="70" y="139.5">45</text><text x="70" y="68">60</text></g>
+      <text x="80" y="28">DOVER VQA score</text>
+    </g>
+    <g>
+      <rect x="185" y="142.5" width="86" height="207.5" rx="5" fill="#2a78d6" tabindex="0" data-tip="此前最佳 · VQA-Aesthetic：43.54（EfficientDM）"/>
+      <rect x="281" y="94.7" width="86" height="255.3" rx="5" fill="#eb6834" tabindex="0" data-tip="Q-VDiT · VQA-Aesthetic：53.53"/>
+      <rect x="455" y="209.0" width="86" height="141.0" rx="5" fill="#2a78d6" tabindex="0" data-tip="此前最佳 · VQA-Technical：29.58（EfficientDM）"/>
+      <rect x="551" y="68.2" width="86" height="281.8" rx="5" fill="#eb6834" tabindex="0" data-tip="Q-VDiT · VQA-Technical：59.10"/>
+      <g font-size="13" text-anchor="middle">
+        <text x="276" y="378">VQA-Aesthetic</text><text x="546" y="378">VQA-Technical</text>
+      </g>
+    </g>
+  </svg>
+  <figcaption>来源：核心论文表 2，W3A6 行。精确矩阵、逐列基线与相对提升见正文；图形并不编码统计显著性。</figcaption>
+</figure>
+
+<section class="card" aria-labelledby="section-4" data-section="2. 相关工作回溯：问题如何一步步传递"><h2 id="section-4">2. 相关工作回溯：问题如何一步步传递</h2>
+<h3 id="scalable-diffusion-models-with-transformers-2023.10iccv-2023-oral">2.1 Scalable Diffusion Models with Transformers — 2023.10，ICCV 2023 Oral</h3>
+<p><strong>解决了什么。</strong> DiT 把 latent diffusion 的 U-Net backbone 改为对 latent patches 操作的 Transformer，并系统比较深度、宽度与 patch size。其核心发现是 forward-pass Gflops 与 FID 强相关；DiT-XL/2 在 ImageNet-256 达 FID <strong>2.27</strong>（论文表 2），证明 Transformer 可以作为可扩展生成 backbone。</p>
+<p><strong>遗留缺口。</strong> 可扩展性以更多参数、token 与矩阵乘法为代价。DiT 的成功把问题从“Transformer 能不能生成”推向“如何在不破坏生成轨迹的前提下降低每次 denoising 的 memory/latency”。原论文没有讨论低比特部署，且主要是单图像、class-conditioned ImageNet。</p>
+<p><strong>Q-VDiT 如何回应。</strong> Q-VDiT 直接作用于 DiT linear layers；视频化后 (n=st) 让 token 数进一步放大，量化成为把 DiT scaling 转为可部署系统的必要环节。</p>
+<p><strong>设计传递。</strong> DiT 的 tokenized latent 与 Transformer linear blocks提供了统一量化单元；Q-VDiT 不改 backbone，而是在这些矩阵乘法上增加 rank-1 correction，并把帧作为 token 分组。</p>
+<h3 id="efficientdm-2024.05iclr-2024-spotlight">2.2 EfficientDM — 2024.05，ICLR 2024 Spotlight</h3>
+<p><strong>解决了什么。</strong> EfficientDM 试图获得 QAT 质量但保留 PTQ 的数据/时间效率：它用 quantization-aware LoRA、教师去噪蒸馏、scale-aware optimization 与 temporal learned step-size quantization，且不需要原训练数据。论文表 4 报告相对 QAT 方案约 <strong>16.8×</strong> 更快的量化过程，并在 ImageNet LDM-4 W4A4 下把 sFID 增量压到 <strong>0.05</strong>（其摘要与表 2）。</p>
+<p><strong>遗留缺口。</strong> 它的任务仍主要是 U-Net/image diffusion，蒸馏目标强调去噪输出；论文 Limitations 承认相对 PTQ 需要更多可训练参数和 GPU memory。更重要的是，单图像没有“不同帧之间应该维持何种关系”这一结构目标。</p>
+<p><strong>Q-VDiT 如何回应。</strong> Q-VDiT 继承“少量可训练参数 + 教师蒸馏”的中间路线，但把 QALoRA 压缩为每层 rank-1 TQE，把蒸馏从点级去噪误差扩展到帧间关系 KL。</p>
+<p><strong>设计传递。</strong> 可训练低秩旁路、teacher-student calibration、位宽越低校准越久，都来自这条技术线；Q-VDiT 的改变是让低秩参数与 token/帧结构显式耦合。</p>
+<h3 id="ptq4dit-2024.12neurips-2024">2.3 PTQ4DiT — 2024.12，NeurIPS 2024</h3>
+<p><strong>解决了什么。</strong> PTQ4DiT 首次系统化 DiT PTQ 的两类异常：salient channels 的极值，以及这些显著激活随 denoising timestep 变化。Channel-wise Salience Balancing 在 weight/activation 间重分配极值，Spearman-ρ-guided Salience Calibration 对更可补偿的 timestep 加权；离线重参数化消除推理额外开销。其表 1 显示 W8A8 可接近 FP，并首次把 DiT 推到有效 W4A8。</p>
+<p><strong>遗留缺口。</strong> 它聚合的是 denoising timestep 维度，不是视频 frame 维度；评测是 ImageNet 图像 DiT。即使 timestep outlier 被校准，视频中的 subject/background/scene relations 仍未进入优化目标。</p>
+<p><strong>Q-VDiT 如何回应。</strong> Q-VDiT 保留 PTQ4DiT 的 calibration 作为基础优化范式，并将帧级 (M) 置于 activation token 侧；TMD 则用全帧相似度分布补足 PTQ4DiT 的关系盲区。</p>
+<p><strong>设计传递。</strong> “不同结构位置需要不同量化待遇”从 channel/timestep salience 进化为 frame/token-aware compensation；Spearman correlation 的统计校准思想也出现在 TQE 的相似度与显著性初始化中。</p>
+<h3 id="vidit-q-2025.04iclr-2025">2.4 ViDiT-Q — 2025.04，ICLR 2025</h3>
+<p><strong>解决了什么。</strong> ViDiT-Q 是最直接前驱：它同时处理 token/channel/timestep/condition 分布，使用 dynamic quantization、static-dynamic channel balancing 和 metric-decoupled mixed precision，并给出 CUDA kernel。论文报告 W4A8 在多种 image/video DiT 上近乎无损，获得 <strong>2–2.5× memory saving、1.4–1.7× latency speedup</strong>。</p>
+<p><strong>遗留缺口。</strong> ViDiT-Q 的核心仍是范围、outlier、敏感层和 bit allocation；它没有用教师关系图约束帧间结构。低到 W3A6 时，核心论文重跑的 ViDiT-Q 在 Open-Sora VQA-Technical 只剩 10.26、scene 11.99，说明“分配正确的 bit”仍不足以恢复低位宽下的视频语义。</p>
+<p><strong>Q-VDiT 如何回应。</strong> Q-VDiT 沿用相同 Open-Sora/Latte、dynamic token-wise activation 与评测协议，在同台对比中加入 TQE+TMD。它不是对抗 ViDiT-Q，而是在其量化工程地基上增加误差旁路与 temporal relational distillation。</p>
+<p><strong>设计传递。</strong> ViDiT-Q 的 dynamic token-wise quantizer、混合精度配置与硬件 kernel 路径直接进入 Q-VDiT 代码；Q-VDiT 的新层次是“量化统计适配 → 结构误差恢复”。</p></section>
+<section class="card" aria-labelledby="section-5" data-section="3. 技术演进脉络"><h2 id="section-5">3. 技术演进脉络</h2>
+<pre class="text"><code>2023 DiT [latent patch Transformer；更大 Gflops → 更低 FID]
+   │
+   ├─ 2024 EfficientDM [低秩可训练旁路 + teacher denoising distillation]
+   │        └─ 遗留：图像/U-Net 为主，关系结构未建模
+   │
+   └─ 2024 PTQ4DiT [channel salience + timestep-aware calibration]
+            │
+            └─ 2025 ViDiT-Q [token/channel/timestep/condition + mixed precision + CUDA]
+                         │
+                         ├─ 解决：视频 DiT 的分布与硬件量化
+                         └─ 遗留：W3A6 下跨帧语义仍崩溃
+                                      │
+                                      ▼
+2025 Q-VDiT [rank-1 feature correction + frame-token scaling + relational TMD]
+   │
+   └─ 2025 S²Q-VDiT [更大 V-DM；salient calibration data + sparse token distillation]</code></pre>
+<p>演进的内在推动力是从<strong>参数压缩</strong>走向<strong>生成轨迹保持</strong>，再走向<strong>关系结构保持</strong>。早期量化关心每层量化误差；扩散模型迫使方法考虑 timestep；DiT 又迫使方法考虑 token/channel；视频最终迫使方法把 frame relations 纳入目标。关键转折不是又多一个 quantizer，而是“什么算误差”的定义发生变化。</p>
+<p>社区关注点也从离线 FID 转向端到端 Pareto。DiT 原始工作用 FID 与 Gflops 说明 scaling；PTQ4DiT 证明 W4A8 可行；ViDiT-Q 首次强调实际 kernel 的 memory/latency；Q-VDiT 再用 VBench 多维指标说明同样数值误差可能对应不同 temporal damage。下一阶段必须统一质量、校准成本、推理延迟与设备功耗，否则单项 SOTA 很难指导部署。</p></section>
+<section class="card" aria-labelledby="section-6" data-section="4. 跨论文对标"><h2 id="section-6">4. 跨论文对标</h2>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">发表年月</th>
+<th scope="col">会议</th>
+<th scope="col">核心贡献</th>
+<th scope="col">代表性定量结果</th>
+<th scope="col">与 Q-VDiT 的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DiT</td>
+<td>2023.10</td>
+<td>ICCV 2023 Oral</td>
+<td>latent patch Transformer 取代 U-Net</td>
+<td>ImageNet-256 FID 2.27（表 2）</td>
+<td>提供待量化 backbone 与 token 结构</td>
+</tr>
+<tr class="even">
+<td>EfficientDM</td>
+<td>2024.05</td>
+<td>ICLR 2024 Spotlight</td>
+<td>QALoRA + teacher distillation 的高效 QAT</td>
+<td>量化约 16.8× 快于 QAT 对照（表 4）</td>
+<td>传递低秩旁路与教师校准思想</td>
+</tr>
+<tr class="odd">
+<td>PTQ4DiT</td>
+<td>2024.12</td>
+<td>NeurIPS 2024</td>
+<td>channel salience 与 timestep calibration</td>
+<td>首次有效 DiT W4A8（表 1）</td>
+<td>传递结构化 salience 与 PTQ 校准</td>
+</tr>
+<tr class="even">
+<td>ViDiT-Q</td>
+<td>2025.04</td>
+<td>ICLR 2025</td>
+<td>视频/图像 DiT dynamic quantization + mixed precision + kernel</td>
+<td>2–2.5× memory、1.4–1.7× latency</td>
+<td>直接代码/协议地基与最强视频前驱</td>
+</tr>
+<tr class="odd">
+<td><strong>Q-VDiT</strong></td>
+<td><strong>2025.07</strong></td>
+<td><strong>ICML 2025</strong></td>
+<td><strong>TQE + TMD，恢复 token/feature 与帧关系</strong></td>
+<td><strong>W3A6 scene 23.40；VQA-Tech 59.10</strong></td>
+<td><strong>把误差目标从局部统计推进到视频关系</strong></td>
+</tr>
+</tbody>
+</table></div></section>
+<section class="card" aria-labelledby="section-7" data-section="5. 开放挑战与可操作研究机会"><h2 id="section-7">5. 开放挑战与可操作研究机会</h2>
+<h3 id="理论层面">5.1 理论层面</h3>
+<ol type="1">
+<li><strong>低熵与低秩的 head-to-head 验证。</strong> 在同一层保存真实误差矩阵，比较 rank-1 TQE、rank-(r) SVD、稀疏矩阵和 Kronecker 分解，在相同参数量下报告 reconstruction error 与视频指标；检验熵是否能预测最佳结构。</li>
+<li><strong>关系蒸馏的稳定性界。</strong> 推导当 ((D<sup>{FP}D</sup>Q)) 时，subject/scene consistency 的可保证变化；与仅约束 feature MSE 的界进行比较。</li>
+<li><strong>量化误差的正确熵定义。</strong> 对经验直方图 Shannon entropy、rate-distortion、differential entropy 和 singular-value effective rank 做并列相关分析，判断哪一项真正解释 TQE 增益。</li>
+</ol>
+<h3 id="工程与应用层">5.2 工程与应用层</h3>
+<ol type="1">
+<li><strong>等校准预算对比。</strong> 固定为 12.5 GPU-hours 和 16.6 GB peak memory，比较 ViDiT-Q、PTQ4DiT、Q-VDiT；再固定最终质量比较 calibration 成本，绘制真正 Pareto front。</li>
+<li><strong>真实设备基准。</strong> 在 A100、RTX 4090、Jetson Orin 与移动 NPU 上以相同 16×512×512/100 steps 报告端到端 latency、energy/video、peak memory、kernel occupancy；避免仅用“× saving”隐藏设备依赖。</li>
+<li><strong>模块成本拆分。</strong> 分别 benchmark pure quant、+feature TQE、+token M、+TMD-trained checkpoint，测 kernel time 和 memory traffic，从而验证 rank-1 旁路是否真近乎免费。</li>
+<li><strong>多 seed paired evaluation。</strong> 对同一 100–500 prompts、相同 initial noise 做 paired bootstrap；同时报告 95% CI，尤其检验 CLIP-Temp 0.0002 的优势是否稳定。</li>
+<li><strong>更大骨干。</strong> 在 HunyuanVideo、CogVideoX、Wan 等不同 attention factorization 的模型上，固定 W4A6 与 1.3× latency 预算，对比 Q-VDiT 和 S²Q-VDiT，检查 frame-token scaling 是否随序列长度失效。</li>
+</ol>
+<h3 id="新兴方向">5.3 新兴方向</h3>
+<ol type="1">
+<li><strong>感知关系与物理关系解耦。</strong> TMD 目前匹配教师的 feature similarity；可以并行加入光流、depth、object tracks 的关系图，比较“教师隐空间关系”与“显式物理关系”谁更能保持长视频运动。</li>
+<li><strong>在线 bit allocation。</strong> 根据当前 denoising step、prompt motion demand 和帧间 KL 动态分配 3/4/6 bits；与静态 mixed precision 在同 latency budget 下 head-to-head。</li>
+<li><strong>安全与水印。</strong> 对量化前后 safety filter bypass、人物身份漂移和 watermark detectability 做成对评测；确定 TMD 是否会保留教师中的危险生成模式，或被低比特噪声破坏安全控制。</li>
+<li><strong>长视频 streaming calibration。</strong> 现有 16 帧实验是离线短视频；设计 128–512 帧 streaming benchmark，限制仅保留最近 (k) 帧关系，测 TMD 的 O((t^2)) 关系矩阵如何近似。</li>
+</ol></section>
+<section class="card" aria-labelledby="section-8" data-section="6. 其他值得关注的近期工作"><h2 id="section-8">6. 其他值得关注的近期工作</h2>
+<p>以下均为本期候选池中已验证的 ICML 2025 主会工作；不展开，避免把相关工作链稀释成平行摘要。</p>
+<p><strong>FlexTok: Resampling Images into 1D Token Sequences of Flexible Length</strong>（2025.07，ICML 2025）<br />
+把图像压成可变长度 1D token 序列，直接连接 tokenizer rate 与生成预算，适合研究“视觉 token 数是否应该按样本动态分配”。<a href="https://proceedings.mlr.press/v267/bachmann25a.html">PMLR</a>｜<a href="https://github.com/apple/ml-flextok">Code</a></p>
+<p><strong>VideoJAM: Joint Appearance-Motion Representations for Enhanced Motion Generation in Video Models</strong>（2025.07，ICML 2025）<br />
+显式联合 appearance 与 motion representation，正好构成 Q-VDiT 未来“量化后运动关系保持”的强下游压力测试。<a href="https://proceedings.mlr.press/v267/chefer25a.html">PMLR</a></p>
+<p><strong>FireFlow: Fast Inversion of Rectified Flow for Image Semantic Editing</strong>（2025.07，ICML 2025）<br />
+从 rectified flow inversion 降步数，展示生成系统效率不只来自 bit-width，也来自数值积分；值得做等质量延迟对比。<a href="https://proceedings.mlr.press/v267/deng25c.html">PMLR</a>｜<a href="https://github.com/HolmesShuan/FireFlow-Fast-Inversion-of-Rectified-Flow-for-Image-Semantic-Editing">Code</a></p>
+<p><strong>Accelerated Diffusion Models via Speculative Sampling</strong>（2025.07，ICML 2025）<br />
+把 speculative decoding 思路移植到 diffusion sampling，提供与量化正交的推理加速轴；两者是否乘法叠加是直接工程空白。<a href="https://proceedings.mlr.press/v267/de-bortoli25a.html">PMLR</a></p>
+<p><strong>Visual Generation Without Guidance</strong>（2025.07，ICML 2025）<br />
+重新审视 classifier-free guidance 的必要性，为无 guidance 模型上的低比特鲁棒性提供不同分布条件。<a href="https://proceedings.mlr.press/v267/chen25ac.html">PMLR</a></p>
+<p><strong>Subobject-level Image Tokenization</strong>（2025.07，ICML 2025）<br />
+把 token 语义粒度推进到 subobject，提示 TQE 的 token grouping 不必固定为帧，也可以来自可学习的对象层级。<a href="https://proceedings.mlr.press/v267/chen25d.html">PMLR</a></p>
+<p><strong>S²Q-VDiT: Accurate Quantized Video Diffusion Transformer with Salient Data and Sparse Token Distillation</strong>（2025.10 更新，NeurIPS 2025）<br />
+Q-VDiT 的直接后续将瓶颈转向 calibration data 与 sparse token learning，并扩展到 HunyuanVideo；它是验证 Q-VDiT 结论能否跨模型规模的首要对照。<a href="https://arxiv.org/abs/2508.04016">arXiv</a>｜<a href="https://github.com/wlfeng0509/S2Q-VDiT">Code</a></p></section>
+<section class="card" aria-labelledby="section-9" data-section="7. 结论"><h2 id="section-9">7. 结论</h2>
+<p>Q-VDiT 最重要的贡献不是“又把位宽降了一位”，而是证明视频 DiT 的量化目标必须显式保留 token 差异与帧间关系。在 W3A6 这一压力区，scene consistency 相对既有最优近乎翻倍、VQA-Technical 也近翻倍，说明 rank-1 correction 与 relational distillation 确实阻止了基线的质量崩溃。</p>
+<p>但证据边界同样明确：Open-Sora multi-aspect 只有 10 prompts、没有多 seed/CI；消融表的位宽标注冲突；自动 VQA 甚至高于 FP16；理论上的低熵也没有推出 rank-1。对研究者最合理的结论是：<strong>TQE+TMD 是值得复用的结构化压缩范式，但“几乎无损、可边缘部署”仍需等预算、多设备、人工评价与大模型验证。</strong></p>
+<hr />
+<p><strong>证据与复核说明</strong>：核心数值来自 ICML/PMLR 正式 PDF 的表 1–7、式 3–19 与附录 B–F；相关工作数字来自各论文原文。所有二次百分比均按公开表格复算，未从图像高度估值。论文未提供的标准差、置信区间、图 6 精确数值、Q-VDiT 量化权重与人工偏好结果均明确标为未报告/未公开。索引 <code>ml-report-index.md</code> 已更新。本机未安装 <code>/usr/bin/chromium</code>，<code>/opt/pw-browsers</code> 也无可执行 Chromium，因此无法诚实声称完成 Playwright 三视角截图；已改做 Warm Editorial validator、语义结构、主题脚本、外链与响应式 CSS 的静态检查。</p></section>
+  </main>
+
+  <footer></footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

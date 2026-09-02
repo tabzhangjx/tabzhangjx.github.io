@@ -1,0 +1,1127 @@
+---
+layout: null
+title: "DocVXQA"
+date: 2026-08-29
+topic: trustworthy-theory
+excerpt: "解析 DocVXQA 如何以充分性、最小性与 token interaction 生成文档问答解释，并审视答案条件化训练对解释忠实度的影响。"
+permalink: /blog/2026/08/29/docvxqa-document-vqa-explanations/
+blog_post: true
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>DocVXQA：上下文解释，还是答案条件化的支持图？ · 2026-08-29</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ML / AI DAILY DEEP PAPER · ICML 2025</p>
+    <h1>DocVXQA：上下文解释，还是答案条件化的支持图？</h1>
+    <p class="subtitle">充分性 × 最小性 × token interaction：解释更好看，也更需要 fidelity 审计</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">ICML 2025 · PMLR 267</span>
+      <span class="chip">2026-08-29</span>
+      <span class="chip">理论与可信 / 自解释学习</span>
+    </div>
+    <p class="lede">DocVXQA 将 PFL-DocVQA 遮罩 ANLS 从 ColPali 的 0.39 提至 0.66，但训练 prior 使用 ground-truth answer，尚未证明热图忠实反映原始预测机制。</p>
+  </header>
+
+  <main>
+<section class="card" aria-labelledby="0-链接验证表与证据规则"><h2 id="0-链接验证表与证据规则">0. 链接验证表与证据规则</h2>
+<p>以下 URL 均于 2026-08-29 实际访问。所有实验数字来自下载并逐页读取的
+ICML/PMLR
+PDF；公开代码用于核对实现，网页摘要不用来填补论文未报告的数值。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">资源</th>
+<th scope="col">经验证链接</th>
+<th scope="col">状态</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>ICML/PMLR</td>
+<td><a href="https://proceedings.mlr.press/v267/souibgui25a.html">PMLR
+论文页</a></td>
+<td>ICML 2025 主会，页 56549–56569</td>
+</tr>
+<tr class="even">
+<td>arXiv</td>
+<td><a href="https://arxiv.org/abs/2505.07496">arXiv:2505.07496</a></td>
+<td><strong>v1，2025-05-12 12:30:16 UTC</strong>；无后续版本</td>
+</tr>
+<tr class="odd">
+<td>OpenReview</td>
+<td><a href="https://openreview.net/forum?id=wex0vL4c2Y">forum</a></td>
+<td>已找到</td>
+</tr>
+<tr class="even">
+<td>代码</td>
+<td><a
+href="https://github.com/dali92002/DocVXQA">dali92002/DocVXQA</a></td>
+<td>已公开，CC BY-NC 4.0；已逐文件审阅训练、数据、参数代码</td>
+</tr>
+<tr class="odd">
+<td>权重</td>
+<td><a
+href="https://drive.google.com/file/d/1m7ypGW7kxzL_Him4b-iIwkmgB6_-dA5x/view">Google
+Drive 链接（由 README 提供）</a></td>
+<td>链接存在；当前网络策略无法直接下载，故未校验文件哈希/大小</td>
+</tr>
+<tr class="even">
+<td>DocVQA 数据</td>
+<td><a href="https://www.docvqa.org/datasets/docvqa">官方数据页</a></td>
+<td class="num">50K 问题、12K+ 图像；需从 RRC portal 下载</td>
+</tr>
+<tr class="odd">
+<td>PFL-DocVQA</td>
+<td><a
+href="https://github.com/rubenpt91/PFL-DocVQA-Competition">官方竞赛仓库</a></td>
+<td>可找到竞赛与数据说明；下载权限/完整数据包未在本次重取</td>
+</tr>
+<tr class="even">
+<td>项目页</td>
+<td>未找到独立项目页</td>
+<td>GitHub README 充当项目主页</td>
+</tr>
+<tr class="odd">
+<td>视频/海报</td>
+<td>ICML virtual 链接在 README 中，但当前环境不可达</td>
+<td>不据此声称已观看视频</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>证据标签</strong>：表 1–5、图 3–4、式 (1)–(3) 均指核心
+PDF；代码位置指 GitHub
+主分支实际文件。论文没有多随机种子、训练方差、GPU/时长或能耗，本文保留相应小节并明确写“未报告”。</p>
+</section><section class="card" aria-labelledby="1-候选池排重与随机选择"><h2 id="1-候选池排重与随机选择">1. 候选池、排重与随机选择</h2>
+<p>按 America/Los_Angeles 当地日期执行 <code>date +%u</code> 得到
+<strong>6（周六）</strong>。先读取 <code>ml-report-index.md</code>，排除
+14 天内已覆盖的 SAE canonicality、LIMEFLDL、Alignment Potential
+等解释/对齐主题。候选池共 24 篇，来自 ICML/NeurIPS
+proceedings、OpenReview、arXiv、Hugging Face Papers、Papers with Code 与
+Semantic Scholar 的交叉检索：</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">#</th>
+<th scope="col">候选</th>
+<th scope="col">主题</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td>Memorization Sinks</td>
+<td>记忆隔离/隐私</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td>OR-Bench</td>
+<td>过度拒答评测</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td>Just Enough Shifts / ACTOR</td>
+<td>表征编辑与过拒</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td>POROver</td>
+<td>安全—有用性对齐</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td>Weak-to-Strong Jailbreaking</td>
+<td>弱到强越狱</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td>Representations Shape Weak-to-Strong Generalization</td>
+<td>泛化理论</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td>Does Generation Require Memorization?</td>
+<td>生成与记忆</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">8</td>
+<td>On Volume Minimization in Conformal Regression</td>
+<td>conformal theory</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td>Policy-labeled Preference Learning</td>
+<td>RLHF 可识别性</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td>ELITE</td>
+<td>多模态毒性评测</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td>Be Confident</td>
+<td>MLLM 校准/过拟合</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;"><strong>12</strong></td>
+<td><strong>DocVXQA</strong></td>
+<td><strong>自解释文档问答</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td>One-Step Generalization Ratio</td>
+<td>域泛化</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td>Outlier Gradient Analysis</td>
+<td>数据归因</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td>Bi-perspective Splitting Defense</td>
+<td>后门防御</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">16</td>
+<td>X-Transfer Attacks</td>
+<td>对抗迁移</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td>Classifier Revelation in Strategic Classification</td>
+<td>策略学习理论</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td>Algorithms with Calibrated ML Predictions</td>
+<td>校准理论</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">19</td>
+<td>Susceptibility to Catastrophic Forgetting</td>
+<td>遗忘预测</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">20</td>
+<td>Representational Similarity as Robustness</td>
+<td>鲁棒性</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">21</td>
+<td>Data Attribution at Scale</td>
+<td>数据归因系统</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">22</td>
+<td>Certified Smoothing under Shift</td>
+<td>认证鲁棒性</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">23</td>
+<td>Mechanistic Unlearning and Editing</td>
+<td>机器遗忘</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">24</td>
+<td>Debate under Weak Judges</td>
+<td>可扩展监督</td>
+</tr>
+</tbody>
+</table></div>
+<p>执行 <code>shuf -i 1-24 -n 1</code> 得到 <strong>12</strong>。DocVXQA
+为 ICML 2025 主会论文，公开了 21
+页正文/附录、代码、权重入口与两套数据说明，故无需重抽。完整候选池另存于
+<code>candidates_2026-08-29.tsv</code>。</p>
+</section><section class="card" aria-labelledby="2-motivation答案位置不是答案理由"><h2 id="2-motivation答案位置不是答案理由">2.
+Motivation：答案位置不是答案理由</h2>
+<p>DocVQA 输入为文档图像 (X) 与问题 (q)，输出字符串答案
+(Y)。文档中的表格、标题、单位、列名、脚注和版式共同限定一个值的含义。例如问题是“总金额是多少”，只框出
+<code>$180,000</code> 可能让模型重现答案，却没有说明它为何是
+total、属于哪个表格或哪一列。核心论文第 1–3 页据此区分：</p>
+<ul>
+<li><strong>answer localization</strong>：找到答案文字出现的位置；</li>
+<li><strong>context-aware
+explanation</strong>：同时包含让答案语义成立的上下文；</li>
+<li><strong>representation
+efficiency</strong>：又不能把整页都涂亮。</li>
+</ul>
+<p>现有 post-hoc 方法有两端问题。Gradient/attention
+方法便宜，但可能噪声大或只追随模型注意力；perturbation
+方法通常更接近因果干预，却需大量遮挡前向。定位监督又只适合答案可直接抄取的
+extractive 样本。核心论文将矛盾量化为三指标：遮罩后重答的 Accuracy、ANLS
+衡量<strong>充分性</strong>，被保留的 Pixel Ratio
+衡量<strong>最小性</strong>（PDF 第 6 页，§4.1）。</p>
+<p>痛点有直接数据：在 DocVQA 上，raw attention 阈值从 0.05 提到
+0.50，Pixel Ratio 从 0.38 降至 0.04，但 Accuracy 从 0.34 跌到 0.03、ANLS
+从 0.46 跌到 0.08；PFL-DocVQA 上相应 Accuracy 从 0.06 跌到 0.00（表
+1，第 6 页）。这不是“阈值没调好”，而是单一 saliency
+排序难以同时保留答案与语义上下文。</p>
+</section><section class="card" aria-labelledby="3-论文故事线关键假设与权衡"><h2 id="3-论文故事线关键假设与权衡">3. 论文故事线、关键假设与权衡</h2>
+<p>故事线分四步：</p>
+<ol type="1">
+<li>用 Pix2Struct 处理完整页面并生成答案，同时从 encoder token、decoder
+attention 与位置编码产生可学习 mask (M)。</li>
+<li>把 (T=X\odot M) 当作 information bottleneck
+representation：遮罩区域应足够预测 (Y)，又尽量小。</li>
+<li>仅靠“可重答 + 稀疏”会退化成答案文字复印，因此用 ColPali 的
+question/document 与 answer/document late-interaction heatmap 作为
+token-interaction prior，要求 mask 包含更广上下文。</li>
+<li>推理后把连通区域装入 bounding boxes，只保留 top-(k)
+个，提高人可读性。</li>
+</ol>
+<p>关键假设是：若同一 DocVQA backbone
+在遮罩图上仍能生成相同答案，遮罩就“充分”；若面积小，解释就“最小”；若贴近
+ColPali prior，就更 context-aware。这些是可操作的
+surrogate，而非天然等价于
+fidelity。论文选择的权衡是：牺牲未遮罩任务性能来换解释学习；在
+PFL-DocVQA 中自家 unmasked 模型 Accuracy/ANLS 为 0.57/0.79，低于原
+Pix2Struct 的 0.80/0.92（表 1），绝对下降 <strong>23/13
+个百分点</strong>。</p>
+</section><section class="card" aria-labelledby="4-方程级形式化与实现流程"><h2 id="4-方程级形式化与实现流程">4. 方程级形式化与实现流程</h2>
+<p>信息瓶颈原型（PDF 式 1，第 3–4 页）：</p>
+<p>[ \min_M \mathcal L_{IB}=\beta I(X;X\odot M)-I(X\odot M;Y). ]</p>
+<p>第二项表示充分性。因 (H(Y)) 对固定标签为常数，论文用自回归
+cross-entropy 近似：</p>
+<p>[ \max I(X\odot M;Y)=H(Y)-H(Y|X\odot M) \Longleftrightarrow \min
+\mathcal L_{CE}(Y,\hat Y_M). ]</p>
+<p>第一项并未按式 (1) 真正估计互信息。作者尝试 kernel-density MI
+后称对高维图像和超参敏感、未取得预期结果（第 4–5 页，§3.3），最终换为 L1
+sparsity 与 anisotropic total variation：</p>
+<p>[ \mathcal
+L_{min}=\lambda_1|M|<em>1+\lambda</em>{tv}\sum_{i,j}(|M_{i+1,j}-M_{i,j}|+|M_{i,j+1}-M_{i,j}|).
+]</p>
+<p>ColPali prior 为 (M_p)，最终目标（式 3，第 5 页）是：</p>
+<p>[ \min \mathcal L_{VXQA}=\gamma,\mathrm{MSE}(M_p,M)+\beta\mathcal
+L_{min}(M)+\mathcal L_{CE}(Y,\hat Y_M). ]</p>
+<p>但论文符号与公开实现命名存在混淆：PDF 表 4 写
+(\gamma=0.5,\beta=5)，代码 <code>arg_utils.py</code> 中
+<code>gamma=0.5</code> 是 minimality，<code>beta=5</code> 是 ColPali
+interaction；<code>train.py</code> 组合为
+<code>gamma * loss_mask + beta * loss_mask_colpali</code>，与式 (3)
+的字母位置相反。数值没有冲突，<strong>语义标签冲突</strong>会影响复现阅读。</p>
+<pre class="text"><code>训练：
+  full image + question ──&gt; Pix2Struct ──&gt; answer loss (pass 1)
+              │ decoder attention / encoder token / position
+              └──────────&gt; mask head ──&gt; sigmoid relevance M
+  question + image ──&gt; ColPali heatmap ─┐
+  GT answer + image ──&gt; ColPali heatmap ├─ add ─&gt; prior Mp
+                                        └─ MSE(M,Mp)
+  image ⊙ M ──&gt; same backbone ──&gt; answer loss (sufficiency)
+  M ──&gt; L1 + TV (minimality)
+
+推理：question + image ─&gt; M ─&gt; connected components ─&gt; top-k boxes
+                         └─ masked image ─&gt; answer</code></pre>
+</section><section class="card" aria-labelledby="5-机制与工程细节表"><h2 id="5-机制与工程细节表">5. 机制与工程细节表</h2>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">模块</th>
+<th scope="col">输入/输出</th>
+<th scope="col">作用</th>
+<th scope="col">可复现细节</th>
+<th scope="col">证据</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Pix2Struct-base</td>
+<td>image+rendered question→answer</td>
+<td>主 DocVQA backbone</td>
+<td class="num">282M；12 encoder + 12 decoder，hidden 768</td>
+<td>附录 A.3，第 14 页</td>
+</tr>
+<tr class="even">
+<td>Mask head</td>
+<td>encoder feature、decoder attention、positional encoding→patch
+score</td>
+<td>内生解释</td>
+<td>MLP + sigmoid；论文未报层数/宽度</td>
+<td>附录 A.2，第 14 页</td>
+</tr>
+<tr class="odd">
+<td>Sufficiency</td>
+<td>masked image→answer CE</td>
+<td>保证解释可用于回答</td>
+<td>两次 forward；代码另含 full-image answer loss</td>
+<td>式 2；<code>train.py</code></td>
+</tr>
+<tr class="even">
+<td>Minimality</td>
+<td>mask→L1+TV</td>
+<td>小且连续</td>
+<td><code>lambda_reg=0.3</code> 仅见代码；论文表 4 未列</td>
+<td>§3.3；<code>arg_utils.py</code></td>
+</tr>
+<tr class="odd">
+<td>Token interaction</td>
+<td>Q-image 与 A-image ColPali maps→prior</td>
+<td>补语义上下文</td>
+<td>README 明确生成两张图并相加</td>
+<td>§3.4；<code>data.py:114–117</code></td>
+</tr>
+<tr class="even">
+<td>Postprocessing</td>
+<td>heatmap→connected boxes→top-k</td>
+<td>人可读遮罩</td>
+<td>默认 k=3；仅推理应用</td>
+<td>§3.6；表 4–5</td>
+</tr>
+<tr class="odd">
+<td>优化</td>
+<td>全模型参数</td>
+<td>联合训练</td>
+<td>lr 1e-7、batch 5、AdamW、100 epochs/seed42 仅代码完整给出</td>
+<td>表 4；<code>arg_utils.py</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>论文正文第 4 页称 decoder 冻结，以保持文本预测一致；但公开默认配置
+<code>decoder_frozen=False</code>，训练脚本只有该 flag 为 true 才设
+<code>requires_grad=False</code>，随后 AdamW 接收
+<code>model.parameters()</code>。因此按 README 的“直接训练”路径，decoder
+默认会更新。除非作者运行时覆盖参数，论文配置与公开默认并不一致。</p>
+</section><section class="card" aria-labelledby="6-数据集基准与指标"><h2 id="6-数据集基准与指标">6. 数据集、基准与指标</h2>
+<ul>
+<li><strong>DocVQA</strong>：官方页面给出约 50K 问题、12K+
+文档图像，答案是图中单段文本。论文用其评估常规文档解释。</li>
+<li><strong>PFL-DocVQA</strong>：invoice 领域，源工作由 4,968
+个人工核验文档与新增 32,701 个标注文档构建（PFL 源论文 §4）；DocVXQA
+将其当作跨域/复杂布局测试，但未在正文报告本次具体 split 样本数。</li>
+<li><strong>Accuracy</strong>：exact/任务定义正确率，越高越好。</li>
+<li><strong>ANLS</strong>：normalized Levenshtein similarity，容忍
+OCR/生成字符串轻微差异，越高越好。</li>
+<li><strong>Pixel
+Ratio</strong>：保留像素面积/整图面积，越低越简洁；但它不判断选中区域是否真因果、是否覆盖
+GT evidence。</li>
+<li><strong>人评</strong>：42 人×10 图，1–5 分 Context 与
+Clarity；第二项偏好实验为 12 人×21 QA=252 trials，报告 exact binomial 类
+CI 与 p 值。</li>
+</ul>
+</section><section class="card" aria-labelledby="7-主结果完整数据矩阵"><h2 id="7-主结果完整数据矩阵">7. 主结果完整数据矩阵</h2>
+<p>表 1 的全部可读数值如下。每个方法/阈值跨两数据集报告
+Accuracy、ANLS、Pixel Ratio；<strong>粗体</strong>表示 explainable
+methods 中逐列最优点值，但 Pixel Ratio
+的最小值往往来自效用崩溃，不应视为整体最优。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法（阈值）</th>
+<th scope="col" style="text-align: right;">Doc Acc</th>
+<th scope="col" style="text-align: right;">Doc ANLS</th>
+<th scope="col" style="text-align: right;">Doc Pixel↓</th>
+<th scope="col" style="text-align: right;">PFL Acc</th>
+<th scope="col" style="text-align: right;">PFL ANLS</th>
+<th scope="col" style="text-align: right;">PFL Pixel↓</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Pix2Struct unmasked</td>
+<td style="text-align: right;">0.56</td>
+<td style="text-align: right;">0.68</td>
+<td style="text-align: right;">1.00</td>
+<td style="text-align: right;">0.80</td>
+<td style="text-align: right;">0.92</td>
+<td style="text-align: right;">1.00</td>
+</tr>
+<tr class="even">
+<td>Our model unmasked</td>
+<td style="text-align: right;">0.51</td>
+<td style="text-align: right;">0.65</td>
+<td style="text-align: right;">1.00</td>
+<td style="text-align: right;">0.57</td>
+<td style="text-align: right;">0.79</td>
+<td style="text-align: right;">1.00</td>
+</tr>
+<tr class="odd">
+<td>Raw attention .05</td>
+<td style="text-align: right;">0.34</td>
+<td style="text-align: right;">0.46</td>
+<td style="text-align: right;">0.38</td>
+<td style="text-align: right;">0.06</td>
+<td style="text-align: right;">0.13</td>
+<td style="text-align: right;">0.27</td>
+</tr>
+<tr class="even">
+<td>Raw attention .10</td>
+<td style="text-align: right;">0.20</td>
+<td style="text-align: right;">0.32</td>
+<td style="text-align: right;">0.20</td>
+<td style="text-align: right;">0.04</td>
+<td style="text-align: right;">0.10</td>
+<td style="text-align: right;">0.17</td>
+</tr>
+<tr class="odd">
+<td>Raw attention .25</td>
+<td style="text-align: right;">0.07</td>
+<td style="text-align: right;">0.13</td>
+<td style="text-align: right;">0.08</td>
+<td style="text-align: right;">0.01</td>
+<td style="text-align: right;">0.04</td>
+<td style="text-align: right;">0.09</td>
+</tr>
+<tr class="even">
+<td>Raw attention .50</td>
+<td style="text-align: right;">0.03</td>
+<td style="text-align: right;">0.08</td>
+<td style="text-align: right;">0.04</td>
+<td style="text-align: right;">0.00</td>
+<td style="text-align: right;">0.01</td>
+<td style="text-align: right;">0.05</td>
+</tr>
+<tr class="odd">
+<td>Attention rollout .01</td>
+<td style="text-align: right;">0.03</td>
+<td style="text-align: right;">0.07</td>
+<td style="text-align: right;">0.04</td>
+<td style="text-align: right;">0.00</td>
+<td style="text-align: right;">0.02</td>
+<td style="text-align: right;"><strong>0.03</strong></td>
+</tr>
+<tr class="even">
+<td>Attention rollout 1e-5</td>
+<td style="text-align: right;">0.06</td>
+<td style="text-align: right;">0.11</td>
+<td style="text-align: right;">0.07</td>
+<td style="text-align: right;">0.00</td>
+<td style="text-align: right;">0.03</td>
+<td style="text-align: right;">0.05</td>
+</tr>
+<tr class="odd">
+<td>Grad-CAM .50</td>
+<td style="text-align: right;">0.01</td>
+<td style="text-align: right;">0.05</td>
+<td style="text-align: right;">0.18</td>
+<td style="text-align: right;">0.00</td>
+<td style="text-align: right;">0.03</td>
+<td style="text-align: right;">0.16</td>
+</tr>
+<tr class="even">
+<td>ColPali+Pix2Struct .50</td>
+<td style="text-align: right;"><strong>0.38</strong></td>
+<td style="text-align: right;">0.50</td>
+<td style="text-align: right;">0.23</td>
+<td style="text-align: right;">0.28</td>
+<td style="text-align: right;">0.39</td>
+<td style="text-align: right;">0.18</td>
+</tr>
+<tr class="odd">
+<td><strong>DocVXQA .70</strong></td>
+<td style="text-align: right;"><strong>0.38</strong></td>
+<td style="text-align: right;"><strong>0.54</strong></td>
+<td style="text-align: right;">0.23</td>
+<td style="text-align: right;"><strong>0.43</strong></td>
+<td style="text-align: right;"><strong>0.66</strong></td>
+<td style="text-align: right;">0.22</td>
+</tr>
+<tr class="even">
+<td>DocVXQA .80</td>
+<td style="text-align: right;">0.30</td>
+<td style="text-align: right;">0.46</td>
+<td style="text-align: right;">0.11</td>
+<td style="text-align: right;">0.33</td>
+<td style="text-align: right;">0.54</td>
+<td style="text-align: right;">0.13</td>
+</tr>
+</tbody>
+</table></div>
+<p>同面积比较最有信息量。DocVQA 上 DocVXQA .70 与 ColPali .50 Pixel
+Ratio 都是 0.23：Accuracy 持平 0.38，ANLS 从 0.50→0.54，<strong>+4
+个百分点、相对 +8%</strong>。PFL 上面积多 4pp（0.22 vs 0.18），Accuracy
+0.28→0.43，<strong>+15pp / +53.6%</strong>；ANLS
+0.39→0.66，<strong>+27pp / +69.2%</strong>。它显示 context prior
+的跨域价值，但不是严格等面积。</p>
+<p>在 PFL 更接近面积的对比中，DocVXQA .80 为 0.13 pixel，raw attention
+.10 为 0.17，前者反而少 4pp 面积，却将 Accuracy 0.04→0.33（+29pp）和
+ANLS 0.10→0.54（+44pp）。这是主表最强证据。</p>
+<p>同时，不应忽略上界损失：DocVQA 自家 unmasked 比原 Pix2Struct 低 5pp
+Accuracy/3pp ANLS；PFL 低 23pp/13pp。这说明联合 mask
+训练没有维持原任务能力，解释质量改进伴随明显 backbone utility 代价。</p>
+</section><figure class="figure" aria-labelledby="fig-pfl-title"><p class="fig-title" id="fig-pfl-title">PFL-DocVQA：上下文 prior 对遮罩后重答的影响</p><p class="fig-sub">ANLS 越高越好；不同 operating point 的 Pixel Ratio 见正文表 1。</p><svg class="chart" viewBox="0 0 840 320" role="img" xmlns="http://www.w3.org/2000/svg"><title>PFL-DocVQA ANLS 对比</title><desc>Raw attention 0.05 为 0.13，0.10 为 0.10，ColPali 为 0.39，DocVXQA 0.80 为 0.54，DocVXQA 0.70 为 0.66。</desc><line x1="65" y1="266" x2="805" y2="266" stroke="var(--grid)"/><line x1="65" y1="56" x2="65" y2="266" stroke="var(--grid)"/><text x="55" y="270" font-size="11" text-anchor="end">0</text><text x="55" y="161" font-size="11" text-anchor="end">0.35</text><text x="55" y="60" font-size="11" text-anchor="end">0.70</text><rect x="100" y="227.0" width="78" height="39.0" rx="5" fill="var(--chart-accent)" tabindex="0" data-tip="Raw .05: ANLS 0.13"/><text x="139" y="288" font-size="12" text-anchor="middle">Raw .05</text><text x="139" y="219.0" font-size="12" text-anchor="middle">0.13</text><rect x="240" y="236.0" width="78" height="30.0" rx="5" fill="var(--chart-accent)" tabindex="0" data-tip="Raw .10: ANLS 0.10"/><text x="279" y="288" font-size="12" text-anchor="middle">Raw .10</text><text x="279" y="228.0" font-size="12" text-anchor="middle">0.10</text><rect x="380" y="149.0" width="78" height="117.0" rx="5" fill="var(--chart-accent)" tabindex="0" data-tip="ColPali: ANLS 0.39"/><text x="419" y="288" font-size="12" text-anchor="middle">ColPali</text><text x="419" y="141.0" font-size="12" text-anchor="middle">0.39</text><rect x="520" y="104.0" width="78" height="162.0" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="DocVXQA .80: ANLS 0.54"/><text x="559" y="288" font-size="12" text-anchor="middle">DocVXQA .80</text><text x="559" y="96.0" font-size="12" text-anchor="middle">0.54</text><rect x="660" y="68.0" width="78" height="198.0" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="DocVXQA .70: ANLS 0.66"/><text x="699" y="288" font-size="12" text-anchor="middle">DocVXQA .70</text><text x="699" y="60.0" font-size="12" text-anchor="middle">0.66</text></svg><figcaption>来源：DocVXQA 表 1（PDF p.6）；悬停或键盘聚焦柱形显示精确值。</figcaption></figure><section class="card" aria-labelledby="8-消融超参敏感性与相变"><h2 id="8-消融超参敏感性与相变">8. 消融、超参敏感性与“相变”</h2>
+<h3 id="81-三目标消融">8.1 三目标消融</h3>
+<p>表 2（第 8 页）的行标签由正文解释确认：</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">目标</th>
+<th scope="col" style="text-align: right;">Accuracy</th>
+<th scope="col" style="text-align: right;">ANLS</th>
+<th scope="col" style="text-align: right;">Pixel Ratio</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>S（仅充分性）</td>
+<td style="text-align: right;"><strong>0.51</strong></td>
+<td style="text-align: right;"><strong>0.65</strong></td>
+<td style="text-align: right;">1.00</td>
+</tr>
+<tr class="even">
+<td>S+M</td>
+<td style="text-align: right;">0.19</td>
+<td style="text-align: right;">0.36</td>
+<td style="text-align: right;"><strong>0.02</strong></td>
+</tr>
+<tr class="odd">
+<td>S+M+TI</td>
+<td style="text-align: right;">0.38</td>
+<td style="text-align: right;">0.54</td>
+<td style="text-align: right;">0.23</td>
+</tr>
+</tbody>
+</table></div>
+<p>从 S 到 S+M，面积降 <strong>98%</strong>，但 Accuracy 下降 32pp、ANLS
+下降 29pp：minimality 把模型推入“只抄答案字符”的塌缩区。加入 TI
+后面积回升 21pp，却恢复 Accuracy 19pp、ANLS 18pp；说明 ColPali prior
+不是微调项，而是避免退化的核心监督。</p>
+<h3 id="82-top-k-敏感性">8.2 top-k 敏感性</h3>
+<p>表 5（第 14 页）给出 k=1/2/3/4/5/8/10/15/20/50/100。Accuracy 从 0.36
+单调升至 0.45，ANLS 从 0.52 升至 0.60，Pixel Ratio 从 0.21 升至
+0.40；k=3 为 0.38/0.54/0.24。论文称 k=3
+“最佳折中”，但没有形式化效用函数或人评确定转折点。实际上 k=4 相对 k=3
+仅多 1pp 面积，就多 1pp
+Accuracy/ANLS；因此不存在数据证明的锐利相变，只有作者偏好的 operating
+point。</p>
+<h3 id="83-权重敏感性">8.3 权重敏感性</h3>
+<p>论文只报 (\gamma=0.5,\beta=5)，未报告
+grid、曲线或跨数据集调参流程；代码另有
+<code>lambda_reg=0.3</code>、<code>alpha_1=2</code>、<code>alpha_2=1</code>、100
+epochs、seed 42。故不能推出对 TI/minimality 权重鲁棒，也无法判断 0.23
+面积是稳定 Pareto 解还是单点选择。</p>
+<h3 id="84-统计显著性">8.4 统计显著性</h3>
+<p>第二项人评给出 163/252 偏好 DocVXQA，即 <strong>64.7%，95% CI
+[58.4%,70.6%]，p≪0.001</strong>（第 9
+页），这是全文唯一明确显著性。主表、消融、阈值和第一项 42
+人评分只给点估计或均值±离散度，没有随机种子/样本 bootstrap CI。表 3 的 ±
+未说明是 SD 还是 SE，不能据此精确推断显著性。</p>
+</section><section class="card" aria-labelledby="9-人类评价真正证明了什么"><h2 id="9-人类评价真正证明了什么">9. 人类评价：真正证明了什么</h2>
+<p>表 3：</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">Context↑</th>
+<th scope="col" style="text-align: right;">Clarity↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Raw attention .25</td>
+<td style="text-align: right;">2.90±0.48</td>
+<td style="text-align: right;">2.75±0.42</td>
+</tr>
+<tr class="even">
+<td>Raw attention .50</td>
+<td style="text-align: right;">2.26±0.54</td>
+<td style="text-align: right;">2.34±0.60</td>
+</tr>
+<tr class="odd">
+<td>ColPali+Pix2Struct</td>
+<td style="text-align: right;">3.97±0.25</td>
+<td style="text-align: right;">3.02±0.42</td>
+</tr>
+<tr class="even">
+<td><strong>DocVXQA .70</strong></td>
+<td style="text-align: right;"><strong>4.49±0.26</strong></td>
+<td style="text-align: right;"><strong>3.56±0.41</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>相对 ColPali，Context +0.52（+13.1%），Clarity
++0.54（+17.9%）。第二项直接偏好也显著。因此可以说“输出遮罩更受人喜欢、更便于凭遮罩回答”。但参与者已看到问题和
+GT answer（第 8
+页），任务是判断遮罩是否支持已知答案，而不是先盲答或诊断模型错误；所以不能把高分等价为“提升真实信任校准”。</p>
+</section><section class="card" aria-labelledby="10-技术来源链解决什么遗留缺口如何回应设计如何传递"><h2 id="10-技术来源链解决什么遗留缺口如何回应设计如何传递">10.
+技术来源链：解决什么—遗留缺口—如何回应—设计如何传递</h2>
+<h3 id="pix2structicml-2023">Pix2Struct（ICML 2023）</h3>
+<p><a href="https://proceedings.mlr.press/v202/lee23g.html">论文</a>用
+masked screenshot→simplified HTML 预训练和 variable-resolution patches
+统一视觉语言任务（PDF 第 1–4 页），为 DocVQA 提供 OCR-free
+encoder-decoder。遗留缺口是输出答案但不暴露依据。DocVXQA保留 282M base
+主干，添加 mask head 并做 masked second pass；传递是
+<strong>截图解析表示→可学习 patch bottleneck</strong>。</p>
+<h3 id="grad-camiccv-2017">Grad-CAM（ICCV 2017）</h3>
+<p><a href="https://arxiv.org/abs/1610.02391">论文</a>以目标输出对卷积
+feature map 的梯度加权生成定位图（PDF 第 2–4
+页），优点是无需改训练；遗留缺口是自回归答案需要跨 token
+聚合、梯度图不保证充分。DocVXQA把 explanation
+直接纳入训练，并以遮罩后重答检验；传递是
+<strong>输出相关性热图→可干预的输入 mask</strong>。</p>
+<h3 id="information-bottleneck-attention--dib-x-路线">Information
+Bottleneck attention / DIB-X 路线</h3>
+<p><a
+href="https://research.google/pubs/information-bottleneck-approach-to-self-attention/">IB
+self-attention</a>把 mask
+视为压缩表示，以保留标签信息、删除输入冗余；DIB-X进一步提出
+minimal/sufficient/interactive 原则。遗留缺口是高维 MI
+估计敏感，核心论文也承认 KDE-MI 未得到预期结果。DocVXQA用 L1+TV 和
+answer CE 替代 MI，再以 ColPali prior实现 interactive；传递是
+<strong>理论互信息目标→三个可优化 surrogate</strong>。</p>
+<h3 id="colpali2024">ColPali（2024）</h3>
+<p><a href="https://arxiv.org/abs/2407.01449">论文</a>把 PaliGemma patch
+embedding 与 ColBERT 式 MaxSim late
+interaction结合，实现纯视觉文档检索（PDF 第 3–5 页）。其
+query-token×image-patch similarity
+天然可视化，但目标是检索，不是解释答案。DocVXQA把该图作为 teacher
+prior，并合并 question-image 与 answer-image；传递是
+<strong>检索匹配图→上下文解释软监督</strong>。</p>
+<h3 id="coexvqa2026后续工作">CoExVQA（2026，后续工作）</h3>
+<p><a
+href="https://arxiv.org/abs/2605.06058">论文</a>将证据选择、答案定位、基于
+grounded region 解码串成 chain-of-explanation，试图让过程可验证（PDF 第
+3–6 页）。它回应 DocVXQA 的 mask 将 evidence 与 answer
+localization混在一起的问题；关键转折是从单热图联合优化走向
+<strong>阶段化、可核验的因果路径</strong>。</p>
+<pre class="text"><code>                           ┌─ Grad-CAM / attention rollout：post-hoc 相关性
+黑盒 DocVQA ─ Pix2Struct ─┤
+                           └─ IB attention / DIB-X：minimal + sufficient mask
+                                         │
+ColBERT MaxSim ─ PaliGemma ─ ColPali：query-token × visual-patch interaction
+                                         │ teacher prior（Q-image + A-image）
+                                         ▼
+                      DocVXQA：CE sufficiency + L1/TV minimality + TI context
+                                  │
+                                  ├─ 单 mask + top-k boxes：人可读但机制混合
+                                  ▼
+                CoExVQA：evidence selection → answer localization → grounded decoding</code></pre>
+<p>演进动力从“哪里相关”转向“哪些区域足以支撑答案”，再转向“解释步骤能否被逐段验证”。DocVXQA
+的转折是将 retrieval prior 变成解释监督；其风险也正来自 teacher prior
+不是 ground-truth reasoning。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">解释类型</th>
+<th scope="col" style="text-align: right;">是否改训练</th>
+<th scope="col" style="text-align: right;">是否要求答案/标签</th>
+<th scope="col">fidelity 检验</th>
+<th scope="col">核心缺口</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Grad-CAM</td>
+<td>gradient saliency</td>
+<td style="text-align: right;">否</td>
+<td style="text-align: right;">目标输出</td>
+<td>间接</td>
+<td>自回归聚合脆弱</td>
+</tr>
+<tr class="even">
+<td>Attention rollout</td>
+<td>attention传播</td>
+<td style="text-align: right;">否</td>
+<td style="text-align: right;">否</td>
+<td>无</td>
+<td>attention≠因果</td>
+</tr>
+<tr class="odd">
+<td>ColPali</td>
+<td>retrieval similarity</td>
+<td style="text-align: right;">独立训练</td>
+<td style="text-align: right;">query；DocVXQA baseline加 answer</td>
+<td>遮罩重答</td>
+<td>不是 QA 决策模型</td>
+</tr>
+<tr class="even">
+<td>DocVXQA</td>
+<td>learned mask</td>
+<td style="text-align: right;">是</td>
+<td style="text-align: right;">训练时 Q+A prior</td>
+<td>masked answer utility</td>
+<td>同模型/teacher 循环</td>
+</tr>
+<tr class="odd">
+<td>CoExVQA</td>
+<td>分阶段 grounding</td>
+<td style="text-align: right;">是</td>
+<td style="text-align: right;">evidence supervision/生成</td>
+<td>grounded decoding</td>
+<td>仍需更强因果测试</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="11-真正贡献复用设计与迁移潜力"><h2 id="11-真正贡献复用设计与迁移潜力">11.
+真正贡献、复用设计与迁移潜力</h2>
+<ol type="1">
+<li><strong>解释作为可执行
+bottleneck</strong>：热图不是展示层，而是必须支持第二次回答的输入。这个“explain→intervene→predict”结构可迁移到表格
+QA、图表 QA、医疗报告和网页 agent。</li>
+<li><strong>把 minimality 与 sufficiency 分开报告</strong>：表 2
+清楚暴露只追求稀疏会塌缩；比单一 IoU 或视觉漂亮更诚实。</li>
+<li><strong>跨模型 teacher prior</strong>：ColPali 检索表示补足 QA
+模型缺失的上下文，是一种可复用的“外部语义先验→内部解释头”蒸馏。</li>
+<li><strong>人可读 postprocessing</strong>：connected components+top-k
+boxes 将 patch heatmap变成可操作证据单元，适合审阅界面；但应把 k
+视为用户/SLO 可调参数。</li>
+<li><strong>迁移边界</strong>：Donut qualitative
+结果说明接口可改造，但没有 Donut 定量表，故只能称架构兼容
+proof-of-concept，不能称已证明 model-agnostic 性能。</li>
+</ol>
+</section><section class="card" aria-labelledby="12-论文自述限制与独立批判"><h2 id="12-论文自述限制与独立批判">12. 论文自述限制与独立批判</h2>
+<h3 id="论文自述限制">论文自述限制</h3>
+<ol type="1">
+<li><strong>MI 估计失败</strong>：§3.3（第 4–5 页）明确 KDE-MI
+对高维图像和超参敏感，未得到预期结果，最终目标是 IB-inspired
+surrogate，而非真正优化式 (1)。</li>
+<li><strong>泛化范围</strong>：结论段（第 9 页）把跨更多 DocVQA
+architecture/dataset 与优化 explanation—performance trade-off
+列为未来工作。</li>
+<li><strong>主干性能损失</strong>：§4.3 承认同时处理 masked/clear images
+使模型性能下降；PFL 的 23pp Accuracy 差距表明限制并不轻微。</li>
+</ol>
+<h3 id="独立批判因为-x所以-y">独立批判（因为 X，所以 Y）</h3>
+<ol type="1">
+<li><strong>[监督泄漏/定义]</strong> 因为 README 与
+<code>data.py:114–117</code> 明确把 question-image 和
+<strong>ground-truth answer-image</strong> ColPali maps 相加作为训练
+target，所以 TI 学到的是“已知答案后哪里相关”；因此它不是纯
+question-conditioned
+自解释，部署到错误预测时可能仍解释训练答案模式。</li>
+<li><strong>[忠实度循环]</strong> 因为 sufficiency 由同一类 Pix2Struct
+在 masked image 上重答衡量，而 mask head又读 decoder attention，所以高
+ANLS可能表示生成了对该模型友好的视觉 prompt；因此不能推出
+mask忠实反映第一次 unmasked 推理的因果机制。</li>
+<li><strong>[实现冲突]</strong> 因为 PDF 第 4 页称 decoder
+frozen，而代码默认 <code>decoder_frozen=False</code>
+且优化全部参数，所以 README 默认复现路径与论文叙述不一致；因此无法确定表
+1 来自哪种训练语义。</li>
+<li><strong>[基线公平]</strong> 因为不同方法用不同阈值，ColPali
+baseline还处理 question+answer，而 raw/rollout/Grad-CAM
+来自不同信息与模型路径，所以逐行“最佳”混合了方法、信息预算和面积预算；因此应补等
+Pixel Ratio Pareto/AUC，而非挑 operating points。</li>
+<li><strong>[任务能力代价]</strong> 因为 PFL unmasked Accuracy 从 0.80
+降到 0.57、ANLS 从 0.92 降到 0.79，所以解释训练损害核心 QA
+泛化；因此不能只用 explainable methods 子表宣称总体更可靠。</li>
+<li><strong>[人评效度]</strong> 因为 42 人研究让参与者看到 GT
+answer，且只用 10
+images，所以它测“遮罩是否看起来支持已知答案”，不是解释能否帮助发现错误或改善
+calibrated trust；因此“fosters trust”超出直接证据。</li>
+<li><strong>[统计/复现]</strong> 因为主表无多种子、CI，论文也未报
+GPU/时长，公开代码虽 seed42/100 epochs
+却含本地绝对路径，所以无法估算稳定性和完整复现成本；因此 4pp ANLS
+小优势需谨慎。</li>
+<li><strong>[后处理归因]</strong> 因为图 4 声称阈值≥0.7 时
+postprocessing 同时提升效用并降面积，却没有给完整数字表，而表 5 又显示 k
+增大时效用单调上升，所以无法分离 learned mask 与 box heuristic
+的贡献。</li>
+</ol>
+</section><section class="card" aria-labelledby="13-开放挑战可操作-head-to-head-实验"><h2 id="13-开放挑战可操作-head-to-head-实验">13. 开放挑战：可操作
+head-to-head 实验</h2>
+<h3 id="理论">理论</h3>
+<ul>
+<li><strong>因果 fidelity</strong>：DocVXQA、Grad-CAM、ColPali、CoExVQA
+在相同 Pixel Ratio 下做 comprehensiveness/sufficiency、mask
+randomization、模型参数 randomization、counterfactual evidence
+swap；比较热图相关性是否随原模型决策真正变化。</li>
+<li><strong>无答案 prior</strong>：分别训练 Q-only、A-only、Q+A、GT
+evidence box teacher 四版，测试正确与错误预测的 fidelity；量化
+answer-conditioned supervision 贡献和错误解释风险。</li>
+<li><strong>Pareto 最优性</strong>：对 β/γ/k 联合 sweep，报告
+Accuracy/ANLS–Pixel Ratio 曲线与 hypervolume，使用独立 validation
+选点；head-to-head 比较是否支配 raw/ColPali 曲线。</li>
+</ul>
+<h3 id="工程应用">工程应用</h3>
+<ul>
+<li><strong>错误诊断人评</strong>：盲化 GT
+answer，让参与者在“模型正确/错误各半”的样本上决定是否采纳答案；比较无解释、DocVXQA、ColPali、CoExVQA
+的人机联合准确率、误信率、阅读时间。</li>
+<li><strong>跨骨干定量</strong>：Pix2Struct、Donut、Qwen-VL/InternVL 在
+DocVQA/PFL/InfographicVQA 上用同一 evidence metric；报告增加参数、两次
+forward 延迟、GPU memory 与吞吐。</li>
+<li><strong>可复现配置</strong>：冻结/不冻结 decoder 2×2（含
+encoder）、固定 seed≥5，报告平均±SD；验证公开默认与论文叙述哪一个产生表
+1。</li>
+</ul>
+<h3 id="新兴方向">新兴方向</h3>
+<ul>
+<li><strong>隐私解释冲突</strong>：在 PFL-DocVQA 中比较高精解释是否泄露
+provider/logo/PII；DocVXQA vs DP-trained backbone，联合测
+ANLS、membership inference AUC、explanation privacy leakage。</li>
+<li><strong>多页 agent 文档推理</strong>：单页 mask扩展到 page
+retrieval→region evidence→answer，比较 token budget 和证据召回；要求每个
+answer 可追溯到页/框，并测试跨页数值推理。</li>
+<li><strong>可验证结构解释</strong>：把 boxes转换为 OCR span/表格
+cell/键值关系图，比较像素热图与结构化 rationale
+在人工审计、反事实编辑、自动证据评分上的差异。</li>
+</ul>
+</section><section class="card" aria-labelledby="14-近期工作雷达经验证链接"><h2 id="14-近期工作雷达经验证链接">14. 近期工作雷达（经验证链接）</h2>
+<ol type="1">
+<li><a href="https://arxiv.org/abs/2605.06058">CoExVQA（2026）</a>：把
+evidence selection、answer localization、grounded decoding
+串成显式链，直接回应 DocVXQA 单热图混合不同推理阶段的问题。</li>
+<li><a href="https://huggingface.co/papers/2511.15090">BBox
+DocVQA（2025）</a>：论文卡报告 3.6K 文档、32K QA 与 bounding-box
+grounding，为解释评价从“同模型重答”转向 GT evidence IoU/recall
+提供数据基础；arXiv 聚合元数据在本次访问中出现标题冲突，故只把 Hugging
+Face 论文卡列为可核验入口。</li>
+<li><a href="https://arxiv.org/abs/2502.03692">DocMIA（2025）</a>：展示
+DocVQA 的 document-level membership inference
+风险；解释图可能成为新的攻击面，应与 privacy audit 联合。</li>
+<li><a
+href="https://arxiv.org/abs/2407.01449">ColPali（2024）</a>：patch-level
+late interaction仍是视觉文档检索和弱解释 prior
+的关键基座，但检索相关性不能自动等价为回答理由。</li>
+<li><a href="https://arxiv.org/abs/2312.10108">PFL-DocVQA /
+Privacy-Aware
+DocVQA</a>：把文档问答置于联邦与差分隐私环境；DocVXQA只使用其数据域，没有评价解释对隐私的影响。</li>
+<li><a href="https://github.com/VLR-CVC/DocVQA2026">DocVQA 2026
+competition</a>：覆盖八类文档并强调多模态 reasoning，可用于检验 DocVXQA
+是否只对 extractive 单页答案有效。</li>
+</ol>
+</section><section class="card" aria-labelledby="15-结论"><h2 id="15-结论">15. 结论</h2>
+<p>DocVXQA最可信的发现是：在 PFL-DocVQA 上，约相近遮罩预算下，DocVXQA
+.70 相对 ColPali 将 Accuracy 从 0.28 提到 0.43、ANLS 从 0.39 提到
+0.66；人类直接偏好达到
+64.7%（163/252，p≪0.001）。它证明“只框答案”不足，语义上下文 prior
+能显著改善解释的可用性。</p>
+<p>但其最重要的未解问题同样清楚：ColPali teacher在训练中看到了
+ground-truth answer，fidelity 又由同类模型 masked re-answer
+衡量；公开默认 decoder 设置与论文叙述冲突，并且 PFL unmasked Accuracy
+损失 23pp。因此更准确的定位是：<strong>一种效果强的 context-support mask
+学习方法，而不是已经验证的原模型因果解释器。</strong></p>
+<hr />
+<p><strong>生成与验证脚注</strong>：核心论文及
+ColPali、Pix2Struct、Grad-CAM、CoExVQA PDF
+均已下载阅读；所有报告链接均实际访问，无法直取的权重/视频已明确标注。HTML
+使用 Warm Editorial 模板、自包含
+CSS/JS、双主题与响应式表格，并已通过结构验证器。当前环境未发现
+<code>/usr/bin/chromium</code> 或
+<code>/opt/pw-browsers</code>，因此无法诚实完成 Playwright
+的浅色、深色与移动端截图；已改用响应式 CSS、DOM
+特征与依赖检查，未虚称完成浏览器渲染。<code>ml-report-index.md</code>
+已追加本次条目。</p>
+</section>
+  </main>
+
+  <footer>核心来源：ICML/PMLR PDF、arXiv v1、公开训练代码与数据说明；生成于 2026-08-29。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

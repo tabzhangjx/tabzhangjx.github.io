@@ -1,0 +1,952 @@
+---
+layout: null
+title: "TIMING"
+date: 2026-08-30
+topic: trustworthy-theory
+excerpt: "解析 TIMING 如何以连续片段随机积分路径重写时间序列归因，并审视其评价指标、完整性取舍与证据边界。"
+permalink: /blog/2026/08/30/timing-time-series-path-attribution/
+blog_post: true
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>TIMING 深度研究报告 · 2026-08-30</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #246fca;
+    --chart-comparison: #c95224;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ICML 2025 SPOTLIGHT · AI4SCIENCE / TIME-SERIES XAI</p>
+    <h1>TIMING：时间序列解释的路径重写</h1>
+    <p class="subtitle">从 signed attribution 的评价漏洞，到连续片段随机积分路径</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">ICML 2025 Spotlight</span>
+      <span class="chip">2026-08-30</span>
+      <span class="chip">医疗与工业时序解释</span>
+    </div>
+    <p class="lede">TIMING 在六个真实数据集的 12 个 CPD 单元格全部领先，但最强证据来自作者与方法共同提出的指标，且 completeness 被主动放弃。</p>
+  </header>
+
+  <main><div class="report-body">
+<ul>
+<li>日期：2026-08-30</li>
+<li>领域：AI4Science 与跨界 / 医疗与工业时序解释</li>
+<li>核心论文：Hyeongwon Jang, Changhun Kim, Eunho Yang. <em>TIMING:
+Temporality-Aware Integrated Gradients for Time Series
+Explanation</em>.</li>
+<li>会议：ICML 2025 Spotlight；PMLR 267:26877–26895。</li>
+<li>随机选择：候选池 24 篇；执行
+<code>shuf -i 1-24 -n 1</code>，首次抽中第 14 篇；未重抽。</li>
+</ul>
+<section class="card" aria-labelledby="0-链接验证表-title"><h2 id="0-链接验证表-title">0. 链接验证表</h2>
+<p>下列链接均于 2026-08-30 实际访问。arXiv 页面显示
+<strong>v1，2025-06-05</strong>；未发现后续版本。论文没有独立数据仓库，MIMIC-III
+需通过 PhysioNet 凭证与 DUA 获取；公开仓库提供其余数据处理脚本及除
+MIMIC-III 外的检查点。</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="数据表，可横向滚动"><table>
+<thead>
+<tr class="header">
+<th scope="col">对象</th>
+<th scope="col" class="num">会议 / 论文</th>
+<th scope="col" class="num">arXiv（版本与日期）</th>
+<th scope="col" class="num">代码</th>
+<th scope="col" class="num">数据 / 权重</th>
+<th scope="col" class="num">项目页 / 视频</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>TIMING</td>
+<td class="num"><a href="https://proceedings.mlr.press/v267/jang25a.html">PMLR
+正式页</a>；<a
+href="https://openreview.net/forum?id=qOgKMqv9T7">OpenReview</a></td>
+<td class="num"><a
+href="https://arxiv.org/abs/2506.05035">2506.05035v1，2025-06-05</a></td>
+<td class="num"><a href="https://github.com/drumpt/TIMING">官方 GitHub</a></td>
+<td class="num">仓库含脚本；README 链接非 MIMIC 检查点；MIMIC-III 受限</td>
+<td class="num">独立项目页未找到；独立视频未找到</td>
+</tr>
+<tr class="even">
+<td>Integrated Gradients</td>
+<td class="num"><a href="https://arxiv.org/abs/1703.01365">原论文</a></td>
+<td class="num">1703.01365，2017-03-04</td>
+<td class="num">未找到作者统一仓库</td>
+<td class="num">不适用</td>
+<td class="num">未找到</td>
+</tr>
+<tr class="odd">
+<td>Dynamask</td>
+<td class="num"><a
+href="https://proceedings.mlr.press/v139/crabbe21a/crabbe21a.pdf">ICML
+2021 / PMLR PDF</a></td>
+<td class="num"><a href="https://arxiv.org/abs/2106.05303">2106.05303</a></td>
+<td class="num"><a href="https://github.com/JonathanCrabbe/Dynamask">官方
+GitHub</a></td>
+<td class="num">仓库脚本；无统一权重包</td>
+<td class="num">未找到</td>
+</tr>
+<tr class="even">
+<td>TimeX++</td>
+<td class="num"><a href="https://arxiv.org/abs/2405.09308">ICML 2024 /
+arXiv</a></td>
+<td class="num">2405.09308v1，2024-05-15</td>
+<td class="num"><a href="https://github.com/zichuan-liu/TimeXplusplus">官方
+GitHub</a></td>
+<td class="num">仓库脚本；未找到统一权重包</td>
+<td class="num"><a
+href="https://www.microsoft.com/en-us/research/publication/timex-learning-time-series-explanations-with-information-bottleneck/">Microsoft
+Research 条目</a>；视频未找到</td>
+</tr>
+<tr class="odd">
+<td>ContraLSP</td>
+<td class="num">论文入口见 TIMING 参考文献与官方实现依赖</td>
+<td class="num">未单独核实版本</td>
+<td class="num"><a href="https://github.com/zichuan-liu/ContraLSP">实现入口</a></td>
+<td class="num">未找到统一权重包</td>
+<td class="num">未找到</td>
+</tr>
+<tr class="even">
+<td>近期 ORTE</td>
+<td class="num"><a href="https://openreview.net/forum?id=u6k5y3FDW1">ICML 2025
+OpenReview</a></td>
+<td class="num">未找到独立 arXiv 版本</td>
+<td class="num"><a href="https://github.com/moon2yue/ORTE_public">公开仓库</a></td>
+<td class="num">未找到权重</td>
+<td class="num"><a
+href="https://slideslive.com/39040334/optimal-information-retention-for-timeseries-explanations">ICML
+视频页</a></td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section class="card" aria-labelledby="1-候选池与排重-title"><h2 id="1-候选池与排重-title">1. 候选池与排重</h2>
+<p>索引显示近 14 天已经深度覆盖蛋白多模态、医疗 VLM
+偏好优化、晶体生成与文档视觉解释，因此本次不再选这些主题。候选池来自
+ICML 2025 PMLR / OpenReview、arXiv、作者代码与近期论文索引，共 24
+篇：BounDr.E、Visual and Domain Knowledge for Medical
+Reasoning、QEM-Bench、KoNODE、Causal Discovery from Conditionally
+Stationary Time Series、Graph Filtration for Time
+Series、sciLaMA、TimeFilter、Flow-field Inference from Neural
+Data、Beyond Atoms、SPACE、Energy-based Alignment for Protein
+Ensembles、Moirai-MoE、TIMING、DUNIA、IMTS、Optimal Information
+Retention、Arrow、SKOLR、In-Context Fine-Tuning for
+TSFM、LSCD、Causality-Aware TS Anomaly Detection、E-prop Neural
+Similarity、Atomic Flow Matching for Ligand-Binding
+Proteins。完整可审计池保存在同目录
+<code>candidates_2026-08-30.tsv</code>。</p>
+</section>
+<section class="card" aria-labelledby="2-motivation问题不是归因不够平滑而是评价把方向信息消掉-title"><h2 id="2-motivation问题不是归因不够平滑而是评价把方向信息消掉-title">2. Motivation：问题不是“归因不够平滑”，而是评价把方向信息消掉</h2>
+<p>时间序列解释通常输出每个 <code>(t,d)</code>
+的重要性。若归因有符号，正值表示该点推高预测类概率，负值表示压低。常见评价一次遮掉
+top-K 点，再观察准确率或目标类概率的变化。论文指出这会发生两个混淆。</p>
+<p>第一，<strong>解释模型</strong>与<strong>解释标签</strong>混淆。若模型学了伪相关，遮掉模型真正依赖的错误特征可能提高分类准确率；此时“准确率下降越多越忠实”把对
+ground truth
+的好坏错误地当作对模型行为的忠实度。第二，<strong>方向抵消</strong>。若
+top-K
+中包含推高和压低预测的点，一次性移除后的净变化可能接近零，即使排名完全正确；反之，一组排名较差但同方向的点会得到更大的净变化。</p>
+<p>MIMIC-III 预实验直接量化了这件事：表 1 中 IG-Unsigned 的 CPD(K=50) 为
+<strong>0.342±0.021</strong>，IG-Signed 为
+<strong>0.248±0.010</strong>；但按 10% 遮挡后保留原预测的
+Acc（越低越好），IG-Signed 为 <strong>0.855±0.011</strong>，反而显著好于
+IG-Unsigned 的
+<strong>0.974±0.001</strong>。这不是两个指标“略有不同”，而是会给出相反的算法排序（论文第
+3 页，表 1）。</p>
+<p>作者进一步指出原始 IG 的路径 <code>αx</code>
+同时缩放所有时点：它既始终保持原序列的相对时间关系，也可能穿过训练分布之外的区域。因此，若关键证据来自“某一连续片段相对邻域被破坏时模型如何反应”，单一直线
+IG 看不到这种条件变化（第 4–5 页，§4.2）。</p>
+</section>
+<section class="card" aria-labelledby="3-故事线假设与权衡-title"><h2 id="3-故事线假设与权衡-title">3. 故事线、假设与权衡</h2>
+<p>论文的故事不是直接提出一个新 explainer，而是三步推进：</p>
+<ol type="1">
+<li>先证明旧评价会误判 signed attribution，提出 CPD 与 CPP；</li>
+<li>在新指标下，朴素 IG 已超过许多时间序列专用方法；</li>
+<li>再把 IG 的 baseline/path
+随机化，并以连续片段而非独立点保留原值，得到 TIMING。</li>
+</ol>
+<p>核心假设是：<strong>连续片段是时间语义的合适最小单元</strong>。这比独立
+Bernoulli
+掩码更尊重局部依赖，但并非从数据学习出来；<code>s_min,s_max,n</code>
+是人工设定，且每个片段只选择一个通道。它因此偏向“单通道连续事件”，对跨通道同步事件、非连续周期模式或长程因果关系没有结构保证。</p>
+<p>权衡也很明确：TIMING 换来多上下文的归因，却失去 IG 的
+completeness。论文 Proposition 4.4 明确承认，所有归因之和不再保证等于
+<code>F(x)-F(x')</code>（第 5 页）。换言之，TIMING
+的数值不再是一笔严格守恒的“预测差额分账”，而是不同随机上下文下局部梯度的条件平均。</p>
+</section>
+<section class="card" aria-labelledby="4-方程级形式化-title"><h2 id="4-方程级形式化-title">4. 方程级形式化</h2>
+<p>设分类器 <code>F: R^(T×D) → [0,1]^C</code>，预测类
+<code>ŷ=argmax_c F_c(x)</code>。标准 IG 对点 <code>(t,d)</code>：</p>
+<pre class="text"><code>IG_t,d(x) = (x_t,d-x&#39;_t,d) ∫_0^1 ∂F_ŷ(x&#39;+α(x-x&#39;))/∂x_t,d dα.</code></pre>
+<p>论文以零 baseline 为主。令二值掩码 <code>M_t,d=1</code>
+表示该点沿路径从 0 变化到输入，<code>M_t,d=0</code>
+表示整条路径保留原值，则：</p>
+<pre class="text"><code>z(α;M) = α(M⊙x) + (1-M)⊙x
+MaskingIG_t,d = x_t,d M_t,d ∫_0^1 ∂F_ŷ(z(α;M))/∂x_t,d dα.</code></pre>
+<p>RandIG 用独立 Bernoulli 掩码求条件期望；TIMING 则改用连续片段生成器
+<code>G(n,s_min,s_max)</code> 定义掩码分布：</p>
+<pre class="text"><code>TIMING_t,d(x) = E_{M~G}[MaskingIG_t,d(x,M) | M_t,d=1].</code></pre>
+<p>Proposition 4.1 的计算技巧是把“多条完整 IG 路径”改成“每个 α
+采一个随机掩码”，以单次 Riemann 求和近似内层期望。它保留 Sensitivity 与
+Implementation Invariance（Proposition 4.2–4.3），但不保留
+completeness（Proposition 4.4）。注意：论文称“maintaining its
+theoretical
+properties”时必须加限定词，准确说法是保留两项关键公理，而非完整继承 IG
+的公理集合。</p>
+<p>新评价指标按 <code>|A|</code> 从高到低依次遮挡，记 <code>x↑k</code>
+为已移除前 k 个高归因点：</p>
+<pre class="text"><code>CPD(x)=Σ_{k=0}^{K-1} ||F(x↑k)-F(x↑(k+1))||_1  （越高越好）
+CPP(x)=Σ_{k=0}^{K-1} ||F(x↓k)-F(x↓(k+1))||_1  （越低越好）</code></pre>
+<p>CPD 测“逐个移除重要点时输出累计移动多少”，CPP
+对最低归因点做同样操作。因为每步取 L1 范数，它避免正负影响在一次 top-K
+遮挡中直接抵消；但也因此累计的是路径长度而非首尾净位移，模型输出来回摆动会被重复计数。</p>
+<section class="subsection" aria-labelledby="算法流程据附录-algorithm-1第-12-页-title"><h3 id="算法流程据附录-algorithm-1第-12-页-title">算法流程（据附录 Algorithm 1，第 12 页）</h3>
+<pre class="text"><code>输入 x、冻结分类器 F、片段数 n、长度区间 [s_min,s_max]、积分步数 n_samples
+ŷ ← argmax F(x); TotalGrad ← 0; count ← 0
+for α = 0, 1/n_samples, ... &lt; 1:
+    从零 baseline 构造插值点
+    随机选择 n 个 (通道, 起点, 长度) 连续片段
+    将这些片段恢复为 x 的原值，并记录哪些位置未被恢复
+    对 F_ŷ 求输入梯度；恢复片段的梯度不计入该点条件平均
+    累积梯度与有效计数
+返回 (累计梯度 ⊙ x) / 每点有效计数</code></pre>
+</section>
+</section>
+<section class="card" aria-labelledby="5-关键机制与工程细节-title"><h2 id="5-关键机制与工程细节-title">5. 关键机制与工程细节</h2>
+<div class="table-scroll" role="region" tabindex="0" aria-label="数据表，可横向滚动"><table>
+<thead>
+<tr class="header">
+<th scope="col">组件</th>
+<th scope="col" class="num">作用</th>
+<th scope="col" class="num">论文配置 / 证据</th>
+<th scope="col" class="num">工程含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>连续片段随机保留</td>
+<td class="num">打破部分局部关系，同时让样本靠近输入</td>
+<td class="num">MIMIC 默认 <code>(n,s_min,s_max)=(50,10,48)</code>；表 6，第 8
+页</td>
+<td class="num">对 48 小时时窗，片段可覆盖 10–48 小时，实际是很强的上下文干预</td>
+</tr>
+<tr class="even">
+<td>随机化积分路径</td>
+<td class="num">一条求和中近似多 baseline 期望</td>
+<td class="num"><code>n_samples=50</code>，代码与 Algorithm 1</td>
+<td class="num">成本约为 50 个梯度步，GPU 可批处理</td>
+</tr>
+<tr class="odd">
+<td>逐点 CPD/CPP</td>
+<td class="num">防止一次 top-K 中正负作用抵消</td>
+<td class="num">§3.2，第 3–4 页</td>
+<td class="num">需 K 次前向遮挡；指标本身增加评估成本</td>
+</tr>
+<tr class="even">
+<td>零 / 均值替换</td>
+<td class="num">检查对替换规则的敏感性</td>
+<td class="num">表 3 同时报 Avg 与 Zero</td>
+<td class="num">仍不能保证替换样本在真实数据流形上</td>
+</tr>
+<tr class="odd">
+<td>主分类器</td>
+<td class="num">主要实验为单层 200 hidden-unit GRU</td>
+<td class="num">§5.1，第 6 页</td>
+<td class="num">附录表 8 再测 CNN、Transformer，但覆盖仅 MIMIC</td>
+</tr>
+<tr class="even">
+<td>计算硬件</td>
+<td class="num">解释评估在 RTX 3090 24GB</td>
+<td class="num">官方 README，2026-08-30 访问</td>
+<td class="num">论文正文未给全实验 GPU-hour</td>
+</tr>
+<tr class="odd">
+<td>可复现性</td>
+<td class="num">官方仓库提供 124 次提交与运行脚本</td>
+<td class="num">README 明示“训练环境差异导致仅靠脚本可能不能完全复现”</td>
+<td class="num">这是作者公开的实质限制，不应被“代码已开源”掩盖</td>
+</tr>
+</tbody>
+</table></div>
+<p>代码审计还发现，六个真实数据集使用不同片段配置：例如 Freezer 为
+<code>(5,10,100)</code>、Wafer <code>(5,10,152)</code>、Boiler
+<code>(50,1,36)</code>、PAM <code>(10,10,600)</code>、Epilepsy
+<code>(10,10,10)</code>、MIMIC <code>(50,10,48)</code>（官方仓库
+<code>scripts/real/run_10perc_masking_our.sh</code>）。所以“同一方法跨数据集无需调参”并不成立；表
+6 只在 MIMIC 上做敏感性分析。</p>
+</section>
+<section class="card" aria-labelledby="6-数据集任务与指标-title"><h2 id="6-数据集任务与指标-title">6. 数据集、任务与指标</h2>
+<p>表 7（附录第 15 页）列出 8 个基准：Switch-Feature 1,000×100×3、State
+1,000×200×3；MIMIC-III 22,988×48×32，PAM 5,333×600×17，Epilepsy
+11,500×178×1，Boiler 90,115×36×20，Wafer 7,164×152×1，Freezer
+3,000×301×1。任务覆盖合成显著性、ICU 院内死亡、活动识别、EEG
+癫痫、锅炉故障、晶圆异常与冰箱来源分类。</p>
+<p>合成数据可用 AUP/AUR 对照生成过程给出的 saliency
+map，但这默认训练模型确实用了生成器规定的点；真实数据没有 ground-truth
+explanation，故 CPD/CPP、Acc、CE、Sufficiency、Comprehensiveness
+都是代理指标。CPD
+高只能说明按该排序逐个替换时模型输出累计变化大，不能说明临床人员认为解释正确，也不能证明被标出的变量是因果风险因素。</p>
+</section>
+<section class="card" aria-labelledby="7-完整主结果矩阵-title"><h2 id="7-完整主结果矩阵-title">7. 完整主结果矩阵</h2>
+<section class="subsection" aria-labelledby="71-六真实数据集--七方法--两替换规则-title"><h3 id="71-六真实数据集--七方法--两替换规则-title">7.1 六真实数据集 × 七方法 × 两替换规则</h3>
+<p>下表完整转录论文表 3（第 7 页），指标均为 10% masking 的
+CPD，五次交叉验证
+<code>mean±SE</code>，越高越好。粗体表示逐列最优。为避免伪精度，提升只对
+TIMING 与逐列第二名 IG 的均值计算。</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="数据表，可横向滚动"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;" class="num">MIMIC Avg</th>
+<th scope="col" style="text-align: right;" class="num">MIMIC Zero</th>
+<th scope="col" style="text-align: right;" class="num">PAM Avg</th>
+<th scope="col" style="text-align: right;" class="num">PAM Zero</th>
+<th scope="col" style="text-align: right;" class="num">Boiler Avg</th>
+<th scope="col" style="text-align: right;" class="num">Boiler Zero</th>
+<th scope="col" style="text-align: right;" class="num">Epilepsy Avg</th>
+<th scope="col" style="text-align: right;" class="num">Epilepsy Zero</th>
+<th scope="col" style="text-align: right;" class="num">Wafer Avg</th>
+<th scope="col" style="text-align: right;" class="num">Wafer Zero</th>
+<th scope="col" style="text-align: right;" class="num">Freezer Avg</th>
+<th scope="col" style="text-align: right;" class="num">Freezer Zero</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>AFO</td>
+<td style="text-align: right;" class="num">.127±.009</td>
+<td style="text-align: right;" class="num">.227±.017</td>
+<td style="text-align: right;" class="num">.140±.009</td>
+<td style="text-align: right;" class="num">.200±.013</td>
+<td style="text-align: right;" class="num">.262±.020</td>
+<td style="text-align: right;" class="num">.349±.035</td>
+<td style="text-align: right;" class="num">.028±.003</td>
+<td style="text-align: right;" class="num">.030±.004</td>
+<td style="text-align: right;" class="num">.018±.003</td>
+<td style="text-align: right;" class="num">.018±.003</td>
+<td style="text-align: right;" class="num">.143±.054</td>
+<td style="text-align: right;" class="num">.143±.054</td>
+</tr>
+<tr class="even">
+<td>GradSHAP</td>
+<td style="text-align: right;" class="num">.250±.015</td>
+<td style="text-align: right;" class="num">.522±.038</td>
+<td style="text-align: right;" class="num">.421±.014</td>
+<td style="text-align: right;" class="num">.518±.012</td>
+<td style="text-align: right;" class="num">.752±.055</td>
+<td style="text-align: right;" class="num">.747±.092</td>
+<td style="text-align: right;" class="num">.052±.004</td>
+<td style="text-align: right;" class="num">.054±.004</td>
+<td style="text-align: right;" class="num">.485±.014</td>
+<td style="text-align: right;" class="num">.485±.014</td>
+<td style="text-align: right;" class="num">.397±.110</td>
+<td style="text-align: right;" class="num">.397±.110</td>
+</tr>
+<tr class="odd">
+<td>Extrmask</td>
+<td style="text-align: right;" class="num">.154±.008</td>
+<td style="text-align: right;" class="num">.305±.010</td>
+<td style="text-align: right;" class="num">.291±.007</td>
+<td style="text-align: right;" class="num">.380±.009</td>
+<td style="text-align: right;" class="num">.338±.028</td>
+<td style="text-align: right;" class="num">.400±.031</td>
+<td style="text-align: right;" class="num">.028±.003</td>
+<td style="text-align: right;" class="num">.029±.003</td>
+<td style="text-align: right;" class="num">.202±.026</td>
+<td style="text-align: right;" class="num">.202±.026</td>
+<td style="text-align: right;" class="num">.176±.057</td>
+<td style="text-align: right;" class="num">.176±.057</td>
+</tr>
+<tr class="even">
+<td>ContraLSP</td>
+<td style="text-align: right;" class="num">.048±.003</td>
+<td style="text-align: right;" class="num">.051±.004</td>
+<td style="text-align: right;" class="num">.046±.007</td>
+<td style="text-align: right;" class="num">.059±.011</td>
+<td style="text-align: right;" class="num">.408±.035</td>
+<td style="text-align: right;" class="num">.496±.043</td>
+<td style="text-align: right;" class="num">.016±.001</td>
+<td style="text-align: right;" class="num">.016±.001</td>
+<td style="text-align: right;" class="num">.121±.032</td>
+<td style="text-align: right;" class="num">.121±.032</td>
+<td style="text-align: right;" class="num">.176±.055</td>
+<td style="text-align: right;" class="num">.176±.055</td>
+</tr>
+<tr class="odd">
+<td>TimeX++</td>
+<td style="text-align: right;" class="num">.017±.002</td>
+<td style="text-align: right;" class="num">.074±.006</td>
+<td style="text-align: right;" class="num">.057±.004</td>
+<td style="text-align: right;" class="num">.070±.004</td>
+<td style="text-align: right;" class="num">.124±.028</td>
+<td style="text-align: right;" class="num">.208±.043</td>
+<td style="text-align: right;" class="num">.030±.004</td>
+<td style="text-align: right;" class="num">.032±.004</td>
+<td style="text-align: right;" class="num">.000±.000</td>
+<td style="text-align: right;" class="num">.000±.000</td>
+<td style="text-align: right;" class="num">.216±.056</td>
+<td style="text-align: right;" class="num">.216±.056</td>
+</tr>
+<tr class="even">
+<td>IG</td>
+<td style="text-align: right;" class="num">.243±.015</td>
+<td style="text-align: right;" class="num">.549±.039</td>
+<td style="text-align: right;" class="num">.448±.013</td>
+<td style="text-align: right;" class="num">.573±.022</td>
+<td style="text-align: right;" class="num">.759±.053</td>
+<td style="text-align: right;" class="num">.752±.013</td>
+<td style="text-align: right;" class="num">.052±.004</td>
+<td style="text-align: right;" class="num">.054±.004</td>
+<td style="text-align: right;" class="num">.500±.017</td>
+<td style="text-align: right;" class="num">.500±.017</td>
+<td style="text-align: right;" class="num">.405±.111</td>
+<td style="text-align: right;" class="num">.405±.111</td>
+</tr>
+<tr class="odd">
+<td><strong>TIMING</strong></td>
+<td style="text-align: right;" class="num"><strong>.250±.015</strong></td>
+<td style="text-align: right;" class="num"><strong>.597±.037</strong></td>
+<td style="text-align: right;" class="num"><strong>.463±.007</strong></td>
+<td style="text-align: right;" class="num"><strong>.602±.033</strong></td>
+<td style="text-align: right;" class="num"><strong>1.259±.065</strong></td>
+<td style="text-align: right;" class="num"><strong>1.578±.085</strong></td>
+<td style="text-align: right;" class="num"><strong>.057±.005</strong></td>
+<td style="text-align: right;" class="num"><strong>.060±.005</strong></td>
+<td style="text-align: right;" class="num"><strong>.674±.014</strong></td>
+<td style="text-align: right;" class="num"><strong>.674±.014</strong></td>
+<td style="text-align: right;" class="num"><strong>.409±.109</strong></td>
+<td style="text-align: right;" class="num"><strong>.409±.109</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>相对 IG：MIMIC Zero <strong>+0.048 / +8.74%</strong>；PAM Zero
+<strong>+0.029 / +5.06%</strong>；Boiler Zero <strong>+0.826 /
++109.84%</strong>；Epilepsy Zero <strong>+0.006 /
++11.11%</strong>；Wafer Zero <strong>+0.174 / +34.80%</strong>；Freezer
+Zero <strong>+0.004 / +0.99%</strong>。论文摘要式说法“跨数据集
+SOTA”在点估计上成立，但优势极不均匀：Freezer 几乎打平，Boiler
+则翻倍。</p>
+</section>
+<section class="subsection" aria-labelledby="72-mimic-多指标新指标赢旧指标不统一-title"><h3 id="72-mimic-多指标新指标赢旧指标不统一-title">7.2 MIMIC 多指标：新指标赢，旧指标不统一</h3>
+<p>论文表 2（第 6 页）中，TIMING 的 CPD K=50/100 为 <strong>0.366±0.021
+/ 0.505±0.029</strong>，IG 为 <strong>0.342±0.021 /
+0.469±0.030</strong>，绝对提升 <strong>0.024 / 0.036</strong>。但 20%
+masking 的 Acc 为 TIMING <strong>0.975±0.002</strong>、Extrmask
+<strong>0.932±0.005</strong>、ContraLSP
+<strong>0.921±0.006</strong>（越低越好）；CE 为 TIMING
+<strong>0.136±0.008</strong>、Extrmask
+<strong>0.485±0.022</strong>（越高越好）；Comprehensiveness×100 为
+TIMING <strong>0.436±0.562</strong>、Extrmask
+<strong>23.370±1.088</strong>。因此 TIMING
+的领先是“在作者认为更公平的新指标上领先”，不是所有既有 fidelity
+指标一致领先。</p>
+</section>
+<section class="subsection" aria-labelledby="73-合成数据暴露模型忠实度与数据生成真值的张力-title"><h3 id="73-合成数据暴露模型忠实度与数据生成真值的张力-title">7.3 合成数据暴露“模型忠实度”与“数据生成真值”的张力</h3>
+<p>表 4（第 8 页）中，Switch-Feature 的 TIMING CPD
+<strong>0.208±0.003</strong> 为最佳，但 AUP/AUR <strong>0.926±0.011 /
+0.434±0.015</strong>；ContraLSP 的 AUP/AUR 为 <strong>0.970±0.005 /
+0.851±0.005</strong>。在 State，TIMING CPD <strong>0.163±0.002</strong>
+与 LIME <strong>0.163±0.002</strong> 并列点估计最佳，但 AUP/AUR
+<strong>0.921±0.010 / 0.355±0.008</strong>，低于 LIME AUP
+<strong>0.944±0.008</strong>、FIT AUR
+<strong>0.607±0.002</strong>。这说明 TIMING
+更像“解释已训练模型正在用什么”，未必最接近生成过程指定的 ground-truth
+salient set。</p>
+</section>
+</section>
+<section class="card" aria-labelledby="8-逐层消融超参相变与统计-title"><h2 id="8-逐层消融超参相变与统计-title">8. 逐层消融、超参、相变与统计</h2>
+<p>表 5（第 8 页）把 IG→RandIG→TIMING 分层：MIMIC Zero CPD 从 IG
+<strong>0.342±0.021</strong>，到 RandIG(p=.3/.5/.7)
+<strong>0.350/.353/.354±约.022</strong>，再到 TIMING
+<strong>0.366±0.021</strong>。随机 baseline 贡献约
++0.012，连续片段在最强 RandIG 上再
++0.012；两步增益同量级，不能把全部提升归给“temporality”。Avg 替换下
+TIMING 仅从 IG <strong>0.172</strong> 升到 <strong>0.177</strong>。</p>
+<p>表 6（第 8 页）给 12 组 MIMIC 超参。Zero CPD 范围
+<strong>0.345–0.366</strong>，绝对跨度 0.021；Avg
+<strong>0.173–0.177</strong>，跨度其实是
+<strong>0.004</strong>。正文写“average performance 最大差异
+0.04”，与表内数字不一致，合理推断是排版小数点错误。较大
+<code>s_max=48</code> 基本优于
+<code>s_max=10</code>，但没有出现突变式相变；<code>n</code> 从 10 到 100
+也非单调。</p>
+<p>统计方面，主表报告五次交叉验证的 mean±standard
+error，这是优点；但论文<strong>未报告</strong>配对显著性检验、置信区间、效应量或多重比较校正。因此
+Freezer 的 +0.004（SE 各约 0.11）不能据表推出统计显著；即使 Boiler
+的差距远大于 SE，也不能把视觉分离当作正式检验。不同方法若共享同一
+folds，最合适的是按 fold 配对检验或 bootstrap 配对差，并报告 12
+列多重比较控制。</p>
+</section>
+<section class="card" aria-labelledby="9-计算效率-title"><h2 id="9-计算效率-title">9. 计算效率</h2>
+<p>图 4（第 9 页）报告 MIMIC 全测试集的秒/样本与 CPD：DeepLIFT
+<strong>0.017 s, 0.142</strong>；IG <strong>0.034 s,
+0.342</strong>；GradSHAP <strong>0.034 s, 0.327</strong>；TIMING
+<strong>0.040 s, 0.366</strong>；FO <strong>2.948 s, 0.016</strong>；AFO
+<strong>3.540 s, 0.120</strong>；LIME <strong>3.742 s,
+0.071</strong>。TIMING 相对 IG 慢约 <strong>17.65%</strong>，CPD 高约
+<strong>7.02%</strong>；相对 AFO 快约
+<strong>88.5×</strong>。但作者把需要 post-training
+的方法排除在这张图之外，因此无法得出“比所有时间序列 XAI
+方法更快”的结论。</p>
+</section>
+<section class="card" aria-labelledby="10-真正贡献可复用设计与迁移潜力-title"><h2 id="10-真正贡献可复用设计与迁移潜力-title">10. 真正贡献、可复用设计与迁移潜力</h2>
+<p>真正贡献有两层。第一层甚至比 TIMING 本身更重要：CPD/CPP 把“一次遮 K
+个点”改成逐步路径，明确揭示 signed attribution
+的抵消问题。它可迁移到图节点、图像 patch、文本
+token，只要能定义替换操作。第二层是把 structured baseline distribution
+放进 IG 路径：不是另训
+explainer，而是通过输入路径编码领域结构；这可复用到空间连通块、频域带宽、事件窗口或多变量同步块。</p>
+<p>不过迁移时应保留三条设计纪律：结构单元必须由领域假设或数据验证支持；替换器需尽量贴近条件数据分布；不能只在与方法共同提出的指标上验证，至少加入外部
+ground truth、反事实一致性、人类任务或下游调试收益。</p>
+</section>
+<section class="card" aria-labelledby="11-相关工作问题来源与技术来源链-title"><h2 id="11-相关工作问题来源与技术来源链-title">11. 相关工作：问题来源与技术来源链</h2>
+<section class="subsection" aria-labelledby="111-integrated-gradientssundararajan-et-al-2017-title"><h3 id="111-integrated-gradientssundararajan-et-al-2017-title">11.1 Integrated Gradients（Sundararajan et al., 2017）</h3>
+<p>它解决“无需改模型、满足 Sensitivity 与 Implementation Invariance
+的输入归因”，并以 completeness 把归因总和约束为输出差。遗留缺口是
+baseline 与路径未表达时间结构，直线缩放可能 OOD。TIMING
+继承梯度积分和两项公理，把 baseline/path
+变成结构化随机变量；关键设计传递是“路径即干预语义”。代价是 completeness
+被放弃。</p>
+</section>
+<section class="subsection" aria-labelledby="112-dynamaskcrabbé--van-der-schaar-icml-2021-title"><h3 id="112-dynamaskcrabbé--van-der-schaar-icml-2021-title">11.2 Dynamask（Crabbé &amp; van der Schaar, ICML 2021）</h3>
+<p>Dynamask 通过优化动态 mask
+强制稀疏、连续、易读，直接回应高维时序的可读性。遗留缺口是每个样本要做优化，且性能高度依赖替换与评价；TIMING
+用固定梯度积分避免 per-instance mask
+training/optimization。传递下来的设计是“连续时间结构应进入扰动”，但
+TIMING 从优化 mask 转向随机片段路径。</p>
+</section>
+<section class="subsection" aria-labelledby="113-timexliu-et-al-icml-2024-title"><h3 id="113-timexliu-et-al-icml-2024-title">11.3 TimeX++（Liu et al., ICML 2024）</h3>
+<p>TimeX++ 用信息瓶颈、解释提取器和 conditioner 生成
+in-distribution、label-preserving 的 explanation-embedded instance，解决
+mask signalling 与分布漂移。遗留缺口是需要学习额外模块，且论文表 2/3
+显示其在 CPD 上很低。TIMING
+不训练生成器，改由部分保留原序列让路径靠近输入。传递的设计是“解释评估的替换样本不能任意
+OOD”，但 TIMING
+只做启发式缓解，没有密度或判别器证据证明路径在分布内。</p>
+</section>
+<section class="subsection" aria-labelledby="114-contralspliu-et-al-2024-title"><h3 id="114-contralspliu-et-al-2024-title">11.4 ContraLSP（Liu et al., 2024）</h3>
+<p>ContraLSP 以对比学习和稀疏 gate 提取局部显著点，在既有
+Acc、Suff、Comp 上强。遗留缺口是 unsigned / zeroed negative importance
+会漏掉压低预测的证据。TIMING 以绝对值排序并在 CPD/CPP
+中逐步遮挡正负证据。传递的是“解释需要稀疏且局部”，但 TIMING
+并不直接优化稀疏性。</p>
+<pre class="text"><code>                         ┌─ 梯度公理线 ─ IG (2017) ───────────────┐
+模型无关局部解释 ────────┤                                      ├─ TIMING (2025)
+                         └─ 时序扰动线 ─ Dynamask (2021) ────────┤   ├─ CPD/CPP：逐步评价
+                                           ├─ ContraLSP (2024) ──┤   └─ 连续片段随机路径
+                                           └─ TimeX++ (2024) ────┘
+                                                     │
+                                   OOD / signalling / 方向抵消成为转折点</code></pre>
+<div class="table-scroll" role="region" tabindex="0" aria-label="数据表，可横向滚动"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" class="num">是否训练额外解释器</th>
+<th scope="col" class="num">时间结构</th>
+<th scope="col" class="num">signed</th>
+<th scope="col" class="num">主要保证</th>
+<th scope="col" style="text-align: right;" class="num">TIMING 表 2 CPD50</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>IG</td>
+<td class="num">否</td>
+<td class="num">无</td>
+<td class="num">是</td>
+<td class="num">Sensitivity、Implementation Invariance、Completeness</td>
+<td style="text-align: right;" class="num">.342±.021</td>
+</tr>
+<tr class="even">
+<td>Dynamask</td>
+<td class="num">每样本优化 mask</td>
+<td class="num">动态连续 mask</td>
+<td class="num">通常无符号</td>
+<td class="num">稀疏 / legibility 目标</td>
+<td style="text-align: right;" class="num">.052±.002</td>
+</tr>
+<tr class="odd">
+<td>ContraLSP</td>
+<td class="num">是</td>
+<td class="num">局部稀疏 gate</td>
+<td class="num">主要无符号</td>
+<td class="num">对比与稀疏目标</td>
+<td style="text-align: right;" class="num">.013±.001</td>
+</tr>
+<tr class="even">
+<td>TimeX++</td>
+<td class="num">是</td>
+<td class="num">conditioner 生成时序</td>
+<td class="num">主要无符号</td>
+<td class="num">信息瓶颈近似与分布约束</td>
+<td style="text-align: right;" class="num">.027±.002</td>
+</tr>
+<tr class="odd">
+<td>TIMING</td>
+<td class="num">否</td>
+<td class="num">随机连续片段路径</td>
+<td class="num">是</td>
+<td class="num">Sensitivity、Implementation Invariance；不 complete</td>
+<td style="text-align: right;" class="num"><strong>.366±.021</strong></td>
+</tr>
+</tbody>
+</table></div>
+</section>
+</section>
+<section class="card" aria-labelledby="12-论文自述限制-title"><h2 id="12-论文自述限制-title">12. 论文自述限制</h2>
+<ol type="1">
+<li><strong>评价可被符号排序操纵。</strong> §3.2（第 4 页）明确说 signed
+方法若按绝对值顺序交替正负点，可能抬高
+CPD/CPP，因此不应利用符号操纵排序。</li>
+<li><strong>Completeness 丢失。</strong> Proposition 4.4 与其后讨论（第
+5–6 页）明确说明归因和不再等于输出差。</li>
+<li><strong>复现环境不一致。</strong> 官方 README
+明示，公开训练脚本因与原训练环境不同，可能无法单独完全复现论文结果；MIMIC
+模型检查点也因访问限制不公开。</li>
+</ol>
+<p>论文没有独立的“Limitations”章节，也未报告用户研究、因果验证或部署测试。</p>
+</section>
+<section class="card" aria-labelledby="13-独立批判证据--推论-title"><h2 id="13-独立批判证据--推论-title">13. 独立批判（证据 → 推论）</h2>
+<ol type="1">
+<li><strong>[指标构念效度]</strong> 因为 CPD 是逐步输出变化的 L1
+和，满足三角不等式
+<code>CPD ≥ ||F(x)-F(x↑K)||₁</code>，路径来回摆动会重复累计，所以高 CPD
+不必然等于更准确地识别净贡献，可能只是遮挡轨迹更曲折。</li>
+<li><strong>[循环验证]</strong>
+因为核心方法与主要胜出指标由同一论文共同提出，且在既有 Acc/CE/Comp 上
+Extrmask 明显更强（表 2：Comp×100 23.370 对 0.436），所以不能用 CPD
+全胜单独证明普遍解释质量更高；需要外部任务或独立 ground truth。</li>
+<li><strong>[统计]</strong> 因为 Freezer Zero 仅从 IG .405±.111 到
+.409±.109，差 0.004 远小于单个方法
+SE，所以“六数据集一致提升”的点估计事实不能推出 Freezer 上可靠改善。</li>
+<li><strong>[归因守恒]</strong> 因为 TIMING 明确不满足
+completeness，所以不同样本或不同片段超参下归因总量未被固定，进而绝对归因大小的跨样本比较缺少
+IG 原有的标尺。</li>
+<li><strong>[OOD 证据缺失]</strong> 因为论文声称部分保留能缓解
+OOD，却未报告路径样本的密度、判别器 AUC、最近邻距离或
+calibration，所以“更
+in-distribution”目前是合理机制假说，不是被直接验证的实验结论。</li>
+<li><strong>[结构偏置]</strong> 因为随机片段一次只选一个通道，PAM 的 17
+通道同步动作、Boiler 的 20
+传感器耦合并未显式成组，所以方法可能把跨通道事件拆散；Boiler
+的大幅增益也不能说明学到了物理耦合。</li>
+<li><strong>[超参外推]</strong> 因为六数据集脚本使用不同
+<code>(n,s_min,s_max)</code>，而敏感性只在 MIMIC 的 T=48
+上报告，所以无法推出对 T=600 的 PAM 或 T=301 的 Freezer 同样稳健。</li>
+<li><strong>[复现性]</strong> 因为 README
+明确警告训练脚本不能完整复现且不公开 MIMIC
+检查点，所以最关键的医疗主表无法由无数据权限的第三方端到端验证；这限制了审计可达性。</li>
+</ol>
+</section>
+<section class="card" aria-labelledby="14-开放挑战可操作的-head-to-head-实验空白-title"><h2 id="14-开放挑战可操作的-head-to-head-实验空白-title">14. 开放挑战：可操作的 head-to-head 实验空白</h2>
+<section class="subsection" aria-labelledby="理论-title"><h3 id="理论-title">理论</h3>
+<ul>
+<li><strong>CPD vs 净位移 vs 单调路径 CPD：</strong> 固定同一
+attribution
+ranking，构造输出往返但终点相同的合成模型，比较三种指标与已知 feature
+contribution 的 Kendall τ；检验 CPD 是否奖励振荡。</li>
+<li><strong>守恒版 TIMING vs 原 TIMING：</strong>
+对随机路径归因做逐样本投影使总和等于 <code>F(x)-F(x')</code>，在
+CPD、AUP/AUR、跨样本 calibration 上 head-to-head，判断 completeness
+是否能无损恢复。</li>
+<li><strong>片段先验 vs 学习结构：</strong> 单通道连续片段、跨通道
+group-lasso 片段、频域周期块三者在已知交互真值合成数据上比较 interaction
+recovery。</li>
+</ul>
+</section>
+<section class="subsection" aria-labelledby="工程与应用-title"><h3 id="工程与应用-title">工程与应用</h3>
+<ul>
+<li><strong>等前向/反向预算：</strong>
+TIMING、IG、GradSHAP、StartGrad、TimeX++ 固定 50 次模型调用与同一
+GPU，报告吞吐、峰值显存、CPD、AUP/AUR和能耗；当前图 4
+排除了训练型方法。</li>
+<li><strong>真实临床用户研究：</strong> 对 MIMIC 病例盲测
+TIMING、IG、Extrmask，让重症医师判断证据方向、定位错误和处置建议；主要终点是错误发现率与用时，不使用作者自定义指标。</li>
+<li><strong>替换器鲁棒性：</strong> 零、均值、条件扩散
+imputer、最近邻真实片段四种替换在所有方法上全交叉；若算法排序随替换器逆转，则报告
+ranking stability 而非单点 SOTA。</li>
+</ul>
+</section>
+<section class="subsection" aria-labelledby="新兴方向-title"><h3 id="新兴方向-title">新兴方向</h3>
+<ul>
+<li><strong>在线风险变化：</strong> TIMING 与 DeltaSHAP 在连续预测差
+<code>F(x_t)-F(x_{t-1})</code>
+上比较；检验解释静态风险与解释风险变化是否需要不同 Shapley/gradient
+目标。</li>
+<li><strong>跨域解释：</strong> TIMING 时间片段路径与 Cross-domain IG
+的频域路径在 EEG、振动信号上比较临床/物理语义；终点包含频带 ground
+truth、completeness 与人类识别率。</li>
+</ul>
+</section>
+</section>
+<section class="card" aria-labelledby="15-近期工作雷达-title"><h2 id="15-近期工作雷达-title">15. 近期工作雷达</h2>
+<ol type="1">
+<li><a href="https://openreview.net/forum?id=u6k5y3FDW1">Optimal
+Information Retention / ORTE，ICML
+2025</a>：用条件互信息统一冗余与完整性，正面补 TIMING
+缺少全局优化准则的问题；但它仍依赖 mask 学习与互信息近似。</li>
+<li><a href="https://openreview.net/forum?id=Iht4NNVqk0">Start Smart /
+StartGrad，ICLR 2025</a>：用梯度初始化 mask
+优化，连接快速梯度法与高质量扰动法；适合作为等预算强基线。</li>
+<li><a href="https://arxiv.org/abs/2507.02342">DeltaSHAP，2025-07-03
+arXiv</a>：解释在线患者风险的“变化”而非静态分数，方向性与实时性更贴近临床监控。</li>
+<li><a href="https://arxiv.org/abs/2505.13100">Cross-domain Integrated
+Gradients，2025-05-19 arXiv</a>：把 IG 推到频域、ICA 与分解域并保留
+completeness；它提醒 TIMING 的“连续时间片段”不是唯一合理语义单元。</li>
+<li><a href="https://arxiv.org/abs/2601.09776">TimeSAE，2026-01-14
+arXiv</a>：以稀疏解码器寻找可解释时间概念，将 point attribution 推向
+concept-level；忠实度仍需与黑箱行为验证。</li>
+<li><a
+href="https://openreview.net/forum?id=ZHW5pp5nE5">Delta-XAI，OpenReview</a>：试图统一预测演化解释；它延续
+TIMING 对方向信息的关注，但需避免再造只利于自身的评价闭环。</li>
+</ol>
+</section>
+<section class="card" aria-labelledby="16-结论-title"><h2 id="16-结论-title">16. 结论</h2>
+<p>TIMING
+最值得读的部分不是“又一个时序归因器”，而是对评价协议的拆解：一次遮掉
+top-K
+确实会让正负证据相互抵消。方法上，连续片段随机路径是一种便宜、模型无关、可迁移的结构先验；六真实数据集
+12/12 CPD 单元格领先，Boiler Zero 相对 IG
+<strong>+109.84%</strong>，且只把 MIMIC 推理从 IG 的 <strong>0.034
+s/样本</strong>增加到 <strong>0.040 s/样本</strong>。</p>
+<p>但严格结论必须收窄：TIMING 没有在所有既有指标上获胜，不保证
+completeness，没有直接证明路径更
+in-distribution，也没有用户或因果解释验证。最稳妥的定位是：<strong>它是“signed
+attribution 公平评价 + 结构化 IG
+路径”的强基线与研究起点，而不是已完成临床可信解释闭环的方法。</strong></p>
+<hr />
+<p>脚注：候选池与报告索引已更新。报告数字均来自实际读取的 TIMING 论文 v1
+PDF（19 页）、附录或官方代码/README；未能核实的项目均明确标注。Warm
+Editorial 验证器以 0 error / 0 warning 通过；本机虽安装 Playwright，但
+<code>/usr/bin/chromium</code>、<code>/opt/pw-browsers</code> 与
+Playwright 缓存均无 Chromium 可执行文件（启动返回 executable
+missing），故无法诚实完成浏览器截图。报告改以响应式断点、宽表滚动、主题
+CSS/JS、SVG 键盘 tooltip
+与静态结构检查作为替代，未声称完成真实浏览器视觉验收。</p>
+</section>
+</div>
+<figure class="figure" aria-labelledby="figure-cpd-title"><p class="fig-title" id="figure-cpd-title">六个真实数据集：Zero 替换 CPD（TIMING vs IG）</p><p class="fig-sub">TIMING 在六列点估计均领先；Boiler 差距最大，Freezer 几乎持平。纵轴为 CPD，越高越好。</p><div class="legend" aria-label="图例"><span><span class="swatch" style="background:var(--chart-primary)"></span>TIMING</span><span><span class="swatch" style="background:var(--chart-comparison)"></span>IG</span></div><svg class="chart" viewBox="0 0 900 390" role="img" xmlns="http://www.w3.org/2000/svg"><title>TIMING 与 IG 在六个真实数据集的 Zero 替换 CPD</title><desc>Boiler 上 TIMING 1.578、IG 0.752，差距最大；Freezer 上分别为 0.409 和 0.405。</desc><g stroke="var(--grid)" stroke-width="1"><line x1="72" y1="330" x2="870" y2="330"/><line x1="72" y1="255" x2="870" y2="255"/><line x1="72" y1="180" x2="870" y2="180"/><line x1="72" y1="105" x2="870" y2="105"/><line x1="72" y1="30" x2="870" y2="30"/></g><g font-size="12"><text x="30" y="334">0.0</text><text x="30" y="259">0.4</text><text x="30" y="184">0.8</text><text x="30" y="109">1.2</text><text x="30" y="34">1.6</text></g><g fill="var(--chart-primary)"><rect tabindex="0" data-tip="MIMIC-III · TIMING: 0.597" x="102" y="218.1" width="28" height="111.9"/><rect tabindex="0" data-tip="PAM · TIMING: 0.602" x="232" y="217.1" width="28" height="112.9"/><rect tabindex="0" data-tip="Boiler · TIMING: 1.578" x="362" y="34.1" width="28" height="295.9"/><rect tabindex="0" data-tip="Epilepsy · TIMING: 0.060" x="492" y="318.8" width="28" height="11.2"/><rect tabindex="0" data-tip="Wafer · TIMING: 0.674" x="622" y="203.6" width="28" height="126.4"/><rect tabindex="0" data-tip="Freezer · TIMING: 0.409" x="752" y="253.3" width="28" height="76.7"/></g><g fill="var(--chart-comparison)"><rect tabindex="0" data-tip="MIMIC-III · IG: 0.549" x="134" y="227.1" width="28" height="102.9"/><rect tabindex="0" data-tip="PAM · IG: 0.573" x="264" y="222.6" width="28" height="107.4"/><rect tabindex="0" data-tip="Boiler · IG: 0.752" x="394" y="189.0" width="28" height="141.0"/><rect tabindex="0" data-tip="Epilepsy · IG: 0.054" x="524" y="319.9" width="28" height="10.1"/><rect tabindex="0" data-tip="Wafer · IG: 0.500" x="654" y="236.3" width="28" height="93.7"/><rect tabindex="0" data-tip="Freezer · IG: 0.405" x="784" y="254.1" width="28" height="75.9"/></g><g font-size="12" text-anchor="middle"><text x="132" y="355">MIMIC</text><text x="262" y="355">PAM</text><text x="392" y="355">Boiler</text><text x="522" y="355">Epilepsy</text><text x="652" y="355">Wafer</text><text x="782" y="355">Freezer</text></g></svg><figcaption>数据来源：TIMING 论文表 3，第 7 页；单位：CPD。完整 mean±SE 数值见正文表。</figcaption></figure></main>
+
+  <footer>来源：TIMING arXiv:2506.05035v1（2025-06-05）、PMLR 267、官方代码仓库及文中列出的原始论文；链接于 2026-08-30 验证。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

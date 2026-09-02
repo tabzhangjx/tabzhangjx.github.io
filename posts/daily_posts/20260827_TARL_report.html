@@ -1,0 +1,1132 @@
+---
+layout: null
+title: "TARL"
+date: 2026-08-27
+topic: rl-peft
+excerpt: "解析 TARL 如何以动作熵最小化和原策略 KL 约束进行无奖励测试时策略适配，并审视环境偏移与实现一致性风险。"
+permalink: /blog/2026/08/27/tarl-test-time-reinforcement-learning-adaptation/
+blog_post: true
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>TARL：无奖励测试时策略适配，还是“自信放大器”？ · 2026-08-27</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ML / AI DAILY DEEP PAPER · ICML 2025</p>
+    <h1>TARL：无奖励测试时策略适配，还是“自信放大器”？</h1>
+    <p class="subtitle">动作熵最小化 + 原策略 KL：概念简洁，代码—论文一致性却是决定性风险</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">ICML 2025 · PMLR 267</span>
+      <span class="chip">2026-08-27</span>
+      <span class="chip">强化学习 / Agent / 具身智能</span>
+    </div>
+    <p class="lede">TARL 在论文报告的 Atari 与 D4RL 配对中全部正向，但没有显式环境偏移；公开实现还与“仅更新 LayerNorm、筛选低熵样本”的论文算法冲突。</p>
+  </header>
+
+  <main>
+<section class="card" aria-labelledby="0-链接验证表"><h2 id="0-链接验证表">0. 链接验证表</h2>
+<p>以下链接均于 2026-08-27 实际访问。核心论文未检索到独立 arXiv
+条目；因此不能给出不存在的 arXiv 版本号。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">会议 / 正文</th>
+<th scope="col">arXiv 版本与日期</th>
+<th scope="col">代码</th>
+<th scope="col">数据 / 权重</th>
+<th scope="col">项目页 / 视频</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>TARL（核心）</td>
+<td><a href="https://proceedings.mlr.press/v267/xu25ar.html">PMLR / ICML
+2025</a>，pp. 70020–70031；<a
+href="https://openreview.net/forum?id=Xv1jY6U0pT">OpenReview</a></td>
+<td>未找到</td>
+<td><a href="https://github.com/xushoukai/TARL">xushoukai/TARL</a></td>
+<td>Atari fixed replay、D4RL 为公共基准；作者训练权重未找到</td>
+<td>独立项目页/视频未找到</td>
+</tr>
+<tr class="even">
+<td>CQL</td>
+<td><a href="https://arxiv.org/abs/2006.04779">NeurIPS 2020 /
+arXiv</a></td>
+<td>v3，2020-08-19</td>
+<td>论文页链接代码</td>
+<td>D4RL 公共数据</td>
+<td><a
+href="https://sites.google.com/view/cql-offline-rl">论文项目页</a></td>
+</tr>
+<tr class="odd">
+<td>Tent</td>
+<td><a href="https://arxiv.org/abs/2006.10726">ICLR 2021 Spotlight /
+arXiv</a></td>
+<td>v3，2021-03-18</td>
+<td>arXiv 页面关联</td>
+<td>ImageNet-C 等公共基准</td>
+<td>未单独核实视频</td>
+</tr>
+<tr class="even">
+<td>PAD</td>
+<td><a href="https://arxiv.org/abs/2007.04309">ICLR 2021 /
+arXiv</a></td>
+<td>v3，2021-04-09</td>
+<td>arXiv 页面关联代码</td>
+<td>DMControl、ViZDoom、真实机器人</td>
+<td><a href="https://nicklashansen.github.io/PAD/">项目页</a></td>
+</tr>
+<tr class="odd">
+<td>EATA</td>
+<td><a href="https://proceedings.mlr.press/v162/niu22a.html">ICML 2022 /
+PMLR</a></td>
+<td><a href="https://arxiv.org/abs/2204.02610">v2，2022-05-31</a></td>
+<td>论文页关联</td>
+<td>CIFAR-C、ImageNet-C/R</td>
+<td>未找到独立视频</td>
+</tr>
+<tr class="even">
+<td>IQL</td>
+<td><a href="https://openreview.net/forum?id=68n2s9ZJWF8">ICLR 2022 /
+OpenReview</a></td>
+<td><a href="https://arxiv.org/abs/2110.06169">v1，2021-10-12</a></td>
+<td>OpenReview/作者仓库</td>
+<td>D4RL 公共数据</td>
+<td>未找到独立视频</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="1-为什么值得读问题是真的证据却没有完全对准问题"><h2 id="1-为什么值得读问题是真的证据却没有完全对准问题">1.
+为什么值得读：问题是真的，证据却没有完全对准问题</h2>
+<p>离线 RL
+从固定数据集学习策略，部署时不再获得训练数据分布的完整覆盖。经典风险不是“测试状态看起来陌生”这么简单，而是策略在新状态上提出数据集外动作，Q
+函数又可能对这些动作过估计。CQL 通过保守 Q 正则降低这种风险；IQL
+更进一步，训练时不需要对数据集外动作查询 Q
+值。但这两类方法仍是<strong>部署前</strong>的静态解法：环境动力学、观测噪声或目标发生变化时，策略参数不会自适应。</p>
+<p>TARL 提出一个很诱人的部署接口：不等待奖励、不重新训练
+critic，只根据在线状态上策略本身的动作分布进行小步更新。离散动作最小化类别熵；连续动作最小化高斯策略的微分熵；再用原策略到适配策略的
+KL 散度限制漂移。其工程承诺是只更新归一化层，因此开销小、破坏少。</p>
+<p>论文给出的最醒目数字来自 D4RL <code>hopper-expert-v2</code>：CQL 从
+<strong>99.72</strong> 提升到 <strong>113.34</strong>，绝对
+<strong>+13.62</strong>，以原分数绝对值为分母复算为
+<strong>+13.66%</strong>（论文摘要写 13.6%；表 2、p. 8）。Atari
+最大增益则出现在 QR-DQN/Asterix：<strong>503.38 → 819.24</strong>，绝对
+<strong>+315.86</strong>、相对 <strong>+62.75%</strong>（表 1、p.
+7）。</p>
+<p>但故事的关键断点是：实验并没有显式改变测试环境。D4RL 在同一 MuJoCo
+任务中用离线数据训练、在标准环境评估；Atari
+也没有报告颜色、动力学、动作延迟、粘滞动作或关卡变化。也就是说，论文验证的是“在线状态流上熵微调能否抬高回报”，而不是严格验证“环境分布偏移越大，TARL
+越能恢复”。两者有关，但不等价。</p>
+</section><section class="card" aria-labelledby="2-方法故事线与假设"><h2 id="2-方法故事线与假设">2. 方法故事线与假设</h2>
+<h3 id="21-问题形式化">2.1 问题形式化</h3>
+<p>令 MDP 为 (\langle\mathcal S,\mathcal
+A,P,R,\gamma\rangle)。离线数据集</p>
+<p>[ \mathcal D={(s_i,a_i,r_i,s'<em>i)}</em>{i=1}^{N}\sim
+d_{\mathrm{off}}(s,a) ]</p>
+<p>由行为策略产生。部署轨迹来自 (d_{\mathrm{on}}(s,a))。TARL
+从已训练策略 (\pi_{\theta_0}) 复制出可适配策略
+(\pi_{\theta})，只利用当前/缓存状态，不使用奖励或新 transition
+的监督信号。</p>
+<p>隐含假设至少有四个：第一，策略的预测熵与动作错误/OOD
+风险正相关；第二，低熵样本上的自训练梯度方向通常正确；第三，减小连续策略方差不会系统性损害需要探索或多模态动作的状态；第四，KL
+锚定足以抑制序列更新的错误累积。论文只直接检验了部分第一、二点，没有校准曲线证明“熵能识别错误/OOD”，也没有验证多模态最优动作。</p>
+<h3 id="22-离散动作目标">2.2 离散动作目标</h3>
+<p>论文式 (1)–(3)，p. 5：</p>
+<p>[ H_{\mathrm{dis}}(s;\theta)=-\sum_{a\in\mathcal A}\pi_\theta(a\mid
+s)\log\pi_\theta(a\mid s), ]</p>
+<p>[ f_{\mathrm{dis}}(s)=\mathbf
+1[H_{\mathrm{dis}}(s;\theta)&lt;E_0],\qquad \mathcal
+L^{\mathrm{dis}}<em>{\mathrm{ent}}=f</em>{\mathrm{dis}}(s)H_{\mathrm{dis}}(s;\theta).
+]</p>
+<p>选择低熵状态的逻辑来自伪标签学习：只让“当前模型已经较自信”的状态提供梯度，避免高熵状态产生噪声更新。危险也同样明显：自信不等于正确；若偏移导致系统性高置信错误，熵最小化会放大错误。</p>
+<h3 id="23-连续动作目标">2.3 连续动作目标</h3>
+<p>论文把策略输出近似为正态分布，使用式 (4)–(6)，p. 5：</p>
+<p>[ H_{\mathrm{con}}(s;\theta)=\tfrac12\log(2\pi\sigma^2)+\tfrac12,
+]</p>
+<p>缓存 (B={s_i}) 后选择熵最小的 top-k 状态，并最小化
+(H_{\mathrm{con}})。实现中是 tanh-squashed diagonal
+Gaussian；论文公式却写的是未截断一维高斯熵，未讨论 tanh 变换的 Jacobian
+与多维求和。这不会自动使实验无效，但意味着公式与真正动作分布的熵并不完全相同。</p>
+<h3 id="24-kl-去偏与更新">2.4 KL 去偏与更新</h3>
+<p>论文式 (7)–(9)，pp. 6：</p>
+<p>[ \mathcal
+L_{\mathrm{KL}}=D_{\mathrm{KL}}(\pi_{\theta_0}|\pi_\theta),\qquad
+\mathcal L_t=\mathcal L_{\mathrm{ent}}+\lambda\mathcal L_{\mathrm{KL}}.
+]</p>
+<p>方向 (D_{\mathrm{KL}}(\pi_0|\pi)) 是 mode-covering
+倾向：适配策略不能对原策略有概率质量的动作赋过低概率。它比对称距离便宜，但并不直接保证回报单调，也不约束状态访问分布。论文没有给出
+performance-difference bound 或安全改进定理。</p>
+<h3 id="25-伪代码">2.5 伪代码</h3>
+<pre class="text"><code>输入：冻结原策略 π0，可适配策略 πθ，在线环境，缓存 B
+for episode = 1..M:
+  s ← reset()
+  while 未终止:
+    用 πθ 选动作并执行，得到下一状态（不使用 reward 更新）
+    将状态放入 B
+    计算离散动作熵，或连续高斯方差/熵
+    论文：保留低熵状态；连续任务从 B 取 top-k 小熵样本
+    计算 KL(π0 || πθ)
+    仅更新声明中的 LayerNorm 参数</code></pre>
+</section><section class="card" aria-labelledby="3-关键机制与工程细节"><h2 id="3-关键机制与工程细节">3. 关键机制与工程细节</h2>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">组件</th>
+<th scope="col">论文设定</th>
+<th scope="col">作用</th>
+<th scope="col">风险 / 未决项</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>离散置信度</td>
+<td>动作概率熵</td>
+<td>选低熵状态并进一步锐化</td>
+<td>高置信错误会被强化；未给 entropy–error AUROC</td>
+</tr>
+<tr class="even">
+<td>连续置信度</td>
+<td>高斯方差/微分熵</td>
+<td>缩小动作不确定性</td>
+<td>多模态动作被单高斯压扁；tanh 后熵未形式化</td>
+</tr>
+<tr class="odd">
+<td>选择器</td>
+<td>Atari 阈值 (E_0=0.1)；D4RL 每缓存选 10 个最小熵样本</td>
+<td>降低噪声梯度</td>
+<td>跨任务共用阈值缺少校准依据</td>
+</tr>
+<tr class="even">
+<td>缓存</td>
+<td>D4RL 容量 1000</td>
+<td>汇总近期状态</td>
+<td>非平稳环境中旧状态可能过时；无遗忘策略消融</td>
+</tr>
+<tr class="odd">
+<td>KL 锚</td>
+<td>D4RL (\lambda=1.0)；Atari (\lambda=1.5)</td>
+<td>防止策略漂移</td>
+<td>无自适应 λ；无回报/约束保证</td>
+</tr>
+<tr class="even">
+<td>更新参数</td>
+<td>论文称只更新 LayerNorm</td>
+<td>低成本适配</td>
+<td>公开连续控制脚本实际上构造全参数 Adam，见代码审计</td>
+</tr>
+<tr class="odd">
+<td>学习率</td>
+<td>D4RL (10^{-6})；Atari (10^{-9})</td>
+<td>控制在线更新幅度</td>
+<td>极小 Atari LR 使机制贡献难与数值微扰区分</td>
+</tr>
+<tr class="even">
+<td>评估</td>
+<td>Atari 125k steps；D4RL 每次 10 episodes，重复 10 次</td>
+<td>报告平均回报</td>
+<td>文中称“mean and variance”，表格用 ±，未定义是 SD/SE/variance</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="4-数据集基准与指标"><h2 id="4-数据集基准与指标">4. 数据集、基准与指标</h2>
+<p>Atari 覆盖 Qbert、Seaquest、Asterix、Pong、Breakout
+五个离散控制游戏；每次在线评估 125,000 steps，每 episode 不超过 27,000
+steps（§4.3，p. 7）。D4RL 覆盖 HalfCheetah、Hopper、Walker2d 的
+medium、medium-replay、medium-expert、expert、fully-replay
+若干数据质量档位，采用 normalized score：0 对应随机策略、100
+对应专家策略（补充表 6，p. 12）。</p>
+<p>需要特别注意：D4RL 分数超过 100
+并不表示错误，而是策略回报超过该归一化所用专家参考。论文主表只列 5
+个配对，补充表再列 9 个 CQL 配对；没有形成统一的 3 环境 × 5
+数据质量完整网格，也未对 Atari
+使用人类归一化分数，因此不能直接跨游戏平均。</p>
+</section><section class="card" aria-labelledby="5-完整主结果矩阵"><h2 id="5-完整主结果矩阵">5. 完整主结果矩阵</h2>
+<h3 id="51-atari表-1p-7">5.1 Atari：表 1（p. 7）</h3>
+<p>绝对提升为 TARL−原方法；相对提升用 ((TARL-base)/|base|\times100%)
+复算。Pong
+基线为负数时，相对百分比仅表示数值变化幅度，不宜解释为回报“提升比例”。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">基线</th>
+<th scope="col" style="text-align: right;">游戏</th>
+<th scope="col" style="text-align: right;">原方法（±）</th>
+<th scope="col" style="text-align: right;">+TARL（±）</th>
+<th scope="col" style="text-align: right;">绝对提升</th>
+<th scope="col" style="text-align: right;">相对提升</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>REM</td>
+<td style="text-align: right;">Qbert</td>
+<td style="text-align: right;">914.38±6.81</td>
+<td style="text-align: right;">920.18±15.82</td>
+<td style="text-align: right;">+5.80</td>
+<td style="text-align: right;">+0.63%</td>
+</tr>
+<tr class="even">
+<td>REM</td>
+<td style="text-align: right;">Seaquest</td>
+<td style="text-align: right;">335.42±9.72</td>
+<td style="text-align: right;">339.26±9.38</td>
+<td style="text-align: right;">+3.84</td>
+<td style="text-align: right;">+1.14%</td>
+</tr>
+<tr class="odd">
+<td>REM</td>
+<td style="text-align: right;">Asterix</td>
+<td style="text-align: right;">387.00±4.68</td>
+<td style="text-align: right;">394.73±8.53</td>
+<td style="text-align: right;">+7.73</td>
+<td style="text-align: right;">+2.00%</td>
+</tr>
+<tr class="even">
+<td>REM</td>
+<td style="text-align: right;">Pong</td>
+<td style="text-align: right;">−20.23±0.10</td>
+<td style="text-align: right;">−20.20±0.06</td>
+<td style="text-align: right;">+0.03</td>
+<td style="text-align: right;">+0.15%*</td>
+</tr>
+<tr class="odd">
+<td>REM</td>
+<td style="text-align: right;">Breakout</td>
+<td style="text-align: right;">3.27±0.44</td>
+<td style="text-align: right;">3.58±0.55</td>
+<td style="text-align: right;">+0.31</td>
+<td style="text-align: right;">+9.48%</td>
+</tr>
+<tr class="even">
+<td>QR-DQN</td>
+<td style="text-align: right;">Qbert</td>
+<td style="text-align: right;">646.35±17.08</td>
+<td style="text-align: right;">672.73±14.44</td>
+<td style="text-align: right;">+26.38</td>
+<td style="text-align: right;">+4.08%</td>
+</tr>
+<tr class="odd">
+<td>QR-DQN</td>
+<td style="text-align: right;">Seaquest</td>
+<td style="text-align: right;">413.09±13.16</td>
+<td style="text-align: right;">424.57±11.91</td>
+<td style="text-align: right;">+11.48</td>
+<td style="text-align: right;">+2.78%</td>
+</tr>
+<tr class="even">
+<td>QR-DQN</td>
+<td style="text-align: right;">Asterix</td>
+<td style="text-align: right;">503.38±14.60</td>
+<td style="text-align: right;"><strong>819.24±30.74</strong></td>
+<td style="text-align: right;"><strong>+315.86</strong></td>
+<td style="text-align: right;"><strong>+62.75%</strong></td>
+</tr>
+<tr class="odd">
+<td>QR-DQN</td>
+<td style="text-align: right;">Pong</td>
+<td style="text-align: right;">−18.48±0.12</td>
+<td style="text-align: right;">−18.40±0.18</td>
+<td style="text-align: right;">+0.08</td>
+<td style="text-align: right;">+0.43%*</td>
+</tr>
+<tr class="even">
+<td>QR-DQN</td>
+<td style="text-align: right;">Breakout</td>
+<td style="text-align: right;">3.89±0.42</td>
+<td style="text-align: right;">4.18±0.60</td>
+<td style="text-align: right;">+0.29</td>
+<td style="text-align: right;">+7.46%</td>
+</tr>
+<tr class="odd">
+<td>CQL</td>
+<td style="text-align: right;">Qbert</td>
+<td style="text-align: right;">4334.64±259.67</td>
+<td style="text-align: right;">4602.67±264.11</td>
+<td style="text-align: right;">+268.03</td>
+<td style="text-align: right;">+6.18%</td>
+</tr>
+<tr class="even">
+<td>CQL</td>
+<td style="text-align: right;">Seaquest</td>
+<td style="text-align: right;">257.80±9.25</td>
+<td style="text-align: right;">270.40±8.42</td>
+<td style="text-align: right;">+12.60</td>
+<td style="text-align: right;">+4.89%</td>
+</tr>
+<tr class="odd">
+<td>CQL</td>
+<td style="text-align: right;">Asterix</td>
+<td style="text-align: right;">504.59±13.98</td>
+<td style="text-align: right;">524.76±13.98</td>
+<td style="text-align: right;">+20.17</td>
+<td style="text-align: right;">+4.00%</td>
+</tr>
+<tr class="even">
+<td>CQL</td>
+<td style="text-align: right;">Pong</td>
+<td style="text-align: right;">1.02±1.22</td>
+<td style="text-align: right;">2.08±0.92</td>
+<td style="text-align: right;">+1.06</td>
+<td style="text-align: right;">+103.92%</td>
+</tr>
+<tr class="odd">
+<td>CQL</td>
+<td style="text-align: right;">Breakout</td>
+<td style="text-align: right;">8.26±1.17</td>
+<td style="text-align: right;">8.53±1.15</td>
+<td style="text-align: right;">+0.27</td>
+<td style="text-align: right;">+3.27%</td>
+</tr>
+</tbody>
+</table></div>
+<p>15/15 配对的均值方向为正，但 8 个配对的绝对变化小于 4
+分；QR-DQN/Asterix 单点贡献极大。论文没有跨 seed
+配对检验、置信区间或校正后的多重检验，不能仅凭“均值都正”声称统计显著。CQL/Pong
+的 +103.92% 主要来自分母 1.02 很小，不代表强绝对效果。</p>
+<h3 id="52-d4rl-主表表-2p-8">5.2 D4RL 主表：表 2（p. 8）</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">基线</th>
+<th scope="col">任务</th>
+<th scope="col" style="text-align: right;">原方法</th>
+<th scope="col" style="text-align: right;">+TARL</th>
+<th scope="col" style="text-align: right;">绝对提升</th>
+<th scope="col" style="text-align: right;">相对提升</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>CQL</td>
+<td>hopper-expert-v2</td>
+<td style="text-align: right;">99.72</td>
+<td style="text-align: right;"><strong>113.34</strong></td>
+<td style="text-align: right;"><strong>+13.62</strong></td>
+<td style="text-align: right;"><strong>+13.66%</strong></td>
+</tr>
+<tr class="even">
+<td>CQL</td>
+<td>walker2d-fully-replay-v2</td>
+<td style="text-align: right;">95.31</td>
+<td style="text-align: right;">97.99</td>
+<td style="text-align: right;">+2.68</td>
+<td style="text-align: right;">+2.81%</td>
+</tr>
+<tr class="odd">
+<td>CQL</td>
+<td>walker2d-expert-v2</td>
+<td style="text-align: right;">113.25</td>
+<td style="text-align: right;">113.57</td>
+<td style="text-align: right;">+0.32</td>
+<td style="text-align: right;">+0.28%</td>
+</tr>
+<tr class="even">
+<td>IQL</td>
+<td>walker2d-medium-v2</td>
+<td style="text-align: right;">79.92</td>
+<td style="text-align: right;">82.43</td>
+<td style="text-align: right;">+2.51</td>
+<td style="text-align: right;">+3.14%</td>
+</tr>
+<tr class="odd">
+<td>IQL</td>
+<td>walker2d-expert-v2</td>
+<td style="text-align: right;">110.31</td>
+<td style="text-align: right;">110.49</td>
+<td style="text-align: right;">+0.18</td>
+<td style="text-align: right;">+0.16%</td>
+</tr>
+</tbody>
+</table></div>
+<p>这里的关键信号不是“普遍大幅提升”，而是强异质性：expert Walker2d
+的增益只有 0.16%–0.28%，hopper-expert 却达到
+13.66%。论文把这种差异解释为分布偏移程度不同，但没有测量 train/test
+state-action divergence，因此该解释仍是推断。</p>
+<h3 id="53-d4rl-补充矩阵表-6p-12">5.3 D4RL 补充矩阵：表 6（p. 12）</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">任务</th>
+<th scope="col" style="text-align: right;">CQL（±）</th>
+<th scope="col" style="text-align: right;">CQL+TARL（±）</th>
+<th scope="col" style="text-align: right;">绝对提升</th>
+<th scope="col" style="text-align: right;">相对提升</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>halfcheetah-medium</td>
+<td style="text-align: right;">50.67±0.30</td>
+<td style="text-align: right;">50.75±0.11</td>
+<td style="text-align: right;">+0.08</td>
+<td style="text-align: right;">+0.16%</td>
+</tr>
+<tr class="even">
+<td>hopper-medium</td>
+<td style="text-align: right;">85.74±4.42</td>
+<td style="text-align: right;">87.79±3.96</td>
+<td style="text-align: right;">+2.05</td>
+<td style="text-align: right;">+2.39%</td>
+</tr>
+<tr class="odd">
+<td>walker2d-medium</td>
+<td style="text-align: right;">77.44±5.50</td>
+<td style="text-align: right;">82.95±3.00</td>
+<td style="text-align: right;">+5.51</td>
+<td style="text-align: right;">+7.12%</td>
+</tr>
+<tr class="even">
+<td>halfcheetah-medium-replay</td>
+<td style="text-align: right;">46.82±0.26</td>
+<td style="text-align: right;">46.92±0.23</td>
+<td style="text-align: right;">+0.10</td>
+<td style="text-align: right;">+0.21%</td>
+</tr>
+<tr class="odd">
+<td>hopper-medium-replay</td>
+<td style="text-align: right;">101.47±0.11</td>
+<td style="text-align: right;">101.55±0.16</td>
+<td style="text-align: right;">+0.08</td>
+<td style="text-align: right;">+0.08%</td>
+</tr>
+<tr class="even">
+<td>walker2d-medium-replay</td>
+<td style="text-align: right;">85.13±6.54</td>
+<td style="text-align: right;">85.61±4.33</td>
+<td style="text-align: right;">+0.48</td>
+<td style="text-align: right;">+0.56%</td>
+</tr>
+<tr class="odd">
+<td>halfcheetah-medium-expert</td>
+<td style="text-align: right;">94.36±2.57</td>
+<td style="text-align: right;">95.12±0.39</td>
+<td style="text-align: right;">+0.76</td>
+<td style="text-align: right;">+0.81%</td>
+</tr>
+<tr class="even">
+<td>hopper-medium-expert</td>
+<td style="text-align: right;">106.18±4.27</td>
+<td style="text-align: right;">107.63±3.29</td>
+<td style="text-align: right;">+1.45</td>
+<td style="text-align: right;">+1.37%</td>
+</tr>
+<tr class="odd">
+<td>walker2d-medium-expert</td>
+<td style="text-align: right;">112.73±1.98</td>
+<td style="text-align: right;">113.64±0.20</td>
+<td style="text-align: right;">+0.91</td>
+<td style="text-align: right;">+0.81%</td>
+</tr>
+<tr class="even">
+<td><strong>平均</strong></td>
+<td style="text-align: right;"><strong>84.52</strong></td>
+<td style="text-align: right;"><strong>85.79</strong></td>
+<td style="text-align: right;"><strong>+1.27</strong></td>
+<td style="text-align: right;"><strong>+1.50%</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>9/9 方向为正，但其中 4 项绝对提升不超过 0.10。若 ±
+是标准差（论文未明确定义），多项差值明显小于单边波动。最稳妥结论是“平均上有小幅一致正向趋势，Walker2d-medium
+明显较大”，而不是“所有任务显著优越”。</p>
+</section><figure class="figure" aria-labelledby="fig-d4rl-title">
+<p class="fig-title" id="fig-d4rl-title">D4RL 补充九任务：绝对提升高度不均</p>
+<p class="fig-sub">Walker2d-medium 的 +5.51 明显高于其余任务；四项不超过 +0.10。单位：D4RL normalized score。</p>
+<svg class="chart" viewBox="0 0 900 320" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>D4RL 九任务 CQL 加 TARL 的绝对提升</title><desc>九根柱依次为 0.08、2.05、5.51、0.10、0.08、0.48、0.76、1.45、0.91，Walker2d-medium 最高。</desc>
+<line x1="58" y1="268" x2="860" y2="268" stroke="var(--grid)"/><line x1="58" y1="58" x2="58" y2="268" stroke="var(--grid)"/>
+<text x="48" y="272" font-size="11" text-anchor="end">0</text><text x="48" y="165" font-size="11" text-anchor="end">2.75</text><text x="48" y="62" font-size="11" text-anchor="end">5.51</text>
+<rect x="72" y="264.95" width="48" height="3.05" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="HC-m: +0.08"/><text x="96" y="290" font-size="11" text-anchor="middle">HC-m</text><rect x="158" y="189.87" width="48" height="78.13" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="Hop-m: +2.05"/><text x="182" y="290" font-size="11" text-anchor="middle">Hop-m</text><rect x="244" y="58.00" width="48" height="210.00" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="W2D-m: +5.51"/><text x="268" y="290" font-size="11" text-anchor="middle">W2D-m</text><rect x="330" y="264.19" width="48" height="3.81" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="HC-mr: +0.10"/><text x="354" y="290" font-size="11" text-anchor="middle">HC-mr</text><rect x="416" y="264.95" width="48" height="3.05" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="Hop-mr: +0.08"/><text x="440" y="290" font-size="11" text-anchor="middle">Hop-mr</text><rect x="502" y="249.71" width="48" height="18.29" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="W2D-mr: +0.48"/><text x="526" y="290" font-size="11" text-anchor="middle">W2D-mr</text><rect x="588" y="239.03" width="48" height="28.97" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="HC-me: +0.76"/><text x="612" y="290" font-size="11" text-anchor="middle">HC-me</text><rect x="674" y="212.74" width="48" height="55.26" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="Hop-me: +1.45"/><text x="698" y="290" font-size="11" text-anchor="middle">Hop-me</text><rect x="760" y="233.32" width="48" height="34.68" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="W2D-me: +0.91"/><text x="784" y="290" font-size="11" text-anchor="middle">W2D-me</text></svg>
+<figcaption>来源：TARL 补充材料表 6（p. 12）；柱值由表中显示均值相减。</figcaption></figure><section class="card" aria-labelledby="6-消融超参敏感性与相变"><h2 id="6-消融超参敏感性与相变">6. 消融、超参敏感性与相变</h2>
+<h3 id="61-熵阈值存在尖锐失败区">6.1 熵阈值：存在尖锐失败区</h3>
+<p>Pong 上固定学习率 (10^{-9})，表 3（p. 8）：(E_0=0.1) 得
+<strong>1.70±0.82</strong>；0.3 降为
+<strong>−13.54±1.22</strong>；0.5、0.7、0.9 分别为
+<strong>−18.79、−19.61、−19.98</strong>。从 0.1 到 0.3
+不是平滑退化，而是跨过任务可用性的相变。这证明筛选可靠状态是必要组件，也反过来说明一个跨环境固定阈值并不稳健。</p>
+<h3 id="62-低熵样本选择">6.2 低熵样本选择</h3>
+<p>Walker2d-medium-v2，表 4（p. 8）：全局熵最小化
+<strong>77.74</strong>，低熵选择 <strong>82.95</strong>，高熵选择
+<strong>72.91</strong>。低熵相对全局绝对 +5.21，低熵相对高熵
++10.04。该消融支持“可靠样本优先”，但只有一个任务、无 ±、无 seed
+数，外推有限。</p>
+<h3 id="63-kl-权重">6.3 KL 权重</h3>
+<p>Pong，表 5（p. 9）：(\lambda=0.5,1.0,1.5,2.0) 时分别为
+<strong>0.92±1.08、1.32±1.39、2.08±0.92、0.62±1.73</strong>。最优点是
+1.5，2.0 明显回落，呈倒 U
+型：约束太弱会漂移，太强会阻止适配。但论文没有与 (\lambda=0)
+比较，无法单独量化 KL 相对纯熵目标的贡献。</p>
+<h3 id="64-未报告的必要消融">6.4 未报告的必要消融</h3>
+<p>论文未报告：只更新 LayerNorm vs 全参数；BN/LN 统计更新 vs
+仿射参数更新；每步更新次数；缓存容量 1000 的敏感性；top-k=10
+的敏感性；KL 方向/对称 KL；重置策略（每 episode 重置还是持续累积）；对
+critic 适配；等 wall-clock /
+latency；真实偏移强度扫描。这些缺失使“为什么有效”仍未闭环。</p>
+</section><section class="card" aria-labelledby="7-公开代码复现审计"><h2 id="7-公开代码复现审计">7. 公开代码复现审计</h2>
+<p>这是本报告最重要的新增检查。仓库当前公开、可访问，但连续控制入口与论文叙述至少存在三处冲突：</p>
+<ol type="1">
+<li><strong>参数范围冲突。</strong> 论文多次声明只更新
+LayerNorm（摘要、§3.2、图 2），而
+<code>run_eval_cql_ln_before_activation.py</code> 用
+<code>torch.optim.Adam(tta_actor.parameters(), ...)</code>，未见
+<code>requires_grad=False</code>
+冻结非归一化参数。因此默认优化器覆盖整个 actor，而非只覆盖
+LayerNorm。</li>
+<li><strong>筛选默认关闭。</strong> 同一入口的
+<code>--is_entropy_filter</code> 默认值为 <code>False</code>；README
+示例没有开启该参数。<code>sac_tta.py</code> 在该值为 False
+时对所有状态更新，和论文连续任务“缓存后选 top-10 小熵样本”不一致。</li>
+<li><strong>筛选方向反转。</strong> 当筛选开启时，代码条件是
+<code>if entropy &gt; entropy_threshold: update</code>，而论文式 (2)/(5)
+与表 4
+支持的是低熵样本更新。日志文案也前后矛盾。这不是命名小问题，而会改变算法。</li>
+</ol>
+<p>此外，代码对连续分布使用
+<code>abs(entropy)</code>。微分熵可以为负；取绝对值后再最小化，会把目标改成“把熵推向
+0”，而非严格最小化论文式 (4) 的熵。论文没有描述这一绝对值操作。</p>
+<p>因此，当前能确认的是“作者提供了相关代码与运行入口”，不能确认“公开默认配置精确复现论文表
+2/6”。最小修复应包括：显式筛选 <code>named_parameters()</code> 中
+LayerNorm 的 weight/bias；将可靠条件统一为小熵；README
+给出实际复现实验命令、checkpoint、seed 与
+commit；添加单元测试验证一次更新后只有 LayerNorm 发生变化。</p>
+</section><section class="card" aria-labelledby="8-统计显著性与证据等级"><h2 id="8-统计显著性与证据等级">8. 统计显著性与证据等级</h2>
+<p>论文称每项过程重复 10 次，但没有说明 ± 是标准差、标准误还是方差；§4.3
+文字写“mean and variance”，表格通常却以 ± 展示离散度。没有 paired
+seeds、置信区间、p 值或 effect size，也没有多任务层级统计模型。</p>
+<p>证据可分三级：</p>
+<ul>
+<li><strong>强：</strong> 所有已报告配对均为正；阈值过高在 Pong
+上灾难性失败；低熵选择优于全局/高熵选择（但单任务）。</li>
+<li><strong>中：</strong> TARL 对 CQL、IQL、QR-DQN、REM
+都可能作为插件工作；因为各基线都有正向结果，但任务覆盖不平衡。</li>
+<li><strong>弱：</strong> TARL 专门缓解“环境分布偏移”、只更新
+LayerNorm、低开销、安全稳定；因为未操纵偏移、代码冲突、无时延和安全指标。</li>
+</ul>
+</section><section class="card" aria-labelledby="9-真正贡献可复用设计与迁移潜力"><h2 id="9-真正贡献可复用设计与迁移潜力">9.
+真正贡献、可复用设计与迁移潜力</h2>
+<p>真正贡献不是新的 RL Bellman 目标，而是把 TTA 变成离线 RL
+的部署期接口：原 policy
+做锚、在线状态做无标签适配数据、动作分布提供自监督信号。这个接口可以迁移到
+VLA、导航、推荐与工业控制。</p>
+<p>最可复用的设计有三点。第一，<strong>可靠性门控 + 小参数更新 +
+anchor</strong> 是比“直接在线微调”更稳健的三件套。第二，连续控制的缓存式
+top-k 使更新可批处理，适合异步部署。第三，把适配目标放在 action
+distribution 而非 critic，可以避免没有奖励时伪造价值监督。</p>
+<p>迁移到 VLA 时，不应直接最小化 token/action
+entropy。更合理的是用视觉一致性、动作可执行性
+verifier、动力学预测误差或成功二元反馈联合门控；否则语言模型的高置信
+hallucination 会被进一步强化。对 MoE/大模型策略，可只更新
+router、LayerNorm 或小 adapter，并把 KL 约束改为 action chunk 与 safety
+constraint 上的复合 trust region。</p>
+</section><section class="card" aria-labelledby="10-论文自述限制与独立批判"><h2 id="10-论文自述限制与独立批判">10. 论文自述限制与独立批判</h2>
+<h3 id="101-论文自述限制">10.1 论文自述限制</h3>
+<p>论文没有独立 Limitation
+小节。正文可识别的自述边界包括：高熵样本会引入噪声并导致错误累积（§3.3，pp.
+5–6）；阈值过高会导致失败（§4.7，p. 8）；online RL 与 TARL
+的反馈依赖不同，TARL 不使用环境奖励（补充 B，p.
+12）。作者没有讨论代码一致性、真实分布偏移或统计显著性。</p>
+<h3 id="102-独立批判证据--推论">10.2 独立批判（证据 → 推论）</h3>
+<ol type="1">
+<li><strong>[构念效度]</strong> 因为训练与评估使用标准 Atari/D4RL
+环境，未操纵视觉或动力学偏移，所以实验不能区分“修复 offline-online
+visitation
+mismatch”与“对同环境轨迹做在线自蒸馏”；分布偏移主张证据不足。</li>
+<li><strong>[机制风险]</strong>
+因为熵只表示置信度而非正确性，所以在高置信错误下熵最小化会强化错误；论文缺
+entropy–error/OOD 校准曲线，不能把低熵直接等同于 in-distribution。</li>
+<li><strong>[实现一致性]</strong> 因为公开代码默认全 actor
+Adam、关闭筛选，筛选时又用高熵条件，所以论文算法与默认实现不等价；当前复现身份不清。</li>
+<li><strong>[统计]</strong> 因为 15 个 Atari 配对中 8 个绝对增益小于
+4，且无 paired test/CI，所以“significant
+improvement”只能按日常语言理解，不能按统计显著性理解。</li>
+<li><strong>[平均数掩盖]</strong> 因为 QR-DQN/Asterix 单点
++315.86，而多数配对增益远小，所以不能用一个总平均概括稳定效果；应报告跨任务
+median 与 rank。</li>
+<li><strong>[安全性]</strong> 因为算法部署中会持续改变动作策略、却没有
+cost violation、catastrophic action 或 recovery
+指标，所以“保留安全性”是目标描述，不是已验证结论。</li>
+<li><strong>[连续熵形式]</strong> 因为公式是普通高斯熵、实现是
+tanh-squashed diagonal Gaussian
+且取绝对值，所以优化目标存在形式错配；对接近边界动作时尤其可能改变梯度含义。</li>
+<li><strong>[效率]</strong>
+因为论文只说更新少量参数、未报告吞吐、延迟、反向次数或能耗，所以无法判断在实时控制中是否满足
+deadline；Atari 125k steps 的离线总耗时也未给。</li>
+</ol>
+</section><section class="card" aria-labelledby="11-相关工作问题来源与技术传递链"><h2 id="11-相关工作问题来源与技术传递链">11.
+相关工作：问题来源与技术传递链</h2>
+<h3 id="cql2020离线保守性来源">CQL（2020）：离线保守性来源</h3>
+<p><strong>解决什么：</strong> CQL 通过 Q
+正则学习保守价值下界，减少数据外动作的过估计。<strong>遗留缺口：</strong>
+部署后策略固定，面对新环境不会自适应。<strong>TARL 如何回应：</strong>
+在 CQL actor 外加测试时熵更新。<strong>设计传递：</strong>
+“不要远离离线支持集”的保守思想从 Q 空间迁移成对原策略的 KL anchor。</p>
+<h3
+id="tent2021无标签熵最小化来源">Tent（2021）：无标签熵最小化来源</h3>
+<p><strong>解决什么：</strong> Tent
+在图像分类测试流中估计归一化统计并更新通道仿射参数，通过预测熵最小化适应
+covariate shift。<strong>遗留缺口：</strong>
+分类样本近似独立，动作会改变后续状态，错误梯度能通过状态访问分布累积。<strong>TARL
+如何回应：</strong> 引入原策略
+KL，并区分离散/连续动作熵。<strong>设计传递：</strong>
+归一化层参数高效更新与熵目标几乎直接传递。</p>
+<h3
+id="pad2021无奖励策略部署适配来源">PAD（2021）：无奖励策略部署适配来源</h3>
+<p><strong>解决什么：</strong> PAD 使用训练期配套的自监督任务，让视觉 RL
+policy 在无奖励部署环境中继续更新；原论文在 36 个环境中的 31
+个改善（arXiv 摘要）。<strong>遗留缺口：</strong>
+需要训练时预置自监督头和联合目标。<strong>TARL 如何回应：</strong>
+不改变原 offline RL
+训练流程，直接使用动作分布作为自监督信号。<strong>设计传递：</strong>
+“部署可见观察、不可见奖励”的设定直接传递，但 TARL
+用可插拔性换掉了更具语义的视觉自监督信号。</p>
+<h3
+id="eata2022可靠样本与防遗忘来源">EATA（2022）：可靠样本与防遗忘来源</h3>
+<p><strong>解决什么：</strong> EATA
+指出高熵样本产生噪声梯度，用可靠/非冗余样本选择和 Fisher
+正则减少遗忘。<strong>遗留缺口：</strong>
+仍是分类模型，不处理策略诱导数据分布。<strong>TARL 如何回应：</strong>
+采用低熵选择，并以 policy KL 代替 Fisher
+参数正则。<strong>设计传递：</strong>
+“不让所有测试样本反向传播”与“锚住源模型”的双部件结构被移植到 RL。</p>
+<h3
+id="iql2022避免数据外动作的另一条路线">IQL（2022）：避免数据外动作的另一条路线</h3>
+<p><strong>解决什么：</strong> IQL 训练时不需要评估数据集外动作，以
+expectile value 与 advantage-weighted behavior cloning 获得强 offline
+policy。<strong>遗留缺口：</strong> 部署期仍静态。<strong>TARL
+如何回应：</strong> 将同一个适配器接到 IQL actor，表 2 的 Walker2d
+两任务分别 +2.51 与 +0.18。<strong>设计传递：</strong> IQL 提供较少依赖
+OOD action evaluation 的底座，TARL 进一步处理测试状态流。</p>
+</section><section class="card" aria-labelledby="12-非线性技术演进树"><h2 id="12-非线性技术演进树">12. 非线性技术演进树</h2>
+<pre class="text"><code>离线 RL 的 extrapolation error
+├─ 行为约束 / 保守价值
+│  ├─ CQL：Q 下界与保守正则 ───────────────┐
+│  └─ IQL：不查询数据外动作 ──────────────┤
+│                                          ├─ TARL：action entropy + policy KL
+测试时适配                                  │
+├─ Tent：熵最小化 + normalization affine ─┤
+├─ EATA：可靠样本选择 + 防遗忘锚 ─────────┘
+└─ PAD：无奖励的部署期 policy adaptation ──┐
+                                           └─ 后续：FeedTTA / TT-VLA / T²VLA
+                                                （反馈、verifier、物理执行信号）</code></pre>
+<p>演进动力有两个转折。第一，从“训练时覆盖所有偏移”转向“部署时利用目标流”；第二，从分类熵这种廉价内生信号，转向带环境二元反馈、verifier
+或 world model 的任务相关信号。TARL 位于两者之间：比 PAD
+更即插即用，但比后续 embodied TTA 更弱监督。</p>
+</section><section class="card" aria-labelledby="13-跨论文对标"><h2 id="13-跨论文对标">13. 跨论文对标</h2>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col">部署期更新</th>
+<th scope="col">需要奖励/标签</th>
+<th scope="col">训练需改造</th>
+<th scope="col">自监督信号</th>
+<th scope="col">防漂移</th>
+<th scope="col">序列决策验证</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>CQL</td>
+<td>否</td>
+<td>否</td>
+<td>是</td>
+<td>保守 Q</td>
+<td>训练期保守性</td>
+<td>是</td>
+</tr>
+<tr class="even">
+<td>IQL</td>
+<td>可在线微调但原式否</td>
+<td>在线微调需要交互</td>
+<td>是</td>
+<td>expectile / AWR</td>
+<td>数据内动作</td>
+<td>是</td>
+</tr>
+<tr class="odd">
+<td>Tent</td>
+<td>是</td>
+<td>否</td>
+<td>否</td>
+<td>分类熵</td>
+<td>无强 anchor</td>
+<td>否</td>
+</tr>
+<tr class="even">
+<td>EATA</td>
+<td>是</td>
+<td>否</td>
+<td>否</td>
+<td>可靠样本熵</td>
+<td>Fisher 正则</td>
+<td>否</td>
+</tr>
+<tr class="odd">
+<td>PAD</td>
+<td>是</td>
+<td>否</td>
+<td><strong>是</strong></td>
+<td>辅助自监督任务</td>
+<td>任务依赖</td>
+<td>是</td>
+</tr>
+<tr class="even">
+<td>TARL</td>
+<td>是</td>
+<td>否</td>
+<td>声称否；需有 LN 结构</td>
+<td>动作熵/方差</td>
+<td>policy KL</td>
+<td>是，但无显式偏移</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="14-开放挑战可操作的-head-to-head-实验"><h2 id="14-开放挑战可操作的-head-to-head-实验">14. 开放挑战：可操作的
+head-to-head 实验</h2>
+<h3 id="理论">理论</h3>
+<ol type="1">
+<li><strong>熵门控 vs density/OOD 门控：</strong> 在可控 dynamics shift
+下比较 entropy、ensemble disagreement、behavior-density、conformal
+score；横轴为 shift 强度，纵轴为 return、OOD detection AUROC 与
+catastrophic-action rate。</li>
+<li><strong>KL 方向：</strong> 比较 (KL(\pi_0|\pi))、(KL(\pi|\pi_0))、JS
+与 action-Wasserstein，在相同 trust-region 半径和梯度步数下测 worst-case
+return。</li>
+<li><strong>安全改进界：</strong> TARL vs 不适配 vs reward-aware online
+fine-tuning，检查是否能用 offline critic lower bound
+触发回滚，并测违反约束的上置信界。</li>
+</ol>
+<h3 id="工程应用">工程应用</h3>
+<ol start="4" type="1">
+<li><strong>论文实现 vs 公开默认代码：</strong> 四臂实验：仅 LN/全 actor
+× 低熵/高熵或无筛选；固定 checkpoint、seed、总反向次数，直接确定表 2
+增益来自哪一臂。</li>
+<li><strong>真实偏移矩阵：</strong> Atari-C 风格视觉腐蚀、action
+sticky、frame delay；MuJoCo friction/mass/sensor noise。与
+PAD、Tent-on-policy、EATA-style Fisher、no-adapt 做五方法
+head-to-head。</li>
+<li><strong>实时预算：</strong> 在 20/50/100 Hz 控制频率下测 p50/p99
+延迟、GPU 能耗和错过 deadline
+比例；同预算下比较每步更新、缓存批更新、异步更新。</li>
+<li><strong>回滚与非平稳：</strong> A→B→A
+环境序列，比较持续更新、episode 重置、EMA anchor、change-point reset，测
+B 适应速度与返回 A 后遗忘。</li>
+</ol>
+<h3 id="新兴方向">新兴方向</h3>
+<ol start="8" type="1">
+<li><strong>VLA 内生置信度 vs verifier：</strong> TARL 式 action
+entropy、视觉语言 verifier、world-model prediction
+error、二元成功反馈四种信号，在 LIBERO/真实机器人相同试验数下比较
+success 与 unsafe action。</li>
+<li><strong>action chunk 适配：</strong> 对 diffusion/VLA policy
+比较缩小全 chunk 方差、只重排候选 chunk、更新
+router/adapter；测多模态任务中 mode collapse。</li>
+<li><strong>无梯度 agent 适配：</strong> 参数更新 TARL vs retrieval
+memory/JitRL vs test-time planning，在同 token/GPU/interaction
+预算下比较长期积累与灾难性遗忘。</li>
+</ol>
+</section><section class="card" aria-labelledby="15-近期工作20252026"><h2 id="15-近期工作20252026">15. 近期工作（2025–2026）</h2>
+<ol type="1">
+<li><strong>FeedTTA（ICML 2025）</strong>：用 episode 末尾二元成功反馈做
+VLN 测试时 RL，比 TARL 的纯内生熵更任务相关，但需要延迟反馈。<a
+href="https://proceedings.mlr.press/v267/kim25ad.html">PMLR</a></li>
+<li><strong>World Model Implanting（ICML 2025）</strong>：通过可插拔
+world model 让 embodied policy
+跨域适配，代表“适配内部动力学模型”而非直接锐化动作分布。<a
+href="https://openreview.net/forum?id=tpbtodnI1p">OpenReview</a></li>
+<li><strong>TMoW（2026）</strong>：测试时调整 world-model mixture
+路由并支持 few-shot 扩充，适合环境由多个可复用域组成的情况。<a
+href="https://arxiv.org/abs/2601.22647">arXiv</a></li>
+<li><strong>TT-VLA（ACL 2026）</strong>：把测试时 RL 推进到 VLA 的在线
+policy adaptation，代表从通用离线 actor 到具身大模型的延伸。<a
+href="https://aclanthology.org/2026.acl-long.1863/">ACL
+Anthology</a></li>
+<li><strong>T²VLA（2026）</strong>：利用 VLA
+生成置信度与物理成功的相关性做自举式测试时 RL，和 TARL
+最接近，也更需要严格检查置信度校准。<a
+href="https://arxiv.org/abs/2606.29892">arXiv</a></li>
+<li><strong>Reflective Test-Time
+Planning（2026）</strong>：不直接以熵更新策略，而让行动模型与内外
+evaluator 在部署期反思，适合可用语言/视觉评价器的长程任务。<a
+href="https://arxiv.org/abs/2602.21198">arXiv</a></li>
+<li><strong>E-TTS（2026）</strong>：联合扩展 embodied reasoning 与
+action sampling，并用历史感知 verifier
+闭环选择；它代表“增加推理计算”而非“梯度适配”的路线。<a
+href="https://arxiv.org/abs/2606.27268">arXiv</a></li>
+<li><strong>JitRL（2026）</strong>：用无梯度记忆/策略优化支持 LLM agent
+持续适配，是参数更新方案的成本对照组。<a
+href="https://arxiv.org/abs/2601.18510">arXiv</a></li>
+</ol>
+</section><section class="card" aria-labelledby="16-候选池与随机过程"><h2 id="16-候选池与随机过程">16. 候选池与随机过程</h2>
+<p>本次先检查 <code>ml-report-index.md</code>，排除了近 14 天已覆盖的
+EARL-BO（非短视 BO）与 SimbaV2（深度 RL 扩展稳定性）。从 ICML 2025
+PMLR、OpenReview 与 2026 arXiv 收集后，正式随机池含 26
+篇主会论文：ARS、In-Context RL from Suboptimal Historical
+Data、Constrained RL Underestimation、Goal-Oriented Skill
+Abstraction、Robust Off-Dynamics RL、Multi-objective RL
+Portfolios、FeedTTA、Task-Aware Virtual Training、Infeasible Action
+Penalty、Combinatorial RLHF、Robust MARL、HYGMA、C2IQL、f-divergence
+Robust Offline RL、Reducing Churn、TARL、Cross-Dynamics Policy
+Regularization、Q-Supervised Safe Offline RL、Markov Heads、Flow
+Q-Learning、Reflective World Models、LARM、FOUNDER、World Model
+Implanting、UP-VLA、Agent-Centric Actor-Critic。</p>
+<p>执行 <code>shuf -i 1-26 -n 1</code> 抽中 <strong>16</strong>，即
+TARL。论文与附录、代码均可访问，因此重抽次数为 0。</p>
+</section><section class="card" aria-labelledby="17-最终判断"><h2 id="17-最终判断">17. 最终判断</h2>
+<p>TARL 的研究价值在于定义了一个清晰、低监督的 offline-to-deployment
+接口，而不是已经证明了一个普适安全的适配算法。定量上，论文报告的所有配对均正向，最强结果是
+hopper-expert-v2 +13.62 与 QR-DQN/Asterix +315.86；但补充九任务平均仅
++1.27，且不少提升小于波动。机制上，阈值相变和低熵选择消融支持“可靠样本门控”；证据上，真实
+shift、统计显著性、实时成本都缺失。复现上，公开默认代码与论文存在足以改变算法的冲突。</p>
+<p>因此最准确的结论是：<strong>TARL
+是值得复用的系统骨架——可靠样本、参数高效更新、原策略锚定——但动作熵不应被当作
+OOD 或正确性的充分代理。下一步的决定性实验不是再多跑几个标准 D4RL
+seed，而是在可控 shift 下，把熵门控与 density、verifier、world-model
+error 做等预算 head-to-head，并先修复论文—代码一致性。</strong></p>
+<hr />
+<h3 id="来源与口径说明">来源与口径说明</h3>
+<p>核心数字均来自 TARL PMLR 论文：方法式 (1)–(9) 位于 pp. 5–6；Atari 表
+1、实验设定位于 p. 7；D4RL 表 2、阈值/选择消融表 3–4 位于 p. 8；KL 表 5
+位于 p. 9；扩展 D4RL 表 6 位于补充 p.
+12。绝对与相对提升由本报告按显示均值复算。代码审计基于 2026-08-27
+可访问的公开 GitHub
+默认分支；仓库后续提交可能改变结论。论文没有报告正式统计显著性。</p>
+<p>HTML 已通过 Warm Editorial 结构/依赖验证器（0 error、0
+warning）。运行环境虽提供 Playwright 包，但未提供
+<code>/usr/bin/chromium</code>、<code>/opt/pw-browsers</code> 或
+Playwright 缓存中的 Chromium 可执行文件；实际启动检查返回 executable
+missing，因此本次无法诚实声称完成浏览器截图验收。页面仍按模板的
+light/dark、640 px 响应式、横向表格滚动与 print CSS 生成。</p>
+</section>
+  </main>
+
+  <footer>核心来源：PMLR 正文、补充材料与公开代码；生成于 2026-08-27。所有相对提升均按表中显示均值复算。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

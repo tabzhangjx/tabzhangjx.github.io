@@ -1,0 +1,1274 @@
+---
+layout: null
+title: "QServe"
+date: 2026-08-28
+topic: llm-systems
+excerpt: "解析 QServe 如何通过 W4A8KV4 量化与 GPU 内核协同设计，将解量化移出关键路径并提升大模型推理吞吐。"
+permalink: /blog/2026/08/28/qserve-w4a8kv4-llm-serving/
+blog_post: true
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>QServe：低比特不等于高吞吐 · 2026-08-28</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ML / AI DAILY DEEP PAPER · MLSys 2025</p>
+    <h1>QServe：低比特不等于高吞吐</h1>
+    <p class="subtitle">W4A8KV4 × GPU 内核协同：把解量化搬出关键路径</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">MLSys 2025 · arXiv v3</span>
+      <span class="chip">2026-08-28</span>
+      <span class="chip">效率与系统</span>
+    </div>
+    <p class="lede">QServe 在 L40S 上把 Qwen1.5-72B 吞吐从 17 提至 59 tokens/s，但固定负载、关闭 in-flight batching 与旧基线限制生产外推。</p>
+  </header>
+
+  <main>
+<section class="card" aria-labelledby="0-链接验证表与证据口径"><h2 id="0-链接验证表与证据口径">0. 链接验证表与证据口径</h2>
+<p>以下链接均在 2026-08-28 实际访问；数字只采用已下载并逐页读取的论文
+PDF。网页用于身份、版本和资源可用性验证，不用二手页面补实验数字。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">资源</th>
+<th scope="col">已验证链接</th>
+<th scope="col">状态与日期</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>MLSys 2025 论文页</td>
+<td><a
+href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/fbe2b2f74a2ece8070d8fb073717bda6-Abstract-Conference.html">Proceedings</a></td>
+<td>已收录于第 8 届 MLSys，2025</td>
+</tr>
+<tr class="even">
+<td>arXiv</td>
+<td><a href="https://arxiv.org/abs/2405.04532">2405.04532</a></td>
+<td>v1 2024-05-07；v2 2024-05-10；<strong>v3 2025-05-01</strong></td>
+</tr>
+<tr class="odd">
+<td>PDF</td>
+<td><a href="https://arxiv.org/pdf/2405.04532v3">arXiv v3 PDF</a></td>
+<td>已下载并读取，15 页正文与附录</td>
+</tr>
+<tr class="even">
+<td>代码</td>
+<td><a href="https://github.com/mit-han-lab/omniserve">OmniServe /
+QServe</a></td>
+<td>已公开，Apache-2.0；README 说明 2025-02 统一 QServe/LServe</td>
+</tr>
+<tr class="odd">
+<td>量化模型/权重</td>
+<td><a
+href="https://github.com/mit-han-lab/omniserve#omniserve-model-zoo">OmniServe
+model zoo</a></td>
+<td>已公开多种 Llama/Mistral/Yi 模型；部分 70B/72B
+链接或权重可用性需逐模型确认</td>
+</tr>
+<tr class="even">
+<td>基准数据</td>
+<td><a
+href="https://huggingface.co/datasets/mit-han-lab/QServe-benchmarks">QServe-benchmarks</a></td>
+<td>已公开；论文仍依赖 WikiText2、LongBench 等上游数据</td>
+</tr>
+<tr class="odd">
+<td>项目页</td>
+<td><a href="https://hanlab.mit.edu/projects/qserve">MIT HAN
+Lab</a></td>
+<td>已公开，含主要图与摘要</td>
+</tr>
+<tr class="even">
+<td>视频</td>
+<td>未找到官方论文讲解视频</td>
+<td>截至核验日未找到可归因于作者的正式视频</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>来源标记规则</strong>：表格中的“表 2/4/5”“图 16/17/19”均指
+QServe v3
+PDF；“本报告复算”只做除法、差值或几何含义解释，不从图中猜测未标出的精确数值。论文未报告重复试验、标准差、置信区间或显著性检验，本文不会补造。</p>
+</section><section class="card" aria-labelledby="1-候选池排重与随机选择"><h2 id="1-候选池排重与随机选择">1. 候选池、排重与随机选择</h2>
+<p>先审阅 <code>ml-report-index.md</code>，排除最近 14 天已深度覆盖的
+DuoAttention、PARQ、Q-VDiT 及其近重复主题。候选来自 ICML/MLSys 2025
+proceedings、arXiv、OpenReview、Hugging Face、Papers with Code 与
+Semantic Scholar 的交叉检索，共 26 篇：</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">#</th>
+<th scope="col">候选</th>
+<th scope="col">方向/来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td>Star Attention</td>
+<td>长上下文稀疏注意力，arXiv 2024</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td>Oscillation-Reduced MXFP4 Training</td>
+<td>低精训练，ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td>Dynamic Token Aggregation for DETR</td>
+<td>token 剪枝，ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td>LongRoPE2</td>
+<td>上下文扩展，ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td>RWKVQuant</td>
+<td>状态空间模型量化，ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td>SkipGPT</td>
+<td>动态层跳过，ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td>Skrr</td>
+<td>文生图编码器复用，ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">8</td>
+<td>Targeted Low-rank Refinement</td>
+<td>稀疏模型修复，ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td>Randomized Subspace Optimization for LLMs</td>
+<td>内存高效训练，ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td>Olica</td>
+<td>激活压缩，ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td>Determining Layer-wise Sparsity</td>
+<td>结构剪枝，ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">12</td>
+<td>Ferret</td>
+<td>联邦全参微调，ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td>Cache Me If You Must</td>
+<td>KV cache/推理，ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td>GANQ</td>
+<td>生成式量化，ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td>Pivoting Factorization</td>
+<td>低秩压缩，ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">16</td>
+<td>MoEQuant</td>
+<td>MoE 量化，ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td>SepLLM</td>
+<td>分段注意力，arXiv 2024</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td>Core Context Aware Transformers</td>
+<td>长上下文，arXiv 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;"><strong>19</strong></td>
+<td><strong>QServe</strong></td>
+<td><strong>量化—服务协同，MLSys 2025</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">20</td>
+<td>TurboAttention</td>
+<td>KV/注意力压缩，MLSys 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">21</td>
+<td>FlashInfer</td>
+<td>服务注意力引擎，MLSys 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">22</td>
+<td>Dynamic Input Pruning &amp; Cache-Aware Masking</td>
+<td>推理剪枝，2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">23</td>
+<td>Mixture Compressor for MoE</td>
+<td>MoE 压缩，2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">24</td>
+<td>Universal Model Routing</td>
+<td>多模型路由，2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">25</td>
+<td>MoE-Infinity</td>
+<td>MoE 服务，2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">26</td>
+<td>DistServe</td>
+<td>prefill/decode 解耦，2024</td>
+</tr>
+</tbody>
+</table></div>
+<p>在本地执行 <code>shuf -i 1-26 -n 1</code> 得到
+<strong>19</strong>，故选择
+QServe。没有重抽：论文、附录、代码、模型与基准材料充足，且“服务内核协同”与近期的训练量化
+PARQ、视频量化 Q-VDiT 不构成主题重复。</p>
+</section><section class="card" aria-labelledby="2-motivationint4-为什么可能越量化越慢"><h2 id="2-motivationint4-为什么可能越量化越慢">2. Motivation：INT4
+为什么可能越量化越慢</h2>
+<p>量化叙事通常从带宽和 Tensor Core 峰值出发：A100 的 FP16、INT8、INT4
+Tensor Core 吞吐分别为 312、624、1248 TOPS，DRAM 带宽约 2 TB/s（论文第 4
+页、图 3）。若只看这组数字，W4A4 应该比 W8A8 更快。然而 QServe
+的起点是实测的 <strong>20%–90% 解量化开销</strong>（摘要与第 2
+页）：INT4 权重或 INT32 partial sum 必须在 CUDA cores
+上做缩放、零点处理和类型转换；在 A100 上，一次 CUDA core
+操作的代价可相当于约 <strong>50 次 INT4 Tensor Core 操作</strong>（第 2
+页）。因此，主循环里几条“便宜的”标量指令，就可能让更快的矩阵乘单元等待。</p>
+<p>论文给出两类失败模式：</p>
+<ol type="1">
+<li><strong>W4A16</strong>：权重存为 INT4，但 GEMM 用 FP16 Tensor
+Core，主循环要把权重反量化回 FP16；它适合小 batch 的 memory-bound
+区域。roofline 分析显示 A100 上约在 batch 维度 <code>m &lt; 78</code> 时
+W4A16 有利，batch 再增大则计算与反量化成为瓶颈（第 4 页、图 3）。</li>
+<li><strong>W4A4</strong>：为了精度常给 activation 做 group-wise
+量化，INT32 partial sums 需在 K 维分组间多次缩放并转浮点。论文测得
+Atom/QuaRot 类内核的解量化占比可到 90%（第 14 页、图 18）。</li>
+</ol>
+<p>服务场景又让问题更尖锐：decode 的 KV cache 随序列长度和 batch
+线性增长，attention 占端到端时间 <strong>30%–50%</strong>（第 10
+页，§5.3）。权重 4 bit 却保留 KV8/16，只解决了一半内存墙；把 KV 直接压到
+4 bit，又会因位操作和分支增加计算。论文实测，朴素 KV4 在 L40S 上相对 KV8
+快 <strong>1.7×</strong>，但在 A100 上反而慢 <strong>1.2×</strong>（第
+10 页）。这构成真正的系统问题：怎样让权重路径少用 CUDA core，同时让 KV4
+attention 仍停留在 memory-bound 区域？</p>
+</section><section class="card" aria-labelledby="3-故事线假设与权衡"><h2 id="3-故事线假设与权衡">3. 故事线、假设与权衡</h2>
+<p>QServe 的故事线可以压成三个连续判断：</p>
+<ul>
+<li><strong>判断 A：精度组合要服从服务 roofline。</strong> W4A16 在小
+batch 好，W8A8 在大 batch 好；所以选 W4A8，让权重带宽减半、矩阵乘走 INT8
+Tensor Core。</li>
+<li><strong>判断 B：算法格式必须让系统容易反量化。</strong> QoQ 不是任意
+W4A8，而是先做 per-channel INT8，再在 INT8 域做 group-wise
+INT4，使解量化可变成寄存器内整数乘减。</li>
+<li><strong>判断 C：KV4 的收益需靠 attention 内核兑现。</strong>
+SmoothAttention 负责精度，位技巧、控制流简化、FP16 QK/SV
+与异步预取负责把算术强度压回带宽瓶颈。</li>
+</ul>
+<p>它接受的权衡也很明确：W4A8KV4 并非最低算术位宽，理论 Tensor Core
+峰值不如 W4A4；但它减少 CUDA-core
+串行工作，以更高的“有效吞吐”换取较温和的精度损失。硬件相关性很强：论文在
+A100 推荐 per-channel W4A8，在 CUDA core 更强的 L40S 推荐 g128 group
+quantization（第 12–13 页）。</p>
+</section><section class="card" aria-labelledby="4-方程级形式化与流程"><h2 id="4-方程级形式化与流程">4. 方程级形式化与流程</h2>
+<p>设权重块为 (W)，第一阶段 per-channel 对称量化到保护区间
+([-119,119])：</p>
+<p>[ s_c=\frac{\max |W_c|}{119},\qquad
+W^{(8)}_c=\operatorname{clip}!\left(\operatorname{round}(W_c/s_c),-119,119\right).
+]</p>
+<p>第二阶段按 group 做 4-bit 非对称量化：</p>
+<p>[
+q_{c,g}=\operatorname{clip}!\left(\operatorname{round}(W^{(8)}<em>{c,g}/s</em>{c,g})+z_{c,g},0,15\right),
+\quad \widehat W_{c,g}=s_c,s_{c,g}(q_{c,g}-z_{c,g}). ]</p>
+<p>关键不是普通的二级量化外形，而是 <code>[-119,119]</code>
+留出的溢出余量：QServe 可在寄存器中并行 unpack INT4，先乘整数
+scale、再减预计算的 zero-point compensation，避免 GEMM 主循环里的 FP16
+反量化（论文第 5–7 页，图 6–9）。</p>
+<p>对注意力，标准计算为</p>
+<p>[ O=\operatorname{softmax}(QK^\top/\sqrt d)V. ]</p>
+<p>SmoothAttention 为每个通道引入缩放 (\lambda_j)，令
+(K'_j=K_j/\lambda_j, Q'_j=Q_j\lambda_j)，于是 (Q'K'^\top=QK^\top)
+保持不变。论文按通道统计 K 的幅值，并取平滑强度 (\alpha)（经验上 0.5
+良好），把难量化的 K outlier 转移到无需缓存量化的 Q（第 7–8 页，式
+5–7）。</p>
+<p>流程伪代码：</p>
+<pre class="text"><code>输入：FP16 模型、校准样本、目标 GPU
+1  对每个 block 搜索旋转/缩放与 clipping，使 block-output MSE 最小
+2  权重先 per-channel -&gt; INT8[-119,119]，再 group -&gt; UINT4
+3  估计 K 通道幅值；用 SmoothAttention 把 K outlier 平移到 Q
+4  按目标 GPU 选择 per-channel(A100) 或 g128(L40S)
+5  离线重排 W4 pack，使相邻 Tensor Core 消费的数据减少地址计算
+6  decode 时：W4 寄存器解包 -&gt; INT8；W4A8 GEMM 在 INT8 Tensor Core 执行
+7  KV4 fused attention：bit tricks -&gt; 简化控制流 -&gt; FP16 QK/SV -&gt; async prefetch
+输出：W4A8KV4 checkpoint 与最大吞吐服务引擎</code></pre>
+</section><section class="card" aria-labelledby="5-关键机制与工程细节"><h2 id="5-关键机制与工程细节">5. 关键机制与工程细节</h2>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">层次</th>
+<th scope="col">机制</th>
+<th scope="col">解决的瓶颈</th>
+<th scope="col">代价/适用条件</th>
+<th scope="col">论文位置</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>算法</td>
+<td>Progressive group quantization</td>
+<td>把 FP 解量化改为 INT4→INT8，保留 group 精度</td>
+<td>两级 scale；格式需专用 kernel</td>
+<td>第 5–6 页，式 3–4</td>
+</tr>
+<tr class="even">
+<td>算法</td>
+<td>Block rotation + MSE clipping</td>
+<td>抑制 activation outlier 与权重误差</td>
+<td>需要校准与离线搜索</td>
+<td>第 6、14 页；图 16</td>
+</tr>
+<tr class="odd">
+<td>算法</td>
+<td>SmoothAttention</td>
+<td>缓解 KV4 的 K outlier</td>
+<td>依赖通道统计；Q 幅值增大但不缓存量化</td>
+<td>第 7–8 页；图 10</td>
+</tr>
+<tr class="even">
+<td>GEMM</td>
+<td>Compute-aware weight reorder</td>
+<td>减少指针算术、提高 coalescing</td>
+<td>与 tile/warp 布局绑定</td>
+<td>第 8–9 页；图 11–12</td>
+</tr>
+<tr class="odd">
+<td>GEMM</td>
+<td>register-level parallelism</td>
+<td>隐藏 unpack/整数变换延迟</td>
+<td>寄存器压力、架构相关</td>
+<td>第 9 页</td>
+</tr>
+<tr class="even">
+<td>Attention</td>
+<td>KV4 fused kernel</td>
+<td>把 KV cache 减半转成带宽收益</td>
+<td>A100 上朴素实现会变慢</td>
+<td>第 10 页；图 13–14</td>
+</tr>
+<tr class="odd">
+<td>Runtime</td>
+<td>paged attention</td>
+<td>支持变长序列的 cache 管理</td>
+<td>基准关闭 in-flight batching</td>
+<td>第 11–12 页，§6.1</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="6-数据集基准与指标"><h2 id="6-数据集基准与指标">6. 数据集、基准与指标</h2>
+<ul>
+<li><strong>WikiText2 perplexity</strong>：序列长度 2048，越低越好；覆盖
+Llama-1/2/3、Mistral、Mixtral、Yi。它测语言建模拟合，不等价于聊天、代码、安全或长程事实一致性。</li>
+<li><strong>零样本任务</strong>：论文还用
+LAMBADA、HellaSwag、PIQA、WinoGrande 等，表 3 报平均准确率；主结论仍以
+perplexity 与吞吐为主。</li>
+<li><strong>LongBench</strong>：v3 增加 Llama-3.1-8B-Instruct 的 10
+个任务，平均分越高越好（表 5）。</li>
+<li><strong>服务吞吐</strong>：单 GPU、输入 1024 token、输出 512
+token，报告最大 tokens/s；A100-80GB-SXM4 与 L40S-48GB。PyTorch
+2.2.0、CUDA 12.2；TensorRT-LLM v0.9.0；基线代码截至 2024-04-18。paged
+attention 开启（QuaRot 不支持），<strong>in-flight batching
+关闭</strong>（第 11–12 页）。该指标不是 SLO-constrained goodput，也没有
+TTFT/TPOT 尾延迟。</li>
+</ul>
+</section><section class="card" aria-labelledby="7-完整主结果矩阵"><h2 id="7-完整主结果矩阵">7. 完整主结果矩阵</h2>
+<h3 id="71-精度wikitext2-perplexity">7.1 精度：WikiText2 perplexity</h3>
+<p>下表完整转录论文表 2 的十模型子矩阵。<code>Atom</code> 为 W4A4-g128
+的非灰底（非 WikiText2 校准）行；AWQ/QoQ 为
+W4A8KV4-g128。粗体为这些量化方法中的最低值；FP16
+是参考上界，不参与“量化最优”标记。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">L3-8B</th>
+<th scope="col" style="text-align: right;">L2-7B</th>
+<th scope="col" style="text-align: right;">L2-13B</th>
+<th scope="col" style="text-align: right;">L2-70B</th>
+<th scope="col" style="text-align: right;">L1-7B</th>
+<th scope="col" style="text-align: right;">L1-13B</th>
+<th scope="col" style="text-align: right;">L1-30B</th>
+<th scope="col" style="text-align: right;">Mistral-7B</th>
+<th scope="col" style="text-align: right;">Mixtral</th>
+<th scope="col" style="text-align: right;">Yi-34B</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>FP16</td>
+<td style="text-align: right;">6.14</td>
+<td style="text-align: right;">5.47</td>
+<td style="text-align: right;">4.88</td>
+<td style="text-align: right;">3.32</td>
+<td style="text-align: right;">5.68</td>
+<td style="text-align: right;">5.09</td>
+<td style="text-align: right;">4.10</td>
+<td style="text-align: right;">5.25</td>
+<td style="text-align: right;">3.84</td>
+<td style="text-align: right;">4.60</td>
+</tr>
+<tr class="even">
+<td>SmoothQuant W8A8</td>
+<td style="text-align: right;"><strong>6.28</strong></td>
+<td style="text-align: right;"><strong>5.54</strong></td>
+<td style="text-align: right;"><strong>4.95</strong></td>
+<td style="text-align: right;"><strong>3.36</strong></td>
+<td style="text-align: right;"><strong>5.73</strong></td>
+<td style="text-align: right;"><strong>5.13</strong></td>
+<td style="text-align: right;">4.23</td>
+<td style="text-align: right;"><strong>5.29</strong></td>
+<td style="text-align: right;"><strong>3.89</strong></td>
+<td style="text-align: right;"><strong>4.69</strong></td>
+</tr>
+<tr class="odd">
+<td>AWQ W4A16-g128</td>
+<td style="text-align: right;">6.54</td>
+<td style="text-align: right;">5.60</td>
+<td style="text-align: right;">4.97</td>
+<td style="text-align: right;">3.41</td>
+<td style="text-align: right;">5.78</td>
+<td style="text-align: right;">5.19</td>
+<td style="text-align: right;"><strong>4.21</strong></td>
+<td style="text-align: right;">5.37</td>
+<td style="text-align: right;">4.02</td>
+<td style="text-align: right;"><strong>4.67</strong></td>
+</tr>
+<tr class="even">
+<td>Atom W4A4-g128</td>
+<td style="text-align: right;">7.57</td>
+<td style="text-align: right;">6.03</td>
+<td style="text-align: right;">5.27</td>
+<td style="text-align: right;">3.69</td>
+<td style="text-align: right;">6.16</td>
+<td style="text-align: right;">5.46</td>
+<td style="text-align: right;">4.55</td>
+<td style="text-align: right;">5.66</td>
+<td style="text-align: right;">4.42</td>
+<td style="text-align: right;">4.92</td>
+</tr>
+<tr class="odd">
+<td>AWQ W4A8KV4-g128</td>
+<td style="text-align: right;">6.94</td>
+<td style="text-align: right;">5.83</td>
+<td style="text-align: right;">5.12</td>
+<td style="text-align: right;">3.51</td>
+<td style="text-align: right;">5.93</td>
+<td style="text-align: right;">5.36</td>
+<td style="text-align: right;">4.39</td>
+<td style="text-align: right;">5.50</td>
+<td style="text-align: right;">4.23</td>
+<td style="text-align: right;">4.78</td>
+</tr>
+<tr class="even">
+<td><strong>QoQ W4A8KV4-g128</strong></td>
+<td style="text-align: right;">6.70</td>
+<td style="text-align: right;">5.67</td>
+<td style="text-align: right;">5.06</td>
+<td style="text-align: right;">3.46</td>
+<td style="text-align: right;">5.88</td>
+<td style="text-align: right;">5.23</td>
+<td style="text-align: right;">4.27</td>
+<td style="text-align: right;">5.41</td>
+<td style="text-align: right;">4.13</td>
+<td style="text-align: right;">4.73</td>
+</tr>
+</tbody>
+</table></div>
+<p>QoQ 相对同格式 AWQ 的绝对 perplexity 改善依次为
+<strong>0.24、0.16、0.06、0.05、0.05、0.13、0.12、0.09、0.10、0.05</strong>；相对降幅分别约
+<strong>3.46%、2.74%、1.17%、1.42%、0.84%、2.43%、2.73%、1.64%、2.36%、1.05%</strong>（本报告复算，来源均为表
+2）。但 W8A8/W4A16 仍在多数模型更接近 FP16，所以不能说
+QoQ“精度最佳”；它优化的是精度—显存—吞吐三方折中。</p>
+<h3 id="72-吞吐l40s-与-a100">7.2 吞吐：L40S 与 A100</h3>
+<p>单位 tokens/s；每列 speedup 以三种 TensorRT-LLM
+精度中的最高吞吐为分母（论文表 4）。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">L40S-48GB</th>
+<th scope="col" style="text-align: right;">L3-8B</th>
+<th scope="col" style="text-align: right;">L2-7B</th>
+<th scope="col" style="text-align: right;">Mistral</th>
+<th scope="col" style="text-align: right;">L2-13B</th>
+<th scope="col" style="text-align: right;">L1-30B</th>
+<th scope="col" style="text-align: right;">Yi-34B</th>
+<th scope="col" style="text-align: right;">L2-70B</th>
+<th scope="col" style="text-align: right;">Qwen72B</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>TRT FP16</td>
+<td style="text-align: right;">1326</td>
+<td style="text-align: right;">444</td>
+<td style="text-align: right;">1566</td>
+<td style="text-align: right;">92</td>
+<td style="text-align: right;">OOM</td>
+<td style="text-align: right;">OOM</td>
+<td style="text-align: right;">OOM</td>
+<td style="text-align: right;">OOM</td>
+</tr>
+<tr class="even">
+<td>TRT W4A16</td>
+<td style="text-align: right;">1431</td>
+<td style="text-align: right;">681</td>
+<td style="text-align: right;">1457</td>
+<td style="text-align: right;">368</td>
+<td style="text-align: right;">148</td>
+<td style="text-align: right;">313</td>
+<td style="text-align: right;">119</td>
+<td style="text-align: right;">17</td>
+</tr>
+<tr class="odd">
+<td>TRT W8A8</td>
+<td style="text-align: right;"><strong>2634</strong></td>
+<td style="text-align: right;"><strong>1271</strong></td>
+<td style="text-align: right;"><strong>2569</strong></td>
+<td style="text-align: right;"><strong>440</strong></td>
+<td style="text-align: right;">123</td>
+<td style="text-align: right;"><strong>364</strong></td>
+<td style="text-align: right;">OOM</td>
+<td style="text-align: right;">OOM</td>
+</tr>
+<tr class="even">
+<td><strong>QServe</strong></td>
+<td style="text-align: right;"><strong>3656</strong></td>
+<td style="text-align: right;"><strong>2394</strong></td>
+<td style="text-align: right;"><strong>3774</strong></td>
+<td style="text-align: right;"><strong>1327</strong></td>
+<td style="text-align: right;"><strong>504</strong></td>
+<td style="text-align: right;"><strong>869</strong></td>
+<td style="text-align: right;"><strong>286</strong></td>
+<td style="text-align: right;"><strong>59</strong></td>
+</tr>
+<tr class="odd">
+<td>绝对增量 vs 最强 TRT</td>
+<td style="text-align: right;">+1022</td>
+<td style="text-align: right;">+1123</td>
+<td style="text-align: right;">+1205</td>
+<td style="text-align: right;">+887</td>
+<td style="text-align: right;">+356</td>
+<td style="text-align: right;">+505</td>
+<td style="text-align: right;">+167</td>
+<td style="text-align: right;">+42</td>
+</tr>
+<tr class="even">
+<td>相对提升</td>
+<td style="text-align: right;">+39%</td>
+<td style="text-align: right;">+88%</td>
+<td style="text-align: right;">+47%</td>
+<td style="text-align: right;">+202%</td>
+<td style="text-align: right;">+241%</td>
+<td style="text-align: right;">+139%</td>
+<td style="text-align: right;">+140%</td>
+<td style="text-align: right;">+247%</td>
+</tr>
+</tbody>
+</table></div>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">A100-80GB</th>
+<th scope="col" style="text-align: right;">L3-8B</th>
+<th scope="col" style="text-align: right;">L2-7B</th>
+<th scope="col" style="text-align: right;">Mistral</th>
+<th scope="col" style="text-align: right;">L2-13B</th>
+<th scope="col" style="text-align: right;">L1-30B</th>
+<th scope="col" style="text-align: right;">Yi-34B</th>
+<th scope="col" style="text-align: right;">L2-70B</th>
+<th scope="col" style="text-align: right;">Qwen72B</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>TRT FP16</td>
+<td style="text-align: right;"><strong>2503</strong></td>
+<td style="text-align: right;">1549</td>
+<td style="text-align: right;">2371</td>
+<td style="text-align: right;">488</td>
+<td style="text-align: right;">80</td>
+<td style="text-align: right;">145</td>
+<td style="text-align: right;">OOM</td>
+<td style="text-align: right;">OOM</td>
+</tr>
+<tr class="even">
+<td>TRT W4A16</td>
+<td style="text-align: right;">2370</td>
+<td style="text-align: right;">1549</td>
+<td style="text-align: right;">2403</td>
+<td style="text-align: right;">871</td>
+<td style="text-align: right;">352</td>
+<td style="text-align: right;">569</td>
+<td style="text-align: right;"><strong>358</strong></td>
+<td style="text-align: right;"><strong>143</strong></td>
+</tr>
+<tr class="odd">
+<td>TRT W8A8</td>
+<td style="text-align: right;">2396</td>
+<td style="text-align: right;"><strong>2334</strong></td>
+<td style="text-align: right;"><strong>2427</strong></td>
+<td style="text-align: right;"><strong>1277</strong></td>
+<td style="text-align: right;"><strong>361</strong></td>
+<td style="text-align: right;"><strong>649</strong></td>
+<td style="text-align: right;">234</td>
+<td style="text-align: right;">53</td>
+</tr>
+<tr class="even">
+<td><strong>QServe</strong></td>
+<td style="text-align: right;"><strong>3005</strong></td>
+<td style="text-align: right;"><strong>2908</strong></td>
+<td style="text-align: right;"><strong>2970</strong></td>
+<td style="text-align: right;"><strong>1741</strong></td>
+<td style="text-align: right;"><strong>749</strong></td>
+<td style="text-align: right;"><strong>797</strong></td>
+<td style="text-align: right;"><strong>419</strong></td>
+<td style="text-align: right;"><strong>340</strong></td>
+</tr>
+<tr class="odd">
+<td>绝对增量 vs 最强 TRT</td>
+<td style="text-align: right;">+502</td>
+<td style="text-align: right;">+574</td>
+<td style="text-align: right;">+543</td>
+<td style="text-align: right;">+464</td>
+<td style="text-align: right;">+388</td>
+<td style="text-align: right;">+148</td>
+<td style="text-align: right;">+61</td>
+<td style="text-align: right;">+197</td>
+</tr>
+<tr class="even">
+<td>相对提升</td>
+<td style="text-align: right;">+20%</td>
+<td style="text-align: right;">+25%</td>
+<td style="text-align: right;">+22%</td>
+<td style="text-align: right;">+36%</td>
+<td style="text-align: right;">+107%</td>
+<td style="text-align: right;">+23%</td>
+<td style="text-align: right;">+17%</td>
+<td style="text-align: right;">+138%</td>
+</tr>
+</tbody>
+</table></div>
+<p>最强单点是 L40S 上 Qwen1.5-72B：17→59 tokens/s，绝对 +42、相对
+<strong>+247%（3.47×）</strong>。A100 对应
+143→340，+197、<strong>+138%（2.38×）</strong>。论文正文把 A100
+范围概括为 1.2–2.4×，表 4
+的逐列值支持这一表述。跨卡比较方面，L40S+QServe 在
+L3-8B、L2-7B、Mistral、L2-13B、L1-30B 五个模型上超过 A100+最佳
+TRT；Yi-34B、70B、72B 不满足或缺少可比 A100
+基线，故不能扩写成“所有模型”。</p>
+<h3 id="73-longbench">7.3 LongBench</h3>
+<p>论文表 5：Llama-3.1-8B-Instruct，QoQ W4A8KV4-g128。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">DuReader</th>
+<th scope="col" style="text-align: right;">GovReport</th>
+<th scope="col" style="text-align: right;">HotpotQA</th>
+<th scope="col" style="text-align: right;">MultiNews</th>
+<th scope="col" style="text-align: right;">Musique</th>
+<th scope="col" style="text-align: right;">QMSum</th>
+<th scope="col" style="text-align: right;">SamSum</th>
+<th scope="col" style="text-align: right;">TriviaQA</th>
+<th scope="col" style="text-align: right;">TREC</th>
+<th scope="col" style="text-align: right;">MultiFieldQA-En</th>
+<th scope="col" style="text-align: right;">平均</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>BF16</td>
+<td style="text-align: right;">35.07</td>
+<td style="text-align: right;"><strong>34.54</strong></td>
+<td style="text-align: right;">16.68</td>
+<td style="text-align: right;"><strong>26.84</strong></td>
+<td style="text-align: right;">11.68</td>
+<td style="text-align: right;"><strong>23.48</strong></td>
+<td style="text-align: right;">43.50</td>
+<td style="text-align: right;"><strong>91.65</strong></td>
+<td style="text-align: right;"><strong>72.50</strong></td>
+<td style="text-align: right;"><strong>29.22</strong></td>
+<td style="text-align: right;"><strong>38.52</strong></td>
+</tr>
+<tr class="even">
+<td>QoQ</td>
+<td style="text-align: right;"><strong>35.45</strong></td>
+<td style="text-align: right;">34.09</td>
+<td style="text-align: right;"><strong>17.46</strong></td>
+<td style="text-align: right;">26.73</td>
+<td style="text-align: right;"><strong>12.05</strong></td>
+<td style="text-align: right;">23.45</td>
+<td style="text-align: right;"><strong>44.42</strong></td>
+<td style="text-align: right;">91.45</td>
+<td style="text-align: right;">71.00</td>
+<td style="text-align: right;">27.65</td>
+<td style="text-align: right;">38.38</td>
+</tr>
+</tbody>
+</table></div>
+<p>平均仅下降 <strong>0.14 分（相对 -0.36%）</strong>，且 4/10
+任务上升；但这是单模型、单次评测，没有方差，不能把上升解释为量化带来的真实能力增益。</p>
+</section><figure class="figure" aria-labelledby="fig-qwen-title">
+<p class="fig-title" id="fig-qwen-title">Qwen1.5-72B：容量与内核协同带来的吞吐差</p>
+<p class="fig-sub">同为最大可达吞吐；TensorRT-LLM 取三种精度中的最优。单位：tokens/s。</p>
+<svg class="chart" viewBox="0 0 840 320" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>Qwen1.5-72B 在 L40S 与 A100 上的吞吐</title><desc>L40S TensorRT 17、QServe 59；A100 TensorRT 143、QServe 340 tokens per second。</desc>
+<line x1="70" y1="265" x2="805" y2="265" stroke="var(--grid)"/><line x1="70" y1="55" x2="70" y2="265" stroke="var(--grid)"/>
+<text x="60" y="269" font-size="11" text-anchor="end">0</text><text x="60" y="162" font-size="11" text-anchor="end">170</text><text x="60" y="59" font-size="11" text-anchor="end">340</text>
+<rect x="115" y="254.50" width="92" height="10.50" rx="5" fill="var(--chart-accent)" tabindex="0" data-tip="L40S TRT: 17 tokens/s"/><text x="161" y="287" font-size="12" text-anchor="middle">L40S TRT</text><text x="161" y="246.50" font-size="12" text-anchor="middle">17</text><rect x="290" y="228.56" width="92" height="36.44" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="L40S QServe: 59 tokens/s"/><text x="336" y="287" font-size="12" text-anchor="middle">L40S QServe</text><text x="336" y="220.56" font-size="12" text-anchor="middle">59</text><rect x="465" y="176.68" width="92" height="88.32" rx="5" fill="var(--chart-accent)" tabindex="0" data-tip="A100 TRT: 143 tokens/s"/><text x="511" y="287" font-size="12" text-anchor="middle">A100 TRT</text><text x="511" y="168.68" font-size="12" text-anchor="middle">143</text><rect x="640" y="55.00" width="92" height="210.00" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="A100 QServe: 340 tokens/s"/><text x="686" y="287" font-size="12" text-anchor="middle">A100 QServe</text><text x="686" y="47.00" font-size="12" text-anchor="middle">340</text></svg><figcaption>来源：QServe 表 4（p. 13）。悬停或键盘聚焦柱形可查看数值。</figcaption></figure><section class="card" aria-labelledby="8-逐层消融敏感性与相变"><h2 id="8-逐层消融敏感性与相变">8. 逐层消融、敏感性与相变</h2>
+<p>图 16 在 Llama2-7B、L40S、64 请求、1024/512 token
+上给出完整链条：W8A8KV8 baseline perplexity 5.58、吞吐 1367；换 W4
+权重后为 6.00、1538（<strong>1.12×</strong>，省 3.5GB）；block rotation
+将 perplexity 降至 5.82，MSE clipping 再到 5.66；KV4 使 perplexity升到
+5.80，但吞吐到 2254（<strong>1.47×</strong>，KV
+内存减半）；SmoothAttention 到 5.75；progressive group quantization 到
+5.70、吞吐 2190；activation-aware reorder 最终 5.67。对照 Atom 为
+6.12/1732，QuaRot 为 6.19/688。</p>
+<p>这组消融说明收益不是单模块包办：精度修复来自
+rotation、clipping、SmoothAttention 与 progressive group；速度主要来自
+W4 容量和 KV4 带宽；最后的 group/reorder 以约 <strong>64
+tokens/s（2.84%）</strong> 的吞吐回撤换 0.13 perplexity
+改善（2254→2190、5.80→5.67，本报告复算）。</p>
+<p>图 17 又把 batch capacity 与同 batch 内核速度分开：Llama2-7B 总加速
+<strong>1.88× = 1.45×（同 batch）×约 1.30×（更大 batch）</strong>；13B
+总加速约 1.7×，两部分近似均分。图 19 的 KV4 kernel 逐层延迟为
+0.48ms→0.44ms（bit tricks）→0.39ms（简化控制）→0.36ms（FP16
+QK）→0.33ms（FP16 SV）→0.28ms（异步预取），累计
+<strong>1.7×</strong>。</p>
+<p><strong>超参敏感性</strong>：论文讨论 SmoothAttention 的
+(\alpha)，指出 0.5 效果良好，并比较 per-channel 与
+g128；但没有提供跨模型完整数表、置信区间或自动选参准则。因此能推出“存在硬件依赖的格式切换”：A100
+用 per-channel，L40S 用 g128；不能推出 (\alpha=0.5)
+在所有模型、层和长度全局最优。真正的“相变”来自 roofline：batch 增大使
+W4A16 从带宽优势跨入解量化/计算瓶颈；KV4 若未优化，在 A100
+也从省带宽跨为算力受限。</p>
+<p><strong>统计显著性</strong>：论文未报告吞吐多次运行的均值±标准差、尾延迟、perplexity
+重复实验或显著性检验。因此 1.17×
+等较小吞吐差值无法判断跨驱动版本/热状态是否稳定；38.52→38.38
+也不能判断统计上是否等价，只能称“点估计接近”。</p>
+</section><section class="card" aria-labelledby="9-相关工作问题来源与技术来源链"><h2 id="9-相关工作问题来源与技术来源链">9.
+相关工作：问题来源与技术来源链</h2>
+<h3 id="smoothquanticml-2023">SmoothQuant（ICML 2023）</h3>
+<p><a
+href="https://proceedings.mlr.press/v202/xiao23c.html">论文</a>解决
+activation outlier 使 W8A8 难以无损的问题：通过逐通道等价缩放把
+activation 的量化难度迁移到更易量化的权重，报告最高 1.56× 加速和约 2×
+内存降低（其 PDF 第 1 页）。遗留缺口是仍停在 8 bit，KV cache
+也不是其核心。QServe
+继承“等价变换迁移量化难度”，但把接收端从权重改为不缓存的 Q，以
+SmoothAttention 保护 K；设计传递是 <strong>outlier migration → K/Q
+等价缩放</strong>。</p>
+<h3 id="awqmlsys-2024">AWQ（MLSys 2024）</h3>
+<p><a
+href="https://proceedings.mlsys.org/paper_files/paper/2024/hash/42a452cbafa9dd64e9ba4aa95cc1ef21-Abstract-Conference.html">论文</a>识别约
+1% salient weights 并以 activation-aware scaling 保护它们，解决 W4
+weight-only 的精度与端侧速度，PDF 第 1 页报告相对 Hugging Face FP16 平均
+3.2–3.3×。遗留缺口是 W4A16 仍需 FP16 Tensor Core
+与在线权重解量化，面向高 batch 云服务时不一定占优。QServe 把 AWQ/clip
+作为精度组件，但用 W4A8 与两级整数格式改变执行路径；传递是
+<strong>salient-aware weight protection → block MSE clipping +
+progressive integer dequantization</strong>。</p>
+<h3 id="atommlsys-2024">Atom（MLSys 2024）</h3>
+<p><a href="https://arxiv.org/abs/2310.19102">arXiv</a>面向吞吐服务，把
+weight/activation/KV cache 都量化并保留少量 outlier channel；其 PDF
+摘要报告相对 FP16 最高 7.73×。遗留缺口是 W4A4 group-wise activation 的
+partial-sum 反量化进入 GEMM 主循环；QServe 图 18 测得这类 CUDA-core
+开销最高约 90%，且 Atom 公开系统只支持部分模型。QServe 直接回应为
+W4A8、保护区间与寄存器级 INT4→INT8；传递是 <strong>全链路低比特服务 →
+避免在主循环做浮点 partial-sum dequant</strong>。</p>
+<h3 id="quarotneurips-2024">QuaRot（NeurIPS 2024）</h3>
+<p><a href="https://openreview.net/forum?id=dfqsW38v1X">OpenReview</a>用
+Hadamard rotation 消除隐藏态 outlier，实现权重、activation、KV cache
+的端到端 4 bit。遗留缺口与 Atom 相似：准确率友好的 group quantization
+未必映射为高 batch 吞吐，且论文对比时 QuaRot 不支持 paged
+attention。QServe保留旋转作为精度前处理，却选择 W4A8KV4 并优化服务
+kernel；传递是 <strong>旋转消 outlier → 旋转不再等同于必须采用 W4A4
+执行格式</strong>。</p>
+<h3 id="vllm--pagedattention-与-tensorrt-llm">vLLM / PagedAttention 与
+TensorRT-LLM</h3>
+<p><a href="https://dl.acm.org/doi/10.1145/3600006.3613165">vLLM SOSP
+2023</a>解决 KV cache 碎片与共享，以分页管理提升服务吞吐；<a
+href="https://github.com/NVIDIA/TensorRT-LLM">TensorRT-LLM</a>提供产业级多精度内核。它们遗留的不是量化理论，而是特定
+W4A8KV4 格式的端到端 kernel。QServe沿用 paged attention
+与最大吞吐评测，把贡献放在格式—内核共设；但关闭 in-flight
+batching，使调度层优势尚未被完整检验。</p>
+<pre class="text"><code>                         ┌─ SmoothQuant：等价缩放迁移 activation outlier ─┐
+FP16 服务 ── W8A8 ──────┤                                               ├─ SmoothAttention：K→Q
+   │                     └─ AWQ：activation-aware 保护 salient weights ──┤
+   │                                                                     ├─ QoQ W4A8KV4
+   ├─ W4A16：省权重带宽 ── FP16 在线解量化瓶颈 ───────────────────────────┤
+   │                                                                     │
+   └─ W4A4 全链量化 ─┬─ Atom：group + outlier channel ─┐                 │
+                     └─ QuaRot：Hadamard 消 outlier ───┴─ partial-sum FP 解量化瓶颈
+                                                                          │
+vLLM PagedAttention ── KV 分页/容量 ───────────────────────────────────────┤
+TensorRT-LLM ── 工业基线/多精度 kernel ────────────────────────────────────┘
+                                      ↓
+                         QServe：格式 × GEMM × KV4 fused attention</code></pre>
+<p>转折并非 bit 数继续下降，而是评价目标从“模型文件/单 kernel
+理论峰值”变成“服务关键路径中的低吞吐指令数”。这也是 QServe
+最可复用的系统思想。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">权重/激活/KV</th>
+<th scope="col">主要精度手段</th>
+<th scope="col">服务系统手段</th>
+<th scope="col">QServe 的回应</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>SmoothQuant</td>
+<td>W8A8 / KV未聚焦</td>
+<td>等价缩放迁移 outlier</td>
+<td>INT8 GEMM</td>
+<td>把迁移思想用于 K→Q</td>
+</tr>
+<tr class="even">
+<td>AWQ</td>
+<td>W4A16 / KV未聚焦</td>
+<td>salient weight scaling</td>
+<td>weight-only kernel</td>
+<td>保留保护，改 W4A8 执行</td>
+</tr>
+<tr class="odd">
+<td>Atom</td>
+<td>W4A4KV4</td>
+<td>group + outlier channel</td>
+<td>全链低比特服务</td>
+<td>避免 FP partial-sum dequant</td>
+</tr>
+<tr class="even">
+<td>QuaRot</td>
+<td>W4A4KV4</td>
+<td>Hadamard rotation</td>
+<td class="num">4-bit kernel</td>
+<td>旋转用于精度，执行仍 W4A8</td>
+</tr>
+<tr class="odd">
+<td>QServe</td>
+<td>W4A8KV4</td>
+<td>QoQ + SmoothAttention</td>
+<td>reorder、register、KV4 fused</td>
+<td>算法—系统闭环</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="10-真正贡献可复用设计与迁移潜力"><h2 id="10-真正贡献可复用设计与迁移潜力">10.
+真正贡献、可复用设计与迁移潜力</h2>
+<p>第一，QServe把“非 Tensor Core
+指令”提升为精度选择的一等约束。这个判断可迁移到 FP4、MXFP4、MoE、稀疏
+kernel：比较格式时必须统计转换、索引、路由和同步，而不只看 MAC
+位宽。</p>
+<p>第二，progressive group quantization
+展示了“中间表示为硬件服务”的设计：先用保护区间制造可并行、可溢出安全的
+INT8
+中间态，再二次压缩。它可以迁移到分块稀疏权重、专家权重流式加载和混合精度缓存。</p>
+<p>第三，SmoothAttention 是较干净的结构不变变换：把缓存端 K 的 outlier
+转移到即时
+Q，不改变点积。其抽象是“把误差预算从长生命周期状态迁移到短生命周期计算”，可尝试用于跨注意力、视觉
+token cache、RNN/SSM state quantization。</p>
+<p>第四，图 17 把吞吐收益拆成同 batch kernel speed 与更大 batch
+capacity，这是系统论文应复用的归因模板；否则显存容纳更多请求与算子本身更快会被混成一个数字。</p>
+</section><section class="card" aria-labelledby="11-限制与独立批判"><h2 id="11-限制与独立批判">11. 限制与独立批判</h2>
+<h3 id="论文自述材料可见限制">论文自述/材料可见限制</h3>
+<ol type="1">
+<li><strong>硬件依赖</strong>：第 12–13 页明确 A100 与 L40S
+使用不同量化粒度；Artifact Appendix 主要要求 x86_64，并推荐
+A100/L40S。故结果不能直接外推到 Hopper/Blackwell、AMD 或移动端。</li>
+<li><strong>基线支持不齐</strong>：第 12 页说明 Atom/QuaRot
+存在模型不支持，QuaRot 无 paged attention；表 4
+因而无法为所有模型形成完全对称的六方法矩阵。</li>
+<li><strong>精度与配置边界</strong>：表 2 对部分方法/模型为
+NaN，且灰底行使用 WikiText2
+校准；这意味着校准数据可影响点估计，可比性需按行阅读。</li>
+</ol>
+<h3 id="独立批判证据推论">独立批判（证据→推论）</h3>
+<ol type="1">
+<li><strong>[评测外部效度]</strong> 因为吞吐只在固定 1024 输入/512
+输出、in-flight batching
+关闭的单一批量生成设置测量（§6.1），所以不能推出线上到达过程下的
+TTFT、TPOT、P99 或 SLO goodput 更优。</li>
+<li><strong>[基线时效]</strong> 因为 TensorRT-LLM 固定为
+v0.9.0、其余主分支截至 2024-04-18（第 12 页），而论文终稿为
+2025、当前核验为 2026，所以 1.17–3.47×
+是历史快照，不能当作当前服务框架排行榜。</li>
+<li><strong>[成本论证]</strong> 因为“L40S $8K、A100 $25K、成本省
+3×”只在图 1
+给出设备标价，未报告云厂商、采购时间、功耗、主机、利用率与折旧，所以能支持的是近似
+GPU 采购价比，不能支持完整 TCO 或每个合格 token 的 3× 降本。</li>
+<li><strong>[统计可信度]</strong>
+因为全文没有吞吐重复次数、标准差或显著性检验，所以 A100 Llama2-70B 的
+1.17×
+等小优势可能受频率、温度、驱动和测量噪声影响；无法从点估计证明稳定领先。</li>
+<li><strong>[归因公平性]</strong> 因为 QServe 相对 TRT
+的总加速同时来自更大 batch capacity 与同 batch kernel（7B 为
+1.88×=1.45××约1.30×，图 17），所以“量化内核快 1.88×”是错误推论；容量与
+kernel 必须分别报告。</li>
+<li><strong>[质量覆盖]</strong> 因为主要质量矩阵是 WikiText2
+perplexity，LongBench 仅一个 8B
+模型，且没有聊天偏好、代码、数学、安全、事实性与长对话压力测试，所以平均
+38.52→38.38 不能证明所有部署任务“近乎无损”。</li>
+<li><strong>[可移植性]</strong> 因为 weight reorder、寄存器并行和 KV4
+bit tricks 与 A100/L40S 的 Tensor Core、CUDA core
+与寄存器层次绑定，且朴素 KV4 在 A100 曾慢
+1.2×，所以方法的算法收益不能脱离具体 kernel 与 GPU 世代复现。</li>
+<li><strong>[比较完整性]</strong> 因为 Atom 仅支持 Llama2-7B、QuaRot
+不支持 paged attention，表 4 只完整列 TRT 与 QServe，所以“优于全部 SOTA
+系统”在多数模型上不是 head-to-head
+实证，只能说优于可运行的报告基线。</li>
+</ol>
+</section><section class="card" aria-labelledby="12-开放挑战可操作的-head-to-head-实验空白"><h2 id="12-开放挑战可操作的-head-to-head-实验空白">12.
+开放挑战：可操作的 head-to-head 实验空白</h2>
+<h3 id="理论">理论</h3>
+<ul>
+<li><strong>格式选择模型</strong>：在同一模型与 GPU 上比较
+W4A16、W8A8、W4A8KV4、W4A4KV4，逐 kernel 记录 Tensor Core
+利用率、CUDA-core 指令、register
+spill、算术强度；检验一个含转换指令的扩展 roofline 能否预测
+batch/长度转折点。</li>
+<li><strong>误差传播</strong>：固定权重 W4A8，仅比较
+KV8、QoQ-KV4、QuaRot-KV4，在 1k/8k/32k/128k 长度上测 attention-logit
+KL、层间 state error 与任务分；确定 K/V
+误差是否随长度线性或出现相变。</li>
+</ul>
+<h3 id="工程应用">工程应用</h3>
+<ul>
+<li><strong>线上 SLO</strong>：同一 A100/L40S/H100 上 QServe vs 最新
+TensorRT-LLM/vLLM，使用 Poisson 与 bursty 到达，报告 TTFT/TPOT
+P50/P95/P99、99% SLO 下 goodput、能耗/token；而非只测最大 batch
+吞吐。</li>
+<li><strong>公平版本复测</strong>：固定 2026
+驱动、CUDA、编译器和调度器，将 QoQ kernel 接入同一 runtime，与
+FP8/INT8/INT4 后端同场测；分离“runtime 年代差”与“格式贡献”。</li>
+<li><strong>多 GPU</strong>：70B/72B 在 1/2/4/8 GPU 上比较 tensor
+parallel、pipeline parallel 和 KV cache 通信；观察 KV4 节省是否被
+all-reduce、反量化或负载不均衡抵消。</li>
+<li><strong>TCO</strong>：A100/L40S/H100
+按实际云价、功率、请求质量门槛测美元/百万合格输出 token；把论文的 3×
+设备价格主张升级为可审计成本曲线。</li>
+</ul>
+<h3 id="新兴方向">新兴方向</h3>
+<ul>
+<li><strong>MoE W4A8KV4</strong>：QServe vs MoEQuant/FP8，在
+Mixtral/DeepSeek 类模型上同时测专家权重流入、路由不均衡、KV4 attention
+与跨卡通信，判断权重带宽还是专家通信成为新瓶颈。</li>
+<li><strong>推理时扩展</strong>：在相同答案正确率下比较 BF16、W8A8、QoQ
+的并行采样数与 verifier
+成本；如果量化小幅降低单样本质量但允许更多样本，评估最终
+pass@k/美元是否改善。</li>
+<li><strong>多模态/世界模型</strong>：对 VLM 长视觉 token 与视频 KV
+cache 做 QServe vs KV8/FP8，报告视觉 grounding、时间一致性和吞吐；检验
+SmoothAttention 的 K→Q 迁移是否跨模态成立。</li>
+</ul>
+</section><section class="card" aria-labelledby="13-近期工作雷达20252026"><h2 id="13-近期工作雷达20252026">13. 近期工作雷达（2025–2026）</h2>
+<ol type="1">
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/f4f55846501f3336f293fd8b6de10770-Abstract-Conference.html">TurboAttention，MLSys
+2025</a>：用注意力近似与量化把 KV cache 缩小超过 4.4×，论文页报告
+attention 1.2–1.8×；它是 QServe “精确 KV4
+kernel”之外的近似路线，应在同质量阈值下比较。</li>
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/dbf02b21d77409a2db30e56866a8ab3a-Abstract-Conference.html">FlashInfer，MLSys
+2025</a>：把多种 KV 布局与注意力变体统一为可定制内核，是验证 QoQ
+是否能进入更通用服务栈的自然底座。</li>
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/cc8c6b9d89f7a898a29f58869b238e46-Abstract-Conference.html">LServe，MLSys
+2025</a>：以统一稀疏注意力解决长序列 prefill 二次复杂度与 decode KV
+容量；其与 QServe 已在 OmniServe 合流，代表“稀疏 ×
+低比特”的组合方向。</li>
+<li><a
+href="https://proceedings.mlr.press/v267/shang25a.html">LongRoPE2，ICML
+2025</a>：近无损扩展上下文窗口，却进一步放大 KV cache 压力；应与
+QServe/LServe 联合评测，而非只看 needle retrieval。</li>
+<li><a
+href="https://proceedings.mlr.press/v267/xu25at.html">RWKVQuant，ICML
+2025</a>：把量化扩展到 RWKV 的 scalar/vector 混合表示；它提醒 QServe 的
+KV-cache 中心叙事并不适用于所有序列架构。</li>
+<li><a
+href="https://proceedings.mlr.press/v267/zhao25ab.html">SkipGPT，ICML
+2025</a>：按 token 动态跳层，以减少计算而非降低每次计算位宽；与 QServe
+组合时需要测动态控制流是否重新把瓶颈推回 CUDA cores。</li>
+<li><a href="https://proceedings.mlr.press/v267/shutova25a.html">Cache
+Me If You Must，ICML 2025</a>：按重要性自适应分配 KV 量化精度；与全量
+KV4 相比，值得做“选择性保留高精 KV vs QoQ 全量
+KV4”的质量—显存—内核复杂度对照。</li>
+</ol>
+</section><section class="card" aria-labelledby="14-结论"><h2 id="14-结论">14. 结论</h2>
+<p>QServe 的实证最强处是：在相同单卡内存预算下，W4A8KV4 将 Qwen1.5-72B
+的 L40S 吞吐从最佳 TensorRT-LLM 的 17 提至 59 tokens/s（3.47×），且 A100
+上也从 143 提至 340（2.38×）。更深的贡献是证明低 bit
+的成败由关键路径上的 CUDA-core 指令决定：朴素 KV4 在 A100 会慢
+1.2×，优化后才变成约 1.5× 加速。</p>
+<p>但“3× 降本”应降格理解为特定设备标价下的示意，而非 TCO
+结论；固定长度、关闭 in-flight batching、旧版
+TensorRT-LLM、无尾延迟/标准差和单 GPU
+范围，均限制了生产外推。真正值得复用的是它的研究方法：<strong>同时报告格式精度、容量带来的
+batch 增益、同 batch kernel 增益，以及硬件转折点</strong>。</p>
+<hr />
+<p><strong>生成与验证脚注</strong>：报告已对核心
+PDF、四篇技术来源论文和所有列出的 URL
+做实际访问/读取；候选池保存在同目录的
+<code>candidates_2026-08-28.tsv</code>。HTML 采用 Warm Editorial
+单文件模板并做静态 HTML/CSS/JS 校验。运行环境未发现
+<code>/usr/bin/chromium</code> 或 <code>/opt/pw-browsers</code> 的本机
+Chromium，因此无法诚实完成 Playwright
+的浅色、深色、移动端截图；已以响应式规则、横向表格容器、主题变量与 DOM
+校验替代，未虚称完成浏览器渲染。<code>ml-report-index.md</code>
+已追加本次记录。</p>
+</section>
+  </main>
+
+  <footer>核心来源：MLSys 2025 终稿、arXiv v3、OmniServe 代码与 QServe benchmarks；生成于 2026-08-28。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

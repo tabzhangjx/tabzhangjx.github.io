@@ -1,0 +1,990 @@
+---
+layout: null
+title: "LongLive"
+date: 2026-09-02
+topic: vlm-vision
+excerpt: "解析 LongLive 如何以流式长视频训练、frame sink 与 KV-recache 实现可持续的长视频生成，并权衡长程质量与速度。"
+permalink: /blog/2026/09/02/longlive-streaming-long-video-generation/
+blog_post: true
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>LongLive 深度研究报告 · 2026-09-02</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ICLR 2026 · GENERATIVE VIDEO</p>
+    <h1>LongLive：把长视频生成改造成可持续的流式系统</h1>
+    <p class="subtitle">从自回归暴露偏差，到缓存刷新与长程状态管理</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">ICLR 2026</span>
+      <span class="chip">2026-09-02</span>
+      <span class="chip">实时交互式长视频生成</span>
+    </div>
+    <p class="lede">LongLive 以 streaming long tuning、frame sink 与 KV-recache 达到单 H100 20.7 FPS；真正优势是长程质量—速度 Pareto，而非短片语义全面领先。</p>
+  </header>
+
+  <main><div class="report-body">
+<p><strong>一句话核心定位：</strong> LongLive
+将因果视频扩散的长程问题拆成“训练时见过自身错误、推理时只保留局部窗口与首帧锚点、提示切换时重算缓存”三件事，使
+1.3B 模型在单张 H100 上达到 <strong>20.7 FPS</strong> 并支持最长 240
+秒生成；但其短视频 Semantic 仍低于 Self‑Forcing <strong>4.81
+分</strong>，最可靠的贡献是长程稳定—吞吐
+Pareto，而非绝对画质全面领先。</p>
+<section class="card" aria-labelledby="1-链接验证表与证据边界-title"><h2 id="1-链接验证表与证据边界-title">1. 链接验证表与证据边界</h2>
+<p>以下 URL 均实际访问；数字来自实际读取的论文 v2 PDF。页码指 PDF
+页序。LongLive 的 GitHub 在 2026 年更新为 2.0 主分支，1.0 代码在
+<code>v1.0</code> 分支；本报告只分析论文对应的 LongLive 1.0。</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="数据表，可横向滚动"><table>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">会议/正式页</th>
+<th scope="col">arXiv（具体版本与日期）</th>
+<th scope="col">代码</th>
+<th scope="col">数据/权重</th>
+<th scope="col">项目页/视频</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>LongLive（核心）</td>
+<td><a href="https://openreview.net/forum?id=nCAODkpsPJ">ICLR 2026
+OpenReview</a></td>
+<td><a
+href="https://arxiv.org/abs/2509.22622">2509.22622v2，2025-10-13；v1
+2025-09-26</a></td>
+<td><a
+href="https://github.com/NVlabs/LongLive">NVlabs/LongLive</a></td>
+<td><a
+href="https://huggingface.co/Efficient-Large-Model/LongLive-1.3B">LongLive-1.3B
+权重</a>；训练提示来自 VidProM</td>
+<td><a href="https://nvlabs.github.io/LongLive/">项目页与视频</a></td>
+</tr>
+<tr class="even">
+<td>Self-Forcing</td>
+<td>NeurIPS 2025 Spotlight（见 arXiv comments）</td>
+<td><a
+href="https://arxiv.org/abs/2506.08009">2506.08009v2，2025-11-10；v1
+2025-06-09</a></td>
+<td><a href="https://github.com/guandeh17/Self-Forcing">GitHub</a></td>
+<td>仓库链接模型权重</td>
+<td><a href="https://self-forcing.github.io/">项目页</a></td>
+</tr>
+<tr class="odd">
+<td>SkyReels-V2</td>
+<td>技术报告，未找到正式主会页</td>
+<td><a
+href="https://arxiv.org/abs/2504.13074">2504.13074v3，2025-04-21</a></td>
+<td><a href="https://github.com/SkyworkAI/SkyReels-V2">GitHub</a></td>
+<td>仓库提供多规格权重</td>
+<td>仓库含 demo/playground</td>
+</tr>
+<tr class="even">
+<td>FramePack</td>
+<td>OpenReview 页面未核实接收 venue</td>
+<td><a
+href="https://arxiv.org/abs/2504.12626">2504.12626v3，2025-10-14</a></td>
+<td><a href="https://github.com/lllyasviel/FramePack">GitHub</a></td>
+<td>仓库提供桌面模型与权重</td>
+<td><a
+href="https://lllyasviel.github.io/frame_pack_gitpage/">项目页</a></td>
+</tr>
+<tr class="odd">
+<td>StreamingT2V</td>
+<td><a
+href="https://openaccess.thecvf.com/content/CVPR2025/html/Henschel_StreamingT2V_Consistent_Dynamic_and_Extendable_Long_Video_Generation_from_Text_CVPR_2025_paper.html">CVPR
+2025</a></td>
+<td><a
+href="https://arxiv.org/abs/2403.14773">2403.14773v2，2025-04-16；v1
+2024-03-21</a></td>
+<td><a
+href="https://github.com/Picsart-AI-Research/StreamingT2V">GitHub</a></td>
+<td>仓库/HF 提供权重</td>
+<td><a href="https://streamingt2v.github.io/">项目页</a></td>
+</tr>
+</tbody>
+</table></div>
+<p>证据分级：表格精确值记为“论文原报”；百分比、倍数与差值只由这些值复算；图
+7
+没有给出全部窗口配置的小数，本报告只写“接近”和饱和点，不臆读柱高。论文没有报告多随机种子、标准差或置信区间，故不使用“显著提升”。</p>
+</section>
+<section class="card" aria-labelledby="2-排重候选池与随机选择-title"><h2 id="2-排重候选池与随机选择-title">2. 排重、候选池与随机选择</h2>
+<p>先查 <code>ml-report-index.md</code>，排除近 14 天已覆盖的 DMFM
+Alignment、Q-VDiT 与晶体扩散 KLDM。候选池共 24 篇，覆盖
+ICLR/OpenReview、arXiv、公开项目页与代码：Transition Matching、Mean
+Flows、Self Forcing、LongLive、TurboDiffusion、FLUX.1
+Kontext、Qwen-Image、BAGEL、MAGI-1、UniWorld-V2、Representation
+Autoencoders、Autoregressive Adversarial
+Post-Training、Flow-GRPO、DanceGRPO、DiffusionNFT、SANA-Sprint、Block
+Diffusion、SemanticGen、OmniGen2、OneReward、Goku、Graph Flow
+Matching、Symmetrical Flow Matching、ZeroGVC。完整池见
+<code>candidates_2026-09-02.tsv</code>。</p>
+<p>执行 <code>shuf -i 1-24 -n 1</code> 得 <strong>4</strong>，即
+LongLive。其 ICLR 2026 接收状态、v2 PDF、训练/推理代码、1.3B
+权重和结果表均可核验，故 <strong>重抽 0
+次</strong>。随机规则只决定核心论文，不以热度或主观喜好二次筛选。</p>
+</section>
+<section class="card" aria-labelledby="3-motivation长视频不只是把短片多生成几次-title"><h2 id="3-motivation长视频不只是把短片多生成几次-title">3. Motivation：长视频不只是“把短片多生成几次”</h2>
+<p>短视频扩散通常使用双向时空注意力，画质高但无法自然复用历史 KV；因果
+AR 模型可缓存，却会在滚动生成时不断条件化于自己的错误。LongLive
+把矛盾概括为三组：短训练—长推理的 exposure
+bias；全历史注意力的二次计算与线性 KV
+增长；提示切换时“删缓存会跳变、留缓存会粘住旧语义”。</p>
+<p>量化痛点来自表 1（p.7）：Wan2.1 仅 <strong>0.78
+FPS</strong>、SkyReels-V2 <strong>0.49 FPS</strong>、MAGI-1 <strong>0.19
+FPS</strong>；最快既有 CausVid/Self-Forcing chunk-wise 为 <strong>17.0
+FPS</strong>。在 30 秒 VBench-Long 表 3（p.8）中，SkyReels-V2 总分
+<strong>75.29</strong>，FramePack <strong>81.95</strong>，Self-Forcing
+<strong>81.59</strong>。这说明“无限长度”口号并未自动解决生成速度与长程一致性。</p>
+<p>交互又增加状态更新问题：旧 prompt 经 cross-attention 写入
+self-attention 的 KV cache；切换新 prompt
+后，缓存仍携带旧语义。清空缓存能听新指令却破坏人物和场景，保留缓存能连续却出现
+prompt inertia。LongLive
+的工程目标不是一次性生成一条固定长片，而是用户可连续追加
+prompt、系统持续输出且每步成本有界。</p>
+</section>
+<section class="card" aria-labelledby="4-故事线核心假设与权衡-title"><h2 id="4-故事线核心假设与权衡-title">4. 故事线、核心假设与权衡</h2>
+<p>故事线有三个连续层次。第一，基于 Wan2.1-T2V-1.3B，把短片模型通过
+Self-Forcing/DMD 适配成少步因果生成器。第二，训练不再只看真实短
+clip，而是每轮延伸自身已生成历史 5
+秒，只对当前新片段求梯度，让模型在训练时见到部署时的退化上下文。第三，训练与推理统一采用局部窗口加首帧
+frame sink；提示切换时，以最近视觉历史和新 prompt 重建 KV。</p>
+<p>其假设是：视频的大部分运动依赖近邻帧，首帧保留身份/场景的低频全局锚点；短片
+teacher 虽不会生成可靠长片，却可逐段提供局部监督；detach
+历史不会破坏学习长程稳定所需梯度；训练只含一次 prompt switch
+仍可泛化到多次切换。权衡是：有界内存换来有限长程信息；首帧锚定可能妨碍应当发生的场景/身份变化；局部
+teacher 继承了基座偏差。</p>
+</section>
+<section class="card" aria-labelledby="5-方程级形式化与伪代码-title"><h2 id="5-方程级形式化与伪代码-title">5. 方程级形式化与伪代码</h2>
+<p>令每个 5 秒 latent chunk 为 (x_t)，提示为 (p_t)，历史缓存为
+(C_t)。因果分解为 [ p_\theta(x_{1:T}|p_{1:T})=\prod_{t=1}^T
+p_\theta(x_t\mid C_{t-1},p_t), \quad
+C_t=\mathrm{Update}(C_{t-1},x_t,p_t). ] 普通 KV 保留在提示切换 (p^-\to
+p^+) 时使用 (C^-)，旧语义残留；清空变为
+(\varnothing)，丢失视觉状态。KV-recache 定义为 [
+C^+=G^{KV}<em>\theta(x</em>{t-W:t},p^+), ] 即用最近 (W)
+帧和新提示重编码一次。论文报告单次 10 秒切换的 recache 只增加约
+<strong>6%</strong> 时间（§3.1，p.3）。</p>
+<p>流式长调优把历史 stop-gradient： [ \tilde x_{&lt;t}\sim
+p_\theta,\quad \mathcal L_t=\mathcal
+L_{DMD}\bigl(x_t;\operatorname{sg}(\tilde
+x_{&lt;t}),p_t,G_{teacher}\bigr), ] 所以反向图只覆盖当前 5
+秒，不随总时长增长。驻留 KV 由局部窗口 (W)、当前监督片段 (T) 和 sink (S)
+组成，空间为 (O(W+T+S))，不再是 (O(L))。</p>
+<pre class="text"><code>初始化：Wan2.1-1.3B → ODE init → Self-Forcing DMD 少步因果模型
+for 每条最长 60s 训练 rollout:
+    cache = ∅
+    for chunk = 1..12:
+        若到随机 switch 点：cache = Recache(最近 W 帧, 新 prompt)
+        x_chunk = Student.sample(cache, active_prompt)
+        loss = DMD(x_chunk, Teacher14B, stopgrad(history))
+        只更新当前 chunk；cache 保留 [首帧 sink + 最近 W]
+推理：每个 prompt 边界 recache 一次，其余持续滚动输出</code></pre>
+</section>
+<section class="card" aria-labelledby="6-机制与工程细节-title"><h2 id="6-机制与工程细节-title">6. 机制与工程细节</h2>
+<div class="table-scroll" role="region" tabindex="0" aria-label="数据表，可横向滚动"><table>
+<thead>
+<tr class="header">
+<th scope="col">机制</th>
+<th scope="col">具体设置</th>
+<th scope="col">解决什么</th>
+<th scope="col">成本/风险</th>
+<th scope="col">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>因果 AR 少步化</td>
+<td>Wan2.1-T2V-1.3B，832×480，5s/16FPS</td>
+<td>支持 KV cache 与流式输出</td>
+<td>依赖 14B teacher 和 DMD</td>
+<td>§4、附录 F，p.6/16</td>
+</tr>
+<tr class="even">
+<td>Streaming long tuning</td>
+<td>每轮生成下一段 5s，最长 60s</td>
+<td>train-long/test-long，见到自身错误</td>
+<td>历史 detach，跨段梯度被截断</td>
+<td>§3.2，p.4</td>
+</tr>
+<tr class="odd">
+<td>KV-recache</td>
+<td>切换时用最近窗口+新 prompt 重建 cache</td>
+<td>连续性与新指令服从兼得</td>
+<td>每次切换约 +6% 时间</td>
+<td>§3.1，p.3</td>
+</tr>
+<tr class="even">
+<td>短窗口</td>
+<td>local window 9 latent frames</td>
+<td>计算/缓存不随总时长增长</td>
+<td>远程事件可能遗忘</td>
+<td>§3.3，p.5</td>
+</tr>
+<tr class="odd">
+<td>Frame sink</td>
+<td>首个 chunk 3 latent frames永久保留</td>
+<td>身份/场景全局锚点</td>
+<td>可能锁住初始状态</td>
+<td>附录 F，p.16</td>
+</tr>
+<tr class="even">
+<td>提示数据</td>
+<td>VidProM 原 prompt；Qwen2-72B 生成后续 prompt</td>
+<td>无需额外真实长视频</td>
+<td>LLM 合成切换模式较规则</td>
+<td>§4、附录 E</td>
+</tr>
+<tr class="odd">
+<td>优化</td>
+<td>64 H100，batch 64，3,000 iter；actor lr 1e-5，critic 2e-6；EMA
+.99</td>
+<td>12h 完成长调优</td>
+<td>约 32 H100 GPU-days</td>
+<td>附录 F，p.16</td>
+</tr>
+<tr class="even">
+<td>LoRA</td>
+<td>rank 32–512；rank256=350M 参数</td>
+<td>降低状态开销</td>
+<td>最优仍需 27% 参数</td>
+<td>表 A，p.16</td>
+</tr>
+</tbody>
+</table></div>
+<p>论文称窗口+sink 相比全历史在单 H100 上端到端计算时间降低
+<strong>28%</strong>、峰值显存降低
+<strong>17%</strong>（§3.3，p.5）。注意这不是相对所有 baseline，也不是
+20.7 FPS 的完整来源分解。</p>
+</section>
+<section class="card" aria-labelledby="7-数据基准与指标-title"><h2 id="7-数据基准与指标-title">7. 数据、基准与指标</h2>
+<p>短片用 VBench 官方 prompts，报告
+Total、Quality、Semantic。单提示长片用 VBench-Long：每个 prompt 生成 30
+秒并按官方脚本切片。交互评测是作者自建 <strong>160 条 60
+秒视频</strong>，每条六个连续 10 秒 prompts；全程质量用 VBench-Long
+可定制维度，语义对齐按 10 秒 segment 算 CLIP。用户研究有 <strong>48
+个成对问题 × 26 个有效参与者 = 1,248 个判断</strong>（附录
+L，p.17），但主文图 1 未给可直接复算的逐项数值表或置信区间。</p>
+<p>FPS 均在单 H100（表 1/3），分辨率和参数量却并不完全统一：640×384 到
+960×540，0.6B 到 4.5B。LongLive 20.7 FPS 对同为 1.3B/832×480 的
+Self-Forcing 17.0 更可比；对 SkyReels 960×540 或 MAGI 4.5B
+的倍数不能纯归因于算法。</p>
+</section>
+<section class="card" aria-labelledby="8-主结果完整矩阵-title"><h2 id="8-主结果完整矩阵-title">8. 主结果完整矩阵</h2>
+<section class="subsection" aria-labelledby="81-短视频-vbench表-1p7-title"><h3 id="81-短视频-vbench表-1p7-title">8.1 短视频 VBench（表 1，p.7）</h3>
+<div class="table-scroll" role="region" tabindex="0" aria-label="数据表，可横向滚动"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">参数</th>
+<th scope="col" style="text-align: right;">分辨率</th>
+<th scope="col" style="text-align: right;">FPS↑</th>
+<th scope="col" style="text-align: right;">Total↑</th>
+<th scope="col" style="text-align: right;">Quality↑</th>
+<th scope="col" style="text-align: right;">Semantic↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>LTX-Video</td>
+<td style="text-align: right;">1.9B</td>
+<td style="text-align: right;">768×512</td>
+<td style="text-align: right;">8.98</td>
+<td style="text-align: right;">80.00</td>
+<td style="text-align: right;">82.30</td>
+<td style="text-align: right;">70.79</td>
+</tr>
+<tr class="even">
+<td>Wan2.1</td>
+<td style="text-align: right;">1.3B</td>
+<td style="text-align: right;">832×480</td>
+<td style="text-align: right;">0.78</td>
+<td style="text-align: right;">84.26</td>
+<td style="text-align: right;">85.30</td>
+<td style="text-align: right;">80.09</td>
+</tr>
+<tr class="odd">
+<td>SkyReels-V2</td>
+<td style="text-align: right;">1.3B</td>
+<td style="text-align: right;">960×540</td>
+<td style="text-align: right;">0.49</td>
+<td style="text-align: right;">82.67</td>
+<td style="text-align: right;">84.70</td>
+<td style="text-align: right;">74.53</td>
+</tr>
+<tr class="even">
+<td>MAGI-1</td>
+<td style="text-align: right;">4.5B</td>
+<td style="text-align: right;">832×480</td>
+<td style="text-align: right;">0.19</td>
+<td style="text-align: right;">79.18</td>
+<td style="text-align: right;">82.04</td>
+<td style="text-align: right;">67.74</td>
+</tr>
+<tr class="odd">
+<td>CausVid</td>
+<td style="text-align: right;">1.3B</td>
+<td style="text-align: right;">832×480</td>
+<td style="text-align: right;">17.0</td>
+<td style="text-align: right;">81.20</td>
+<td style="text-align: right;">84.05</td>
+<td style="text-align: right;">69.80</td>
+</tr>
+<tr class="even">
+<td>NOVA</td>
+<td style="text-align: right;">0.6B</td>
+<td style="text-align: right;">768×480</td>
+<td style="text-align: right;">0.88</td>
+<td style="text-align: right;">80.12</td>
+<td style="text-align: right;">80.39</td>
+<td style="text-align: right;">79.05</td>
+</tr>
+<tr class="odd">
+<td>Pyramid Flow</td>
+<td style="text-align: right;">2B</td>
+<td style="text-align: right;">640×384</td>
+<td style="text-align: right;">6.7</td>
+<td style="text-align: right;">81.72</td>
+<td style="text-align: right;">84.74</td>
+<td style="text-align: right;">69.62</td>
+</tr>
+<tr class="even">
+<td>Self-Forcing chunk</td>
+<td style="text-align: right;">1.3B</td>
+<td style="text-align: right;">832×480</td>
+<td style="text-align: right;">17.0</td>
+<td style="text-align: right;">84.31</td>
+<td style="text-align: right;">85.07</td>
+<td style="text-align: right;"><strong>81.28</strong></td>
+</tr>
+<tr class="odd">
+<td>Self-Forcing frame</td>
+<td style="text-align: right;">1.3B</td>
+<td style="text-align: right;">832×480</td>
+<td style="text-align: right;">8.9</td>
+<td style="text-align: right;">84.26</td>
+<td style="text-align: right;">85.25</td>
+<td style="text-align: right;">80.30</td>
+</tr>
+<tr class="even">
+<td><strong>LongLive</strong></td>
+<td style="text-align: right;">1.3B</td>
+<td style="text-align: right;">832×480</td>
+<td style="text-align: right;"><strong>20.7</strong></td>
+<td style="text-align: right;"><strong>84.87</strong></td>
+<td style="text-align: right;"><strong>86.97</strong></td>
+<td style="text-align: right;">76.47</td>
+</tr>
+</tbody>
+</table></div>
+<p>相对最可比的 Self-Forcing chunk，LongLive 吞吐 <strong>+3.7 FPS /
++21.76%</strong>，Total <strong>+0.56 / +0.66%</strong>，Quality
+<strong>+1.90 / +2.23%</strong>，但 Semantic <strong>−4.81 /
+−5.92%</strong>（本报告复算）。相对 SkyReels-V2 为
+<strong>42.24×</strong> FPS，但分辨率不同。</p>
+</section>
+<section class="subsection" aria-labelledby="82-30-秒-vbench-long表-3p8-title"><h3 id="82-30-秒-vbench-long表-3p8-title">8.2 30 秒 VBench-Long（表 3，p.8）</h3>
+<div class="table-scroll" role="region" tabindex="0" aria-label="数据表，可横向滚动"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">Total↑</th>
+<th scope="col" style="text-align: right;">Quality↑</th>
+<th scope="col" style="text-align: right;">Semantic↑</th>
+<th scope="col" style="text-align: right;">FPS↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>SkyReels-V2</td>
+<td style="text-align: right;">75.29</td>
+<td style="text-align: right;">80.77</td>
+<td style="text-align: right;">53.37</td>
+<td style="text-align: right;">0.49</td>
+</tr>
+<tr class="even">
+<td>FramePack</td>
+<td style="text-align: right;">81.95</td>
+<td style="text-align: right;">83.61</td>
+<td style="text-align: right;">75.32</td>
+<td style="text-align: right;">0.92</td>
+</tr>
+<tr class="odd">
+<td>Self-Forcing</td>
+<td style="text-align: right;">81.59</td>
+<td style="text-align: right;">83.82</td>
+<td style="text-align: right;">72.70</td>
+<td style="text-align: right;">17.0</td>
+</tr>
+<tr class="even">
+<td><strong>LongLive</strong></td>
+<td style="text-align: right;"><strong>83.52</strong></td>
+<td style="text-align: right;"><strong>85.44</strong></td>
+<td style="text-align: right;"><strong>75.82</strong></td>
+<td style="text-align: right;"><strong>20.7</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>LongLive 对 Total 第二名 FramePack 为 <strong>+1.57 /
++1.92%</strong>，对 Quality 第二名 Self-Forcing 为 <strong>+1.62 /
++1.93%</strong>，对 Semantic 第二名 FramePack 为 <strong>+0.50 /
++0.66%</strong>。这一表比短片表更支持方法主张。</p>
+</section>
+<section class="subsection" aria-labelledby="83-60-秒交互表-2p7-title"><h3 id="83-60-秒交互表-2p7-title">8.3 60 秒交互（表 2，p.7）</h3>
+<div class="table-scroll" role="region" tabindex="0" aria-label="数据表，可横向滚动"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">Quality↑</th>
+<th scope="col" style="text-align: right;">0–10s CLIP</th>
+<th scope="col" style="text-align: right;">10–20s</th>
+<th scope="col" style="text-align: right;">20–30s</th>
+<th scope="col" style="text-align: right;">30–40s</th>
+<th scope="col" style="text-align: right;">40–50s</th>
+<th scope="col" style="text-align: right;">50–60s</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>SkyReels-V2</td>
+<td style="text-align: right;">80.49</td>
+<td style="text-align: right;">20.96</td>
+<td style="text-align: right;">22.51</td>
+<td style="text-align: right;">25.78</td>
+<td style="text-align: right;">18.45</td>
+<td style="text-align: right;">19.57</td>
+<td style="text-align: right;">19.61</td>
+</tr>
+<tr class="even">
+<td>Self-Forcing</td>
+<td style="text-align: right;">82.46</td>
+<td style="text-align: right;">28.46</td>
+<td style="text-align: right;">24.89</td>
+<td style="text-align: right;">23.53</td>
+<td style="text-align: right;">22.96</td>
+<td style="text-align: right;">23.07</td>
+<td style="text-align: right;">23.19</td>
+</tr>
+<tr class="odd">
+<td><strong>LongLive</strong></td>
+<td style="text-align: right;"><strong>84.38</strong></td>
+<td style="text-align: right;"><strong>28.85</strong></td>
+<td style="text-align: right;"><strong>25.68</strong></td>
+<td style="text-align: right;"><strong>24.64</strong></td>
+<td style="text-align: right;"><strong>24.23</strong></td>
+<td style="text-align: right;"><strong>24.32</strong></td>
+<td style="text-align: right;"><strong>24.32</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>LongLive 全程 Quality 对 Self-Forcing <strong>+1.92 /
++2.33%</strong>；末段 CLIP 为 24.32 对 23.19，<strong>+1.13 /
++4.87%</strong>。但首段到末段仍从 28.85 降至 24.32，绝对 <strong>−4.53 /
+−15.70%</strong>，故“稳定”是相对更慢衰减，不是无衰减。</p>
+</section>
+</section>
+<section class="card" aria-labelledby="9-逐层消融超参相变与量化-title"><h2 id="9-逐层消融超参相变与量化-title">9. 逐层消融、超参相变与量化</h2>
+<p>KV 表 4（p.8）：</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="数据表，可横向滚动"><table>
+<thead>
+<tr class="header">
+<th scope="col">缓存策略</th>
+<th scope="col" style="text-align: right;">Background consistency↑</th>
+<th scope="col" style="text-align: right;">Subject consistency↑</th>
+<th scope="col" style="text-align: right;">CLIP↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>No KV cache</td>
+<td style="text-align: right;">92.75</td>
+<td style="text-align: right;">89.59</td>
+<td style="text-align: right;"><strong>28.95</strong></td>
+</tr>
+<tr class="even">
+<td>KV cache</td>
+<td style="text-align: right;">94.77</td>
+<td style="text-align: right;">93.69</td>
+<td style="text-align: right;">25.92</td>
+</tr>
+<tr class="odd">
+<td><strong>KV-recache</strong></td>
+<td style="text-align: right;"><strong>94.81</strong></td>
+<td style="text-align: right;"><strong>94.04</strong></td>
+<td style="text-align: right;">27.87</td>
+</tr>
+</tbody>
+</table></div>
+<p>Recache 相对普通 KV：背景 +0.04、主体 +0.35、CLIP
++1.95（+7.52%）；但相对清空缓存的 CLIP 仍低 1.08。它是折中
+Pareto，不是每列最优。</p>
+<p>图 7（p.8）只给趋势：窗口从 3 到 27 latent frames，一致性约在
+<strong>24 帧</strong>饱和；9 local + 3 sink 接近 21-frame
+window。论文未给所有柱的精确数，不能造表。表 A（p.16）给 LoRA：rank
+32/64/128/256/512/Full 的可训练参数 44M/87M/175M/350M/700M/1.3B，总分
+<strong>81.08/82.68/82.98/83.12/83.04/83.52</strong>。rank 256 是
+adapter 内最佳，512 反降 0.08，出现明确饱和；但 full 仍高 0.40。</p>
+<p>表 B（p.16）在 RTX 5090：INT8/BF16 模型 1.4/2.7GB，FPS
+<strong>16.4/12.6</strong>，Total <strong>84.31/84.87</strong>，Quality
+<strong>86.20/86.97</strong>，Semantic
+<strong>76.74/76.47</strong>。INT8 吞吐 +30.16%，Total −0.56；Semantic
+反而 +0.27，因无多种子不能把微小反向波动解释为量化增益。注意摘要/HF
+后续称 FP8 24.8 FPS，而 v2 表 B 是 INT8
+5090，硬件和精度口径不可混用。</p>
+</section>
+<section class="card" aria-labelledby="10-统计显著性与复现性-title"><h2 id="10-统计显著性与复现性-title">10. 统计显著性与复现性</h2>
+<p>论文<strong>未报告</strong>生成随机种子数量、均值±标准差、bootstrap
+CI、VBench item-level 配对检验或用户研究置信区间；26
+名参与者的重复判断也不是 1,248 个独立人。故 0.50 Semantic、0.04
+Background 等差异无法判断统计稳定性。</p>
+<p>可复现性优点是训练/推理代码、权重、提示生成模板和主要超参公开；要求至少
+40GB GPU、Linux、64GB RAM。风险是主仓库已转为 LongLive 2.0，必须固定
+<code>v1.0</code> commit；训练依赖 Wan2.1-14B teacher、VidProM
+prompts、Qwen2-72B 合成后续提示和 64 H100，完整复现门槛仍高。</p>
+</section>
+<section class="card" aria-labelledby="11-相关工作问题来源与设计传递-title"><h2 id="11-相关工作问题来源与设计传递-title">11. 相关工作：问题来源与设计传递</h2>
+<p><strong>StreamingT2V</strong> 解决短 clip 拼接的硬切，使用前一 chunk
+的短期 CAM、第一 chunk 的长期 appearance preservation 与随机
+blending，能生成 80–1,200+ 帧。缺口是多阶段模块推理慢、不是少步因果 KV
+系统，也不处理流式 prompt 切换。LongLive
+继承“近程+首段长期锚点”，把它压缩成 rolling window + frame sink。</p>
+<p><strong>SkyReels-V2</strong> 用 diffusion forcing、结构化电影
+caption、多阶段训练与 motion RL 支持无限延伸。缺口是 1.3B 在 LongLive 表
+1 仅 0.49 FPS，交互切换也需复杂状态处理。LongLive 保留 AR diffusion
+forcing 的长片路线，把重点从电影语言转为缓存和在线延迟。</p>
+<p><strong>FramePack</strong> 用按重要性压缩历史 frame context，使
+Transformer context 固定，并用逆时间/端点等
+anti-drift。缺口是其核心是上下文打包和 I2V 工作流，不提供 prompt switch
+recache。LongLive
+对应地不学习复杂压缩，而保留“最近窗口+固定首帧”，设计更简单但信息容量更小。</p>
+<p><strong>Self-Forcing</strong> 是最直接技术来源：训练时自回归
+rollout、用自身输出作上下文，并以 DMD/截断梯度消除 teacher-forcing
+gap。它留下的缺口是短训练向长 rollout 延伸仍退化，且无交互 prompt
+更新。LongLive 将自迫式训练从短视频扩展为 60 秒 streaming long
+tuning，并把 KV-recache 嵌入同一训练条件。</p>
+<pre class="text"><code>短视频扩散
+   ├─ StreamingT2V：前段锚点 + 局部过渡 ─────────┐
+   ├─ SkyReels-V2：diffusion forcing + 电影后训练 ├─→ LongLive
+   ├─ FramePack：固定历史预算 + anti-drift ──────┤    ├─ self-rollout 长调优
+   └─ Self-Forcing：训练时使用自身输出 ──────────┘    ├─ window + frame sink
+                                                       └─ prompt 边界 KV-recache
+                         尚未合流：动态检索历史 + 多事件因果记忆 + 等算力人评</code></pre>
+<div class="table-scroll" role="region" tabindex="0" aria-label="数据表，可横向滚动"><table>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">长程状态</th>
+<th scope="col">训练—推理对齐</th>
+<th scope="col">交互切换</th>
+<th scope="col">成本随时长</th>
+<th scope="col">LongLive 如何回应/仍缺什么</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>StreamingT2V</td>
+<td>首段+前块模块</td>
+<td>有限</td>
+<td>未主攻</td>
+<td>多模块</td>
+<td>简化为 cache；语义记忆弱</td>
+</tr>
+<tr class="even">
+<td>SkyReels-V2</td>
+<td>diffusion forcing</td>
+<td>渐进训练</td>
+<td>有限</td>
+<td>较慢</td>
+<td>20.7 vs 0.49 FPS；分辨率不等</td>
+</tr>
+<tr class="odd">
+<td>FramePack</td>
+<td>重要性压缩历史</td>
+<td>anti-drift</td>
+<td>无 recache</td>
+<td>固定 context</td>
+<td>更简单；无动态检索</td>
+</tr>
+<tr class="even">
+<td>Self-Forcing</td>
+<td>rolling KV</td>
+<td>self-rollout</td>
+<td>未主攻</td>
+<td>有界</td>
+<td>延伸到 60s；teacher 依赖仍在</td>
+</tr>
+<tr class="odd">
+<td>LongLive</td>
+<td>local 9 + sink 3</td>
+<td>streaming long tuning</td>
+<td>KV-recache</td>
+<td>(O(W+T+S))</td>
+<td>远程事件与多镜头仍不足</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section class="card" aria-labelledby="12-真正贡献可复用设计与迁移潜力-title"><h2 id="12-真正贡献可复用设计与迁移潜力-title">12. 真正贡献、可复用设计与迁移潜力</h2>
+<p>真正贡献不是单一新
+loss，而是三层一致性共同成立：训练用自身历史，训练与推理用同一窗口/sink，prompt
+switch 在训练和推理都执行 recache。单独抄 frame sink
+未必有效；论文明确指出，当长 rollout collapse 先由 streaming tuning
+缓解后，sink 才恢复作用（§3.3）。</p>
+<p>可复用设计包括：流式 truncated backprop
+让总序列长而显存恒定；事件边界显式 state
+refresh；稳定锚点与滑窗分工。这可迁移到 world model、机器人视觉
+rollout、长音频生成、流式 avatar 和混合 linear/full
+attention。迁移时应把固定首帧改成可检索或可更新的
+memory，否则真正换场景时锚点会成为错误约束。</p>
+</section>
+<section class="card" aria-labelledby="13-论文自述限制-title"><h2 id="13-论文自述限制-title">13. 论文自述限制</h2>
+<ol type="1">
+<li><strong>基座上限。</strong> 附录
+M（p.18）明确说方法是基座之上的高效微调，短片绝对质量不太可能持续超过基座；收益主要是适配与稳定。</li>
+<li><strong>继承偏差。</strong>
+同一节指出不使用额外精选真实视频，无法修复基座系统性错误和偏见。</li>
+<li><strong>长程信息权衡。</strong>
+§3.3（p.5）承认小窗口会损害一致性，约 24 帧才饱和；sink
+只是折中，并非完整历史替代。</li>
+</ol>
+</section>
+<section class="card" aria-labelledby="14-独立批判因为-x所以-y-title"><h2 id="14-独立批判因为-x所以-y-title">14. 独立批判：因为 X，所以 Y</h2>
+<ol type="1">
+<li><strong>[语义代价]</strong> 因为短片 Semantic 76.47 低于
+Self-Forcing 81.28 达 4.81 分（表 1），所以“短片能力不退化”只对
+Total/Quality 成立，不能外推到文本遵循。</li>
+<li><strong>[长程仍衰减]</strong> 因为交互 CLIP 从首段 28.85 降至末段
+24.32（−15.70%），所以 LongLive 是减缓漂移而非消除漂移。</li>
+<li><strong>[基线公平]</strong> 因为表 1 混合
+0.6–4.5B、640×384–960×540，只有部分方法同为
+1.3B/832×480，所以“全表最快”包含模型/分辨率差异。</li>
+<li><strong>[指标有效性]</strong> 因为交互集由 Qwen2-72B 基于原 prompt
+合成、要求只加一个动作并保持场景，而真实用户可能换主体、风格与镜头，所以
+KV-recache 的泛化被较温和切换分布高估。</li>
+<li><strong>[状态上限]</strong> 因为全局记忆只固定第一 chunk，局部只保留
+9 帧，所以中途引入且稍后回归的角色/物体无长期槽位；240 秒 demo
+不能证明事件级召回。</li>
+<li><strong>[统计]</strong> 因为所有主表无标准差/CI，用户研究仅 26
+人且重复测量，所以 0.50 分等小差距不能断言稳健。</li>
+<li><strong>[归因]</strong> 因为系统同时引入 streaming
+tuning、短窗口、sink、recache，并先做 ODE+DMD 适配，而表格未给完整
+factorial ablation，所以 20.7 FPS 与长程分数无法逐项归因。</li>
+<li><strong>[“实时”定义]</strong> 因为 FPS 不包含首帧启动延迟、prompt
+编码、VAE 解码/IO 的完整分解，也无 p95 抖动，所以 20.7 FPS
+证明稳态吞吐，不等同于交互服务 SLA。</li>
+</ol>
+</section>
+<section class="card" aria-labelledby="15-可操作开放挑战-title"><h2 id="15-可操作开放挑战-title">15. 可操作开放挑战</h2>
+<section class="subsection" aria-labelledby="理论-title"><h3 id="理论-title">理论</h3>
+<ul>
+<li><strong>锚点 vs 检索记忆：</strong> 固定 9+3 token 预算，比较首帧
+sink、uniform sink、CLIP 相似检索、learned eviction；在“角色离场 30
+秒后回归”集合测 identity retrieval 与每帧 FLOPs。</li>
+<li><strong>截断梯度偏差：</strong> 相同 60 秒序列比较 detach 历史、每
+2/4 chunk 截断、低秩跨段梯度，报告质量、显存和梯度余弦，验证局部 DMD
+是否错过长因果依赖。</li>
+<li><strong>切换分布相变：</strong> 控制 prompt edit
+distance，从单动作、换背景、换主体到风格突变，画 recache 一次/两次/不
+recache 的 continuity—adherence Pareto。</li>
+</ul>
+</section>
+<section class="subsection" aria-labelledby="工程应用-title"><h3 id="工程应用-title">工程应用</h3>
+<ul>
+<li><strong>等硬件端到端：</strong> 在同一 H100、832×480、80 帧、相同
+VAE 与编译设置下重跑 LongLive/Self-Forcing/SkyReels，报告 TTFF、稳态
+FPS、p50/p95、峰值显存和功耗。</li>
+<li><strong>多用户服务：</strong> batch 1/2/4/8、不同切换频率下比较动态
+batching 与 cache fragmentation；以每美元视频秒数和 SLA miss rate
+为指标。</li>
+<li><strong>复现漂移：</strong> 固定公开 160 prompts 和 seeds，在不同
+CUDA/GPU 上测试 60/240 秒分数及 hash 可重复性，量化 FramePack
+所指出的硬件敏感。</li>
+</ul>
+</section>
+<section class="subsection" aria-labelledby="新兴方向-title"><h3 id="新兴方向-title">新兴方向</h3>
+<ul>
+<li><strong>视频 world model：</strong> 在相同控制轨迹上对比文本
+prompt、键盘/6DoF action，测
+controllability、状态一致性和闭环任务成功率，而非只测 VBench。</li>
+<li><strong>音视频同步长生成：</strong> 加入语音/环境声缓存，比较独立
+audio sink 与共享 cross-modal memory，测嘴型、说话人和事件同步随 4
+分钟的漂移。</li>
+<li><strong>安全编辑：</strong> 在 prompt 中途加入违规动作，比较 recache
+前后安全策略生效延迟、旧语义残留和视觉连续性，检验缓存是否成为安全绕过通道。</li>
+</ul>
+</section>
+</section>
+<section class="card" aria-labelledby="16-近期联读-title"><h2 id="16-近期联读-title">16. 近期联读</h2>
+<ol type="1">
+<li><a href="https://arxiv.org/abs/2605.18739">LongLive-2.0</a>：把 1.0
+的算法骨架升级为 NVFP4、sequence parallel 与异步 VAE 基础设施，报告 5B
+模型 45.7 FPS；适合检验算法收益和硬件收益能否分离。</li>
+<li><a href="https://arxiv.org/abs/2608.11745">LiveAnimate</a>：用
+pose-retrieval sink 在固定预算中取回历史姿态相关片段，比 LongLive
+固定首帧更接近动态记忆。</li>
+<li><a
+href="https://arxiv.org/abs/2608.23383">JoyAI-Echo-1.5</a>：将跨镜头视觉记忆、说话人音频和
+6DoF 控制合并，代表长视频向持久故事/world model 的迁移。</li>
+<li><a
+href="https://openreview.net/forum?id=4Q55RwYte9">MotionStream</a>：把实时
+AR 视频进一步扩展到细粒度运动控制，补足 LongLive 主要依赖粗文本 prompt
+的限制。</li>
+<li><a
+href="https://arxiv.org/abs/2506.08009">Self-Forcing</a>：LongLive
+最直接的训练来源，读它能区分“自生成历史监督”与 LongLive
+新增的长调优/缓存更新。</li>
+<li><a
+href="https://arxiv.org/abs/2504.12626">FramePack</a>：从重要性压缩与
+anti-drift 给出另一条固定上下文路线，适合做动态 memory
+head-to-head。</li>
+</ol>
+</section>
+<section class="card" aria-labelledby="17-结论-title"><h2 id="17-结论-title">17. 结论</h2>
+<p>LongLive
+的重要性在于把长视频生成从“一次昂贵采样”改写为有状态流式系统：状态要定期刷新、训练必须暴露于自身错误、全局与局部记忆必须分工。最关键结果是单
+H100 <strong>20.7 FPS</strong>，30 秒 VBench-Long Total
+<strong>83.52</strong>，同时短片 Semantic 比 Self-Forcing 低
+<strong>4.81</strong>、末段 CLIP 仍较首段下降
+<strong>15.70%</strong>。因此最准确的判断是：它建立了很强的长程质量—速度
+Pareto，但没有解决语义衰减、动态长期记忆和服务级尾延迟。</p>
+<hr />
+<p><strong>脚注：</strong> 已更新 <code>ml-report-index.md</code>。HTML
+使用 Warm Editorial
+模板；全部精确数字来自实际读取论文表格/正文。当前环境未发现
+<code>/usr/bin/chromium</code>、<code>chromium-browser</code> 或
+<code>/opt/pw-browsers</code> 中可执行 Chromium，因此无法完成 Playwright
+的浅色、深色与移动端截图检查；本报告不虚报该项，改以模板响应式规则和静态验证器（0
+error / 0 warning）兜底。</p>
+</section>
+</div>
+<figure class="figure" aria-labelledby="fps-title"><p class="fig-title" id="fps-title">同规格 1.3B / 832×480 模型的吞吐</p><p class="fig-sub">LongLive 达到 20.7 FPS，相对 Self-Forcing chunk-wise 提升 21.76%；纵轴为单 H100 FPS。</p><svg class="chart" viewBox="0 0 720 380" role="img" xmlns="http://www.w3.org/2000/svg"><title>LongLive 与同规格基线吞吐比较</title><desc>Wan2.1 0.78，Self-Forcing frame 8.9，Self-Forcing chunk 17.0，LongLive 20.7 FPS。</desc><g stroke="var(--grid)"><line x1="70" y1="320" x2="690" y2="320"/><line x1="70" y1="250" x2="690" y2="250"/><line x1="70" y1="180" x2="690" y2="180"/><line x1="70" y1="110" x2="690" y2="110"/><line x1="70" y1="40" x2="690" y2="40"/></g><g font-size="12"><text x="35" y="324">0</text><text x="35" y="254">5</text><text x="29" y="184">10</text><text x="29" y="114">15</text><text x="29" y="44">20</text></g><g fill="var(--chart-comparison)"><rect tabindex="0" data-tip="Wan2.1：0.78 FPS" x="105" y="309.1" width="90" height="10.9"/><rect tabindex="0" data-tip="Self-Forcing frame：8.9 FPS" x="255" y="195.4" width="90" height="124.6"/><rect tabindex="0" data-tip="Self-Forcing chunk：17.0 FPS" x="405" y="82" width="90" height="238"/></g><g fill="var(--chart-primary)"><rect tabindex="0" data-tip="LongLive：20.7 FPS" x="555" y="30.2" width="90" height="289.8"/></g><g text-anchor="middle" font-size="12"><text x="150" y="345">Wan2.1</text><text x="300" y="345">SF frame</text><text x="450" y="345">SF chunk</text><text x="600" y="345">LongLive</text></g></svg><figcaption>来源：LongLive 表 1，p.7。只画相同参数量、分辨率与硬件口径，避免误导。</figcaption></figure></main>
+
+  <footer>来源：ICLR 2026 OpenReview、arXiv:2509.22622v2（2025-10-13）、官方代码/权重/项目页及四篇技术链论文；链接于 2026-09-02 验证。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1058 @@
+---
+layout: null
+title: "VGA"
+date: 2026-08-25
+topic: vlm-vision
+excerpt: "解析 Visual Graph Arena 如何评测多模态模型从像素恢复图结构的能力，并审视布局鲁棒性、测试泄漏与感知—推理解耦问题。"
+permalink: /blog/2026/08/25/visual-graph-arena-graph-reasoning/
+blog_post: true
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Visual Graph Arena 深度报告 · 2026-08-25</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #246fca;
+    --chart-comparison: #c95224;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  blockquote { margin: 18px 0; padding: 14px 18px; border-left: 3px solid var(--chart-comparison); border-radius: 0 8px 8px 0; background: var(--page); color: var(--text-secondary); }
+  blockquote > :last-child { margin-bottom: 0; }
+  strong { color: var(--text-primary); }
+  .card h3 { padding-top: 5px; border-top: 1px solid var(--grid); }
+  .card > h3:first-of-type { border-top: 0; }
+  table th:first-child, table td:first-child { min-width: 8rem; }
+  table td { vertical-align: top; }
+  pre code { white-space: pre; }
+  .figure { overflow: hidden; }
+  @media (max-width: 640px) {
+    .chart { min-width: 760px; }
+    .figure { overflow-x: auto; }
+    .figure .fig-title, .figure .fig-sub, .figure .legend, .figure figcaption { position: sticky; left: 0; min-width: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">视觉与多模态 · ICML 2025</p>
+    <h1>Visual Graph Arena 深度报告</h1>
+    <p class="subtitle">模型看见了线条，却没有稳定恢复线条背后的图</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">ICML 2025 / PMLR 267</span>
+      <span class="chip">2026-08-25</span>
+      <span class="chip">Visual reasoning · Graph invariance · MLLM evaluation</span>
+    </div>
+    <p class="lede">VGA 证明当前模型尚未形成布局稳健的像素到图结构映射；但测试泄漏与感知—推理未解耦，使“pseudo-intelligence”仍是待验证解释。</p>
+  </header>
+
+  <main>
+<section class="card" aria-label="报告元信息与核心判断"><p><strong>日期</strong>：2026-08-25<br />
+<strong>今日领域</strong>：视觉与多模态<br />
+<strong>核心论文</strong>：<em>Visual Graph Arena: Evaluating Visual Conceptualization of Vision and Multimodal Large Language Models</em><br />
+<strong>发表</strong>：ICML 2025，PMLR 267:2081–2113<br />
+<strong>随机选择记录</strong>：候选池共 24 篇；执行 <code>shuf -i 1-24 -n 1</code> 抽中第 7 篇；正式全文、项目页与数据入口均可访问，无重抽。</p>
+<blockquote>
+<p><strong>一句话核心定位</strong>：VGA 不再问模型“能否在一张图上答对图论题”，而是把同一图结构换一种布局，检验模型能否从像素中恢复与布局无关的关系不变量；结果显示，人类准确率为 88.2%–100%，而视觉模型在同构任务上接近随机，最好的通用视觉模型在最大无弦环上也只有 36.3%。</p>
+</blockquote></section>
+<section class="card" aria-labelledby="section-1" data-section="0. 链接验证表"><h2 id="section-1">0. 链接验证表</h2>
+<p>下列链接均于 2026-08-25 实际访问。VGA 项目页提供数据下载与读取示例，但未找到完整训练/评测仓库，因此“代码”列不把网页中的 loader snippet 误标为完整复现代码。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">论文</th>
+<th scope="col">会议主页 / 正式出版</th>
+<th scope="col">arXiv（版本日期）</th>
+<th scope="col">Code 仓库</th>
+<th scope="col">数据集 / 权重</th>
+<th scope="col">项目主页 / 视频</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Visual Graph Arena（核心）</strong></td>
+<td><a href="https://proceedings.mlr.press/v267/babaiee25a.html">ICML 2025 / PMLR</a>；<a href="https://openreview.net/forum?id=BCJPAmlfxv">OpenReview</a></td>
+<td><a href="https://arxiv.org/abs/2506.06242v1">2506.06242v1</a>，2025-06-06</td>
+<td><strong>完整训练代码未找到</strong>；<a href="https://vga.csail.mit.edu/code.html">网页读取示例</a></td>
+<td><a href="https://vga.csail.mit.edu/visual_graph_arena.zip">直接下载 ZIP</a>；<a href="https://doi.org/10.5281/zenodo.11636413">Zenodo DOI</a></td>
+<td><a href="https://vga.csail.mit.edu/">项目主页</a>；视频未找到</td>
+</tr>
+<tr class="even">
+<td>CLEVR</td>
+<td><a href="https://openaccess.thecvf.com/content_cvpr_2017/html/Johnson_CLEVR_A_Diagnostic_CVPR_2017_paper.html">CVPR 2017</a></td>
+<td><a href="https://arxiv.org/abs/1612.06890v1">1612.06890v1</a>，2016-12-20</td>
+<td><a href="https://github.com/facebookresearch/clevr-dataset-gen">数据生成代码</a></td>
+<td><a href="https://cs.stanford.edu/people/jcjohns/clevr/">CLEVR 数据页</a></td>
+<td>同数据页；视频未找到</td>
+</tr>
+<tr class="odd">
+<td>FigureQA</td>
+<td>正式会议主页未找到</td>
+<td><a href="https://arxiv.org/abs/1710.07300v2">1710.07300v2</a>，2018-02-22</td>
+<td><a href="https://github.com/Maluuba/FigureQA">官方仓库</a>；<a href="https://github.com/vmichals/FigureQA-baseline">baseline</a></td>
+<td>仓库提供下载说明</td>
+<td>项目主页未找到</td>
+</tr>
+<tr class="even">
+<td>Visual Concept-Metaconcept Learning</td>
+<td><a href="https://proceedings.neurips.cc/paper_files/paper/2019/hash/98d8a23fd60826a2a474c5b4f5811707-Abstract.html">NeurIPS 2019</a></td>
+<td><a href="https://arxiv.org/abs/2002.01464v1">2002.01464v1</a>，2020-02-04</td>
+<td>未找到</td>
+<td>使用 CLEVR / GQA / CUB</td>
+<td>项目主页未找到</td>
+</tr>
+<tr class="odd">
+<td>VisionGraph</td>
+<td>正式会议主页未找到</td>
+<td><a href="https://arxiv.org/abs/2405.04950v1">2405.04950v1</a>，2024-05-08</td>
+<td><a href="https://github.com/HITsz-TMG/VisionGraph">官方仓库</a></td>
+<td>仓库内 benchmark</td>
+<td>项目主页未找到</td>
+</tr>
+</tbody>
+</table></div></section>
+<section class="card" aria-labelledby="section-2" data-section="0.1 候选池（24 篇）"><h2 id="section-2">0.1 候选池（24 篇）</h2>
+<p>候选均为 ICML 2025 主会论文，处于最近 12 个月优先范围；已排除 2026-08-18 深度覆盖的 MMedPO 及医疗偏好优化主题。</p>
+<ol type="1">
+<li>GAPrompt: Geometry-Aware Point Cloud Prompt for 3D Vision Model</li>
+<li>Vision Graph Prompting via Semantic Low-Rank Decomposition</li>
+<li>Direct Motion Models for Assessing Generated Videos</li>
+<li>Aligning Multimodal Representations through an Information Bottleneck</li>
+<li>Raptor: Scalable Train-Free Embeddings for 3D Medical Volumes</li>
+<li>FlexTok: Resampling Images into 1D Token Sequences of Flexible Length</li>
+<li><strong>Visual Graph Arena: Evaluating Visual Conceptualization of Vision and Multimodal Large Language Models</strong></li>
+<li>Layer-wise Alignment: Examining Safety Alignment Across Image Encoder Layers in VLMs</li>
+<li>SMART-PC: Skeletal Model Adaptation for Robust Test-Time Training in Point Clouds</li>
+<li>Impossible Videos</li>
+<li>Whitened CLIP as a Likelihood Surrogate of Images and Captions</li>
+<li>Rethinking Point Cloud Data Augmentation: Topologically Consistent Deformation</li>
+<li>Point Cloud Dataset Distillation</li>
+<li>DEFAME: Dynamic Evidence-based Fact-checking with Multimodal Experts</li>
+<li>From Local Details to Global Context: Advancing VLMs with Attention-Based Selection</li>
+<li>Understanding Model Reprogramming for CLIP via Decoupling Visual Prompts</li>
+<li>From Thousands to Billions: 3D Visual Language Grounding via Render-Supervised Distillation</li>
+<li>EFDTR: Learnable Elliptical Fourier Descriptor Transformer for Instance Segmentation</li>
+<li>AGAV-Rater: Adapting Large Multimodal Model for AI-Generated Audio-Visual Quality Assessment</li>
+<li>CtrlSynth: Controllable Image Text Synthesis for Data-Efficient Multimodal Learning</li>
+<li>Open-Det: An Efficient Learning Framework for Open-Ended Detection</li>
+<li>SCENIR: Visual Semantic Clarity through Unsupervised Scene Graph Retrieval</li>
+<li>LV-XAttn: Distributed Cross-Attention for Long Visual Inputs in MLLMs</li>
+<li>A Closer Look at Multimodal Representation Collapse</li>
+</ol></section>
+<section class="card" aria-labelledby="section-3" data-section="1. 核心论文深度解析"><h2 id="section-3">1. 核心论文深度解析</h2>
+<h3 id="motivation把答题能力拆成视觉解析与结构不变量">1.1 Motivation：把“答题能力”拆成视觉解析与结构不变量</h3>
+<p>传统 VQA benchmark 往往把识别、语言理解、常识与推理同时揉进一个分数。模型答错时，很难判断它没看清对象、没理解问题、不会推理，还是被数据偏差误导。VGA 选择极小的无向图作为受控对象：图只含 8–9 个节点，边与节点清晰，人类可以直接检查；同时，同一个抽象图可以被 random、Kamada–Kawai 或 planar layout 画成外观截然不同的图像。这样，标签只由图结构决定，视觉形式成为可控干预变量。</p>
+<p>论文把目标称为 <strong>conceptualization</strong>：底层概念保持不变、表征形式发生变化时，模型仍能识别并操作同一概念。这个问题比一般的 OOD 更窄。颜色、背景或拍摄域变化未必改变对象关系；而 VGA 直接改变节点坐标、边长、角度、交叉与整体轮廓，同时保持邻接关系或图论性质。理想模型应忽略 layout 的表面差异，恢复一个等价的关系表示。</p>
+<p>痛点的量化非常直接。核心论文表 2 中，人类在八个报告列上达到 <strong>88.2%–100%</strong>；视觉模型在两个同构任务上几乎全部被标为 <code>FAIL</code>，唯一例外是 SigLIP 在 easy isomorphism 上 <strong>54.4%</strong>，仍只比二分类随机水平高 4.4 pp。最大无弦环上，最强 ConvNeXt 只有 <strong>36.3%</strong>，比人类 88.2% 低 <strong>51.9 pp</strong>。这不是“大模型还差一点”，而是结构不变量没有从像素表征中稳定出现。</p>
+<p>为什么值得解决？流程图、化学结构、逻辑电路、电气图、分子骨架与科学示意图都存在“同一关系、多种画法”。若模型主要依赖轮廓和局部纹理，它可能在熟悉模板上表现很好，却在换布局、换绘图软件或换工程规范时失效。VGA 的价值不是模拟所有真实图表，而是提供一个最小反例：连 8–9 节点图的布局变化都不能跨越，就很难声称模型已经具备通用的视觉结构理解。</p>
+<h3 id="论文故事线从受控干预到行为异常">1.2 论文故事线：从受控干预到行为异常</h3>
+<p>论文的故事并不是提出新网络，而是构建一条诊断链。</p>
+<p><strong>第一步：选择结构明确、可枚举的视觉对象。</strong> 作者从 8、9 节点 connected graph 集合中生成图像；附录 B 报告原始集合含 11,117 个 8 节点图和 261,080 个 9 节点图。图论算法可以给出确定标签，避免主观标注。</p>
+<p><strong>第二步：让标签依赖结构，让 train/test 在布局上分离。</strong> 六项任务覆盖 isomorphism、path、cycle 三个概念，每个概念分两种难度或问题形式。模型不能仅靠训练布局的整体形状记忆标签，至少在设计意图上必须学习跨布局不变量。</p>
+<p><strong>第三步：同时测三个层次。</strong> 人类给出认知上限；ImageNet 预训练的 ViT、Swin、ConvNeXt，以及 SigLIP、DINOv2 在任务数据上 fine-tune，测“有大量监督后能否跨布局”；闭源 MLLM 直接看图回答，测通用模型的零样本能力。</p>
+<p><strong>第四步：从分数进入错误结构。</strong> GPT-o1 在 shortest path 总体 55%，但表 3 显示 path length=1 只答对 28%，length=2 却为 69%。作者据此提出 Easier-Worse Anomaly：如果模型真正理解“相邻即距离 1”，最简单类别不应比更长路径差 41 pp。Hamiltonian cycle 的 66% 也主要来自检测 leaf node 这一捷径；移除 leaf-node cases 后接近随机。</p>
+<p>论文的关键权衡是：为了隔离纯视觉概念化，它明确要求 MLLM “without using code”。这让 benchmark 更像人类视觉直觉测试，却也意味着它没有评估现代 agent 最实用的能力——先把图转写为 adjacency list，再调用确定性算法。因此 VGA 诊断的是<strong>单次视觉到结构的闭环能力</strong>，不是工具增强系统的最佳可达性能。</p>
+<h3 id="方程级形式化vga-真正测的是什么">1.3 方程级形式化：VGA 真正测的是什么</h3>
+<p>设抽象图为 (G=(V,E))，布局算法为 (ellL)，渲染器为 (R)，得到图像：</p>
+<p>[ x_{G,}=R(G;). ]</p>
+<p>任务标签只由图结构决定：</p>
+<p>[ y=(G), ]</p>
+<p>其中 ( au) 可以是同构真假、是否存在 Hamiltonian path/cycle、两标记节点的最短路长度，或最大无弦环长度。理想视觉推理器 (f_) 应满足布局不变性：</p>
+<p>[ f_(R(G;<em>1))=f</em>(R(G;_2))=(G), _1,_2L. ]</p>
+<p>若训练布局集合为 (mathcal L_{tr})、测试布局为未见过的 (mathcal L_{te})，可定义真正想测的 layout generalization gap：</p>
+<p>[ <em>{layout}=(L</em>{tr})- (L_{te}). ]</p>
+<p>但核心论文除 shortest-path 的多布局测试外，没有系统报告同一模型、同一 underlying graph distribution 下的 in-layout 与 cross-layout 成对结果，因此多数任务的 (Delta_{layout}) <strong>不可计算</strong>。论文实际报告的是 cross-layout accuracy，而不是完整的不变性曲线。</p>
+<p>六项标签可形式化为：</p>
+<ul>
+<li>同构：(y=[: A_2=P_A_1P_^])；hard negative 与 positive 具有相同 degree sequence，排除简单度数捷径。</li>
+<li>Hamiltonian path：(y=[(v_1,,v_{|V|}), (v_i,v_{i+1})E])。</li>
+<li>最短路：(y=d_G(s,t){1,2,3,4})。</li>
+<li>Hamiltonian cycle：在 Hamiltonian path 条件上再要求 ((v_{|V|},v_1)E)。</li>
+<li>最大无弦环：(y=_{CG}|C|{3,4,5,6})，且 cycle 中非相邻节点间无 chord。</li>
+</ul>
+<p>从机制上，成功路径应当是：</p>
+<pre class="text"><code>像素图像
+  ↓ 节点检测 + 边追踪
+显式或隐式邻接结构 Â
+  ↓ 置换/布局不变的关系运算
+图论性质 τ(Â)
+  ↓
+答案</code></pre>
+<p>VGA 只观察最终答案，并在附录 D 用 3 张图做 adjacency-matrix 转写案例；它没有对所有 benchmark 样本提供节点/边解析准确率。因此，最终错误仍可能来自“边没看清”或“图看清但不会推理”任一环节。</p>
+<h3 id="数据集与工程实现">1.4 数据集与工程实现</h3>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">机制 / 维度</th>
+<th scope="col">设计选择</th>
+<th scope="col">动机</th>
+<th scope="col">论文报告的关键配置</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>图规模</td>
+<td>connected graphs，8–9 节点</td>
+<td>人类可检查，又可生成大规模样本</td>
+<td>原始集合：11,117 个 8-node；261,080 个 9-node，附录 B</td>
+</tr>
+<tr class="even">
+<td>渲染</td>
+<td>700×700 原始 canvas；random / Kamada–Kawai / planar</td>
+<td>改变形式而保持结构标签</td>
+<td>附录 B</td>
+</tr>
+<tr class="odd">
+<td>任务</td>
+<td>同构、路径、环，各两项</td>
+<td>从二分类到四分类、从局部到全局结构</td>
+<td>主文 §3</td>
+</tr>
+<tr class="even">
+<td>类别平衡</td>
+<td>二分类正负平衡；四分类各长度平衡</td>
+<td>降低 label prior 捷径</td>
+<td>主文 §3、附录 B</td>
+</tr>
+<tr class="odd">
+<td>视觉模型</td>
+<td>ViT-B、Swin-T-B、ConvNeXt-B、SigLIP-B、DINOv2-B</td>
+<td>比较卷积、监督 Transformer、视觉语言与自监督预训练</td>
+<td>主文 §4</td>
+</tr>
+<tr class="even">
+<td>Fine-tuning</td>
+<td>Adam，LR (10^{-4})，batch 32，10 epochs，CrossEntropy</td>
+<td>任务监督适配</td>
+<td>附录 C，第 12 页</td>
+</tr>
+<tr class="odd">
+<td>输入尺寸</td>
+<td>384×384</td>
+<td>与预训练输入设置对齐</td>
+<td>附录 C</td>
+</tr>
+<tr class="even">
+<td>硬件</td>
+<td>2× NVIDIA TITAN RTX</td>
+<td>训练视觉模型</td>
+<td>附录 C</td>
+</tr>
+<tr class="odd">
+<td>模型选择</td>
+<td>每 epoch 在 test set 评估，选择 test 表现最好的 epoch</td>
+<td>论文原实现</td>
+<td>附录 C；这是测试泄漏风险</td>
+</tr>
+<tr class="even">
+<td>MLLM</td>
+<td>每任务随机 100 个样本；禁止代码</td>
+<td>测直接视觉推理</td>
+<td>主文 §4、附录 E</td>
+</tr>
+<tr class="odd">
+<td>人类</td>
+<td>15 名工程学院学生/员工；24 题，每任务 4 题</td>
+<td>建立人类参照</td>
+<td>主文第 6 页</td>
+</tr>
+</tbody>
+</table></div>
+<h4 id="六任务规模矩阵">六任务规模矩阵</h4>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">概念</th>
+<th scope="col">任务</th>
+<th scope="col" style="text-align: right;">训练样本</th>
+<th scope="col" style="text-align: right;">测试样本</th>
+<th scope="col" style="text-align: right;">类别</th>
+<th scope="col">训练 → 测试布局</th>
+<th scope="col">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Isomorphism</td>
+<td>Easy</td>
+<td style="text-align: right;">140,000</td>
+<td style="text-align: right;">15,718</td>
+<td style="text-align: right;">2</td>
+<td>paired Kawai/planar；graph split</td>
+<td>表 1、附录 B.1</td>
+</tr>
+<tr class="even">
+<td>Isomorphism</td>
+<td>Hard degree-equivalent</td>
+<td style="text-align: right;">127,374</td>
+<td style="text-align: right;">14,298</td>
+<td style="text-align: right;">2</td>
+<td>paired Kawai/planar；hard negative 同 degree sequence</td>
+<td>表 1、附录 B.1</td>
+</tr>
+<tr class="odd">
+<td>Path</td>
+<td>Hamiltonian path</td>
+<td style="text-align: right;">25,000</td>
+<td style="text-align: right;">2,480</td>
+<td style="text-align: right;">2</td>
+<td>Kawai → planar</td>
+<td>表 1、§3.2</td>
+</tr>
+<tr class="even">
+<td>Path</td>
+<td>Shortest path</td>
+<td style="text-align: right;">80,000</td>
+<td style="text-align: right;">8,672</td>
+<td style="text-align: right;">4</td>
+<td>表 2 脚注/目录图：random → random/Kawai/planar；附录 B.2 文字却写 Kawai → planar</td>
+<td>表 1、表 2 脚注、附录 B.2</td>
+</tr>
+<tr class="odd">
+<td>Cycle</td>
+<td>Hamiltonian cycle</td>
+<td style="text-align: right;">69,935</td>
+<td style="text-align: right;">7,740</td>
+<td style="text-align: right;">2</td>
+<td>Kawai → planar</td>
+<td>表 1、§3.3</td>
+</tr>
+<tr class="even">
+<td>Cycle</td>
+<td>Biggest chordless cycle</td>
+<td style="text-align: right;">80,000</td>
+<td style="text-align: right;">6,484</td>
+<td style="text-align: right;">4</td>
+<td>Kawai → planar</td>
+<td>表 1、§3.3</td>
+</tr>
+</tbody>
+</table></div>
+<p>表 1 的训练总量为 <strong>522,309</strong>，按每个任务单列测试集相加为 <strong>55,392</strong>。但 shortest path 实际有三种测试布局，附录目录图还为 Hamiltonian path/cycle 和 chordless cycle列出 Kawai 与 planar 两份测试目录；表 1 的 “#Testing Samples” 是每布局还是合并计数并不完全清楚。因此不能据表 1 直接断言所有图像文件总数。</p>
+<h3 id="主结果完整可核验矩阵">1.5 主结果：完整可核验矩阵</h3>
+<p>下表逐项转录核心论文表 2；<code>FAIL</code> 是作者借用 Long Range Arena 的用词，表示接近随机，但论文没有给出精确数值或统一阈值。二分类 chance 为 50%，四分类 chance 为 25%。短横线表示该模型/布局未报告。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table>
+<colgroup>
+<col style="width: 7%" />
+<col style="width: 10%" />
+<col style="width: 10%" />
+<col style="width: 10%" />
+<col style="width: 10%" />
+<col style="width: 10%" />
+<col style="width: 10%" />
+<col style="width: 10%" />
+<col style="width: 10%" />
+<col style="width: 7%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">Iso-Easy</th>
+<th scope="col" style="text-align: right;">Iso-Hard</th>
+<th scope="col" style="text-align: right;">Ham. Path</th>
+<th scope="col" style="text-align: right;">Shortest-Random</th>
+<th scope="col" style="text-align: right;">Shortest-Kawai</th>
+<th scope="col" style="text-align: right;">Shortest-Planar</th>
+<th scope="col" style="text-align: right;">Ham. Cycle</th>
+<th scope="col" style="text-align: right;">Chordless</th>
+<th scope="col">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Human</td>
+<td style="text-align: right;"><strong>95.0</strong></td>
+<td style="text-align: right;"><strong>91.6</strong></td>
+<td style="text-align: right;"><strong>96.6</strong></td>
+<td style="text-align: right;"><strong>98.3</strong></td>
+<td style="text-align: right;"><strong>100.0</strong></td>
+<td style="text-align: right;"><strong>100.0</strong></td>
+<td style="text-align: right;"><strong>93.3</strong></td>
+<td style="text-align: right;"><strong>88.2</strong></td>
+<td>表 2，第 1 行</td>
+</tr>
+<tr class="even">
+<td>ViT Base</td>
+<td style="text-align: right;">FAIL</td>
+<td style="text-align: right;">FAIL</td>
+<td style="text-align: right;">57.0</td>
+<td style="text-align: right;">67.4</td>
+<td style="text-align: right;">66.7</td>
+<td style="text-align: right;">64.4</td>
+<td style="text-align: right;">67.8</td>
+<td style="text-align: right;">32.3</td>
+<td>表 2，第 2 行</td>
+</tr>
+<tr class="odd">
+<td>Swin-T Base</td>
+<td style="text-align: right;">FAIL</td>
+<td style="text-align: right;">FAIL</td>
+<td style="text-align: right;">65.8</td>
+<td style="text-align: right;">68.6</td>
+<td style="text-align: right;">65.7</td>
+<td style="text-align: right;">65.4</td>
+<td style="text-align: right;">71.1</td>
+<td style="text-align: right;">34.4</td>
+<td>表 2，第 3 行</td>
+</tr>
+<tr class="even">
+<td>ConvNeXt Base</td>
+<td style="text-align: right;">FAIL</td>
+<td style="text-align: right;">FAIL</td>
+<td style="text-align: right;"><strong>72.9</strong></td>
+<td style="text-align: right;"><strong>73.3</strong></td>
+<td style="text-align: right;"><strong>82.4</strong></td>
+<td style="text-align: right;"><strong>73.3</strong></td>
+<td style="text-align: right;"><strong>74.9</strong></td>
+<td style="text-align: right;"><strong>36.3</strong></td>
+<td>表 2，第 4 行</td>
+</tr>
+<tr class="odd">
+<td>SigLIP Base</td>
+<td style="text-align: right;">54.4</td>
+<td style="text-align: right;">FAIL</td>
+<td style="text-align: right;">59.5</td>
+<td style="text-align: right;">25.2</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">63.5</td>
+<td style="text-align: right;">28.0</td>
+<td>表 2，第 5 行</td>
+</tr>
+<tr class="even">
+<td>DINOv2 Base</td>
+<td style="text-align: right;">FAIL</td>
+<td style="text-align: right;">FAIL</td>
+<td style="text-align: right;">56.8</td>
+<td style="text-align: right;">36.4</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">FAIL</td>
+<td style="text-align: right;">31.1</td>
+<td>表 2，第 6 行</td>
+</tr>
+<tr class="odd">
+<td>GPT-o1</td>
+<td style="text-align: right;">FAIL</td>
+<td style="text-align: right;">FAIL</td>
+<td style="text-align: right;">FAIL</td>
+<td style="text-align: right;">55.0</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">66.0</td>
+<td style="text-align: right;">FAIL</td>
+<td>表 2，第 7 行</td>
+</tr>
+<tr class="even">
+<td>GPT-4o</td>
+<td style="text-align: right;">FAIL</td>
+<td style="text-align: right;">FAIL</td>
+<td style="text-align: right;">FAIL</td>
+<td style="text-align: right;">FAIL</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">FAIL</td>
+<td style="text-align: right;">FAIL</td>
+<td>表 2，第 8 行</td>
+</tr>
+<tr class="odd">
+<td>Claude 3.5 Sonnet</td>
+<td style="text-align: right;">FAIL</td>
+<td style="text-align: right;">FAIL</td>
+<td style="text-align: right;">FAIL</td>
+<td style="text-align: right;">FAIL</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">FAIL</td>
+<td style="text-align: right;">FAIL</td>
+<td>表 2，第 9 行</td>
+</tr>
+</tbody>
+</table></div>
+<p>按六个有精确值的非同构列复算，ViT、Swin、ConvNeXt 平均分别为 <strong>59.27%、61.83%、68.85%</strong>；ConvNeXt 对 Swin 平均高 <strong>7.02 pp</strong>，对 ViT 高 <strong>9.58 pp</strong>。这支持“卷积 backbone 在这组细线条关系图上更强”的描述性结论，但论文没有多随机种子、误差条或显著性检验，不能把差异稳健归因于架构类型。</p>
+<p>人类与逐列最强视觉模型的可计算差距为：easy isomorphism 40.6 pp、Hamiltonian path 23.7 pp、shortest-random 25.0 pp、shortest-Kawai 17.6 pp、shortest-planar 26.7 pp、Hamiltonian cycle 18.4 pp、chordless cycle 51.9 pp。<strong>最大无弦环的 51.9 pp 是全文最有说服力的单项差距</strong>：四分类随机为 25%，ConvNeXt 36.3% 只高 11.3 pp，而人类为 88.2%。</p>
+<h4 id="gpt-o1-的错误矩阵">GPT-o1 的错误矩阵</h4>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Ground truth  Prediction</th>
+<th scope="col" style="text-align: right;">1</th>
+<th scope="col" style="text-align: right;">2</th>
+<th scope="col" style="text-align: right;">3</th>
+<th scope="col" style="text-align: right;">4</th>
+<th scope="col" style="text-align: right;">该类准确率</th>
+<th scope="col">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Length 1</td>
+<td style="text-align: right;"><strong>28.0</strong></td>
+<td style="text-align: right;">67.0</td>
+<td style="text-align: right;">5.0</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">28.0</td>
+<td>表 3，第 1 行</td>
+</tr>
+<tr class="even">
+<td>Length 2</td>
+<td style="text-align: right;">18.0</td>
+<td style="text-align: right;"><strong>69.0</strong></td>
+<td style="text-align: right;">13.0</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">69.0</td>
+<td>表 3，第 2 行</td>
+</tr>
+<tr class="odd">
+<td>Length 3</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">40.0</td>
+<td style="text-align: right;"><strong>60.0</strong></td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">60.0</td>
+<td>表 3，第 3 行</td>
+</tr>
+<tr class="even">
+<td>Length 4</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">5.0</td>
+<td style="text-align: right;">40.0</td>
+<td style="text-align: right;"><strong>55.0</strong></td>
+<td style="text-align: right;">55.0</td>
+<td>表 3，第 4 行</td>
+</tr>
+</tbody>
+</table></div>
+<p>最明显的 failure mode 不是远距离路径，而是相邻节点：67% 的 length-1 样本被预测为 2。作者据此提出 Easier-Worse Anomaly。但还应注意，表 3 写 28%/69%，§5.3 又写 29%/70%；表 2 对 Hamiltonian cycle 写 66.0%，表注写 66.6%，正文写 67%。这些看似只是四舍五入，却暴露了结果口径没有完全统一。</p>
+<h3 id="消融超参敏感性与统计显著性">1.6 消融、超参敏感性与统计显著性</h3>
+<h4 id="消融研究">消融研究</h4>
+<p>论文<strong>没有报告标准的模型消融</strong>。没有逐步比较：</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">应有消融</th>
+<th scope="col">论文是否报告</th>
+<th scope="col">因而不能回答的问题</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>同一 underlying graph，train/test 只换 layout</td>
+<td>部分任务按设计实现，但未给配对 per-graph 结果</td>
+<td>错误究竟由布局变化贡献多少</td>
+</tr>
+<tr class="even">
+<td>同布局 in-domain vs 异布局 OOD</td>
+<td>除 shortest path 外未系统报告</td>
+<td>无法计算 (Delta_{layout})</td>
+</tr>
+<tr class="odd">
+<td>图像 → adjacency oracle → solver</td>
+<td>未报告</td>
+<td>无法分解视觉解析错误与图论推理错误</td>
+</tr>
+<tr class="even">
+<td>位置/边交叉/线宽/节点大小单因素扫描</td>
+<td>未报告</td>
+<td>不知道哪种视觉因素导致崩溃</td>
+</tr>
+<tr class="odd">
+<td>数据规模曲线</td>
+<td>未报告</td>
+<td>27k–140k 是否已饱和、更多数据是否有效</td>
+</tr>
+<tr class="even">
+<td>去 ImageNet pretraining / 冻结 backbone</td>
+<td>未报告</td>
+<td>预训练的作用与负迁移无法区分</td>
+</tr>
+<tr class="odd">
+<td>多 seed 与不同 epoch selection</td>
+<td>未报告</td>
+<td>ConvNeXt 优势是否稳定</td>
+</tr>
+</tbody>
+</table></div>
+<p>附录 D 的 adjacency-matrix transcription 只用 <strong>3 张图</strong>，属于定性案例，不足以作为 perception ablation。它仍提供重要线索：所有闭源 MLLM 都难以正确转写，Claude 3.5 Sonnet最接近节点与边数，说明最终图论错误至少有一部分发生在视觉结构提取阶段。</p>
+<h4 id="超参敏感性">超参敏感性</h4>
+<p>论文仅给出单组训练配置：LR (10^{-4})、batch 32、10 epochs、384×384、Adam、2×TITAN RTX；<strong>未报告</strong>学习率、分辨率、augmentation、epoch、weight decay 或不同节点规模的敏感性曲线。因此不能判断 8–9 节点是否是性能相变点，也不能判断分辨率从 384 提升到 768 是否会显著改善细边读取。</p>
+<p>可以观察到一个值得后续验证的“任务相变”：四分类 chordless cycle 上所有精确结果仅 28.0%–36.3%，接近 25% chance；而二分类 Hamiltonian cycle 的视觉模型达到 63.5%–74.9%。这可能来自 global cycle enumeration 难度，也可能来自二分类中的 leaf-node shortcut。没有按 leaf count、edge density、crossing count 分层，不能确定相变来源。</p>
+<h4 id="统计显著性">统计显著性</h4>
+<p>视觉模型只报告一个 best test accuracy，没有标准差；MLLM 每任务 100 样本但没有置信区间；人类只有 15 人且每任务 4 题。论文不报告 p 值、置信区间、bootstrap、paired test 或 effect size。更严重的是，附录 C 明确写“每个 epoch 在 test set 上评估，并选择 test set 上表现最好的模型”，所以表 2 的视觉模型数字不是一次封闭测试，而带有 10 次 epoch-level selection 的乐观偏差。</p>
+<h3 id="真正贡献复用价值与迁移潜力">1.7 真正贡献、复用价值与迁移潜力</h3>
+<p>VGA 真正的贡献不是又增加六道图论题，而是提供一种 benchmark 设计原则：<strong>对概念保持不变，对表示形式实施可控干预</strong>。在视觉研究里，常见 OOD 测试把背景、风格、类别频率和数据来源同时改变，难以解释失败。VGA 试图只改 layout，让“概念不变性”成为可检验对象。</p>
+<p>可脱离本文复用的设计包括：</p>
+<ol type="1">
+<li><strong>paired renderer intervention</strong>：对同一结构生成多种布局，构造反事实图像对；可迁移到分子、逻辑电路、流程图、交通网络与 UI wireframe。</li>
+<li><strong>hard negative by invariant matching</strong>：同构 hard negative 保持 degree sequence 相同，迫使模型超越节点数、边数和度数统计。</li>
+<li><strong>错误单调性审计</strong>：不仅看总 accuracy，还检查更简单实例是否反而更差；这一思想可用于数学、空间关系、计数与工具调用 benchmark。</li>
+<li><strong>人—模型最小能力差</strong>：选人类无需专门训练即可解决的小规模任务，避免把“专家知识差”误当成“感知差”。</li>
+</ol>
+<p>迁移潜力也很明确：如果把 underlying structure 改成电路 netlist、化学分子图或流程依赖图，就可以测模型是否从多种绘图规范恢复同一关系。但下一代 benchmark 应同时给 pixel-only、oracle adjacency、tool-enabled 三条轨道，分别测 perception、reasoning 与 agent orchestration。</p>
+<h3 id="局限性">1.8 局限性</h3>
+<h4 id="论文自述或明确承认的限制">论文自述或明确承认的限制</h4>
+<ol type="1">
+<li><strong>任务域有限。</strong> 论文结论与 Future Work（第 8 页）明确指出当前只覆盖小型图，下一步应扩展到化学结构和逻辑电路；因此“概念化”尚未跨领域验证。</li>
+<li><strong>模型对 graph transcription 本身就困难。</strong> 附录 D（第 17 页）承认 GPT-4o/o1、Claude 3/3.5 都无法稳定生成正确 adjacency matrix，说明视觉解析是首要瓶颈。</li>
+<li><strong>现有概率训练可能导致模仿式捷径是作者假说，不是已证实机制。</strong> §5 把 pseudo-intelligence 与训练范式联系起来，并提出 RL 可能是路径；论文没有相应训练实验验证这一机制解释。</li>
+</ol>
+<h4 id="补充批判独立观察10-点">补充批判（独立观察，10 点）</h4>
+<ol type="1">
+<li><strong>实验设计问题｜测试集泄漏。</strong> 因为附录 C 明确在每个 epoch 上评估 test set，并选择 test accuracy 最好的 epoch，所以每个视觉模型实际上对 test set 做了 10 次隐式模型选择；因此表 2 不是严格 held-out estimate，差异可能被乐观放大。</li>
+<li><strong>论证缺口｜视觉解析与图论推理未解耦。</strong> 因为附录 D 已显示 adjacency transcription 失败，而正文没有在 oracle adjacency 输入下测试同一模型，所以“缺乏 conceptualization”也可能是线条/节点读取错误；最终准确率不能单独定位推理层缺陷。</li>
+<li><strong>实验设计问题｜layout shift 与 graph-distribution shift 混杂。</strong> 因为附录 B.2 的 shortest-path 先把 planar graphs 分到 test、剩余 non-planar graphs 用于 train，再改变绘图 layout，所以 train/test 不只换画法，underlying graph family 也可能变化；不能把全部 gap 归因于视觉表示形式。</li>
+<li><strong>指标有效性问题｜<code>FAIL</code> 隐藏效应大小。</strong> 因为表 2 用 <code>FAIL</code> 代替十多个精确数值，且二分类和四分类的 chance 分别是 50% 与 25%，所以读者无法判断是 49.9%、25.1%，还是明显低于随机；也无法计算模型均值、置信区间或公平排名。</li>
+<li><strong>统计设计问题｜人类基线过小且协议不清。</strong> 因为只有 15 人、每任务 4 题，单任务最多 60 次 judgment；但 shortest path 又分别报告 random/Kawai/planar 三列，论文没有说明 24 题如何覆盖这些布局、是否重复图或是否每人看到全部变体，所以人类—模型比较缺少可审计 denominator。</li>
+<li><strong>可复现性风险｜闭源模型版本与采样设置缺失。</strong> 因为 GPT-4o、o1、Claude 3.5、Gemini 会持续更新，而论文没有精确 snapshot、API 日期、temperature、max tokens、重试和拒答处理，所以 100-sample 结果无法稳定复现。</li>
+<li><strong>论证过度｜“pseudo-intelligence”不是唯一解释。</strong> 因为 GPT-o1 对 length 1 为 28%、length 2 为 69%（表 3），所以确实存在非单调错误；但这也可能由方形标记遮挡边、边接触视觉歧义或 prompt parsing 引起。未做视觉可见性控制前，不能排除感知 artifact。</li>
+<li><strong>缺乏关键对比｜没有工具增强轨道。</strong> 因为 VisionGraph 已展示“图描述 → adjacency → 代码/解释器”的 DPR 路线，而 VGA 明令禁止代码，所以论文只证明直接视觉回答困难，不能推出实际 agent 系统也无法解决；应在同 100 样本上比较 pixel-only、oracle graph、OCR/edge detector、Python solver。</li>
+<li><strong>失手子任务｜大规模监督仍接近 chance。</strong> 因为 chordless cycle 有 80,000 个训练样本，但 ConvNeXt 仅 36.3%，比四分类 chance 高 11.3 pp；所以“增加监督数据即可学会不变量”缺乏支持。需要数据规模曲线判断问题是样本不足还是表示/优化不匹配。</li>
+<li><strong>报告一致性问题｜数字与配置口径漂移。</strong> 因为 GPT-o1 shortest-path 表 3 为 28/69，§5.3 写 29/70；Hamiltonian cycle 表 2 为 66.0，表注为 66.6，正文为 67；此外表 2 脚注与附录目录图写 shortest-path 训练布局为 random，附录 B.2 文字却写 Kamada–Kawai，所以即使前者只是四舍五入，后者也已影响复现配置，必须由代码和原始 count 消歧。</li>
+</ol></section>
+<section class="card" aria-labelledby="section-4" data-section="2. 相关工作回溯：从“去偏 VQA”到“布局反事实”"><h2 id="section-4">2. 相关工作回溯：从“去偏 VQA”到“布局反事实”</h2>
+<h3 id="clevr-2017cvpr">2.1 CLEVR — 2017，CVPR</h3>
+<p><strong>解决了什么。</strong> CLEVR 用程序化场景、函数式问题模板和可追踪的 reasoning program，把对象识别、计数、比较、空间关系与组合推理变成可诊断任务。论文报告 100,000 张渲染图、约 100 万个自动生成问题，其中 853,000 个问题唯一。它首次大规模说明：合成数据不是为了逼真，而是为了控制偏差与推理链。</p>
+<p><strong>遗留了什么。</strong> CLEVR 的物体外观、渲染风格和关系语法相对固定；即便 CoGenT 做颜色—形状组合泛化，它主要改变属性组合，并没有系统地把同一关系结构以完全不同的视觉几何呈现。</p>
+<p><strong>VGA 如何回应。</strong> VGA 沿用“程序生成 + 确定标签 + 合成控制”框架，但把干预单位从物体属性换成 graph layout。标签 ( au(G)) 固定，节点坐标与边几何变化，测试模型是否学习关系而非画法。</p>
+<p><strong>关键设计传递。</strong> CLEVR 的功能程序与分解式诊断思想，传递为 VGA 的六个原子图论任务；不同之处在于 VGA 没有提供每个样本的可执行 reasoning trace，这也削弱了错误归因能力。</p>
+<h3 id="figureqa-20172018预印本">2.2 FigureQA — 2017/2018，预印本</h3>
+<p><strong>解决了什么。</strong> FigureQA 将合成柱状图、折线图和饼图与关系型问答结合，构造超过 100,000 张图和超过 100 万个问答对；问题覆盖大于/小于、最大/最小、趋势、交点等。它把视觉推理从自然图像推进到科学图表。</p>
+<p><strong>遗留了什么。</strong> FigureQA 主要问图中数据之间的可见关系；同一数据能否在不同 chart theme、layout 或绘图库下保持推理稳定并不是核心评测轴。模型仍可能学习图表模板、颜色与位置统计。</p>
+<p><strong>VGA 如何回应。</strong> VGA 选择没有文字与数值轴的抽象图，避免 OCR 与数值读取主导；同时明确用 Kawai/random/planar 改变 geometry，迫使模型面对结构—表现分离。</p>
+<p><strong>关键设计传递。</strong> FigureQA 的“可程序生成科学视觉 + 自动验证答案”被保留；VGA 进一步把布局设置成 OOD 变量，但牺牲了 FigureQA 对多类图表和自然语言问法的覆盖。</p>
+<h3 id="visual-concept-metaconcept-learning-2019neurips">2.3 Visual Concept-Metaconcept Learning — 2019，NeurIPS</h3>
+<p><strong>解决了什么。</strong> VCML 不只学习 red、cube 等 visual concept，还学习 synonym、same-kind、hypernym 等 metaconcept，并以神经符号程序执行问题。它把“概念之间的关系”显式编码为可学习 operator，在 CLEVR、GQA、CUB 上测试新概念与元概念泛化。</p>
+<p><strong>遗留了什么。</strong> VCML 假设视觉对象 proposal、语义解析与 DSL 均可用，推理发生在结构化的 concept embedding 空间；它没有回答端到端像素模型是否能在没有显式 scene graph 的情况下恢复结构不变量。</p>
+<p><strong>VGA 如何回应。</strong> VGA 把中间结构全部隐藏，只给像素和简短问题，观察通用视觉模型是否自发形成等价的关系表示。结果显示，即使 8–9 节点图，人类与模型仍有 18.4–51.9 pp 的可计算差距。</p>
+<p><strong>关键设计传递。</strong> “概念不是类别标签，而是可跨实例/表征操作的关系结构”这一思想直接传入 VGA；但 VGA 只有终值 accuracy，没有 VCML 那种显式 operator 与 program trace，因此诊断粒度更粗。</p>
+<h3 id="visiongraph-2024arxiv">2.4 VisionGraph — 2024，arXiv</h3>
+<p><strong>解决了什么。</strong> VisionGraph 直接以图像形式提出 8 类图论题，共 5,902 个 problems；每张图配 3 个问题，合计 17,706 个问答。它测节点/边识别与 connectivity、cycle、topological sort、shortest path、max flow、matching、Hamilton path、GNN update，并提出 Description–Program–Reasoning（DPR）：先生成图描述/邻接，再选择算法和代码，必要时调用 Python。</p>
+<p><strong>遗留了什么。</strong> VisionGraph 的主要维度是问题类型和节点数难度，布局不变性不是中心变量；其图像在节点增多后可能出现视觉拥挤。它还把 perception、program generation 与 tool execution串成整体，难以单独回答“模型是否以人类直觉方式概念化”。</p>
+<p><strong>VGA 如何回应。</strong> VGA 将节点限制为 8–9 个、保证视觉可检查，并用不同布局作为 train/test 干预；同时禁止代码，故意把问题收缩为端到端视觉抽象。</p>
+<p><strong>关键设计传递。</strong> VisionGraph 的 graph-image benchmark 形式被继承；VGA 增加大规模监督集（单任务训练 25,000–140,000）和 human baseline。但 VisionGraph 的 DPR 也揭示 VGA 的缺口：实际系统可通过显式 adjacency 与工具补偿端到端直觉不足。</p></section>
+
+<figure class="figure" aria-labelledby="gap-chart-title">
+  <p class="fig-title" id="gap-chart-title">人类与 ConvNeXt：跨布局任务仍存在 17.6–51.9 pp 差距</p>
+  <p class="fig-sub">仅绘制表 2 中双方都有精确数字的六列；同构任务因 ConvNeXt 只标为 FAIL 而不做像素估值。</p>
+  <div class="legend" aria-label="图例">
+    <span><span class="swatch" style="background:#2a78d6"></span>Human</span>
+    <span><span class="swatch" style="background:#eb6834"></span>ConvNeXt Base</span>
+  </div>
+  <svg class="chart" viewBox="0 0 900 430" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>VGA 六项任务上人类与 ConvNeXt Base 准确率</title>
+    <desc>人类在 Hamiltonian path、shortest path random、Kawai、planar、Hamiltonian cycle、chordless cycle 上分别为 96.6、98.3、100、100、93.3、88.2；ConvNeXt 分别为 72.9、73.3、82.4、73.3、74.9、36.3。</desc>
+    <g font-size="12">
+      <line x1="92" y1="350" x2="860" y2="350" stroke="var(--grid)"/>
+      <line x1="92" y1="40" x2="92" y2="350" stroke="var(--grid)"/>
+      <g stroke="var(--grid)" stroke-dasharray="3 5">
+        <line x1="246" y1="40" x2="246" y2="350"/><line x1="399" y1="40" x2="399" y2="350"/>
+        <line x1="553" y1="40" x2="553" y2="350"/><line x1="706" y1="40" x2="706" y2="350"/><line x1="860" y1="40" x2="860" y2="350"/>
+      </g>
+      <g text-anchor="middle"><text x="92" y="374">0</text><text x="246" y="374">20</text><text x="399" y="374">40</text><text x="553" y="374">60</text><text x="706" y="374">80</text><text x="860" y="374">100%</text></g>
+    </g>
+    <g font-size="12.5">
+      <text x="82" y="75" text-anchor="end">Ham. Path</text>
+      <rect x="92" y="56" width="742" height="14" rx="3" fill="#2a78d6" tabindex="0" data-tip="Human · Hamiltonian path：96.6%"/>
+      <rect x="92" y="74" width="560" height="14" rx="3" fill="#eb6834" tabindex="0" data-tip="ConvNeXt · Hamiltonian path：72.9%"/>
+
+      <text x="82" y="123" text-anchor="end">SP Random</text>
+      <rect x="92" y="104" width="755" height="14" rx="3" fill="#2a78d6" tabindex="0" data-tip="Human · shortest path random：98.3%"/>
+      <rect x="92" y="122" width="563" height="14" rx="3" fill="#eb6834" tabindex="0" data-tip="ConvNeXt · shortest path random：73.3%"/>
+
+      <text x="82" y="171" text-anchor="end">SP Kawai</text>
+      <rect x="92" y="152" width="768" height="14" rx="3" fill="#2a78d6" tabindex="0" data-tip="Human · shortest path Kawai：100.0%"/>
+      <rect x="92" y="170" width="633" height="14" rx="3" fill="#eb6834" tabindex="0" data-tip="ConvNeXt · shortest path Kawai：82.4%"/>
+
+      <text x="82" y="219" text-anchor="end">SP Planar</text>
+      <rect x="92" y="200" width="768" height="14" rx="3" fill="#2a78d6" tabindex="0" data-tip="Human · shortest path planar：100.0%"/>
+      <rect x="92" y="218" width="563" height="14" rx="3" fill="#eb6834" tabindex="0" data-tip="ConvNeXt · shortest path planar：73.3%"/>
+
+      <text x="82" y="267" text-anchor="end">Ham. Cycle</text>
+      <rect x="92" y="248" width="717" height="14" rx="3" fill="#2a78d6" tabindex="0" data-tip="Human · Hamiltonian cycle：93.3%"/>
+      <rect x="92" y="266" width="575" height="14" rx="3" fill="#eb6834" tabindex="0" data-tip="ConvNeXt · Hamiltonian cycle：74.9%"/>
+
+      <text x="82" y="315" text-anchor="end">Chordless</text>
+      <rect x="92" y="296" width="677" height="14" rx="3" fill="#2a78d6" tabindex="0" data-tip="Human · biggest chordless cycle：88.2%"/>
+      <rect x="92" y="314" width="279" height="14" rx="3" fill="#eb6834" tabindex="0" data-tip="ConvNeXt · biggest chordless cycle：36.3%"/>
+    </g>
+  </svg>
+  <figcaption>单位：accuracy（%）。来源：核心论文表 2；条形长度按单一 0–100% 横轴绘制，精确数字及来源行见正文矩阵。</figcaption>
+</figure>
+
+<section class="card" aria-labelledby="section-5" data-section="3. 技术演进脉络"><h2 id="section-5">3. 技术演进脉络</h2>
+<pre class="text"><code>2017 CLEVR [合成场景；程序化问题；去语言/标签偏差]
+   ├── 2017/18 FigureQA [科学图表；自动问答；关系比较]
+   └── 2019 VCML [概念 + 元概念；显式 operator；神经符号程序]
+                  │
+                  ├── 路线 A：显式结构后再推理
+                  │      2024 VisionGraph [节点/边识别 → DPR → 代码/工具]
+                  │
+                  └── 路线 B：端到端结构不变量诊断
+                         2025 VGA [同一图结构 × 多布局；禁止代码]
+                                  ├─ 发现：同构接近随机
+                                  ├─ 发现：length-1 反而比 length-2 差 41 pp
+                                  └─ 缺口：未拆开 perception 与 reasoning</code></pre>
+<p>演进背后的推动力经历了三次转移：早期关注“答案是不是靠语言偏差猜出来”；随后关注“模型是否能组合概念和关系”；现在开始关注“同一关系换一种视觉实现后是否仍成立”。VGA 的转折是把 layout 从 nuisance 变成实验变量。不过下一阶段很可能重新汇合两条路线：既要有 pixel-only 轨道测直觉式概念化，也要有 structured/tool轨道测实际任务完成能力，并报告两者之间的结构恢复损失。</p></section>
+<section class="card" aria-labelledby="section-6" data-section="3.1 跨论文对标"><h2 id="section-6">3.1 跨论文对标</h2>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">发表年月</th>
+<th scope="col">会议/出版</th>
+<th scope="col">核心贡献</th>
+<th scope="col">规模 / 主要指标</th>
+<th scope="col">与 VGA 的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>CLEVR</td>
+<td>2017.07</td>
+<td>CVPR</td>
+<td>程序化合成视觉推理诊断</td>
+<td>100k images；约 1M questions</td>
+<td>提供可控生成与原子推理范式</td>
+</tr>
+<tr class="even">
+<td>FigureQA</td>
+<td>2018.02（v2）</td>
+<td>arXiv</td>
+<td>科学图表关系问答</td>
+<td>&gt;100k images；&gt;1M QA</td>
+<td>将合成推理推向图表视觉</td>
+</tr>
+<tr class="odd">
+<td>VCML</td>
+<td>2019.12</td>
+<td>NeurIPS</td>
+<td>联合学习 visual concepts 与 metaconcepts</td>
+<td>CLEVR/GQA/CUB</td>
+<td>概念作为可操作关系，而非类别</td>
+</tr>
+<tr class="even">
+<td>VisionGraph</td>
+<td>2024.05</td>
+<td>arXiv</td>
+<td>8 类视觉图论题与 DPR agent</td>
+<td>5,902 problems；17,706 QA</td>
+<td>最直接前驱；偏工具增强、非布局不变性</td>
+</tr>
+<tr class="odd">
+<td><strong>VGA</strong></td>
+<td><strong>2025.07</strong></td>
+<td><strong>ICML</strong></td>
+<td><strong>六任务、大规模跨布局图像 benchmark</strong></td>
+<td><strong>522,309 train；表 2 人类 88.2–100%</strong></td>
+<td><strong>把 layout 变成受控反事实变量</strong></td>
+</tr>
+</tbody>
+</table></div></section>
+<section class="card" aria-labelledby="section-7" data-section="4. 开放挑战与可操作研究机会"><h2 id="section-7">4. 开放挑战与可操作研究机会</h2>
+<h3 id="理论与评测层面">4.1 理论与评测层面</h3>
+<ol type="1">
+<li><strong>把概念化拆成可识别的误差项。</strong> 对每张图同时评估 node F1、edge F1、graph edit distance、最终 property accuracy；在 oracle adjacency 下再运行同一 reasoning module。比较 <code>pixel→answer</code>、<code>pixel→adjacency→answer</code>、<code>oracle adjacency→answer</code>，量化 perception 与 reasoning 各占多少错误。</li>
+<li><strong>严格估计 layout generalization gap。</strong> 固定同一批 underlying graphs，为每个图生成 random/Kawai/planar 三视图；用 graph-stratified split，禁止同一图跨 split。报告 3×3 train-layout→test-layout 矩阵，而不是只给单向 Kawai→planar。</li>
+<li><strong>建立不变性—准确率联合指标。</strong> 除 accuracy 外，报告同一图三视图预测一致率： [ C(G)=_{_i_j} [f(R(G;_i))=f(R(G;_j))]. ] 高一致但全错与低一致需区分。</li>
+</ol>
+<h3 id="工程与应用层面">4.2 工程与应用层面</h3>
+<ol type="1">
+<li><strong>修复 test leakage 的正式复现。</strong> 按 graph identity 划分 train/validation/test；validation 选 epoch，test 只运行一次；5 seeds 报 mean±std 与 paired bootstrap。与论文“每 epoch 看 test”数字并列，测乐观偏差有多大。</li>
+<li><strong>多分辨率与视觉退化扫描。</strong> 在 224/384/768/1024 分辨率、1–5 px 线宽、不同 antialias、节点半径与 crossing count 下对比 ConvNeXt、ViT、现代 VLM。目标不是追最高分，而是找到结构读取发生突变的视觉阈值。</li>
+<li><strong>等预算架构对比。</strong> 统一参数量、预训练数据、输入分辨率与训练步数，比 ConvNeXt、ViT、Swin、graph-aware vision encoder；否则表 2 的 9.58 pp 平均差不能归因于卷积 inductive bias。</li>
+<li><strong>工具增强 head-to-head。</strong> 在同一 100 样本、同一 API snapshot 下比较 direct answer、CoT、先转 adjacency、调用 NetworkX 四种策略；同时报告正确率、token、延迟与 adjacency edit distance。</li>
+</ol>
+<h3 id="新兴方向">4.3 新兴方向</h3>
+<ol type="1">
+<li><strong>从静态图扩到视频中的关系恒常性。</strong> 让节点连续移动但边关系不变，比较单帧 VLM、video encoder 与显式 tracker；测试模型能否区分 layout motion 与 topology change。</li>
+<li><strong>跨领域同构迁移。</strong> 用同一 underlying graph 分别渲染为电路、分子、流程图与社交网络，训练于其中三域、测试第四域；这比同域三布局更接近真正的概念迁移。</li>
+<li><strong>生成—验证闭环。</strong> 让 VLM先生成 adjacency，再用 differentiable renderer 重画，与输入做结构对齐；比较 reconstruction supervision、contrastive invariance 与纯分类损失，控制总数据和算力。</li>
+<li><strong>安全与可靠性。</strong> 对关键工程图加入一条细边、遮挡或伪交叉，测 graph edit robustness；要求系统在 adjacency uncertainty 高时拒答，而不是给出流畅但错误的图论解释。</li>
+</ol></section>
+<section class="card" aria-labelledby="section-8" data-section="5. 其他值得关注的近期工作"><h2 id="section-8">5. 其他值得关注的近期工作</h2>
+<p><strong>Why Is Spatial Reasoning Hard for VLMs? An Attention Mechanism Perspective on Focus Areas</strong>（2025.07，ICML）<br />
+从 attention focus 分析 VLM 空间推理失败，可与 VGA 的边/节点感知瓶颈形成机制互证。<br />
+<a href="https://proceedings.mlr.press/v267/chen25cr.html">PMLR</a></p>
+<p><strong>Vision Graph Prompting via Semantic Low-Rank Decomposition</strong>（2025.07，ICML）<br />
+把视觉关系显式图化并以低秩语义结构做 prompting，代表“给模型结构先验”而非只扩大端到端数据的路线。<br />
+<a href="https://proceedings.mlr.press/v267/ai25b.html">PMLR</a></p>
+<p><strong>From Local Details to Global Context: Advancing VLMs with Attention-Based Selection</strong>（2025.07，ICML）<br />
+研究局部视觉细节的选择与全局上下文整合；VGA 的细边读取和全图 cycle 推理正好覆盖这两个尺度。<br />
+<a href="https://proceedings.mlr.press/v267/cai25d.html">PMLR</a></p>
+<p><strong>A Closer Look at Multimodal Representation Collapse</strong>（2025.07，ICML）<br />
+诊断多模态对齐中的表示坍缩，值得用于追问“layout 不变”是否被错误实现为丢失结构信息。<br />
+<a href="https://proceedings.mlr.press/v267/chaudhuri25a.html">PMLR</a></p>
+<p><strong>Contrastive Localized Language-Image Pre-Training</strong>（2025.07，ICML）<br />
+将图文对齐从全局推进到局部定位；对 VGA 而言，局部 node/edge grounding 是形成邻接结构的前提。<br />
+<a href="https://proceedings.mlr.press/v267/chen25ah.html">PMLR</a></p>
+<p><strong>Scaling Video-Language Models to 10K Frames via Hierarchical Differential Distillation</strong>（2025.07，ICML）<br />
+处理超长视频中的层次化视觉压缩，提示 VGA 未来扩展到动态图时必须同时控制关系保持与 token 压缩损失。<br />
+<a href="https://proceedings.mlr.press/v267/cheng25b.html">PMLR</a></p>
+<p><strong>LV-XAttn: Distributed Cross-Attention for Long Visual Inputs in Multimodal Large Language Models</strong>（2025.07，ICML）<br />
+从系统侧扩展长视觉输入，适合与大规模电路图/流程图 benchmark结合，但“看得更多”仍不等于“恢复正确结构”。<br />
+<a href="https://proceedings.mlr.press/v267/chang25c.html">PMLR</a></p></section>
+<section class="card" aria-labelledby="section-9" data-section="6. 最终判断"><h2 id="section-9">6. 最终判断</h2>
+<p>VGA 是一篇有价值的诊断型论文。它最重要的证据不是“某模型又低了几个点”，而是三组互相补强的现象：同构任务接近随机；最大无弦环上 ConvNeXt 与人类相差 51.9 pp；GPT-o1 对 length-1 的最简单最短路仅 28%，却对 length-2 达 69%。这些结果足以否定“当前视觉模型已经稳定掌握小图结构”的乐观叙事。</p>
+<p>但论文把失败进一步解释为 conceptualization/pseudo-intelligence 时跨得太快。测试集选 epoch造成泄漏，<code>FAIL</code> 隐藏精确数值，human protocol 与闭源模型设置不完整，最关键的是没有 oracle adjacency 控制来区分“边没看清”与“看清后不会推理”。因此更稳健的结论应是：<strong>当前模型没有从像素到图论答案形成布局稳健的端到端映射；至于瓶颈位于感知、结构恢复、算法推理还是它们的接口，VGA 还没有完成因果分解。</strong></p>
+<hr />
+<p><strong>索引状态</strong>：已更新 <code>ml-report-index.md</code>。<br />
+<strong>坦诚说明</strong>：论文未公开完整训练仓库，未给 <code>FAIL</code> 对应的精确准确率、视觉模型多 seed 结果、超参敏感性或严格 held-out test；本报告没有补造这些数字。HTML 采用 Warm Editorial Report 单文件模板并通过结构验证；当前执行环境未发现 <code>/usr/bin/chromium</code> 或 <code>/opt/pw-browsers</code> 下的可执行 Chromium，因此无法诚实声称完成 Playwright 截图 QA，已以响应式静态规则、标题/表格/SVG 语义检查与零警告 validator 作为降级验证。</p></section>
+  </main>
+
+  <footer></footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

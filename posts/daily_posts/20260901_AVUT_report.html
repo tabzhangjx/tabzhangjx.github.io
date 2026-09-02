@@ -1,0 +1,886 @@
+---
+layout: null
+title: "AVUT"
+date: 2026-09-01
+topic: vlm-vision
+excerpt: "解析 AVUT 如何通过多轮文本捷径过滤构建真正依赖音视频证据的视频问答基准，并分析音频贡献的归因风险。"
+permalink: /blog/2026/09/01/avut-audio-visual-video-question-answering/
+blog_post: true
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>AVUT 深度研究报告 · 2026-09-01</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">EMNLP 2025 MAIN · VISION & MULTIMODAL</p>
+    <h1>AVUT：当视频问答不能再靠读题猜答案</h1>
+    <p class="subtitle">从文本捷径过滤，到音频是否真的提供独立证据</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">EMNLP 2025 Main</span>
+      <span class="chip">2026-09-01</span>
+      <span class="chip">音视频理解与基准可信度</span>
+    </div>
+    <p class="lede">四循环过滤将 AVUT 的文本-only 命中压至 1.89%/4.50%，而同一 Gemini 的完整音视频比视觉高 15.56 pp；但生成器、过滤器与评测协议仍留下归因风险。</p>
+  </header>
+
+  <main><div class="report-body">
+<p><strong>一句话核心定位：</strong> AVUT
+用音频中心任务、新视频与四次循环选项过滤，主动切断“只读问题和选项就能答对”的捷径；同一
+Gemini 1.5 Pro 的完整音视频准确率比视觉单模态高 <strong>15.56
+个百分点</strong>，但独立文本模型在过滤后仍有 <strong>4.50%</strong>
+循环命中，故“无捷径”应理解为强抑制而非绝对消除。</p>
+<section class="card" aria-labelledby="1-链接验证表与证据边界-title"><h2 id="1-链接验证表与证据边界-title">1. 链接验证表与证据边界</h2>
+<p>所有链接均实际访问。页码指 EMNLP 最终 PDF 印刷页码，必要时附 PDF
+页序。论文最初名为 ACVUBench，正式版改名 AVUT，二者不是两篇工作。</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="数据表，可横向滚动"><table>
+<thead>
+<tr class="header">
+<th scope="col">对象</th>
+<th scope="col">会议/正式页</th>
+<th scope="col">arXiv（版本、日期）</th>
+<th scope="col">代码</th>
+<th scope="col">数据/权重</th>
+<th scope="col">项目页/视频</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>AVUT（核心）</td>
+<td><a href="https://aclanthology.org/2025.emnlp-main.333/">EMNLP 2025
+Main, pp.6569–6587</a></td>
+<td><a href="https://arxiv.org/abs/2503.19951">2503.19951v3,
+2025-09-28；v1 首投 2025-03-25</a></td>
+<td><a href="https://github.com/lark-png/AVUT">GitHub</a></td>
+<td><a
+href="https://huggingface.co/datasets/tsinghua-ee/AVUTBenchmark">HF
+数据集</a>；模型权重不适用</td>
+<td>未找到独立项目页/视频</td>
+</tr>
+<tr class="even">
+<td>Video-MME</td>
+<td><a
+href="https://openaccess.thecvf.com/content/CVPR2025/html/Fu_Video-MME_The_First-Ever_Comprehensive_Evaluation_Benchmark_of_Multi-modal_LLMs_in_Video_Analysis_CVPR_2025_paper.html">CVPR
+2025</a></td>
+<td><a href="https://arxiv.org/abs/2405.21075">2405.21075v4</a></td>
+<td><a
+href="https://github.com/MME-Benchmarks/Video-MME">GitHub</a></td>
+<td>仓库提供数据说明</td>
+<td><a href="https://video-mme.github.io/home_page.html">项目页</a></td>
+</tr>
+<tr class="odd">
+<td>AVHBench</td>
+<td><a href="https://openreview.net/forum?id=FDDa4VDJYp">ICLR
+2025</a></td>
+<td><a href="https://arxiv.org/abs/2410.18325">2410.18325</a></td>
+<td><a href="https://github.com/kaist-ami/AVHBench">GitHub</a></td>
+<td>仓库提供基准</td>
+<td><a href="https://avhbench.github.io/">项目页</a></td>
+</tr>
+<tr class="even">
+<td>LongVALE</td>
+<td><a
+href="https://openaccess.thecvf.com/content/CVPR2025/papers/Geng_LongVALE_Vision-Audio-Language-Event_Benchmark_Towards_Time-Aware_Omni-Modal_Perception_of_Long_Videos_CVPR_2025_paper.pdf">CVPR
+2025 PDF</a></td>
+<td><a href="https://arxiv.org/abs/2411.19772">2411.19772</a></td>
+<td><a href="https://github.com/ttgeng233/LongVALE">GitHub</a></td>
+<td><a
+href="https://huggingface.co/datasets/ttgeng233/LongVALE">HF</a></td>
+<td>视频未找到</td>
+</tr>
+<tr class="odd">
+<td>MUSIC-AVQA-R</td>
+<td><a
+href="https://proceedings.neurips.cc/paper_files/paper/2024/hash/123a18dfd821c8b440f42a00a27648d6-Abstract-Conference.html">NeurIPS
+2024</a></td>
+<td><a href="https://arxiv.org/abs/2404.12020">2404.12020</a></td>
+<td><a href="https://openreview.net/forum?id=twpPD9UMUN">OpenReview</a>
+所列资源</td>
+<td>基于 MUSIC-AVQA 重构</td>
+<td>项目页未找到</td>
+</tr>
+</tbody>
+</table></div>
+<p>“论文原报”只指 PDF
+正文/表格可读数值；“本报告复算”只做减法和除法。AVUT
+未报告置信区间、标准差、显著性或标注者一致性，故不写“显著优于”。</p>
+</section>
+<section class="card" aria-labelledby="2-候选池排重与随机选择-title"><h2 id="2-候选池排重与随机选择-title">2. 候选池、排重与随机选择</h2>
+<p>先查 <code>ml-report-index.md</code>，排除最近 14 天的 MMedPO、Visual
+Graph Arena、Q-VDiT、DocVXQA 等主题。通过 ACL
+Anthology、arXiv、OpenReview、会议页及公开仓库交叉收集 24 篇：UniVLG；Do
+VLMs Really Understand Visual Language；ELITE；DEFAME；Closed-form
+Adversarial Robustness；MTSTRec；CoreMatching；Agent Reviewers；RoG
+World Models；video-SALMONN-o1；Hidden Life of Tokens；Compositional
+Tabular QA；Orthus；Be
+Confident；VL-PRM；MMix；RobustVLA；VSTAT；HAVEN；MVU-Eval；Video-MMLU；MT-Video-Bench；MMIU；AVUT。执行
+<code>shuf -i 1-24 -n 1</code> 得 <strong>24</strong>。初版题名
+ACVUBench，经核验为 EMNLP 2025 Main 最终版 AVUT，资料充分，<strong>重抽
+0 次</strong>。</p>
+</section>
+<section class="card" aria-labelledby="3-motivation榜单可能测到读题能力-title"><h2 id="3-motivation榜单可能测到读题能力-title">3. Motivation：榜单可能测到“读题能力”</h2>
+<p>AVUT 表 8（p.6577 / PDF p.9）显示，无视频时 GPT-4o 在
+VideoVista、TemporalBench、NExT-QA 分别有
+<strong>68.00%、65.42%、47.57%</strong>，Gemini 为
+<strong>62.63%、59.37%、48.95%</strong>，远超四选一随机
+25%。所以视频问答准确率会混入问题措辞、答案长度、选项位置和数据来源先验。</p>
+<p>AVUT 表 1（p.6570 / PDF p.2）含 <strong>2,662 视频、11,609 QA、8
+任务</strong>，平均 <strong>67.8 秒</strong>；AV-Human 为 698 视频/1,734
+QA，AV-Gemini 为 1,964 视频/9,875 QA。视频主要采于 2023 年后、英语、≤2
+分钟，覆盖 18 个音频中心领域。六个 MCQ 为音频信息抽取 AIE、计数
+ACC、事件定位 AEL、音视对应 AVCM、对象匹配 AVOM、时间匹配
+AVTM；开放任务为片段匹配 AVSM 与说话人日志 AVDiar。AVDiar 有 260
+视频、平均 3.59 位说话者（§3.2，p.6572）。</p>
+</section>
+<section class="card" aria-labelledby="4-故事线假设与权衡-title"><h2 id="4-故事线假设与权衡-title">4. 故事线、假设与权衡</h2>
+<p>论文先采集新视频；人工构建 AV-Human；Gemini 1.5 Pro 每个 MCQ 任务看 4
+个示例生成 AV-Gemini；9,875 个生成 QA 全部经人工审校；再让 GPT-4o
+不看视频、在四个循环排列上答题，全对则删除。核心假设是：跨排列稳定正确意味着文本捷径；GPT-4o
+能暴露大部分捷径；同一模型完整输入对单模态的增益近似反映模态价值。代价是过滤可能过拟合
+GPT-4o、生成器风格写进数据、短视频牺牲长程理解。</p>
+</section>
+<section class="card" aria-labelledby="5-形式化伪代码与流程-title"><h2 id="5-形式化伪代码与流程-title">5. 形式化、伪代码与流程</h2>
+<p>设题目 (q=(x_a,x_v,t,O,y))，循环置换集
+(C_4={ABCD,BCDA,CDAB,DABC})。过滤指示量： [ S_m(q)=\prod_{\pi\in
+C_4}\mathbf1[m(t,\pi(O))=\pi(y)]. ] 若 (S_{GPT4o}(q)=1)
+则删除。独立均匀猜测四连中的理想概率为
+((1/4)^4=0.390625%)，但模型回答不独立，且只覆盖 (4!/4=6)
+分之一的排列，不能把它当真实假阳性率。MCQ 为微平均准确率。表 5
+的同模型模态增益为： [ \Delta_{AV-V}=78.34-62.78=15.56\text{ pp},\quad
+15.56/62.78=24.78%. ]</p>
+<pre class="text"><code>新视频 ─┬─ 人工：698 视频 → 1,734 QA
+        └─ Gemini + 4 demos/任务：1,964 视频 → 9,875 QA
+                         ↓ 全量人工审校
+六类 MCQ → GPT-4o 无视频 × 四循环选项 → 删除稳定文本命中
+AVSM/AVDiar ──────────────────────────→ 开放任务评测
+                         ↓
+12 个模型，多种帧/音频预算 → MCQ、匹配、DWER、GPT 排名、ROUGE-L</code></pre>
+</section>
+<section class="card" aria-labelledby="6-关键机制与工程细节-title"><h2 id="6-关键机制与工程细节-title">6. 关键机制与工程细节</h2>
+<div class="table-scroll" role="region" tabindex="0" aria-label="数据表，可横向滚动"><table>
+<thead>
+<tr class="header">
+<th scope="col">机制</th>
+<th scope="col">实现</th>
+<th scope="col">作用</th>
+<th scope="col">代价/来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>新数据</td>
+<td>主要 2023 年后、英语、≤2 分钟</td>
+<td>降低旧榜记忆</td>
+<td>无商业训练集审计；§3.1</td>
+</tr>
+<tr class="even">
+<td>双轨构建</td>
+<td>人工 AV-Human + Gemini AV-Gemini</td>
+<td>质量锚点与规模</td>
+<td>生成器也是榜首；§3.2–3.3</td>
+</tr>
+<tr class="odd">
+<td>全量审校</td>
+<td>9,875 机器题均审查</td>
+<td>去错误、多解、错配</td>
+<td>无一致性/成本；§3.3</td>
+</tr>
+<tr class="even">
+<td>循环过滤</td>
+<td>GPT-4o 文本-only，4 次全对删除</td>
+<td>压低内容与位置捷径</td>
+<td>单一模型、4/24 排列；§3.4</td>
+</tr>
+<tr class="odd">
+<td>模态消融</td>
+<td>同一 Gemini 比 AV/转录/V/A</td>
+<td>隔离模态贡献</td>
+<td>仅一个闭源模型；表 5</td>
+</tr>
+<tr class="even">
+<td>异构适配</td>
+<td>6–32 帧或 1–2 fps；音频 16kHz</td>
+<td>让现有模型可运行</td>
+<td>非等算力；§4.2</td>
+</tr>
+<tr class="odd">
+<td>API</td>
+<td>GPT-4o/Gemini，temperature 1.0</td>
+<td>纳入强闭源模型</td>
+<td>GPT-4o 仅 2,100 题子集</td>
+</tr>
+</tbody>
+</table></div>
+<p>闭源评测约 6 小时、开源约 4 小时（§4.2，p.6573），但无 GPU、批量、API
+成本或重试率，不能据此比较端到端效率。</p>
+</section>
+<section class="card" aria-labelledby="7-数据集指标与协议-title"><h2 id="7-数据集指标与协议-title">7. 数据集、指标与协议</h2>
+<p>MCQ 用准确率；AVSM 报 pair/full matching；AVDiar 用
+DWER（越低越好）；开放答案另报 GPT-4o 平均排名和
+ROUGE-L。帧输入并不统一：Video-SALMONN 2 fps、VideoLLaMA2 16
+帧、PandaGPT 10、Qwen2-VL 1 fps、LLaVA-Video 32、InternVL2 32、VILA1.5
+6、VideoLLaVA 8、SALMONN 16kHz
+音频（§4.2）。因此排名回答“默认配置能做到什么”，不能回答等
+token/时延/显存下哪个架构更强。</p>
+</section>
+<section class="card" aria-labelledby="8-完整主结果矩阵-title"><h2 id="8-完整主结果矩阵-title">8. 完整主结果矩阵</h2>
+<p>每格为 AV-Human/AV-Gemini 百分比，粗体为列最优。来源：表 3（p.6574 /
+PDF p.6）。</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="数据表，可横向滚动"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">AIE</th>
+<th scope="col" style="text-align: right;">ACC</th>
+<th scope="col" style="text-align: right;">AEL</th>
+<th scope="col" style="text-align: right;">AVCM</th>
+<th scope="col" style="text-align: right;">AVOM</th>
+<th scope="col" style="text-align: right;">AVTM</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Gemini 1.5 Pro</td>
+<td style="text-align: right;"><strong>90.02/94.70</strong></td>
+<td style="text-align: right;"><strong>50.85/39.99</strong></td>
+<td style="text-align: right;"><strong>83.43/73.32</strong></td>
+<td style="text-align: right;"><strong>74.05/83.13</strong></td>
+<td style="text-align: right;"><strong>74.79/76.62</strong></td>
+<td style="text-align: right;"><strong>81.22/83.68</strong></td>
+</tr>
+<tr class="even">
+<td>VideoLLaMA2 7B</td>
+<td style="text-align: right;">42.30/35.65</td>
+<td style="text-align: right;">32.77/32.88</td>
+<td style="text-align: right;">32.02/25.75</td>
+<td style="text-align: right;">46.80/57.41</td>
+<td style="text-align: right;">49.60/46.11</td>
+<td style="text-align: right;">48.92/40.90</td>
+</tr>
+<tr class="odd">
+<td>video-SALMONN 13B</td>
+<td style="text-align: right;">52.45/32.86</td>
+<td style="text-align: right;">33.33/30.17</td>
+<td style="text-align: right;">36.05/32.48</td>
+<td style="text-align: right;">34.47/41.42</td>
+<td style="text-align: right;">30.25/31.42</td>
+<td style="text-align: right;">39.95/36.21</td>
+</tr>
+<tr class="even">
+<td>PandaGPT 13B</td>
+<td style="text-align: right;">24.94/30.82</td>
+<td style="text-align: right;">25.00/29.13</td>
+<td style="text-align: right;">26.16/30.61</td>
+<td style="text-align: right;">24.31/27.54</td>
+<td style="text-align: right;">26.28/28.44</td>
+<td style="text-align: right;">25.77/26.36</td>
+</tr>
+<tr class="odd">
+<td>GPT-4o（视觉）</td>
+<td style="text-align: right;">60.37/61.43</td>
+<td style="text-align: right;">35.00/31.14</td>
+<td style="text-align: right;">33.14/34.57</td>
+<td style="text-align: right;">51.81/55.71</td>
+<td style="text-align: right;">59.34/55.43</td>
+<td style="text-align: right;">70.69/61.71</td>
+</tr>
+<tr class="even">
+<td>Qwen2-VL 7B</td>
+<td style="text-align: right;">59.21/53.48</td>
+<td style="text-align: right;">41.67/33.18</td>
+<td style="text-align: right;">34.88/39.44</td>
+<td style="text-align: right;">62.90/65.08</td>
+<td style="text-align: right;">55.85/57.01</td>
+<td style="text-align: right;">69.74/58.37</td>
+</tr>
+<tr class="odd">
+<td>LLaVA-Video 7B</td>
+<td style="text-align: right;">54.19/55.77</td>
+<td style="text-align: right;">39.05/30.62</td>
+<td style="text-align: right;">24.83/38.17</td>
+<td style="text-align: right;">62.83/62.53</td>
+<td style="text-align: right;">61.87/58.21</td>
+<td style="text-align: right;">62.94/60.04</td>
+</tr>
+<tr class="even">
+<td>InternVL2 76B</td>
+<td style="text-align: right;">53.15/45.49</td>
+<td style="text-align: right;">25.83/26.83</td>
+<td style="text-align: right;">30.23/26.89</td>
+<td style="text-align: right;">58.42/57.79</td>
+<td style="text-align: right;">53.18/50.13</td>
+<td style="text-align: right;">61.70/53.25</td>
+</tr>
+<tr class="odd">
+<td>InternVL2 8B</td>
+<td style="text-align: right;">44.52/37.70</td>
+<td style="text-align: right;">30.00/25.24</td>
+<td style="text-align: right;">29.07/26.58</td>
+<td style="text-align: right;">49.25/53.54</td>
+<td style="text-align: right;">47.43/43.38</td>
+<td style="text-align: right;">53.19/43.69</td>
+</tr>
+<tr class="even">
+<td>VILA1.5 8B</td>
+<td style="text-align: right;">41.72/38.28</td>
+<td style="text-align: right;">28.33/26.78</td>
+<td style="text-align: right;">28.49/36.61</td>
+<td style="text-align: right;">53.30/62.38</td>
+<td style="text-align: right;">46.41/47.77</td>
+<td style="text-align: right;">46.34/46.64</td>
+</tr>
+<tr class="odd">
+<td>VideoLLaVA 7B</td>
+<td style="text-align: right;">34.73/27.97</td>
+<td style="text-align: right;">15.00/19.10</td>
+<td style="text-align: right;">22.67/17.30</td>
+<td style="text-align: right;">36.67/42.36</td>
+<td style="text-align: right;">34.09/35.86</td>
+<td style="text-align: right;">35.93/29.69</td>
+</tr>
+<tr class="even">
+<td>SALMONN 13B（音频）</td>
+<td style="text-align: right;">45.92/45.18</td>
+<td style="text-align: right;">33.33/31.68</td>
+<td style="text-align: right;">29.65/31.56</td>
+<td style="text-align: right;">32.62/32.70</td>
+<td style="text-align: right;">36.76/33.11</td>
+<td style="text-align: right;">34.52/38.39</td>
+</tr>
+</tbody>
+</table></div>
+<p>表 4（p.6574）总分：</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="数据表，可横向滚动"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">AV-Human</th>
+<th scope="col" style="text-align: right;">AV-Gemini</th>
+<th scope="col" style="text-align: right;">Overall</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Gemini 1.5 Pro</td>
+<td style="text-align: right;"><strong>78.34</strong></td>
+<td style="text-align: right;"><strong>75.21</strong></td>
+<td style="text-align: right;"><strong>75.67</strong></td>
+</tr>
+<tr class="even">
+<td>GPT-4o（视觉，2,100 子集）</td>
+<td style="text-align: right;">56.62</td>
+<td style="text-align: right;">50.00</td>
+<td style="text-align: right;">53.31</td>
+</tr>
+<tr class="odd">
+<td>Qwen2-VL 7B</td>
+<td style="text-align: right;">58.38</td>
+<td style="text-align: right;">51.05</td>
+<td style="text-align: right;">52.26</td>
+</tr>
+<tr class="even">
+<td>LLaVA-Video 7B</td>
+<td style="text-align: right;">56.52</td>
+<td style="text-align: right;">50.62</td>
+<td style="text-align: right;">51.48</td>
+</tr>
+<tr class="odd">
+<td>InternVL2 76B</td>
+<td style="text-align: right;">52.62</td>
+<td style="text-align: right;">43.29</td>
+<td style="text-align: right;">44.72</td>
+</tr>
+<tr class="even">
+<td>VILA1.5 8B</td>
+<td style="text-align: right;">44.48</td>
+<td style="text-align: right;">43.05</td>
+<td style="text-align: right;">43.27</td>
+</tr>
+<tr class="odd">
+<td>VideoLLaMA2 7B</td>
+<td style="text-align: right;">44.90</td>
+<td style="text-align: right;">39.75</td>
+<td style="text-align: right;">40.56</td>
+</tr>
+<tr class="even">
+<td>InternVL2 8B</td>
+<td style="text-align: right;">45.90</td>
+<td style="text-align: right;">38.31</td>
+<td style="text-align: right;">39.47</td>
+</tr>
+<tr class="odd">
+<td>SALMONN 13B</td>
+<td style="text-align: right;">36.48</td>
+<td style="text-align: right;">35.43</td>
+<td style="text-align: right;">35.59</td>
+</tr>
+<tr class="even">
+<td>video-SALMONN 13B</td>
+<td style="text-align: right;">38.33</td>
+<td style="text-align: right;">34.08</td>
+<td style="text-align: right;">34.74</td>
+</tr>
+<tr class="odd">
+<td>VideoLLaVA 7B</td>
+<td style="text-align: right;">33.14</td>
+<td style="text-align: right;">28.70</td>
+<td style="text-align: right;">29.37</td>
+</tr>
+<tr class="even">
+<td>PandaGPT 13B</td>
+<td style="text-align: right;">25.38</td>
+<td style="text-align: right;">28.83</td>
+<td style="text-align: right;">28.31</td>
+</tr>
+</tbody>
+</table></div>
+<p>Gemini 对第二名的 AV-Human 优势为 <strong>19.96 pp /
+34.19%</strong>，AV-Gemini 为 <strong>24.16 pp /
+47.33%</strong>（本报告复算）。后者不能全归因于感知，因为数据由 Gemini
+生成并经人工修订。</p>
+<p>开放任务表 6（p.6575）：Gemini 的 AVSM pair/full/DWER 为
+<strong>72.84/26.29/66.31</strong>，VideoLLaMA2 为
+<strong>38.05/0.00/116.92</strong>，PandaGPT 为
+<strong>39.87/1.22/155.94</strong>。即使最强模型 full matching 仅
+26.29，细粒度全序列对应仍很难。表 7（p.6576）的 GPT
+排名/ROUGE-L/MCQ：Gemini <strong>3.331/.108/78.34</strong>，Qwen2-VL
+<strong>2.233/.074/58.38</strong>，LLaVA-Video
+<strong>2.217/.099/56.52</strong>。排序大致一致，但论文未报相关系数，ROUGE-L
+最高也只有 .108。</p>
+</section>
+<section class="card" aria-labelledby="9-消融敏感性相变与统计-title"><h2 id="9-消融敏感性相变与统计-title">9. 消融、敏感性、相变与统计</h2>
+<p>表 5（p.6575）同一 Gemini 在 Audio-Visual、Detailed
+Transcription、Visual-only、Audio-only 下为
+<strong>78.34、69.23、62.78、54.10</strong>。AV 对视觉是 <strong>+15.56
+pp / +24.78%</strong>，对音频 <strong>+24.24 pp /
++44.81%</strong>，对详细转录 <strong>+9.11 pp /
++13.16%</strong>。完整音频超过转录，提示韵律、音色、同步不可完全文字化；但没有反事实交互项，不能证明全部增益来自“推理”而非更多信息。</p>
+<p>表 8（p.6577）循环文本 GPT-4o/Gemini：VideoVista
+<strong>41.25/38.75</strong>，NExT-QA
+<strong>23.22/26.37</strong>，Video-MME
+<strong>16.03/13.05</strong>，AVUT <strong>1.89/4.50</strong>。AVUT
+相对随机低 23.11/20.50 pp，过滤很强；但 TemporalBench GPT-4o 从普通文本
+65.42 升至循环
+73.57，说明两列不能简单理解为循环必降，论文也无逐题误差分析。</p>
+<p>论文<strong>未报告</strong>过滤模型、排列数、删除阈值、4
+个演示或年份截止的敏感性，无法判断 4→24 排列或 4/4→3/4
+阈值的纯度—规模相变。也<strong>未报告</strong>随机种子、标准差、bootstrap、McNemar、视频聚类标准误或标注者
+kappa。同视频多题并非独立，相邻 1–2 pp 排名不能断言显著。</p>
+</section>
+<section class="card" aria-labelledby="10-相关工作技术链-title"><h2 id="10-相关工作技术链-title">10. 相关工作技术链</h2>
+<p><strong>Video-MME</strong> 以 900 视频、254 小时、2,700 QA
+覆盖短中长视频并考虑字幕/音频（摘要与数据节）；遗留缺口是音频并非每题必要且无系统文本过滤。AVUT
+继承真实视频和模态对照，改成音频必要任务。</p>
+<p><strong>AVHBench</strong> 用 2,136 视频、5,816 QA、1,238
+描述诊断跨模态幻觉（摘要与 §3）；但问题文本仍可能泄露答案。AVUT
+把“模态冲突”扩为“模态必要 +
+文本不可猜”，传递按错误来源拆任务的思想。</p>
+<p><strong>LongVALE</strong> 有 8,411 长视频、549 小时、105,730
+全模态事件和时间边界（摘要、表 1）；它解决长期事件感知，却不以去捷径 MCQ
+为中心。其边界设计传给 AEL/AVTM/AVSM，而 AVUT 选择 ≤2
+分钟换取可控成本。</p>
+<p><strong>MUSIC-AVQA-R</strong> 诊断 MUSIC-AVQA
+的语言/视觉偏置，用重构与反事实训练修正（NeurIPS
+2024，§1–3）；范围集中于音乐且与特定训练绑定。AVUT
+将缺模态压力测试前移到数据发布阶段。</p>
+<pre class="text"><code>通用覆盖 ─ Video-MME ───────────────┐
+跨模态错 ─ AVHBench ────────────────┤→ AVUT：音频必要 + 新视频 + 文本过滤
+时间事件 ─ LongVALE ─ 长程边界 ──────┤       ├─ 六类 MCQ
+偏置反事实 ─ MUSIC-AVQA-R ─ 缺模态 ─┘       └─ AVSM / AVDiar
+                         ↘ 尚未合流：长视频 × 全排列 × 等算力</code></pre>
+<div class="table-scroll" role="region" tabindex="0" aria-label="数据表，可横向滚动"><table>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">对象</th>
+<th scope="col">音频必要</th>
+<th scope="col">文本捷径控制</th>
+<th scope="col">时间结构</th>
+<th scope="col">遗留缺口</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Video-MME</td>
+<td>通用视频 QA</td>
+<td>部分</td>
+<td>未系统过滤</td>
+<td>多时长</td>
+<td>音频可有可无</td>
+</tr>
+<tr class="even">
+<td>AVHBench</td>
+<td>跨模态幻觉</td>
+<td>是</td>
+<td>非主机制</td>
+<td>有限</td>
+<td>无文本-only 清洗</td>
+</tr>
+<tr class="odd">
+<td>LongVALE</td>
+<td>长视频事件</td>
+<td>是</td>
+<td>非 MCQ 重点</td>
+<td>强</td>
+<td>无同构捷径实验</td>
+</tr>
+<tr class="even">
+<td>MUSIC-AVQA-R</td>
+<td>音乐 AVQA 偏置</td>
+<td>是</td>
+<td>反事实重构</td>
+<td>音乐事件</td>
+<td>领域窄</td>
+</tr>
+<tr class="odd">
+<td>AVUT</td>
+<td>音频中心理解</td>
+<td>是</td>
+<td>四循环稳定过滤</td>
+<td>≤2 分钟</td>
+<td>单过滤器、非全排列</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section class="card" aria-labelledby="11-贡献复用与迁移-title"><h2 id="11-贡献复用与迁移-title">11. 贡献、复用与迁移</h2>
+<p>真正贡献有三点：把无视频文本模型测试变成发布门槛；把音频作用拆成抽取、计数、定位、对象/视觉/时间对应和说话人任务；分开
+AV-Human 与 AV-Gemini，使生成风格可审计。最可复用的是“缺模态对照 ×
+选项排列不变性”，可迁移到医学
+VQA（去影像）、图表问答（去图）、文档问答（去页面）、RAG（去证据）和机器人（去观测）。开放回答则需答案可恢复率、语义等价与反事实改写，不能机械套用四选一规则。</p>
+</section>
+<section class="card" aria-labelledby="12-论文自述限制-title"><h2 id="12-论文自述限制-title">12. 论文自述限制</h2>
+<ol type="1">
+<li>开源音频/音视频 LLM
+较旧，可能弱于视觉模型（Limitations，p.6577），故榜单混合底座代际差。</li>
+<li>≤2
+分钟视频不能覆盖长程时间推理和持续时间理解（同页），不可外推到电影、会议、课程。</li>
+<li>标注者可能偏好视觉、受第一语言影响，且仅系统研究四选一（同页），限制多语言与开放交互代表性。</li>
+</ol>
+</section>
+<section class="card" aria-labelledby="13-独立批判因为-x所以-y-title"><h2 id="13-独立批判因为-x所以-y-title">13. 独立批判：因为 X，所以 Y</h2>
+<ol type="1">
+<li><strong>[构造归因]</strong> 因为 9,875 个 AV-Gemini 题由 Gemini
+生成，而 Gemini 在该分区 75.21、第二名 51.05，所以 24.16 pp
+可能含生成器风格匹配，不能全归于感知。</li>
+<li><strong>[过滤外推]</strong> 因为过滤只用 GPT-4o，而独立 Gemini
+循环文本仍有 4.50%、高于 GPT-4o 的
+1.89%，所以“无捷径”只是已测模型上的强压低。</li>
+<li><strong>[排列覆盖]</strong> 因为只测 4 个循环、全排列有 24
+个，所以非循环交换和答案长度组合捷径仍可能保留。</li>
+<li><strong>[公平性]</strong> 因为输入从 6–32 帧、1–2 fps
+到音频不等，GPT-4o 又只跑 2,100 题，所以表 4 不是等算力架构
+head-to-head。</li>
+<li><strong>[统计]</strong>
+因为无方差、聚类区间或显著性且同视频多题，所以相邻 1–2 pp
+排名不能视为稳定差异。</li>
+<li><strong>[效度]</strong> 因为开放答案最高 ROUGE-L 仅 .108 且无
+MCQ/开放任务相关系数，所以 MCQ 代表真实问答只有粗排序证据。</li>
+<li><strong>[生成质量]</strong> 因为附录将需修订问题类型列为错误答案
+40%、任务错配 20%、无关 15%、多解 15%、其他 10%，却不报其占 9,875
+题的总发生率，所以无法量化审校成本和原始生成可靠性。</li>
+<li><strong>[复现]</strong> 因为版权策略只发布 YouTube
+链接，所以失效、地区限制、平台转码会改变可用样本；长期复现需要 URL
+存活率和内容哈希。</li>
+</ol>
+</section>
+<section class="card" aria-labelledby="14-可操作开放挑战-title"><h2 id="14-可操作开放挑战-title">14. 可操作开放挑战</h2>
+<section class="subsection" aria-labelledby="理论-title"><h3 id="理论-title">理论</h3>
+<ul>
+<li>同一题池比较 1/4/8/24 个排列，固定 GPT-4o、Gemini、Qwen
+三过滤器，报告保留率、独立文本准确率和 AV 准确率，画纯度—规模
+Pareto。</li>
+<li>对每题构造音频反事实、视频反事实、时间错位，比较
+(f(A,V)-f(A,V')-f(A',V)+f(A',V'))，分离信息叠加与交互。</li>
+<li>以视频为 bootstrap 单位，做 Gemini/Qwen/LLaVA 配对区间和
+McNemar，并按 18 领域做层级模型。</li>
+</ul>
+</section>
+<section class="subsection" aria-labelledby="工程应用-title"><h3 id="工程应用-title">工程应用</h3>
+<ul>
+<li>统一 16 帧、同音频秒数、解码 token 与 GPU，报告
+accuracy、p50/p95、显存、每千题成本，对比
+audio-only、visual-only、early/late fusion。</li>
+<li>每月扫描 YouTube
+URL，发布可用率、哈希变化、领域分布和排名漂移。</li>
+<li>随机 500
+个原始生成题，对比零审校、单审校、双人仲裁的准确率、歧义率、分钟/题和模型排名。</li>
+</ul>
+</section>
+<section class="subsection" aria-labelledby="新兴方向-title"><h3 id="新兴方向-title">新兴方向</h3>
+<ul>
+<li>在 LongVALE 10–30 分钟片段构建同构任务，控制事件密度，直接比较 2 与
+20 分钟的文本先验和长程记忆。</li>
+<li>用 Gemini、GPT-4o、开源模型各生成、由不同模型过滤，做 3×3 矩阵量化
+generator affinity。</li>
+<li>同视频制作英语、中文和口音版本，对比原音频、翻译、ASR、静音输入，分层报告
+DWER。</li>
+</ul>
+</section>
+</section>
+<section class="card" aria-labelledby="15-近期联读-title"><h2 id="15-近期联读-title">15. 近期联读</h2>
+<ol type="1">
+<li><a href="https://arxiv.org/abs/2604.05015">Video-MME
+v2</a>：更大规模视频评测，可检验音频是否仍是每题必要条件。</li>
+<li><a
+href="https://arxiv.org/abs/2606.03920">VSTAT</a>：强调视频时空与音频联合推理，适合验证
+AVUT 的短时结论。</li>
+<li><a
+href="https://arxiv.org/abs/2605.19223">HAVEN</a>：高难音视频事件理解；应重点检查负样本是否经过缺模态压力测试。</li>
+<li><a
+href="https://arxiv.org/abs/2605.18041">OmniSelect</a>：研究全模态信息选择，与
+AVUT 的“是否需要音频”互补。</li>
+<li><a href="https://openreview.net/forum?id=Zg1YH8R5GG">Joint
+Audio-Visual Reasoning
+Benchmark</a>：把联合推理置于中心，适合做同预算交叉评测。</li>
+<li><a
+href="https://arxiv.org/abs/2411.19772">LongVALE</a>：长视频事件标注的重要参照，直接暴露
+AVUT ≤2 分钟的外推边界。</li>
+</ol>
+</section>
+<section class="card" aria-labelledby="16-结论-title"><h2 id="16-结论-title">16. 结论</h2>
+<p>AVUT 把“模型是否真的看和听”变成可执行的数据审计流程。最强证据是同一
+Gemini 的 AV <strong>78.34</strong> 对视觉
+<strong>62.78</strong>（+15.56 pp），以及循环文本仅
+<strong>1.89/4.50%</strong>；最大保留意见是生成器—榜首重合、单过滤器、排列不全、等算力与统计检验缺失。它是更接近“证据依赖”的
+benchmark，但尚不是因果验证完成的多模态理解测量器。</p>
+<hr />
+<p><strong>脚注：</strong> 候选池保存在
+<code>candidates_2026-09-01.tsv</code>；已更新
+<code>ml-report-index.md</code>。所有精确数字来自实际读取的五篇论文
+PDF，不从曲线臆读未标数字。HTML 已通过 Warm Editorial 结构验证器（0
+error / 0 warning）；环境未发现 <code>/usr/bin/chromium</code> 或
+<code>/opt/pw-browsers</code> 中可执行 Chromium，故未虚称完成 Playwright
+浅色、深色与移动端截图检查，改以模板响应式规则与静态结构验证兜底。</p>
+</section>
+</div>
+<figure class="figure" aria-labelledby="mod-title"><p class="fig-title" id="mod-title">同一 Gemini 1.5 Pro 的模态消融</p><p class="fig-sub">完整音视频超过视觉 15.56 pp，也超过详细转录 9.11 pp；纵轴为 MCQ 准确率（%）。</p><svg class="chart" viewBox="0 0 760 390" role="img" xmlns="http://www.w3.org/2000/svg"><title>Gemini 模态消融准确率</title><desc>音视频 78.34，详细转录 69.23，视觉 62.78，音频 54.10。</desc><g stroke="var(--grid)"><line x1="70" y1="330" x2="730" y2="330"/><line x1="70" y1="255" x2="730" y2="255"/><line x1="70" y1="180" x2="730" y2="180"/><line x1="70" y1="105" x2="730" y2="105"/><line x1="70" y1="30" x2="730" y2="30"/></g><g font-size="12"><text x="30" y="334">0</text><text x="24" y="259">20</text><text x="24" y="184">40</text><text x="24" y="109">60</text><text x="24" y="34">80</text></g><g fill="var(--chart-primary)"><rect tabindex="0" data-tip="音视频：78.34%" x="115" y="36.2" width="90" height="293.8"/><rect tabindex="0" data-tip="详细转录：69.23%" x="275" y="70.4" width="90" height="259.6"/></g><g fill="var(--chart-comparison)"><rect tabindex="0" data-tip="视觉：62.78%" x="435" y="94.6" width="90" height="235.4"/><rect tabindex="0" data-tip="音频：54.10%" x="595" y="127.1" width="90" height="202.9"/></g><g text-anchor="middle" font-size="13"><text x="160" y="354">音视频</text><text x="320" y="354">详细转录</text><text x="480" y="354">视觉</text><text x="640" y="354">音频</text></g></svg><figcaption>来源：AVUT 表 5，p.6575（PDF p.7）。仅比较同一模型，避免把模型代际差误作模态贡献。</figcaption></figure></main>
+
+  <footer>来源：EMNLP 2025 最终论文、arXiv:2503.19951v3（2025-09-28）、官方代码/数据及四篇技术链论文；链接于 2026-09-01 验证。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

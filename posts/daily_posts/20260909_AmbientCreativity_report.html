@@ -1,0 +1,1286 @@
+---
+layout: null
+title: "Ambient Creativity"
+date: 2026-09-09
+topic: "trustworthy-theory"
+tags: ["trustworthy-theory", "diffusion-models", "memorization"]
+excerpt: "扩散记忆 × Ambient Score Matching × 小样本创造性 CIFAR-10/300 高相似复制率 56.56%→9.64%，FID 25.10→23.91；但文本条件下单独收益很小，且无端到端隐私保证。"
+permalink: "/blog/2026/09/09/ambientcreativity/"
+blog_post: true
+lang: "zh-CN"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_en: "/blog/2026/09/09/ambientcreativity/en/"
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Ambient Creativity：按噪声阶段切开记忆权限 · 2026-09-09</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ML / AI DAILY DEEP PAPER · ICML 2025</p>
+    <h1>Ambient Creativity：按噪声阶段切开记忆权限</h1>
+    <p class="subtitle">扩散记忆 × Ambient Score Matching × 小样本创造性</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">ICML 2025 Main · PMLR 267:54143–54166</span>
+      <span class="chip">2026-09-09</span>
+      <span class="chip">生成模型 / 记忆与隐私</span>
+    </div>
+    <p class="lede">CIFAR-10/300 高相似复制率 56.56%→9.64%，FID 25.10→23.91；但文本条件下单独收益很小，且无端到端隐私保证。</p>
+  </header>
+
+  <main>
+<section class="card" aria-labelledby="0-链接验证与版本审计"><h2 id="0-链接验证与版本审计">0. 链接验证与版本审计</h2>
+<p>下表链接均于 <strong>2026-09-09</strong>
+实际访问；“未公开/未找到”表示在论文页、arXiv、官方代码仓库与常用论文索引中均未找到可核实入口，而不是断言资源不存在。核心定量以
+ICML 2025 正式版及 arXiv v2 正文为准；两版数字一致，v2
+对“固定一次构造噪声集”的动机解释更明确。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">论文</th>
+<th scope="col">会议/正式页</th>
+<th scope="col">arXiv 版本与日期</th>
+<th scope="col">代码</th>
+<th scope="col">数据/权重</th>
+<th scope="col">项目页/视频</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>核心：Does Generation Require Memorization?</strong></td>
+<td><a href="https://proceedings.mlr.press/v267/shah25b.html">ICML 2025
+/ PMLR</a>；<a
+href="https://openreview.net/forum?id=GGPM0z3dhU">OpenReview</a></td>
+<td><a href="https://arxiv.org/abs/2502.21278">2502.21278v2</a>，v1
+2025-02-28，v2 2026-03-01</td>
+<td><a
+href="https://github.com/kulinshah98/memorization_noisy_data">官方实现</a></td>
+<td>数据脚本公开；训练权重未找到</td>
+<td>项目页未找到；视频未找到</td>
+</tr>
+<tr class="even">
+<td>Ambient Diffusion</td>
+<td><a href="https://openreview.net/forum?id=wBJBLy9kBY">NeurIPS 2023
+OpenReview</a></td>
+<td><a
+href="https://arxiv.org/abs/2305.19256">2305.19256</a>，2023-05-30</td>
+<td><a
+href="https://github.com/giannisdaras/ambient-diffusion">官方实现</a></td>
+<td>数据处理代码公开；权重未找到</td>
+<td>未找到</td>
+</tr>
+<tr class="odd">
+<td>Understanding and Mitigating Copying</td>
+<td><a href="https://openreview.net/forum?id=HtMXRGbUMt">NeurIPS 2023
+OpenReview</a></td>
+<td><a
+href="https://arxiv.org/abs/2305.20086">2305.20086v1</a>，2023-05-31</td>
+<td><a href="https://github.com/Somepago/DCR">官方实现</a></td>
+<td>LAION-10k/Imagenette 配置；权重未找到</td>
+<td>未找到</td>
+</tr>
+<tr class="even">
+<td>Detecting, Explaining, and Mitigating Memorization</td>
+<td><a href="https://openreview.net/forum?id=84n3UwkH7b">ICLR 2024
+OpenReview</a></td>
+<td><a
+href="https://arxiv.org/abs/2407.21720">2407.21720v1</a>，2024-07-31</td>
+<td><a
+href="https://github.com/YuxinWenRick/diffusion_memorization">官方实现</a></td>
+<td class="num">500 个记忆 prompts 来源可追溯；权重未找到</td>
+<td>未找到</td>
+</tr>
+<tr class="odd">
+<td>An Analytic Theory of Creativity in Convolutional Diffusion
+Models</td>
+<td><a href="https://dl.acm.org/doi/10.5555/3780338.3781469">ICML 2025 /
+ACM 记录</a></td>
+<td><a href="https://arxiv.org/abs/2412.20292">2412.20292v2</a>，v1
+2024-12-28，v2 2025-06-05</td>
+<td><a
+href="https://github.com/Kambm/convolutional_diffusion">官方实现</a></td>
+<td>标准数据集；权重未找到</td>
+<td>视频未找到</td>
+</tr>
+<tr class="even">
+<td>Does Learning Require Memorization?</td>
+<td><a href="https://doi.org/10.1145/3357713.3384290">STOC 2020
+DOI</a></td>
+<td>arXiv 未找到</td>
+<td>代码未公开/未找到</td>
+<td>不适用</td>
+<td>未找到</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>索引交叉检查。</strong> OpenReview/PMLR 用于会议身份，arXiv
+用于版本日期，Hugging Face Daily Papers、Semantic Scholar 与 Papers with
+Code 用于交叉发现代码和后续工作；ACL Anthology
+未检出与本轮生成模型主题及核心论文直接对应的正式版本。Papers with Code
+未找到独立任务页，故不把第三方聚合页冒充官方资源。</p>
+</section><section class="card" aria-labelledby="1-候选池去重与随机选择"><h2 id="1-候选池去重与随机选择">1. 候选池、去重与随机选择</h2>
+<p>先检查 <code>ml-report-index.md</code>，排除近 14 天已经深读的
+Q-VDiT、LongLive、DreamGen，以及相邻的长视频/世界模型生成主题。初始池含视频论文，第一次
+<code>shuf -i 1-24 -n 1</code> 抽到
+Kaleido；这暴露了候选清洗错误，故移除全部视频生成项，再补入 ICML 2025
+正式主会论文，使合格池达到 22 篇。第二次严格执行
+<code>shuf -i 1-22 -n 1</code>，结果为
+<strong>19</strong>，即本报告核心论文。没有因热度或结论好坏人工挑选。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">#</th>
+<th scope="col">候选论文</th>
+<th scope="col">来源/身份</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td>On the Flow Matching Interpretability</td>
+<td>ICLR 2026 OpenReview</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td>Continuous Speculative Decoding for Autoregressive Image Models</td>
+<td>ICLR 2026 OpenReview</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td>Generation by Search: Scaling Test-Time Compute for AR Image
+Generation</td>
+<td>ICLR 2026 OpenReview</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td>Building Flow Uniqueness in One-step Generative Modeling</td>
+<td>ICLR 2026 OpenReview</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td>Safe Autoregressive Image Generation with Iterative
+Self-Refinement</td>
+<td>ICLR 2026 OpenReview</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td>Flow Along the K-Amplitude for Generative Modeling</td>
+<td>ICLR 2026 OpenReview</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td>GridAR: Glimpse-and-Grow Test-Time Scaling</td>
+<td>ICLR 2026 OpenReview</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">8</td>
+<td>Delay Flow Matching</td>
+<td>ICLR 2026 OpenReview</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td>Data Provenance for Image Autoregressive Generation</td>
+<td>ICLR 2026 OpenReview</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td>Autoregressive Image Generation with Randomized Parallel
+Decoding</td>
+<td>ICLR 2026 OpenReview</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td>Learning Manifold Data with Flow Matching</td>
+<td>ICLR 2026 OpenReview</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">12</td>
+<td>Frequency Autoregressive Image Generation</td>
+<td>ICLR 2026 OpenReview</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td>Exploring the Design Space of Transition Matching</td>
+<td>ICLR 2026 OpenReview</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td>Condition Errors Refinement in AR Image Generation</td>
+<td>ICLR 2026 OpenReview</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td>Geometry-Aware Image Flow Matching</td>
+<td>ICLR 2026 OpenReview</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">16</td>
+<td>On the Guidance of Flow Matching</td>
+<td>ICML 2025 Main</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td>Wasserstein Flow Matching</td>
+<td>ICML 2025 Main</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td>Continuous Visual Autoregressive Generation via Score
+Maximization</td>
+<td>ICML 2025 Main</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;"><strong>19</strong></td>
+<td><strong>Does Generation Require Memorization?</strong></td>
+<td><strong>ICML 2025 Main；抽中</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">20</td>
+<td>SketchDNN</td>
+<td>ICML 2025 Main</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">21</td>
+<td>Can Diffusion Models Learn Hidden Inter-Feature Rules Behind
+Images?</td>
+<td>ICML 2025 Main</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">22</td>
+<td>Taming Diffusion for Dataset Distillation</td>
+<td>ICML 2025 Main</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="2-motivation问题不是模型会不会记而是在哪段轨迹必须记"><h2 id="2-motivation问题不是模型会不会记而是在哪段轨迹必须记">2.
+Motivation：问题不是“模型会不会记”，而是“在哪段轨迹必须记”</h2>
+<p>扩散训练的经验风险最小化有一个尴尬的极限：若在有限训练集上完美拟合
+denoising score matching，最优 score 是以训练样本为中心的高斯混合
+score，反向过程最终回到经验分布，即只生成训练点。换言之，实际模型的“创造性”恰恰来自没有精确达到经验最优。Kamb
+与 Ganguli 后来从卷积网络的局部性与等变性解释了这种偏离：其解析 ELS
+模型对四个数据集的卷积网络输出取得中位数 <span
+class="math inline"><em>r</em><sup>2</sup> = 0.94 ∼ 0.96</span>，带自注意力
+UNet 上仍约 <span class="math inline">0.77</span>（相关论文摘要与表
+1，pp.1,25）。</p>
+<p>现实风险也不是抽象担忧。Somepalli
+等在早期大模型审计中观察到生成图像中约 <strong>0.5%–2%</strong>
+出现训练数据的局部对象级复制（论文 p.2），并进一步指出 text conditioning
+与图像重复同样重要。Wen 等用 500 个已知记忆 prompts 与 2,000 个对照
+prompts 发现，只看第一个去噪步、一次生成，其条件噪声幅值检测就达到
+<strong>AUC 0.960、TPR@1%FPR 0.760、0.199 秒</strong>；看前 10 步则为
+<strong>0.989/0.944/1.866 秒</strong>（表 1，p.5）。这说明记忆既能被
+prompt 触发，又在高噪声早期已经显形。</p>
+<p>核心论文把问题重新切片：高噪声阶段决定全局结构与多样性，低噪声阶段补高频纹理。如果只在高噪声阶段阻断对干净训练点的直接访问，而在低噪声阶段保留常规
+DDPM，是否能把“结构创新”和“细节质量”分离？其小样本数据给出最强动机：CIFAR-10
+仅 300 张训练图时，DDPM 在 DINOv2 相似度阈值 <span
+class="math inline"><em>S</em> &gt; 0.95</span> 下有
+<strong>56.56%</strong> 生成样本被判为高度相似；本文方法降到
+<strong>9.64%</strong>，绝对降低 <strong>46.92 pp</strong>、相对降低
+<strong>82.96%</strong>，同时 FID 从 <strong>25.10</strong> 降至
+<strong>23.91</strong>（核心表
+1，p.12）。这不是通常的“牺牲质量换隐私”曲线，而是对 DDPM 小样本训练点的
+Pareto 改进。</p>
+</section><section class="card" aria-labelledby="3-故事线假设与权衡"><h2 id="3-故事线假设与权衡">3. 故事线、假设与权衡</h2>
+<p>论文故事线可压缩为四步，但每一步都有条件：</p>
+<ol type="1">
+<li><strong>有限样本经验最优会复制。</strong> 在理想优化下，经验 score
+把每个状态拉向具体训练点；这是“为什么理论上会记”。</li>
+<li><strong>噪声改变长尾结构。</strong> Feldman
+的稀有子群论证意味着低噪声下，为拟合频率约 <span
+class="math inline">1/<em>n</em></span>
+的稀有模式，记忆可能帮助泛化；噪声升高后，原本分离的子群合并，长尾变轻，不再需要逐点记忆。</li>
+<li><strong>高噪声用 Ambient loss。</strong>
+每个干净样本只随机加噪一次，形成固定集合 <span
+class="math inline"><em>S</em><sub><em>t</em><sub><em>n</em></sub></sub></span>；高噪声训练只接触这些
+noisy copies，低噪声仍接触原图。</li>
+<li><strong>通过一个阈值换取 Pareto 点。</strong> <span
+class="math inline"><em>t</em><sub><em>n</em></sub></span> 太低近似
+DDPM；太高则低噪声“记忆段”变长，复制可能重新上升。论文声称存在中间窗口，但只用一张
+FFHQ/300 曲线支持，未给跨数据集相变边界。</li>
+</ol>
+<p>关键假设有三层。第一，高噪声确实主要控制结构、多样性；第二，固定噪声难以压缩，因此网络即使记住
+noisy copy 也难恢复 clean
+point；第三，将高噪声的“非记忆轨迹”与低噪声的“记忆轨迹”拼接，不会重新落回训练样本。第三点在论文
+p.5 被明确称为
+conjecture，且作者承认尚无非平凡的端到端分布距离下界。因此本文的理论支撑是“局部机制
++ 信息泄露 + 子群直觉”，不是算法整体的隐私或收敛定理。</p>
+</section><section class="card" aria-labelledby="4-方程级形式化与算法流程"><h2 id="4-方程级形式化与算法流程">4. 方程级形式化与算法流程</h2>
+<h3 id="41-常规-vp-扩散与经验最优">4.1 常规 VP 扩散与经验最优</h3>
+<p>前向扰动写为</p>
+<p><span class="math display">$$X_t=\sqrt{1-\sigma_t^2}X_0+\sigma_t
+Z,\qquad Z\sim\mathcal N(0,I_d),$$</span></p>
+<p>并用 Tweedie 公式把最优去噪器转成 score：</p>
+<p><span class="math display">$$\nabla\log
+p_t(x_t)=\frac{\sqrt{1-\sigma_t^2}\,\mathbb E[X_0\mid
+X_t=x_t]-x_t}{\sigma_t^2}.$$</span></p>
+<p>常规目标为</p>
+<p><span
+class="math display"><em>J</em><sub>DDPM</sub>(<em>θ</em>) = 𝔼<sub><em>x</em><sub>0</sub>, <em>t</em>, <em>x</em><sub><em>t</em></sub> ∣ <em>x</em><sub>0</sub></sub>∥<em>h</em><sub><em>θ</em></sub>(<em>x</em><sub><em>t</em></sub>,<em>t</em>) − <em>x</em><sub>0</sub>∥<sub>2</sub><sup>2</sup>.</span></p>
+<p>这些式子见核心论文式 (1)–(3)，pp.3–4。对有限集合 <span
+class="math inline"><em>S</em></span>，经验最优 score
+是所有训练点贡献的核加权和；若完全优化，采样终点就是经验分布。论文的策略不是否认这个结论，而是让高噪声段的“经验点”变成
+noisy copies。</p>
+<h3 id="42-ambient-score-matching">4.2 Ambient Score Matching</h3>
+<p>令自然噪声阈值为 <span
+class="math inline"><em>t</em><sub><em>n</em></sub></span>，对 <span
+class="math inline"><em>t</em> &gt; <em>t</em><sub><em>n</em></sub></span>
+使用</p>
+<p><span class="math display">$$J_{\mathrm{ambient}}(\theta)=\mathbb
+E_{x_{t_n}}\mathbb E_{x_t,t\mid x_{t_n}}
+\left\|\frac{\sigma_t^2-\sigma_{t_n}^2}{\sigma_t^2\sqrt{1-\sigma_{t_n}^2}}h_\theta(x_t,t)
++\frac{\sigma_{t_n}^2}{\sigma_t^2}\sqrt{\frac{1-\sigma_t^2}{1-\sigma_{t_n}^2}}x_t-x_{t_n}\right\|_2^2.$$</span></p>
+<p>这是核心式 (6)，pp.6–7。它利用“从进一步加噪的样本预测原 noisy
+copy”的方向，经重标定恢复 <span
+class="math inline">𝔼[<em>x</em><sub>0</sub>∣<em>x</em><sub><em>t</em></sub>]</span>。技术来源
+Ambient Diffusion 原本处理随机缺像素、压缩测量等腐败数据：即便训练图像
+<strong>90%
+像素缺失</strong>仍能学习干净分布（原论文摘要，p.1）。核心论文把“不得不接受的测量腐败”改造成“主动设计的反记忆界面”。</p>
+<h3 id="43-伪代码与工程语义">4.3 伪代码与工程语义</h3>
+<pre class="text"><code>输入：干净训练集 S，阈值 tn，噪声日程 σ(t)，网络 hθ
+1  对每个 x0∈S 仅采一次 ε，固定构造 Stn={sqrt(1-σtn²)x0+σtn ε}
+2  重复训练：从 S ∪ Stn 均匀采 batch
+3    若样本来自 Stn：采 t∈[tn,T]，进一步加噪，使用 Ambient loss
+4    若样本来自 S：采 t∈[0,tn]，使用普通 DDPM denoising loss
+5    合并梯度更新 θ
+输出：同一网络在整条时间轴上的分段学习结果</code></pre>
+<p>伪代码对应 arXiv v2 Algorithm 1，p.8。最容易被忽略的工程点是
+<strong><span
+class="math inline"><em>S</em><sub><em>t</em><sub><em>n</em></sub></sub></span>
+只在训练开始前构造一次</strong>，而不是每个 epoch 重采噪声；v2 pp.7–8
+明言，反复重采会逐渐泄露更多关于 clean distribution
+的信息。这个“固定随机化视图”比 loss
+本身更像隐私瓶颈，但代码仓库只有通用训练脚本，README
+未提供预训练权重或逐表复现实验命令。</p>
+<h3 id="44-理论结果到底证明了什么">4.4 理论结果到底证明了什么</h3>
+<ul>
+<li><strong>Lemma 4.2，p.9：</strong> 单点高斯模型下，若 DDPM 与 Ambient
+各产生 <span class="math inline"><em>m</em></span> 个 <span
+class="math inline"><em>t</em><sub><em>n</em></sub></span> 时刻样本，则
+<span class="math display">$$I(D;x_0)=m\,I(A;x_0)=\frac
+m2\log\det\left(\frac{1-\sigma_{t_n}^2}{\sigma_{t_n}^2}\Sigma+I\right).$$</span>
+Ambient 的一组输出共享同一 noisy copy，因此互信息不随 <span
+class="math inline"><em>m</em></span> 线性增长；DDPM
+则线性泄露。它说明“观察越多样本越能恢复训练点”的差异，但只在单高斯输入和特定中间时刻成立。</li>
+<li><strong>Theorem 4.2/4.3，pp.10–11：</strong> 总体误差下界包含 <span
+class="math inline"><em>τ</em><sub>1</sub> err<sub><em>Z</em></sub>(<em>A</em>,1)</span>，其中
+<span class="math inline"><em>τ</em><sub>1</sub></span>
+由频率分布的长尾程度控制。低噪声下稀有子群分离，<span
+class="math inline"><em>τ</em><sub>1</sub></span>
+大；高噪声合并子群，使长尾变轻。</li>
+<li><strong>Lemma 4.4，pp.11–12：</strong> 对共享协方差的
+GMM，噪声将总变差距离收缩，并给出“分离/可合并”的阈值条件。它支持阶段划分，却没有推导有限网络、SGD、离散采样器下的最优
+<span class="math inline"><em>t</em><sub><em>n</em></sub></span>。</li>
+</ul>
+</section><section class="card" aria-labelledby="5-关键机制与工程细节"><h2 id="5-关键机制与工程细节">5. 关键机制与工程细节</h2>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">组件</th>
+<th scope="col">具体实现</th>
+<th scope="col">作用</th>
+<th scope="col">证据与未决项</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>轨迹切分</td>
+<td><span
+class="math inline"><em>t</em> ≤ <em>t</em><sub><em>n</em></sub></span>
+用 DDPM；<span
+class="math inline"><em>t</em> &gt; <em>t</em><sub><em>n</em></sub></span>
+用 Ambient</td>
+<td>高噪声保结构多样性，低噪声保纹理</td>
+<td>方法 §3，pp.7–8；整体拼接仍是 conjecture</td>
+</tr>
+<tr class="even">
+<td>固定 noisy set</td>
+<td>每张图仅一次随机扰动形成 <span
+class="math inline"><em>S</em><sub><em>t</em><sub><em>n</em></sub></sub></span></td>
+<td>限制高噪声段反复看到 clean point</td>
+<td>arXiv v2 p.7；没有“每 epoch 重采”消融</td>
+</tr>
+<tr class="odd">
+<td>单一控制量</td>
+<td>通过 <span
+class="math inline"><em>t</em><sub><em>n</em></sub></span>
+或实现中的噪声尺度调 Pareto 前沿</td>
+<td>让质量—记忆可连续调节</td>
+<td>Figure 1，p.2；精确坐标未表格化</td>
+</tr>
+<tr class="even">
+<td>架构</td>
+<td>FFHQ/CIFAR 沿用 EDM 实现默认配置</td>
+<td>减少架构混杂</td>
+<td>附录 D，p.30；网络规模细节需回溯 EDM</td>
+</tr>
+<tr class="odd">
+<td>优化</td>
+<td>Adam，lr <span class="math inline">10<sup>−4</sup></span>，betas
+(0.9,0.999)，eps <span class="math inline">10<sup>−8</sup></span>，wd
+0.01</td>
+<td>标准训练</td>
+<td>附录 D，p.30</td>
+</tr>
+<tr class="even">
+<td>训练量</td>
+<td>FFHQ/CIFAR 30k steps、batch 256；Tiny ImageNet 80k、batch 512</td>
+<td>覆盖三个小样本规模</td>
+<td>附录 D，p.30；未报告 GPU-hour/能耗</td>
+</tr>
+<tr class="odd">
+<td>文本条件</td>
+<td>Stable Diffusion v2，LAION-10k，100k steps，batch 16</td>
+<td>验证 prompt-conditioned 场景</td>
+<td>附录 D，p.30；只取最终 checkpoint</td>
+</tr>
+<tr class="even">
+<td>选择规则</td>
+<td>文本实验尝试自然噪声尺度 {25,50,100}，按最好图像质量选</td>
+<td>控制质量退化</td>
+<td>附录 D，p.30；存在验证集/选择偏差不透明</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="6-数据集基准与指标"><h2 id="6-数据集基准与指标">6. 数据集、基准与指标</h2>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">数据/设置</th>
+<th scope="col" style="text-align: right;">规模</th>
+<th scope="col">任务</th>
+<th scope="col">指标</th>
+<th scope="col">解释风险</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>CIFAR-10</td>
+<td style="text-align: right;">300/1k/3k</td>
+<td>无条件 32×32 图像生成</td>
+<td>FID；DINOv2 最近邻阈值率</td>
+<td>DINOv2 对低分辨率复制的校准未报告</td>
+</tr>
+<tr class="even">
+<td>FFHQ</td>
+<td style="text-align: right;">300/1k/3k</td>
+<td>无条件人脸生成</td>
+<td>FID；<span
+class="math inline"><em>S</em> &gt; 0.85/0.875/0.9</span></td>
+<td>阈值与 CIFAR 不同，不能直接横向比率</td>
+</tr>
+<tr class="odd">
+<td>Tiny ImageNet</td>
+<td style="text-align: right;">1k/3k（每类 5/15）</td>
+<td>类条件生成</td>
+<td>FID；<span
+class="math inline"><em>S</em> &gt; 0.9/0.925/0.95</span></td>
+<td class="num">300 样本因 200 类覆盖不足而不做</td>
+</tr>
+<tr class="even">
+<td>LAION-10k</td>
+<td style="text-align: right;">10k 图文对</td>
+<td>SD v2 文本条件微调</td>
+<td>平均/95%相似度、CLIP、FID</td>
+<td>文本触发记忆与图像记忆混合</td>
+</tr>
+</tbody>
+</table></div>
+<p>FID 用 50,000 个生成样本与 50,000
+个数据集样本计算；相似度为生成图像与训练集最近邻的 DINOv2 内积（核心
+§5.1，p.13）。阈值由作者按数据集分别调成“潜在记忆/部分记忆/近似精确复制”三个语义层级，但没有发布人类标注校准集、ROC
+或置信区间。因此它是可操作
+proxy，不是法律意义的复制判定，也不是成员推断概率。</p>
+</section><section class="card" aria-labelledby="7-主结果数据矩阵"><h2 id="7-主结果数据矩阵">7. 主结果数据矩阵</h2>
+<h3 id="71-八个数据规模ddpm-对-ambient-creativity">7.1
+八个数据规模：DDPM 对 Ambient Creativity</h3>
+<p>下表完整转录核心表
+1（p.12），括号给出本报告复算的“DDPM−Ours”绝对改善与相对改善；FID
+与相似率均越低越好。相似率按百分数报告，故绝对差为 pp。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">数据/训练量</th>
+<th scope="col" style="text-align: right;">FID DDPM→Ours</th>
+<th scope="col" style="text-align: right;">最低阈值相似率</th>
+<th scope="col" style="text-align: right;">中阈值相似率</th>
+<th scope="col" style="text-align: right;">最高阈值相似率</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>CIFAR-10 / 300</td>
+<td
+style="text-align: right;">25.10→<strong>23.91</strong>（1.19；4.74%）</td>
+<td style="text-align: right;">78.96→<strong>44.84</strong>（34.12
+pp；43.21%）</td>
+<td style="text-align: right;">67.20→<strong>20.22</strong>（46.98
+pp；69.91%）</td>
+<td style="text-align: right;">56.56→<strong>9.64</strong>（46.92
+pp；82.96%）</td>
+</tr>
+<tr class="even">
+<td>CIFAR-10 / 1k</td>
+<td
+style="text-align: right;">10.46→<strong>10.36</strong>（0.10；0.96%）</td>
+<td style="text-align: right;">75.86→<strong>69.08</strong>（6.78
+pp；8.94%）</td>
+<td style="text-align: right;">57.98→<strong>47.26</strong>（10.72
+pp；18.49%）</td>
+<td style="text-align: right;">43.44→<strong>26.34</strong>（17.10
+pp；39.36%）</td>
+</tr>
+<tr class="odd">
+<td>CIFAR-10 / 3k</td>
+<td
+style="text-align: right;">14.73→<strong>14.26</strong>（0.47；3.19%）</td>
+<td style="text-align: right;">53.40→<strong>52.24</strong>（1.16
+pp；2.17%）</td>
+<td style="text-align: right;">11.92→<strong>11.36</strong>（0.56
+pp；4.70%）</td>
+<td style="text-align: right;">0.08→<strong>0.06</strong>（0.02
+pp；25.00%）</td>
+</tr>
+<tr class="even">
+<td>FFHQ / 300</td>
+<td
+style="text-align: right;">16.21→<strong>15.05</strong>（1.16；7.16%）</td>
+<td style="text-align: right;">63.38→<strong>49.68</strong>（13.70
+pp；21.62%）</td>
+<td style="text-align: right;">55.48→<strong>40.01</strong>（15.47
+pp；27.88%）</td>
+<td style="text-align: right;">47.86→<strong>29.86</strong>（18.00
+pp；37.61%）</td>
+</tr>
+<tr class="odd">
+<td>FFHQ / 1k</td>
+<td
+style="text-align: right;">12.26→<strong>11.30</strong>（0.96；7.83%）</td>
+<td style="text-align: right;">55.36→<strong>32.08</strong>（23.28
+pp；42.05%）</td>
+<td style="text-align: right;">43.82→<strong>17.48</strong>（26.34
+pp；60.11%）</td>
+<td style="text-align: right;">33.92→<strong>7.52</strong>（26.40
+pp；77.83%）</td>
+</tr>
+<tr class="even">
+<td>FFHQ / 3k</td>
+<td
+style="text-align: right;"><strong>6.42</strong>→6.46（<strong>−0.04；−0.62%</strong>）</td>
+<td style="text-align: right;">21.58→<strong>20.08</strong>（1.50
+pp；6.95%）</td>
+<td style="text-align: right;">4.98→<strong>4.53</strong>（0.45
+pp；9.04%）</td>
+<td style="text-align: right;">0.46→<strong>0.42</strong>（0.04
+pp；8.70%）</td>
+</tr>
+<tr class="odd">
+<td>Tiny ImageNet / 1k</td>
+<td
+style="text-align: right;">50.20→<strong>47.19</strong>（3.01；6.00%）</td>
+<td style="text-align: right;">54.72→<strong>26.68</strong>（28.04
+pp；51.24%）</td>
+<td style="text-align: right;">41.66→<strong>15.56</strong>（26.10
+pp；62.65%）</td>
+<td style="text-align: right;">25.86→<strong>5.54</strong>（20.32
+pp；78.58%）</td>
+</tr>
+<tr class="even">
+<td>Tiny ImageNet / 3k</td>
+<td
+style="text-align: right;">40.66→<strong>39.87</strong>（0.79；1.94%）</td>
+<td style="text-align: right;">32.86→<strong>28.40</strong>（4.46
+pp；13.57%）</td>
+<td style="text-align: right;">12.32→<strong>9.44</strong>（2.88
+pp；23.38%）</td>
+<td style="text-align: right;">6.08→<strong>4.02</strong>（2.06
+pp；33.88%）</td>
+</tr>
+</tbody>
+</table></div>
+<p>结论不能只看最漂亮一行。8 个设置中，Ours 的 FID 在 7 个更低，FFHQ/3k
+反而高 0.04；且收益随数据增多明显收缩。CIFAR-10 的 FID 还从 1k 的 10.46
+反常恶化到 3k 的
+14.73，这与“更多数据应更好”的直觉冲突。论文未解释是否由于随机子集、训练不足或表格/设置差异，因此不能把不同训练量的横向趋势当作受控
+scaling law。</p>
+<h3 id="72-四方法对照为什么只用腐败数据不够">7.2
+四方法对照：为什么“只用腐败数据”不够</h3>
+<p>核心表 2（p.13）只在 FFHQ
+报告四方法，未达到“五基准×六方法”。本报告保留缺口，不补造矩阵。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">训练量</th>
+<th scope="col">指标</th>
+<th scope="col" style="text-align: right;">DDPM</th>
+<th scope="col" style="text-align: right;">Masking</th>
+<th scope="col" style="text-align: right;">Noise-only</th>
+<th scope="col" style="text-align: right;"><strong>本文</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">300</td>
+<td>FID↓</td>
+<td style="text-align: right;">16.21</td>
+<td style="text-align: right;">23.40</td>
+<td style="text-align: right;">27.92</td>
+<td style="text-align: right;"><strong>15.05</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">300</td>
+<td>Sim&gt;0.9↓</td>
+<td style="text-align: right;">47.86</td>
+<td style="text-align: right;">30.34</td>
+<td style="text-align: right;"><strong>10.60</strong></td>
+<td style="text-align: right;">29.86</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">1k</td>
+<td>FID↓</td>
+<td style="text-align: right;">12.26</td>
+<td style="text-align: right;">15.73</td>
+<td style="text-align: right;">25.57</td>
+<td style="text-align: right;"><strong>11.30</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">1k</td>
+<td>Sim&gt;0.9↓</td>
+<td style="text-align: right;">33.92</td>
+<td style="text-align: right;">10.08</td>
+<td style="text-align: right;"><strong>6.49</strong></td>
+<td style="text-align: right;">7.52</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3k</td>
+<td>FID↓</td>
+<td style="text-align: right;"><strong>6.42</strong></td>
+<td style="text-align: right;">7.44</td>
+<td style="text-align: right;">16.28</td>
+<td style="text-align: right;">6.46</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">3k</td>
+<td>Sim&gt;0.9↓</td>
+<td style="text-align: right;">0.46</td>
+<td style="text-align: right;">0.43</td>
+<td style="text-align: right;"><strong>0.36</strong></td>
+<td style="text-align: right;">0.42</td>
+</tr>
+</tbody>
+</table></div>
+<p>Noise-only 的记忆率通常最低，却让 FID 大幅恶化；本文保留低噪声 clean
+objective
+后恢复高频质量。由此可推出“分段训练优于全程只见噪声”的工程价值，但不能推出本文在每个单指标都最优：例如
+FFHQ/300 的 Sim&gt;0.9，Noise-only 比本文低 <strong>19.26
+pp</strong>，只是 FID 差 <strong>12.87</strong>。</p>
+<h3 id="73-文本条件强结论需要组合方法">7.3
+文本条件：强结论需要组合方法</h3>
+<p>核心表 3（arXiv v2 p.15；正式版表 5 p.9）完整如下：</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">平均相似度↓</th>
+<th scope="col" style="text-align: right;">95%分位↓</th>
+<th scope="col" style="text-align: right;">CLIP↑</th>
+<th scope="col" style="text-align: right;">FID↓</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Baseline</td>
+<td style="text-align: right;">0.378</td>
+<td style="text-align: right;">0.649</td>
+<td style="text-align: right;"><strong>0.306</strong></td>
+<td style="text-align: right;"><strong>18.18</strong></td>
+</tr>
+<tr class="even">
+<td>本文单独</td>
+<td style="text-align: right;">0.373</td>
+<td style="text-align: right;">0.636</td>
+<td style="text-align: right;">0.305</td>
+<td style="text-align: right;">18.34</td>
+</tr>
+<tr class="odd">
+<td>S23</td>
+<td style="text-align: right;">0.319</td>
+<td style="text-align: right;">0.573</td>
+<td style="text-align: right;">0.302</td>
+<td style="text-align: right;">20.55</td>
+</tr>
+<tr class="even">
+<td>S23 + 本文</td>
+<td style="text-align: right;">0.308</td>
+<td style="text-align: right;">0.547</td>
+<td style="text-align: right;"><strong>0.306</strong></td>
+<td style="text-align: right;">21.30</td>
+</tr>
+<tr class="odd">
+<td>W24</td>
+<td style="text-align: right;">0.208</td>
+<td style="text-align: right;">0.300</td>
+<td style="text-align: right;">0.293</td>
+<td style="text-align: right;">21.44</td>
+</tr>
+<tr class="even">
+<td><strong>W24 + 本文</strong></td>
+<td style="text-align: right;"><strong>0.192</strong></td>
+<td style="text-align: right;"><strong>0.267</strong></td>
+<td style="text-align: right;">0.293</td>
+<td style="text-align: right;">20.74</td>
+</tr>
+</tbody>
+</table></div>
+<p>本文单独相对 baseline 只降低平均相似度
+<strong>0.005（1.32%）</strong>，CLIP 下降 0.001，FID 恶化
+0.16；强记忆缓解来自与 text mitigation 组合。W24+本文相对 W24
+再降平均相似度 0.016（7.69%）和 95% 分位 0.033（11.00%），FID 反而改善
+0.70，但 CLIP 不变。故正确定位是“视觉侧 anti-memorization
+模块，可叠加到文本侧方法”，不是独立解决 text-to-image 复制。</p>
+</section><figure class="figure" aria-labelledby="copy-chart-title">
+<p class="fig-title" id="copy-chart-title">最高相似度阈值下，复制 proxy 的收益集中在小样本区</p>
+<p class="fig-sub">各设置采用论文为该数据集定义的最高 DINOv2 阈值；纵轴为超过阈值的生成样本比例（%），越低越好。</p>
+<div class="legend"><span><span class="swatch" style="background:var(--chart-primary)"></span>DDPM</span><span><span class="swatch" style="background:var(--chart-comparison)"></span>本文</span></div>
+<svg class="chart" viewBox="0 0 860 395" role="img" xmlns="http://www.w3.org/2000/svg"><title>DDPM 与本文在八个数据规模上的高相似度生成率</title><desc>CIFAR-10、FFHQ、Tiny ImageNet 的最高阈值复制率对比，本文在小样本设置下降最大，数据增多后差距收缩。</desc>
+<line x1="65" y1="340" x2="845" y2="340" stroke="var(--grid)"/><line x1="65" y1="40" x2="65" y2="340" stroke="var(--grid)"/>
+<line x1="65" y1="240" x2="845" y2="240" stroke="var(--grid)" stroke-dasharray="4 5"/><line x1="65" y1="140" x2="845" y2="140" stroke="var(--grid)" stroke-dasharray="4 5"/><line x1="65" y1="40" x2="845" y2="40" stroke="var(--grid)" stroke-dasharray="4 5"/>
+<text x="55" y="344" text-anchor="end" font-size="12">0</text><text x="55" y="244" text-anchor="end" font-size="12">20</text><text x="55" y="144" text-anchor="end" font-size="12">40</text><text x="55" y="44" text-anchor="end" font-size="12">60</text><rect x="82" y="57.2" width="25" height="282.8" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="C10·300 · DDPM: 56.56%"/><rect x="112" y="291.8" width="25" height="48.2" rx="4" fill="var(--chart-comparison)" tabindex="0" data-tip="C10·300 · 本文: 9.64%"/><text x="109" y="365" text-anchor="middle" font-size="11">C10·300</text><rect x="177" y="122.8" width="25" height="217.2" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="C10·1k · DDPM: 43.44%"/><rect x="207" y="208.3" width="25" height="131.7" rx="4" fill="var(--chart-comparison)" tabindex="0" data-tip="C10·1k · 本文: 26.34%"/><text x="204" y="365" text-anchor="middle" font-size="11">C10·1k</text><rect x="272" y="339.6" width="25" height="0.4" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="C10·3k · DDPM: 0.08%"/><rect x="302" y="339.7" width="25" height="0.3" rx="4" fill="var(--chart-comparison)" tabindex="0" data-tip="C10·3k · 本文: 0.06%"/><text x="299" y="365" text-anchor="middle" font-size="11">C10·3k</text><rect x="367" y="100.7" width="25" height="239.3" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="FFHQ·300 · DDPM: 47.86%"/><rect x="397" y="190.7" width="25" height="149.3" rx="4" fill="var(--chart-comparison)" tabindex="0" data-tip="FFHQ·300 · 本文: 29.86%"/><text x="394" y="365" text-anchor="middle" font-size="11">FFHQ·300</text><rect x="462" y="170.4" width="25" height="169.6" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="FFHQ·1k · DDPM: 33.92%"/><rect x="492" y="302.4" width="25" height="37.6" rx="4" fill="var(--chart-comparison)" tabindex="0" data-tip="FFHQ·1k · 本文: 7.52%"/><text x="489" y="365" text-anchor="middle" font-size="11">FFHQ·1k</text><rect x="557" y="337.7" width="25" height="2.3" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="FFHQ·3k · DDPM: 0.46%"/><rect x="587" y="337.9" width="25" height="2.1" rx="4" fill="var(--chart-comparison)" tabindex="0" data-tip="FFHQ·3k · 本文: 0.42%"/><text x="584" y="365" text-anchor="middle" font-size="11">FFHQ·3k</text><rect x="652" y="210.7" width="25" height="129.3" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="Tiny·1k · DDPM: 25.86%"/><rect x="682" y="312.3" width="25" height="27.7" rx="4" fill="var(--chart-comparison)" tabindex="0" data-tip="Tiny·1k · 本文: 5.54%"/><text x="679" y="365" text-anchor="middle" font-size="11">Tiny·1k</text><rect x="747" y="309.6" width="25" height="30.4" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="Tiny·3k · DDPM: 6.08%"/><rect x="777" y="319.9" width="25" height="20.1" rx="4" fill="var(--chart-comparison)" tabindex="0" data-tip="Tiny·3k · 本文: 4.02%"/><text x="774" y="365" text-anchor="middle" font-size="11">Tiny·3k</text></svg>
+<figcaption>来源：核心论文表 1，arXiv v2 p.12；下方主结果表给出完整 FID、三档阈值及复算。悬停或键盘聚焦柱形查看精确值。</figcaption></figure><section class="card" aria-labelledby="8-消融超参敏感性与相变"><h2 id="8-消融超参敏感性与相变">8. 消融、超参敏感性与相变</h2>
+<h3 id="81-逐层消融">8.1 逐层消融</h3>
+<p>论文没有“移除每个组件”的标准消融表。能视为机制消融的只有表 2：DDPM
+表示不切分，Noise-only 表示全程只用高噪声信息，Masking
+表示换腐败类型，本文表示二段拼接。缺失的关键对照包括：每 epoch 重采
+<span
+class="math inline"><em>S</em><sub><em>t</em><sub><em>n</em></sub></sub></span>、同一图保留
+<span class="math inline"><em>k</em> &gt; 1</span> 个 noisy
+copies、只切时间但高噪声仍用 clean target、等 GPU-hour
+的正则化/早停基线。因为这些没有报告，所以不能把收益唯一归因于“固定一次
+noisy copy”还是“loss 重标定”。</p>
+<h3 id="82-单超参敏感性与非单调相变">8.2 单超参敏感性与非单调相变</h3>
+<p>Figure 1（arXiv v2 p.2）在 FFHQ/300 上扫噪声尺度并显示中间区间形成
+Pareto 前沿；论文文字称 <span
+class="math inline"><em>σ</em><sub><em>t</em><sub><em>n</em></sub></sub> ∈ [0.4,4]</span>
+较优，过低或过高都回到 DDPM 行为（§5.1，p.14）。但正文前面又把 VP
+日程写成 <span
+class="math inline"><em>σ</em><sub><em>t</em></sub> ∈ [0,1]</span>，所以“4”不可能是同一个归一化
+VP 参数，更可能是 EDM
+的实际噪声尺度。作者没有明确给出两种参数化的映射。这是复现中的相位坐标歧义。</p>
+<p>此外，论文没有把 Figure 1 的点坐标列成表，也未跨 CIFAR/Tiny ImageNet
+报告完整 sweep，更没有给 <span
+class="math inline"><em>t</em><sub><em>m</em><em>i</em><em>n</em></sub>, <em>t</em><sub><em>m</em><em>a</em><em>x</em></sub></span>
+随样本数、分辨率、架构变化的规律。因此我们只能确认“FFHQ/300
+存在非单调区间”，不能宣称通用相变阈值。文本条件只试 {25,50,100}
+并按图像质量挑最好（附录
+D，p.30），没有公开每个点的相似度/FID，选择过程无法审计。</p>
+<h3 id="83-统计显著性">8.3 统计显著性</h3>
+<p><strong>论文未报告</strong>主表的多随机种子均值、标准差、bootstrap
+区间或显著性检验。训练子集称“随机抽取”，但没有列 seed；每项 FID 虽用 50k
+样本计算，仍无法消除训练随机性与子集选择方差。因此 CIFAR-10/300 的 46.92
+pp 复制率下降足够大，方向性证据较强；FFHQ/3k 的 FID 差 0.04
+则完全不能被解释为真实优劣。</p>
+</section><section class="card" aria-labelledby="9-相关工作问题来源技术来源链"><h2 id="9-相关工作问题来源技术来源链">9.
+相关工作：问题来源—技术来源链</h2>
+<h3 id="91-ambient-diffusion从坏数据也能学到主动制造坏数据">9.1 Ambient
+Diffusion：从“坏数据也能学”到“主动制造坏数据”</h3>
+<p>它解决的是只观察随机腐败测量时学习 clean
+distribution；核心技巧是再施加一次已知腐败并预测原测量。遗留缺口是：若
+clean data
+本来可得，为何要牺牲它？核心论文把答案改为隐私/创造性：只在高噪声段主动隐藏
+clean point。设计传递非常直接——Ambient
+loss、进一步加噪、可识别性论证被保留；新增的是时间切分与低噪声 DDPM
+回路。原论文能在 90%
+缺像素下训练（p.1），但也承认高腐败训练偶发发散、需回滚 checkpoint（附录
+p.18），提醒这种技术并非零成本稳定化。</p>
+<h3 id="92-somepalli-et-al复制不仅来自图片重复也来自-caption-key">9.2
+Somepalli et al.：复制不仅来自图片重复，也来自 caption key</h3>
+<p>该工作解决“为什么 Stable Diffusion 会复制”，把图像重复与 caption
+特异性拆开；在 LAION-10k 表 1（p.9）中，image+caption 重复的相似度从
+0.663 经 multiple captions 降到
+<strong>0.470</strong>。遗留缺口是方法主要改文本条件，无法解释无条件小数据集的结构—纹理分工。核心论文用高噪声视觉侧腐败补上这一支，并在文本实验中承认自己单独无效。设计传递体现在组合行
+S23+ours，而不是取代 S23。</p>
+<h3 id="93-wen-et-al记忆在第一步条件噪声中已可见">9.3 Wen et
+al.：记忆在第一步条件噪声中已可见</h3>
+<p>该工作解决无需训练集、低成本检测 trigger
+prompts，并把条件噪声幅值作为可解释信号。它的第一步单样本检测 AUC
+0.960（表
+1，p.5），表明高噪声早期就被文本条件劫持。遗留缺口是它面向检测和文本侧干预，没有改变视觉训练数据暴露。核心论文在视觉侧改变高噪声训练，并把
+W24 作为互补模块；W24+本文在保持 CLIP 0.293 时把平均相似度从 0.208 降至
+0.192（核心表 3，p.15）。</p>
+<h3 id="94-kamb--ganguli创造性来自网络偏置而非经验最优">9.4 Kamb &amp;
+Ganguli：创造性来自网络偏置，而非经验最优</h3>
+<p>该工作解决“理论只会复现、卷积扩散却会创造”的矛盾，用
+locality+equivariance 得到可解析 patch-mosaic 机制。其最佳模型在
+CIFAR/FashionMNIST/MNIST/CelebA 的中位 <span
+class="math inline"><em>r</em><sup>2</sup></span> 为
+0.95/0.94/0.94/0.96（摘要 p.1；表 1
+p.25）。遗留缺口是解释性强但不是通用训练干预，注意力模型拟合降至约
+0.77。核心论文采取正交路线：不依赖架构天然“拟合失败”，而是通过固定 noisy
+copies
+主动改变高噪声经验分布。设计传递是共同接受“经验最优=记忆”，但一个解释
+implicit bias，一个设计显式数据接口。</p>
+<h3 id="95-feldman长尾稀有子群为何让记忆有时必要">9.5
+Feldman：长尾稀有子群为何让记忆有时必要</h3>
+<p>该工作解决监督学习中“记忆长尾样本是否有助泛化”，提供稀有子群频率下界。遗留缺口是没有噪声时间轴和生成采样。核心论文把每个噪声时刻视为一个学习问题：低噪声保留分离的长尾子群，高噪声让高斯分量合并、减小
+<span
+class="math inline"><em>τ</em><sub>1</sub></span>。设计传递是误差分解与
+rare subpopulation 系数；新增转折是“噪声改变频率几何”。</p>
+<h3 id="96-非线性技术演进树">9.6 非线性技术演进树</h3>
+<pre class="text"><code>Feldman 2020：长尾稀有子群 → 记忆可能帮助泛化
+             │
+             ├──────────────┐
+             ▼              ▼
+经验 score = 训练点核混合   Somepalli 2023：caption 也是唯一键
+             │              │
+             ▼              ├── Wen 2024：第一步条件幅值检测/干预
+Ambient Diffusion 2023       │
+“从腐败数据恢复 clean”      │
+             │              │
+             ├──────┬───────┘
+             ▼      ▼
+     Ambient Creativity 2025
+   高噪声固定 noisy copy + 低噪声 DDPM
+             │
+      ┌──────┴─────────┐
+      ▼                ▼
+Kamb 2025：局部拼贴解释   2025–26：训练动力学/局部覆盖/score smoothing
+（解释隐式创造性）       （寻找何时、何处、如何记忆）</code></pre>
+<p>演进动力从“有没有复制”转向三个可分问题：<strong>哪类条件触发、哪段时间形成、哪块数据空间稀疏</strong>。核心论文的转折是把腐败学习工具转为轨迹级访问控制；后续工作则开始质疑全局阈值，转向训练时间与局部数据覆盖。</p>
+<h3 id="97-跨论文对标">9.7 跨论文对标</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">干预位置</th>
+<th scope="col">是否需训练集访问</th>
+<th scope="col">核心可证性质</th>
+<th scope="col">主要盲区</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Ambient Diffusion</td>
+<td>全程训练数据腐败</td>
+<td>训练时需 corrupted data</td>
+<td>可识别 clean conditional expectation</td>
+<td>质量随腐败恶化、稳定性</td>
+</tr>
+<tr class="even">
+<td>Somepalli et al.</td>
+<td>caption 数据增强/推理扰动</td>
+<td>训练或推理</td>
+<td>无 DP 保证</td>
+<td>无条件生成</td>
+</tr>
+<tr class="odd">
+<td>Wen et al.</td>
+<td>prompt 检测、推理/训练过滤</td>
+<td>检测不需训练集</td>
+<td>检测经验 AUC</td>
+<td>未覆盖视觉侧逐点记忆</td>
+</tr>
+<tr class="even">
+<td>Kamb &amp; Ganguli</td>
+<td>架构归纳偏置解释</td>
+<td>解释时需数据/模型</td>
+<td>卷积局部 score 解析近似</td>
+<td>注意力与大模型</td>
+</tr>
+<tr class="odd">
+<td><strong>核心论文</strong></td>
+<td>高噪声视觉训练 + 低噪声常规训练</td>
+<td>需要 clean data 构造一次 noisy set</td>
+<td>中间时刻互信息、长尾直觉</td>
+<td>无端到端/DP 保证</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="10-真正贡献复用设计与迁移潜力"><h2 id="10-真正贡献复用设计与迁移潜力">10.
+真正贡献、复用设计与迁移潜力</h2>
+<p>真正贡献不是“Ambient loss
+再用一次”，而是三个组合判断：一，把生成轨迹看成具有不同记忆必要性的阶段；二，把固定
+randomized view
+当成高噪声训练的数据访问边界；三，在低噪声段有意识地允许“复制可复用纹理”。这种观点比全局正则化更细：它承认记忆并非全坏，关键是别让单样本身份支配决定语义结构的早期轨迹。</p>
+<p>可复用设计包括：</p>
+<ul>
+<li><strong>阶段化数据权限</strong>：不同噪声/深度/分辨率阶段看不同保真度的数据，可迁移到
+flow matching、masked generative models 与多尺度 AR。</li>
+<li><strong>固定随机视图而非无限增强</strong>：当目标是限制单样本信息泄露时，增强重采样次数本身就是“查询预算”；这可迁移到个性化微调、合成医疗影像和私有小样本适配。</li>
+<li><strong>Pareto
+而非单分数选择</strong>：部署应同时记录质量、最近邻复制、攻击成功率，不能只调一个
+FID。</li>
+<li><strong>文本—视觉双通道防线</strong>：视觉侧 noisy-copy 不能替代
+caption dedup/trigger detection；二者应正交组合。</li>
+</ul>
+<p>迁移到 flow matching 需要重新推导 corruption-consistent vector
+field；迁移到 latent diffusion 必须区分 pixel-space DINO 相似度与 latent
+identity leakage；迁移到
+3D/视频则要防止跨视角或跨帧的局部复制被单帧最近邻指标漏掉。</p>
+</section><section class="card" aria-labelledby="11-论文自述限制与独立批判"><h2 id="11-论文自述限制与独立批判">11. 论文自述限制与独立批判</h2>
+<h3 id="111-作者自述限制">11.1 作者自述限制</h3>
+<ol type="1">
+<li><strong>无隐私保证</strong>：结论 §6，p.15 明确表示方法没有 privacy
+guarantee；因此不能将较低 DINO 最近邻率等同于 <span
+class="math inline">(<em>ε</em>,<em>δ</em>)</span>-DP。</li>
+<li><strong>无最优性性质</strong>：同页承认没有 optimality
+properties；Figure 1 的 Pareto 前沿只对有限 sweep 和单设置成立。</li>
+<li><strong>缺端到端理论</strong>：作者承认从高噪声 Ambient 到低噪声
+DDPM 的整体算法没有端到端分析；p.9 的互信息结果停在中间时刻。</li>
+</ol>
+<h3 id="112-独立批判均按因为-x所以-y">11.2 独立批判（均按“因为 X，所以
+Y”）</h3>
+<ol type="1">
+<li><strong>[归因]</strong> 因为论文没有“固定一次 <span
+class="math inline"><em>S</em><sub><em>t</em><sub><em>n</em></sub></sub></span>
+vs 每 epoch 重采”的直接消融，而 v2
+又把固定一次称为主要新意（pp.7–8），所以无法区分收益来自信息预算、目标重标定还是普通数据增强正则化。</li>
+<li><strong>[理论外推]</strong> 因为互信息 Lemma 4.2
+只处理单个高斯训练点和 <span
+class="math inline"><em>t</em><sub><em>n</em></sub></span>
+中间分布，且作者自己把整条拼接轨迹称为
+conjecture（p.9），所以不能从该式推出最终图像不可恢复或具有成员隐私。</li>
+<li><strong>[指标有效性]</strong> 因为“记忆”由数据集特定 DINOv2
+阈值定义，却没有人类校准、ROC、SSCD/像素复制交叉验证，所以 56.56%→9.64%
+证明的是该 proxy 大幅变化，不等价于版权复制率降低 46.92 pp。</li>
+<li><strong>[统计]</strong> 因为所有主表都没有
+seed、标准差和显著性检验，所以 FFHQ/3k 的 FID 6.42 vs 6.46
+不能支持任何质量排序；甚至 CIFAR-10 的 1k FID 10.46 优于 3k 的
+14.73，说明跨规模比较存在未解释方差或设置差异。</li>
+<li><strong>[参数一致性]</strong> 因为理论 VP 定义 <span
+class="math inline"><em>σ</em><sub><em>t</em></sub> ∈ [0,1]</span>，实验文字却称
+<span
+class="math inline"><em>σ</em><sub><em>t</em><sub><em>n</em></sub></sub> ∈ [0.4,4]</span>（Figure
+1/§5.1），所以复现者无法仅凭论文确定阈值究竟是 VP 标准差、EDM sigma
+还是变换后的时间坐标。</li>
+<li><strong>[条件生成边界]</strong> 因为本文单独用于 LAION-10k
+时平均相似度只从 0.378 到 0.373（相对 −1.32%），同时 FID
+18.18→18.34，所以“文本条件也有效”的表述必须限定为与 S23/W24
+组合，而非独立有效。</li>
+<li><strong>[计算公平性]</strong> 因为论文未报告
+GPU-hour、吞吐或额外数据构造/双分支采样成本，所以无法判断相对 DDPM 的
+Pareto 改进是否仍是等计算预算下的 Pareto 改进。</li>
+<li><strong>[攻击面]</strong>
+因为评测只做最近邻相似度，没有训练数据提取、成员推断、canary exposure
+或多查询聚合攻击，所以“固定 noisy copy
+不随生成数线性泄露”的理论优势没有被现实攻击验证。</li>
+</ol>
+</section><section class="card" aria-labelledby="12-开放挑战可操作的-head-to-head-空白"><h2 id="12-开放挑战可操作的-head-to-head-空白">12. 开放挑战：可操作的
+head-to-head 空白</h2>
+<h3 id="121-理论">12.1 理论</h3>
+<ul>
+<li><strong>整体分布下界实验</strong>：在共享架构与 sampler 下对
+DDPM、本文、score smoothing 三者，测终点分布到经验分布/真实分布的
+Wasserstein 距离；同步验证中间互信息是否预测最终 extraction rate。</li>
+<li><strong>阈值缩放律</strong>：固定数据分布，系统改变 <span
+class="math inline"><em>n</em> ∈ {300, 1<em>k</em>, 3<em>k</em>, 10<em>k</em>, 30<em>k</em>}</span>、分辨率和网络容量，比较最优
+<span class="math inline"><em>t</em><sub><em>n</em></sub></span>
+与后续工作中的 <span
+class="math inline"><em>τ</em><sub><em>m</em><em>e</em><em>m</em></sub> ∝ <em>n</em></span>；目标是得到可证、可拟合的相变边界。</li>
+<li><strong>固定噪声查询预算</strong>：比较每图 noisy copies <span
+class="math inline"><em>k</em> ∈ {1, 2, 4, 8, ∞}</span>，测互信息估计、FID、DINO/SSCD
+复制率，检验泄露是否随 <span class="math inline"><em>k</em></span>
+单调增长。</li>
+</ul>
+<h3 id="122-工程应用">12.2 工程应用</h3>
+<ul>
+<li><strong>等 GPU-hour 对比</strong>：DDPM+早停、DDPM+weight
+decay、本文、DP-SGD、caption mitigation 在相同 H100 小时下比较
+FID、CLIP、p95 延迟与 extraction
+success；这是判断生产价值的最低公平线。</li>
+<li><strong>多指标复制审计</strong>：同一 50k 生成集同时用
+DINOv2、SSCD、LPIPS、像素哈希和盲人评，构造阈值 ROC；head-to-head
+检验“降低 DINO 最近邻”是否只是特征空间规避。</li>
+<li><strong>真实私有域</strong>：在有授权的医学/人脸小样本集植入
+canary，比较本文与 DP 扩散的成员推断 AUC和诊断/身份保真；避免用 FFHQ
+proxy 代替隐私结论。</li>
+</ul>
+<h3 id="123-新兴方向">12.3 新兴方向</h3>
+<ul>
+<li><strong>Flow Matching 迁移</strong>：同一 backbone 上比较分段
+Ambient-FM、标准 FM、加温 score/velocity smoothing，测
+NFE、FID、复制率；验证“高噪声结构—低噪声细节”是否依赖 diffusion
+parameterization。</li>
+<li><strong>3D/视频记忆</strong>：比较单帧 DINO、跨帧轨迹指纹、3D
+point-cloud matching，对本文式阶段权限与 rotation/temporal augmentation
+做二乘二实验，检测局部复制是否在跨视角重组后被隐藏。</li>
+<li><strong>扩散语言模型</strong>：以相同 PII canary 和采样步数比较 DLM
+的 mask-resolution、本文式固定 corrupted sequence 与 AR
+解码；检验高采样分辨率导致的提取概率上升能否被阶段化数据权限打断。</li>
+</ul>
+</section><section class="card" aria-labelledby="13-近期工作雷达"><h2 id="13-近期工作雷达">13. 近期工作雷达</h2>
+<ol type="1">
+<li><a href="https://arxiv.org/abs/2505.17638">Why Diffusion Models
+Don't Memorize</a>（2025）：提出生成质量出现时间 $\tau_{gen}$
+基本不随样本数变，而记忆时间 <span
+class="math inline"><em>τ</em><sub><em>m</em><em>e</em><em>m</em></sub></span>
+随 <span class="math inline"><em>n</em></span>
+线性增长；它提示“早停”是本文必须面对的廉价基线。</li>
+<li><a href="https://arxiv.org/abs/2509.25705">How Diffusion Models
+Memorize</a>（2025）：把记忆归因于早期去噪对训练样本的过估计与轨迹坍缩；与本文“控制高噪声段”方向相合，但机制从数据访问转向动态偏差。</li>
+<li><a href="https://arxiv.org/abs/2503.19429">Quantifying the Ease of
+Reproducing Training Data</a>（2025）：用反向 ODE
+的体积增长估计单个训练样本被复现的概率，为比最近邻阈值更连续的风险指标提供候选。</li>
+<li><a href="https://arxiv.org/abs/2512.23628">Memorization in 3D Shape
+Generation</a>（2025）：显示 3D 记忆受模态、条件粒度、guidance scale 与
+Vecset 长度影响；说明二维 DINO 阈值不能直接外推。</li>
+<li><a href="https://arxiv.org/abs/2601.19285">Smoothing the Score
+Function for Generalization</a>（2026）：把经验 score 的尖锐 softmax
+权重视为单点支配来源，并提出温度平滑；应与本文做同预算
+head-to-head。</li>
+<li><a href="https://arxiv.org/abs/2603.02333">Characterizing
+Memorization in Diffusion Language
+Models</a>（2026）：理论上把采样分辨率与精确提取概率关联，拓展了“哪段生成过程泄露”的问题到离散扩散。</li>
+<li><a href="https://arxiv.org/abs/2606.14390">Local Coverage Governs
+Memorization</a>（2026）：把全局样本数改写为局部覆盖率，在同一模型内解释“稀疏区记、密集区泛化”；它直接挑战单一全局
+$t_n$ 是否足够。</li>
+</ol>
+</section><section class="card" aria-labelledby="14-结论"><h2 id="14-结论">14. 结论</h2>
+<p>这篇论文最值得带走的不是一个新的 diffusion
+loss，而是“<strong>把记忆权限按噪声阶段切开</strong>”的设计观。它在最有说服力的小样本无条件设置中确实把复制
+proxy 大幅降低且不损 FID：CIFAR-10/300 的最高阈值相似率
+<strong>56.56%→9.64%</strong>，FID
+<strong>25.10→23.91</strong>。但外推必须收紧：文本条件下单独收益仅 0.005
+相似度，缺少多种子、攻击评测、等算力比较和端到端隐私理论；它应被视为可组合的
+anti-memorization building block，而不是“生成无需记忆”的最终答案。</p>
+<hr />
+<p><strong>复算说明</strong>：所有绝对/相对提升均由报告依据论文表格数值计算，保留两位小数；相似率差使用百分点（pp）。<br />
+<strong>完整性说明</strong>：论文未报告五基准×六方法统一矩阵、标准差、显著性、完整超参
+sweep 或 GPU-hour，本报告均未补造。<br />
+<strong>呈现验证说明</strong>：HTML 已通过 Warm Editorial 结构验证器（0
+warnings），并以响应式/打印 CSS 做静态审计；本机未提供
+<code>/usr/bin/chromium</code> 或 <code>/opt/pw-browsers</code>
+可执行文件，因此无法如实声称完成 Playwright
+的浅色、深色与移动端截图检查，且未运行
+<code>playwright install</code>。<br />
+<strong>索引更新</strong>：已将本报告条目追加到
+<code>ml-report-index.md</code>。</p>
+</section>
+  </main>
+
+  <footer>核心来源：ICML/PMLR、arXiv v2、OpenReview、官方代码；技术链深读 Ambient Diffusion、Somepalli、Wen、Kamb 与 Feldman。生成于 2026-09-09。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

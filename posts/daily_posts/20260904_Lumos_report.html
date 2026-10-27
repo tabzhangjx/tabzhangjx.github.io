@@ -1,0 +1,1221 @@
+---
+layout: null
+title: "Lumos"
+date: 2026-09-04
+topic: "llm-systems"
+tags: ["llm-systems", "distributed-training", "performance-modeling"]
+excerpt: "Kineto trace × 因果执行图 × 反事实配置重放 Lumos 将平均重放误差从 14.0% 降至 3.3%，但未公开的 kernel 时延模型与缺失的 TP/OOM 建模限制了独立复现和全局规划。"
+permalink: "/blog/2026/09/04/lumos/"
+blog_post: true
+lang: "zh-CN"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_en: "/blog/2026/09/04/lumos/en/"
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Lumos：一次真实迭代，能否替代 512 张 H100 上的试错？ · 2026-09-04</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ML / AI DAILY DEEP PAPER · MLSys 2025</p>
+    <h1>Lumos：一次真实迭代，能否替代 512 张 H100 上的试错？</h1>
+    <p class="subtitle">Kineto trace × 因果执行图 × 反事实配置重放</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">MLSys 2025 · arXiv v1</span>
+      <span class="chip">2026-09-04</span>
+      <span class="chip">效率与系统</span>
+    </div>
+    <p class="lede">Lumos 将平均重放误差从 14.0% 降至 3.3%，但未公开的 kernel 时延模型与缺失的 TP/OOM 建模限制了独立复现和全局规划。</p>
+  </header>
+
+  <main>
+<section class="card" aria-labelledby="0-链接验证表与证据口径"><h2 id="0-链接验证表与证据口径">0. 链接验证表与证据口径</h2>
+<p>以下链接均在 2026-09-04 实际访问。实验数字只来自逐页读取的论文
+PDF；网页只用于核验版本、会议与资源状态。没有从曲线像素猜数：图 7
+的数字直接印在堆叠条上；其余没有标签的柱/曲线只作定性判断。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">会议/论文</th>
+<th scope="col">arXiv（版本与日期）</th>
+<th scope="col">代码</th>
+<th scope="col">数据/权重</th>
+<th scope="col">项目页/视频</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Lumos</strong></td>
+<td><a
+href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/a66caa1703fe34705a4368c3014c1966-Abstract-Conference.html">MLSys
+2025 论文页</a>；<a
+href="https://proceedings.mlsys.org/paper_files/paper/2025/file/a66caa1703fe34705a4368c3014c1966-Paper-Conference.pdf">终稿
+PDF</a></td>
+<td><a
+href="https://arxiv.org/abs/2504.09307">2504.09307</a>，**v1，2025-04-12**，也是当前唯一版本</td>
+<td><strong>未公开/未找到</strong>；搜索到的同名 GitHub
+仓库与本文无关</td>
+<td>训练 trace、内部 kernel
+模型、生成图均<strong>未公开/未找到</strong></td>
+<td>独立项目页、作者视频<strong>未找到</strong></td>
+</tr>
+<tr class="even">
+<td>TraceSim</td>
+<td><a
+href="https://mingyu-liang.github.io/files/mlarchsys24-tracesim.pdf">MLArchSys
+@ ISCA 2024 PDF</a>；<a
+href="https://openreview.net/forum?id=nWPq6s35Rr">OpenReview</a>（访问时跳转浏览器验证页）</td>
+<td>未找到独立 arXiv 记录</td>
+<td><strong>未找到</strong></td>
+<td><strong>未找到</strong></td>
+<td>视频入口曾被索引，但本次页面加载失败，故标为<strong>未核验</strong></td>
+</tr>
+<tr class="odd">
+<td>dPRO</td>
+<td><a
+href="https://proceedings.mlsys.org/paper_files/paper/2022/hash/b422680f3db0986ddd7f8f126baaf0fa-Abstract.html">MLSys
+2022 论文页</a>；<a
+href="https://proceedings.mlsys.org/paper_files/paper/2022/file/b422680f3db0986ddd7f8f126baaf0fa-Paper.pdf">PDF</a></td>
+<td><a href="https://arxiv.org/abs/2205.02473">2205.02473</a>，v1
+2022-05-05</td>
+<td>论文 Artifact Appendix 声明公开源码与样例
+trace；稳定仓库入口本次<strong>未找到</strong></td>
+<td>Artifact 含一项 2×8-V100 的 Horovod+TensorFlow+TCP trace（dPRO PDF
+p.14）</td>
+<td>独立项目页/视频<strong>未找到</strong></td>
+</tr>
+<tr class="even">
+<td>Daydream</td>
+<td><a
+href="https://www.usenix.org/conference/atc20/presentation/zhu-hongyu">USENIX
+ATC 2020 页面/PDF</a></td>
+<td>未找到 arXiv 版本</td>
+<td><strong>未找到</strong></td>
+<td><strong>未找到</strong></td>
+<td>会议页含演讲视频与 slides（均从该页进入）</td>
+</tr>
+<tr class="odd">
+<td>ASTRA-sim 2.0</td>
+<td><a href="https://arxiv.org/abs/2303.14006">ISPASS 2023 /
+arXiv</a></td>
+<td><strong>v1，2023-03-24</strong></td>
+<td><a
+href="https://github.com/astra-sim/astra-sim">GitHub，MIT</a></td>
+<td>示例 workload/topology 随仓库公开；无模型权重概念</td>
+<td><a
+href="https://astra-sim.github.io/">项目页</a>，视频未单独核验</td>
+</tr>
+<tr class="even">
+<td>Calculon</td>
+<td><a
+href="https://sc23.supercomputing.org/proceedings/tech_paper/tech_paper_pages/pap552.html">SC
+2023 proceedings</a>；ACM DOI 页面本次返回 403，未列作可用链接</td>
+<td>未找到 arXiv 版本</td>
+<td><a
+href="https://github.com/calculon-ai/calculon">Calculon</a>，Apache-2.0</td>
+<td><a href="https://github.com/calculon-ai/sc23">SC'23
+复现实验</a>已公开</td>
+<td>独立视频<strong>未找到</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>证据标签</strong>：<code>论文原报</code>
+表示作者文字或表图标签；<code>本报告复算</code>
+只做加总、差值与百分比；<code>论文未报告</code>
+绝不以推测填补。HTML、Markdown、纯文本三份正文由同一 Markdown
+源生成，内容一致。</p>
+</section><section class="card" aria-labelledby="1-候选池排重与真实随机选择"><h2 id="1-候选池排重与真实随机选择">1. 候选池、排重与真实随机选择</h2>
+<p>先查 <code>ml-report-index.md</code>：最近 14 天已经深读
+QServe（量化服务）、PARQ（量化训练）以及与生成系统相邻的
+LongLive，因此剔除它们及近重复的“再做一篇低比特”。候选来自 MLSys 2025
+proceedings、OSDI 2025、arXiv、OpenReview、Hugging Face Daily
+Papers、Papers with Code 与 Semantic Scholar
+的交叉检索；后四者用于发现或核验，不以二手摘要替代原论文。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">#</th>
+<th scope="col">候选论文</th>
+<th scope="col">方向/来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td>Youmu: Efficient Columnar Data Pipeline for LLM Training</td>
+<td>数据管线，MLSys 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td>LeanAttention</td>
+<td>decode attention，MLSys 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td>Rethinking KV Cache Compression</td>
+<td>KV cache，MLSys 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td>SampleAttention</td>
+<td>长上下文推理，MLSys 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td>ReaL</td>
+<td>RLHF 训练资源重分配，MLSys 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td>APOLLO</td>
+<td>优化器内存，MLSys 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td>PipeFill</td>
+<td>pipeline bubble 回收，MLSys 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">8</td>
+<td>HyC-LoRA</td>
+<td>activation 压缩，MLSys 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td>XGrammar</td>
+<td>结构化生成引擎，MLSys 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td>FlexAttention</td>
+<td>attention 编译，MLSys 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td>NEO</td>
+<td>CPU offload，MLSys 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">12</td>
+<td>Context Parallelism for Million-Token Inference</td>
+<td>上下文并行，MLSys 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td>Marconi</td>
+<td>prefix cache，MLSys 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td>FastTree</td>
+<td>tree attention/runtime，MLSys 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td>Scaling Training with MPMD Pipeline Parallelism</td>
+<td>训练并行，MLSys 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;"><strong>16</strong></td>
+<td><strong>Lumos</strong></td>
+<td><strong>训练性能建模，MLSys 2025</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td>Dynamic Input Pruning and Cache-Aware Masking</td>
+<td>推理剪枝，MLSys 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td>Optimizing LLM Queries in Relational Analytics</td>
+<td>数据系统，MLSys 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">19</td>
+<td>SOLA</td>
+<td>SLO 调度，MLSys 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">20</td>
+<td>ThunderServe</td>
+<td>异构云服务，MLSys 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">21</td>
+<td>Seesaw</td>
+<td>model resharding，MLSys 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">22</td>
+<td>LServe</td>
+<td>稀疏长序列服务，MLSys 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">23</td>
+<td>FlashInfer</td>
+<td>attention engine，MLSys 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">24</td>
+<td>WaferLLM</td>
+<td>wafer-scale 推理，OSDI 2025</td>
+</tr>
+</tbody>
+</table></div>
+<p>本地执行 <code>date +%u</code> 得到
+<strong>5</strong>，确认周五；执行 <code>shuf -i 1-24 -n 1</code> 得到
+<strong>16</strong>。因此核心论文是
+Lumos。<strong>重抽次数：0</strong>；正文、附录级讨论、会议终稿和九组带数字的
+scale-out 分解足够支撑深读。它发表于当前日期前约 17 个月，仍在“不得超过
+24 个月”的硬约束内；候选优先主会系统论文，随机步骤没有按热度挑选。</p>
+</section><section class="card" aria-labelledby="2-motivation最难预测的不是-flops而是什么时候真的能跑"><h2 id="2-motivation最难预测的不是-flops而是什么时候真的能跑">2.
+Motivation：最难预测的不是 FLOPs，而是“什么时候真的能跑”</h2>
+<p>大模型训练配置空间是模型结构与系统策略的笛卡尔积：层数、隐藏维、FFN
+维度、micro-batch，再乘 TP、PP、DP、pipeline schedule、collective
+与网络拓扑。简单解析模型把每项耗时相加，却无法知道通信与计算重叠了多少；粗粒度
+trace simulator 又可能漏掉 host thread、CUDA runtime、不同 stream
+之间的因果边。</p>
+<p>论文用 GPT-3 175B、<code>TP=8, PP=4, DP=8</code>
+的一次迭代给出直观证据。图 1（PDF p.2；网页抽取 p.1 lines
+60–65）中，dPRO/实测的四部分依次为：exposed compute <strong>3235/4287
+ms</strong>、overlapped <strong>1691/885 ms</strong>、exposed
+communication <strong>1417/2261 ms</strong>、other <strong>81/178
+ms</strong>。加总为 <strong>6424 vs 7611 ms</strong>，即 dPRO 低估总时长
+<strong>1187 ms（15.60%）</strong>；更重要的是，它把真正暴露的 compute
+低估 <strong>24.54%</strong>，却把 overlap 高估
+<strong>91.07%</strong>（本报告复算）。总数错，可以用校准项勉强修；分解错，则会把工程师引向错误瓶颈。</p>
+<p>这正是 Lumos 的问题定义：给定一次或少数几次实际
+trace，构造足够忠实的执行图 <code>G=(V,E)</code>，使仿真既重放端到端
+makespan，也保留 compute、communication、overlap、host/runtime
+和时序空洞；然后只改受新配置影响的节点、边与
+duration，做成本远低于真机部署的反事实估计。</p>
+<p>其核心假设与代价是：</p>
+<ol type="1">
+<li><strong>迭代稳定性假设</strong>：一次/少数几次 trace
+代表长期迭代。论文称因此 profiling overhead
+对全训练“negligible”，却没有给 overhead 百分比（§5，PDF p.10；lines
+760–767）。</li>
+<li><strong>依赖模式可迁移假设</strong>：改变层数或 PP 后，旧 trace
+的局部依赖模板仍成立（§3.4，PDF p.5；lines
+360–383）。它换来廉价变换，但可能漏掉编译器选择、融合、拥塞相变。</li>
+<li><strong>duration 可外供假设</strong>：新 GEMM/collective
+的时间由内部 fleet-trace 模型估计；kernel predictor
+本身明确不在论文范围内（§5，PDF p.10；lines 783–797）。因此 Lumos
+的公开方法只解决“何时可调度”，未完整公开“新任务跑多久”。</li>
+</ol>
+</section><section class="card" aria-labelledby="3-故事线从-profile-到反事实执行图"><h2 id="3-故事线从-profile-到反事实执行图">3. 故事线：从 profile
+到反事实执行图</h2>
+<p>Lumos 的设计链条很紧：Kineto
+负责观察，依赖恢复负责因果，图变换负责提出反事实，离散事件仿真负责把反事实执行出来。</p>
+<p><strong>第一层：低侵入采集。</strong> Kineto 同时记录 PyTorch
+operator、CUDA runtime event 与 GPU
+kernel，包括开始时间、duration、stream/thread/correlation
+ID。论文称只需约 <strong>10 行 hook</strong>；系统为 Python 约
+<strong>5200 LoC</strong>，从原 trace 到预测 trace
+用时数秒至数分钟（§4，PDF p.6；lines 437–445）。这比要求修改
+framework/model 的旧工具更易落地，但“需要源码插 hook”仍不是零接入。</p>
+<p><strong>第二层：补齐四种依赖。</strong> 节点只有 CPU task 与 GPU task
+两类，边却覆盖四象限（§3.3，PDF pp.4–5；lines 252–318）：</p>
+<ul>
+<li>CPU→CPU：同 thread 的顺序边，以及由显著 execution gap 推断的跨
+thread 阻塞边；</li>
+<li>CPU→GPU：以 correlation ID 连接
+<code>cudaLaunchKernel</code>/<code>cudaMemsetAsync</code> 与目标
+kernel；</li>
+<li>GPU→CPU：<code>cudaDeviceSync</code>/<code>cudaStreamSync</code>
+把完成的 kernel 连回阻塞的 host task；</li>
+<li>GPU→GPU：同 stream 顺序边；跨 stream 则配对
+<code>cudaEventRecord</code> 与 <code>cudaStreamWaitEvent</code>。</li>
+</ul>
+<p>Lumos 相对 dPRO 的真正技术跃迁不是“图更细”这句口号，而是显式保存跨
+stream 的 happens-before。LLM 训练恰恰大量用独立 stream 覆盖 NCCL 与
+GEMM；少一条 wait edge 就会让仿真认为二者可同时执行，造成图 1 那种
+overlap 虚高。</p>
+<p><strong>第三层：图变换。</strong> DP 变化时，本地计算不变，只更新
+collective duration；PP 变化时，按 1F1B schedule 重新分层、分
+stage、插通信节点并重建相邻依赖；层数变化复制 layer subgraph，hidden/FFN
+变化则改 tensor shape 和关键 GEMM/通信 duration（§3.4、§4.3.2，PDF
+pp.5、9；lines 360–383、717–726）。论文<strong>不支持改变
+TP</strong>，理由是实践中通常固定在单节点内，留作未来工作（PDF
+p.5；lines 370–373）。</p>
+</section><section class="card" aria-labelledby="4-方程级形式化伪代码与流程"><h2 id="4-方程级形式化伪代码与流程">4. 方程级形式化、伪代码与流程</h2>
+<p>令每个任务 <code>v∈V</code> 具有处理器 <code>p(v)</code>（CPU thread
+或 CUDA stream）、持续时间 <code>d(v)</code>、固定前驱
+<code>Pred_f(v)</code> 与运行时前驱
+<code>Pred_r(v,t)</code>。仿真开始时间可写为：</p>
+<pre><code>s(v) = max( A[p(v)],  max_{u∈Pred_f(v)∪Pred_r(v,t)} (s(u)+d(u)) )
+f(v) = s(v)+d(v)
+A[p(v)] ← f(v)
+T_iter = max_v f(v) − min_v s(v)</code></pre>
+<p><code>A[p]</code> 是处理器下一次可用时间。固定边在初始化计入
+indegree；运行时边要等 task 被选中时才能解析，例如
+<code>cudaStreamSync</code> 必须等待“当时该 stream 最后一个
+kernel”，这个对象在仿真前未必可知。论文 Algorithm 1（PDF p.6；lines
+384–417）可重写为：</p>
+<pre><code>R ← 所有固定入度为 0 的任务；A[p] ← 0
+while R 非空:
+    v ← pick(R)
+    动态发现 v 的 runtime dependencies，并把 v 暂挂到前驱 dependents
+    if v 当前入度为 0:
+        s(v) ← max(A[p(v)], 已知最早开始时刻)
+        A[p(v)] ← s(v)+d(v)
+        for c in dependents(v):
+            indegree(c) -= 1
+            earliest(c) ← max(earliest(c), A[p(v)])
+            if indegree(c)=0: R.add(c)
+输出带所有 task 起止时刻的新 trace</code></pre>
+<p>流程不是线性的“测一下再乘 scaling factor”，而是：</p>
+<pre><code>                    ┌─ CPU thread 顺序/阻塞 ─┐
+Kineto trace ─解析─┼─ launch / sync 相关边 ─┼─→ G=(V,E)
+                    └─ CUDA stream/event 边 ─┘       │
+                                                     ├─ 原图重放 → 精度审计
+新 DP/PP/层数/宽度 ─→ 图复制/切分/插边/改 duration ─┤
+                                                     └─ 事件仿真 → 预测 trace
+                                                                   ├─ makespan
+                                                                   ├─ 暴露计算/通信
+                                                                   └─ overlap/活动时间线</code></pre>
+</section><section class="card" aria-labelledby="5-关键机制与工程细节"><h2 id="5-关键机制与工程细节">5. 关键机制与工程细节</h2>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">机制</th>
+<th scope="col">输入信号</th>
+<th scope="col">图操作/实现</th>
+<th scope="col">受益</th>
+<th scope="col">明确边界</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Kineto trace extraction</td>
+<td>operator、runtime、kernel、ID、时长</td>
+<td>CPU/GPU 双层节点</td>
+<td>低接入成本、保留 host launch</td>
+<td>仅实测 PyTorch；TensorFlow 只是“可适配”论述</td>
+</tr>
+<tr class="even">
+<td>四类依赖恢复</td>
+<td>thread/stream/correlation/event</td>
+<td>固定边 + runtime edge</td>
+<td>捕获计算—通信重叠</td>
+<td>跨 thread 边部分依赖“显著 gap”启发式</td>
+</tr>
+<tr class="odd">
+<td>DP graph manipulation</td>
+<td>新 DP、collective metadata</td>
+<td>保留 compute，更新通信时长</td>
+<td>scale-out 估计</td>
+<td>使用未公开内部网络/性能模型</td>
+</tr>
+<tr class="even">
+<td>PP graph manipulation</td>
+<td>新 PP、layer map、1F1B</td>
+<td>切分 layer、换 stage、插通信、重排</td>
+<td>无需真机测试新 stage 数</td>
+<td>只展示特定 schedule；不支持不均匀/动态 pipeline</td>
+</tr>
+<tr class="odd">
+<td>Architecture manipulation</td>
+<td>layer、hidden、FFN</td>
+<td>复制层；改 shape 与关键 kernel duration</td>
+<td>宽/深 what-if</td>
+<td>假设只有少数 GEMM/通信显著变化</td>
+</tr>
+<tr class="even">
+<td>Discrete-event simulator</td>
+<td>执行图、duration</td>
+<td>ready set + processor availability</td>
+<td>输出完整预测 trace</td>
+<td>OOM、功耗、带宽、FLOPS utilization 不建模</td>
+</tr>
+<tr class="odd">
+<td>工程规模</td>
+<td>Python、约 5200 LoC</td>
+<td>约 10 行 hook；秒到分钟</td>
+<td>适合交互式 DSE</td>
+<td>代码、trace 与 predictor 未公开，无法独立复现</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="6-数据集平台基准与指标"><h2 id="6-数据集平台基准与指标">6. 数据集、平台、基准与指标</h2>
+<p>这不是下游 ML 数据集评测，而是系统 trace 实验。模型来自 NVIDIA/MLPerf
+Training 的开源 GPT-3 实现；四种架构见表 1（PDF p.7；lines
+467–471）：15B=<code>48层/6144 hidden/12288 FFN/48 heads</code>，44B=<code>48/12288/24576/48</code>，117B=<code>96/12288/24576/96</code>，175B=<code>96/12288/49152/96</code>，head
+dimension 均 128。</p>
+<p>平台是最多 <strong>512 张 H100、32 台服务器、每主机 8×400 Gbps、RoCE
+数据中心网络</strong>；软件为 CUDA 12.4、PyTorch 2.5、Transformer Engine
+0.12.0、PyTorch Lightning 1.9.4（§4.1，PDF p.6；lines
+456–460）。这套平台足够大，但单一 GPU/网络世代也意味着外推到
+A100、Blackwell、InfiniBand 或拥塞共享集群未经验证。</p>
+<p>核心指标是迭代时间相对绝对误差：<code>Err=|T_pred−T_real|/T_real×100%</code>。分解为
+exposed compute、overlapped、exposed communication、other。论文还称“SM
+utilization”，但它的定义是每个 <strong>1 ms</strong> 窗口内“至少一个
+CUDA stream 正在执行任务”的时间比例（§4.2.3，PDF p.8；lines
+615–622），并非 CUPTI 的 active warps、SM occupancy、tensor-core
+utilization 或 achieved FLOPS。准确称呼应是 <strong>stream-active duty
+cycle</strong>；本报告后文不把它误读成硬件 SM 饱和度。</p>
+</section><section class="card" aria-labelledby="7-完整主结果数据矩阵"><h2 id="7-完整主结果数据矩阵">7. 完整主结果数据矩阵</h2>
+<h3 id="71-重放lumos-对-dpro">7.1 重放：Lumos 对 dPRO</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">平均迭代时间误差</th>
+<th scope="col">最大/典型描述</th>
+<th scope="col" style="text-align: right;">与 dPRO 的绝对变化</th>
+<th scope="col" style="text-align: right;">相对变化</th>
+<th scope="col">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>dPRO</td>
+<td style="text-align: right;">14.0%</td>
+<td>最大 21.8%</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td>图 5、§4.2.1，PDF p.7；lines 559–563</td>
+</tr>
+<tr class="even">
+<td><strong>Lumos</strong></td>
+<td style="text-align: right;"><strong>3.3%</strong></td>
+<td>多数配置低于 5%</td>
+<td style="text-align: right;"><strong>−10.7 pp</strong></td>
+<td style="text-align: right;"><strong>−76.43%</strong></td>
+<td>图 5、§4.2.1，PDF p.7；lines 559–565；差值为本报告复算</td>
+</tr>
+</tbody>
+</table></div>
+<p>换一种更不易误读的说法：平均误差约缩小到 dPRO 的 <strong>0.236
+倍</strong>，而不是“训练快 4.24×”。Lumos
+是预测器，论文没有让训练作业本身提速。</p>
+<h3 id="72-九个反事实-scale-out-配置--四项时间分解">7.2 九个反事实
+scale-out 配置 × 四项时间分解</h3>
+<p>下表完整抄录图 7 标注值（PDF p.8；网页 lines 629–675），每格单位
+ms；<code>P/A</code> 为 Lumos
+预测/真实。总误差按印刷整数重算，可能与作者用未舍入数得到的平均值略异。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">变换</th>
+<th scope="col">TP×PP×DP</th>
+<th scope="col" style="text-align: right;">exposed compute P/A</th>
+<th scope="col" style="text-align: right;">overlap P/A</th>
+<th scope="col" style="text-align: right;">exposed comm P/A</th>
+<th scope="col" style="text-align: right;">other P/A</th>
+<th scope="col" style="text-align: right;">总时长 P/A</th>
+<th scope="col" style="text-align: right;">绝对误差</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>仅扩 DP</td>
+<td class="num">2×2×8</td>
+<td style="text-align: right;">353/329</td>
+<td style="text-align: right;">123/148</td>
+<td style="text-align: right;">291/287</td>
+<td style="text-align: right;">30/38</td>
+<td style="text-align: right;">797/802</td>
+<td style="text-align: right;"><strong>0.62%</strong></td>
+</tr>
+<tr class="even">
+<td>仅扩 DP</td>
+<td class="num">2×2×16</td>
+<td style="text-align: right;">364/337</td>
+<td style="text-align: right;">112/138</td>
+<td style="text-align: right;">307/330</td>
+<td style="text-align: right;">30/33</td>
+<td style="text-align: right;">813/838</td>
+<td style="text-align: right;"><strong>2.98%</strong></td>
+</tr>
+<tr class="odd">
+<td>仅扩 DP</td>
+<td class="num">2×2×32</td>
+<td style="text-align: right;">352/321</td>
+<td style="text-align: right;">124/156</td>
+<td style="text-align: right;">358/370</td>
+<td style="text-align: right;">30/32</td>
+<td style="text-align: right;">864/879</td>
+<td style="text-align: right;"><strong>1.71%</strong></td>
+</tr>
+<tr class="even">
+<td>仅扩 PP</td>
+<td class="num">2×4×4</td>
+<td style="text-align: right;">386/403</td>
+<td style="text-align: right;">60/56</td>
+<td style="text-align: right;">378/408</td>
+<td style="text-align: right;">48/46</td>
+<td style="text-align: right;">872/913</td>
+<td style="text-align: right;"><strong>4.49%</strong></td>
+</tr>
+<tr class="odd">
+<td>仅扩 PP</td>
+<td class="num">2×8×4</td>
+<td style="text-align: right;">405/421</td>
+<td style="text-align: right;">49/46</td>
+<td style="text-align: right;">927/1008</td>
+<td style="text-align: right;">65/77</td>
+<td style="text-align: right;">1446/1552</td>
+<td style="text-align: right;"><strong>6.83%</strong></td>
+</tr>
+<tr class="even">
+<td>仅扩 PP</td>
+<td class="num">2×16×4</td>
+<td style="text-align: right;">422/452</td>
+<td style="text-align: right;">49/44</td>
+<td style="text-align: right;">853/865</td>
+<td style="text-align: right;">461/477</td>
+<td style="text-align: right;">1785/1838</td>
+<td style="text-align: right;"><strong>2.88%</strong></td>
+</tr>
+<tr class="odd">
+<td>同扩 DP+PP</td>
+<td class="num">2×4×8</td>
+<td style="text-align: right;">359/379</td>
+<td style="text-align: right;">96/80</td>
+<td style="text-align: right;">378/415</td>
+<td style="text-align: right;">55/39</td>
+<td style="text-align: right;">888/913</td>
+<td style="text-align: right;"><strong>2.74%</strong></td>
+</tr>
+<tr class="even">
+<td>同扩 DP+PP</td>
+<td class="num">2×8×8</td>
+<td style="text-align: right;">399/414</td>
+<td style="text-align: right;">63/53</td>
+<td style="text-align: right;">481/547</td>
+<td style="text-align: right;">67/81</td>
+<td style="text-align: right;">1010/1095</td>
+<td style="text-align: right;"><strong>7.76%</strong></td>
+</tr>
+<tr class="odd">
+<td>同扩 DP+PP</td>
+<td class="num">2×4×16</td>
+<td style="text-align: right;">371/387</td>
+<td style="text-align: right;">87/72</td>
+<td style="text-align: right;">823/813</td>
+<td style="text-align: right;">55/44</td>
+<td style="text-align: right;">1336/1316</td>
+<td style="text-align: right;"><strong>1.52%</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>逐组解读比“平均 3.3%”更有信息：仅扩 DP 三点误差
+<strong>0.62%–2.98%</strong>；PP 三点
+<strong>2.88%–6.83%</strong>；同时扩展中 <code>2×8×8</code> 达
+<strong>7.76%</strong>。作者另称同时扩 DP+PP 平均误差
+<strong>4.2%</strong>（§4.3.1，PDF p.9；lines
+697–700），用图中整数复算三点平均为 <strong>4.01%</strong>；差
+<strong>0.19 pp</strong> 很可能来自柱上取整，不能据此断言论文矛盾。</p>
+<p>值得注意的是，分解分量可有较大偏差而总数仍接近：<code>2×4×8</code> 的
+other 预测 55、实测 39，分量相对高
+<strong>41.03%</strong>，却因它只占小部分，总误差仍 2.74%。因此 Lumos
+的强证据是 makespan
+预测；关于每个细分瓶颈“都很准”的结论需要逐分量误差矩阵，论文没有汇总提供。</p>
+<h3 id="73-模型架构变化">7.3 模型架构变化</h3>
+<p>表 2（PDF p.9；lines 703–709）从 GPT-3 15B 基线构造四个变体：V1
+20B（64 层）、V2 30B（96 层）、V3 28B（hidden 9216/FFN 18432）、V4
+44B（hidden 12288/FFN 24576），统一 <code>TP=2,PP=2,DP=4</code>。图
+8展示 actual 与 predicted
+分解“接近”，但<strong>柱上未印精确数、正文未报误差均值/最大值</strong>；因此本报告不补数字，也不能比较“改深度”和“改宽度”谁更可靠。</p>
+</section><figure class="figure" aria-labelledby="fig-error-title">
+<p class="fig-title" id="fig-error-title">平均迭代时间重放误差：dPRO 与 Lumos</p>
+<p class="fig-sub">越低越好；Lumos 下降 10.7 个百分点，相对减少 76.43%。</p>
+<svg class="chart" viewBox="0 0 760 310" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>dPRO 与 Lumos 的平均迭代时间重放误差</title><desc>dPRO 为百分之十四，Lumos 为百分之三点三。</desc>
+<line x1="90" y1="250" x2="700" y2="250" stroke="var(--grid)"/><line x1="90" y1="40" x2="90" y2="250" stroke="var(--grid)"/>
+<line x1="90" y1="110" x2="700" y2="110" stroke="var(--grid)" stroke-dasharray="4 5"/>
+<text x="76" y="254" text-anchor="end" font-size="12">0%</text><text x="76" y="184" text-anchor="end" font-size="12">5%</text><text x="76" y="114" text-anchor="end" font-size="12">10%</text><text x="76" y="44" text-anchor="end" font-size="12">15%</text>
+<rect x="205" y="54" width="150" height="196" rx="7" fill="#eb6834" tabindex="0" data-tip="dPRO：14.0%"/><text x="280" y="44" text-anchor="middle" font-size="14">14.0%</text><text x="280" y="276" text-anchor="middle" font-size="13">dPRO</text>
+<rect x="470" y="204" width="150" height="46" rx="7" fill="#2a78d6" tabindex="0" data-tip="Lumos：3.3%"/><text x="545" y="194" text-anchor="middle" font-size="14">3.3%</text><text x="545" y="276" text-anchor="middle" font-size="13">Lumos</text>
+</svg><figcaption>来源：Lumos 图 5 与 §4.2.1（PDF p.7）；数值也在紧邻表格中完整列出。悬停或键盘聚焦柱形可查看数值。</figcaption></figure><section class="card" aria-labelledby="8-逐层消融超参敏感性与相变"><h2 id="8-逐层消融超参敏感性与相变">8. 逐层消融、超参敏感性与相变</h2>
+<h3 id="81-逐层消融">8.1 逐层消融</h3>
+<p>论文<strong>未报告标准组件消融表</strong>：没有分别移除 CPU→GPU
+correlation、GPU→CPU sync、inter-stream event 或 runtime dependencies
+后的误差。图 6只给 Actual/Lumos/dPRO 的一条
+<code>GPT-3 15B, TP2-PP2-DP4</code>
+活动时间线，且没有数值距离指标。因而可以说“完整系统优于 dPRO”，不能把
+10.7 pp 平均误差下降定量归因到某一类边。</p>
+<p>可以从图 1做机制一致性检查：dPRO overlap 比实测高 806 ms、Lumos
+设计恰好补 inter-stream
+happens-before；这支持因果故事，但不是控制变量消融。最有价值的缺失实验应是同一
+Lumos 依次移除四类依赖，报告九配置 makespan、分量 L1 error 与关键路径
+edge recall。</p>
+<h3 id="82-超参敏感性与相变">8.2 超参敏感性与相变</h3>
+<p>论文<strong>未报告</strong>对 gap 阈值、trace 采样迭代数、1 ms
+utilization bin、ready-task <code>pick</code> 规则或 kernel predictor
+误差的敏感性。尤其是两个潜在相变：</p>
+<ul>
+<li>当通信 predictor 的误差改变 collective 完成顺序时，critical path
+可能离散跳转，端到端误差不再线性随单 kernel 误差增长；</li>
+<li>当 PP stage 数改变到触发不同 kernel/fusion 或显存策略时，“复制旧
+layer 子图”会跨出可迁移区域。</li>
+</ul>
+<p>论文只测试从 16 GPU 基线扩至 32/64/128 GPU 的 DP/PP 变体（§4.3.1，PDF
+p.9；lines 678–700），没有逆向缩容、跨 GPU
+型号或拥塞负载。于是能推出在其
+H100/RoCE/实现附近存在一个低误差局部邻域，不能推出全配置空间平滑。</p>
+<h3 id="83-统计显著性">8.3 统计显著性</h3>
+<p>论文<strong>未报告</strong>重复次数、标准差、置信区间、显著性检验或跨时间段方差。既没有
+cluster contention 分布，也没有 profiler run-to-run 变异。因此 3.3% 与
+4.2% 是所选配置上的描述统计，不能视为部署前的概率保证。若训练 iteration
+本身抖动
+3%–5%，单点相对误差与测量噪声可能同阶；论文没有足够数据拆分模型误差与系统噪声。</p>
+</section><section class="card" aria-labelledby="9-真正贡献可复用设计与迁移潜力"><h2 id="9-真正贡献可复用设计与迁移潜力">9.
+真正贡献、可复用设计与迁移潜力</h2>
+<p><strong>真正贡献一：把 host/runtime/stream
+同时放进执行因果图。</strong> 这是可复用的抽象：优化器不必理解整套
+PyTorch，只需在 DAG 上改节点、边或 duration。它也解释了为何简单把
+operator time 与 NCCL time 相加会错。</p>
+<p><strong>真正贡献二：让预测结果仍是一条 trace。</strong>
+输出不是孤立的 iteration
+number，而能继续算暴露通信、重叠和活动时间线。这使性能模型可进入诊断闭环：找关键路径→提出
+kernel/parallelism 修改→图上重放→只实现最有潜力者。</p>
+<p><strong>真正贡献三：把配置探索从“重新部署”改成“局部图手术”。</strong>
+DP 只改通信，PP 重排 layer/stage，宽深变化只替换受影响的 key
+kernels。工程上这比从零建解析模型更快，也比每个候选占用数百 GPU
+更便宜。</p>
+<p>可迁移到 inference、MoE、异构 accelerator 或 elastic
+training，但要满足三件事：profiler 能同时给 host/device 事件；新
+schedule 的依赖模板可形式化；kernel/network duration
+有公开且校准过的供应器。缺任一项，“框架无关”就只是后处理代码无关，而非端到端可用。</p>
+</section><section class="card" aria-labelledby="10-相关工作问题来源与技术来源链"><h2 id="10-相关工作问题来源与技术来源链">10.
+相关工作：问题来源与技术来源链</h2>
+<h3 id="101-daydream图变换的源头">10.1 Daydream：图变换的源头</h3>
+<p><strong>解决什么</strong>：Daydream 用 CUPTI 低层 trace 构建 kernel
+dependency
+graph，并以领域知识和图变换原语预测某种优化会怎样改变运行时；USENIX
+页面明确将问题定义为“实施前回答优化 X
+的收益”。其演示材料报告五类优化、五个 DNN 的平均估计误差约
+<strong>8%</strong>（presentation p.3）。</p>
+<p><strong>遗留缺口</strong>：需要 framework/model
+instrumentation，重点是单机/早期 DNN 优化，不覆盖现代分布式 LLM 的
+host/runtime 与跨 stream 复杂关系。<strong>Lumos 如何回应</strong>：沿用
+trace→DAG→graph transform→simulate 范式，换成 Kineto
+并补四类边。<strong>设计如何传递</strong>：Daydream
+的“修改图而非先修改系统”成为 Lumos what-if 接口的直接思想祖先。</p>
+<h3 id="102-dpro全局分布式图与可比较基线">10.2
+dPRO：全局分布式图与可比较基线</h3>
+<p><strong>解决什么</strong>：dPRO 把多 worker 的细粒度通信 trace 合并为
+global data-flow graph，并搜索 computation/communication/memory
+优化；原文报告多数设置预测误差 <code>&lt;5%</code>，优化最高
+<strong>3.48×</strong>（arXiv 摘要；MLSys 2022 PDF
+p.1）。<strong>遗留缺口</strong>：它面向 TensorFlow/MXNet 与
+AllReduce/PS 时代，Lumos 指出其忽略 concurrent-stream/inter-stream
+dependencies，导致新 LLM 配置平均误差 14%。</p>
+<p><strong>Lumos 如何回应</strong>：以 event pair 和 runtime sync
+显式恢复跨 stream 因果，在相同论文实验中把平均误差降至
+3.3%。<strong>设计如何传递</strong>：dPRO 的全局图、topological
+simulation 与 optimization hook 保留；Lumos 主要升级 trace granularity
+与 dependency semantics。应注意 dPRO 原论文的 <code>&lt;5%</code> 与
+Lumos 复测的 14% 来自不同模型、框架与硬件，不能说旧论文自相矛盾。</p>
+<h3 id="103-tracesimlumos-的直接原型">10.3 TraceSim：Lumos
+的直接原型</h3>
+<p><strong>解决什么</strong>：同一作者链的 TraceSim 已经用 Kineto
+同时保存 operator、runtime、kernel，并在 256 H100 的 GPT-3
+上报告平均重放准确率 <strong>95.6%</strong>、scale-up 最高
+<strong>99.5%</strong>（PDF p.1 lines 13–19；p.5 lines
+423–432）。<strong>遗留缺口</strong>：5 页 workshop 稿只给概念验证，对
+PP/架构图变换、动态依赖算法与限制展开不足。</p>
+<p><strong>Lumos 如何回应</strong>：扩到 512 H100、四个 GPT-3 尺寸、显式
+Algorithm 1、九组 DP/PP
+反事实和架构变体。<strong>设计如何传递</strong>：Kineto 多层
+trace、四类依赖和“生成预测 trace”几乎原样进入 Lumos；所以 Lumos
+更像系统化、扩展验证的成熟版本，而非完全不同的方法。</p>
+<h3 id="104-astra-sim-20通信与硬件空间的互补供应器">10.4 ASTRA-sim
+2.0：通信与硬件空间的互补供应器</h3>
+<p><strong>解决什么</strong>：ASTRA-sim 2.0 以 graph-based training loop
+支持任意 parallelism，并建模多维异构 topology、collective、in-network
+compute 与 disaggregated memory（arXiv v1
+pp.1–2）。<strong>遗留缺口</strong>：它需要 workload
+与系统抽象，未从一次 PyTorch 实跑自动恢复完整 host/CUDA
+happens-before。</p>
+<p><strong>Lumos 如何回应</strong>：从真实 trace 得到 workload execution
+graph；反过来，Lumos 对 unseen collective duration
+使用内部模型，并明确提出未来可接 ASTRA-sim（§4.3.1/§5，PDF
+pp.9–10）。<strong>设计如何传递</strong>：理想组合是 Lumos
+供真实因果结构，ASTRA-sim 供新 topology 下的通信
+duration；二者不是谁取代谁。</p>
+<h3 id="105-calculon解析搜索的另一条支线">10.5
+Calculon：解析搜索的另一条支线</h3>
+<p><strong>解决什么</strong>：Calculon 参数化模型、硬件与 implementation
+strategy，在内存等约束下快速遍历 LLM 软硬件联合空间；开源 README
+示例称单配置约 <strong>1 秒</strong>、5128 A100 的 execution optimizer
+约 <strong>1
+分钟</strong>。<strong>遗留缺口</strong>：解析模型依赖理想化分解，难原样表达动态
+host launch、stream wait 与真实 runtime 空洞。</p>
+<p><strong>Lumos 如何回应</strong>：用实测 trace
+锚定动态行为，牺牲对全新硬件的零样本能力。<strong>设计如何传递</strong>：Calculon
+适合全球粗筛，Lumos 适合已部署栈附近的局部精排；可先用 Calculon
+削减搜索空间，再用 Lumos 重放候选。</p>
+<h3 id="106-非线性技术演进树">10.6 非线性技术演进树</h3>
+<pre><code>硬件/解析模型 ─ Calculon ───────────────┐
+                                        ├─ 粗筛新硬件/全局设计空间
+网络/collective 仿真 ─ ASTRA-sim 2.0 ──┤
+                                        └─ duration supplier ─┐
+                                                              │
+CUPTI kernel DAG ─ Daydream ─┐                                │
+                              ├─ global distributed graph ─ dPRO
+                              │                    │           │
+                              └─ graph transforms  │           │
+                                                   ▼           ▼
+                                  Kineto operator+runtime+kernel
+                                                   │
+                                 TraceSim：跨 stream 依赖原型
+                                                   │  扩规模/图变换/动态边
+                                                   ▼
+                                      Lumos：局部反事实重放
+                                                   │
+                         ┌─────────────────────────┴──────────────┐
+                         ▼                                        ▼
+              开源 kernel/网络预测器                         概率化噪声与 OOM/能耗</code></pre>
+<p><strong>演进动力与转折</strong>：第一转折是从“解释过去的 profiler”到
+Daydream 的“预测尚未实施的优化”；第二转折是 dPRO
+把单设备图扩成全局分布式图；第三转折是 LLM 通信—计算多 stream
+重叠使粗边语义失效，TraceSim/Lumos 转向 operator/runtime/kernel
+三层因果；下一转折应是公开的 duration model
+与不确定性传播，否则局部精确图仍被私有时延估计锁住。</p>
+<h3 id="107-跨论文对标">10.7 跨论文对标</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">核心抽象</th>
+<th scope="col">真实 trace 锚定</th>
+<th scope="col">网络/新硬件建模</th>
+<th scope="col">跨 stream 因果</th>
+<th scope="col">配置反事实</th>
+<th scope="col">公开实现</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Daydream</td>
+<td>kernel DAG</td>
+<td>是，CUPTI</td>
+<td>弱</td>
+<td>未覆盖现代模式</td>
+<td>优化图变换</td>
+<td>未找到</td>
+</tr>
+<tr class="even">
+<td>dPRO</td>
+<td>global data-flow graph</td>
+<td>是，多 worker</td>
+<td>通信 trace/规则</td>
+<td>Lumos 指出不足</td>
+<td>优化搜索</td>
+<td>Artifact 声明有，入口未核实</td>
+</tr>
+<tr class="odd">
+<td>Calculon</td>
+<td>参数化解析方程</td>
+<td>否</td>
+<td><strong>强</strong></td>
+<td>否</td>
+<td><strong>全局</strong>软硬件空间</td>
+<td><strong>是</strong></td>
+</tr>
+<tr class="even">
+<td>ASTRA-sim 2.0</td>
+<td>workload+system simulation</td>
+<td>可接 trace</td>
+<td><strong>强</strong>，拓扑/collective/内存</td>
+<td>非框架 runtime 重点</td>
+<td><strong>全局</strong>系统空间</td>
+<td><strong>是</strong></td>
+</tr>
+<tr class="odd">
+<td>TraceSim</td>
+<td>多层 execution graph</td>
+<td><strong>是，Kineto</strong></td>
+<td>外接</td>
+<td><strong>是</strong></td>
+<td>初步 scale-out</td>
+<td>未找到</td>
+</tr>
+<tr class="even">
+<td><strong>Lumos</strong></td>
+<td>可变换多层 execution graph</td>
+<td><strong>是，Kineto</strong></td>
+<td>内部模型/可外接</td>
+<td><strong>是</strong></td>
+<td>DP、PP、宽深局部空间</td>
+<td><strong>否</strong></td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="11-论文自述限制"><h2 id="11-论文自述限制">11. 论文自述限制</h2>
+<ol type="1">
+<li><strong>可行性盲区</strong>：反事实配置被假设能正常运行，不预测
+OOM；FLOPS utilization、内存、带宽和能耗也在范围外（§5
+“Limitations”，PDF p.10；lines
+808–816）。所以最短的预测配置可能根本放不下。</li>
+<li><strong>新 kernel duration 不在范围内</strong>：当前依赖内部 fleet
+trace 模型；通信可换 ASTRA-sim/解析模型，计算可
+microbenchmark，但论文没有整合与误差传播（§5，PDF p.10；lines
+783–797）。</li>
+<li><strong>TP 不可修改</strong>：只支持 DP/PP 与模型宽深；作者认为 TP
+常固定于节点内（§3.4，PDF p.5；lines
+370–373）。这排除了训练配置搜索中的一个关键维度。</li>
+</ol>
+</section><section class="card" aria-labelledby="12-独立批判因为-x所以-y"><h2 id="12-独立批判因为-x所以-y">12. 独立批判：因为 X，所以 Y</h2>
+<ol type="1">
+<li><strong>[可复现性]</strong> 因为论文描述约 5200
+LoC，却未提供代码、trace 或内部 kernel predictor；所以外部研究者无法复算
+3.3%，也无法判断误差来自图结构还是私有 duration 模型。</li>
+<li><strong>[指标效度]</strong> 因为所谓 SM utilization 只是 1 ms 内任一
+stream active 的时间比例（PDF p.8），一个低占用 kernel
+也记作“活跃”；所以图 6不能证明 SM/Tensor Core
+被高效利用，只能证明活动/空闲时间线相近。</li>
+<li><strong>[外部效度]</strong> 因为全部主实验集中在 H100、RoCE、一个
+GPT-3 实现和一套软件版本；所以不能推出对 A100/Blackwell、InfiniBand、MoE
+或不同编译器同样是 3.3%。</li>
+<li><strong>[消融归因]</strong> 因为没有逐类删边消融，只比较完整 Lumos
+与 dPRO；所以平均 −10.7 pp 不能全部归因于 inter-stream event，也可能包含
+profiler、解析和 duration predictor 的共同变化。</li>
+<li><strong>[统计可靠性]</strong> 因为没有多次运行、标准差或区间；所以
+<code>2×2×8</code> 的 0.62% 与 <code>2×8×8</code> 的 7.76%
+不能与集群自然抖动区分，无法给部署者风险界限。</li>
+<li><strong>[搜索完整性]</strong> 因为不改 TP，PP 只展示
+1F1B/规则分层，且假设 layer 均匀；所以它是局部配置估计器，不是完整 3D
+parallelism 自动规划器。</li>
+<li><strong>[可行性/目标错位]</strong> 因为不建模
+OOM、能耗、训练成本与吞吐波动；所以“预测最快”不等于“可运行、最低成本或最节能”，也不能直接支撑采购决策。</li>
+<li><strong>[分量可信度]</strong> 因为 <code>2×4×8</code> 的 other
+分量由 39 ms 预测为 55 ms（+41.03%），总误差却只有 2.74%；所以低
+makespan error
+会掩盖小分量的大相对偏差，瓶颈诊断需单独报告分量误差。</li>
+</ol>
+</section><section class="card" aria-labelledby="13-开放挑战可操作的-head-to-head-实验空白"><h2 id="13-开放挑战可操作的-head-to-head-实验空白">13.
+开放挑战：可操作的 head-to-head 实验空白</h2>
+<h3 id="理论">理论</h3>
+<ul>
+<li><strong>依赖边误差传播</strong>：在同一 trace 上比较完整 Lumos、删除
+event edge、删除 host sync、随机漏边 1/5/10% 四组；以 critical-path
+precision/recall、makespan error 与分量 L1 error 作
+head-to-head，建立“漏一类边会错多少”的上界。</li>
+<li><strong>不确定性传播</strong>：比较点估计 Lumos 与“每 kernel
+duration 为分布”的 probabilistic Lumos，在跨天 30 次真机运行上评估
+50/90/95% prediction interval coverage，而非只比平均绝对误差。</li>
+</ul>
+<h3 id="工程应用">工程应用</h3>
+<ul>
+<li><strong>公开 duration supplier</strong>：固定 Lumos 图，分别接
+microbenchmark lookup、Calculon/AMPeD、ASTRA-sim、学习型 kernel
+predictor，与内部模型做同九配置比较；报告精度、校准成本、模拟时间和需要的真机
+GPU-hour。</li>
+<li><strong>等预算配置搜索</strong>：给 Lumos、Calculon、Megatron
+empirical grid search 同样 24 小时墙钟/同等 H100-hour，在
+TP×PP×DP×microbatch 空间寻找最快且不 OOM 的配置；最终统一真机复测
+top-5，衡量 best-found throughput 与失败率。</li>
+<li><strong>跨平台转移</strong>：同一模型分别在
+H100-RoCE、A100-InfiniBand、B200-NVLink 上采源
+trace，并交叉预测另外两平台；与“各平台重新 profile”对比，量化 trace
+可迁移性和冷启动成本。</li>
+</ul>
+<h3 id="新兴方向">新兴方向</h3>
+<ul>
+<li><strong>MoE 动态路由</strong>：在 expert imbalance 可控的 MoE
+上比较单迭代静态 Lumos 与保留 token-routing 分布的 stochastic
+simulator；逐级增加偏斜，测 p50/p95 iteration time 与 straggler
+attribution。</li>
+<li><strong>编译器相变</strong>：改变 hidden size 使 Triton/cuBLAS
+在不同 kernel/fusion 间切换，比较“复制旧图+改 duration”与“重新编译+重新
+profile”；寻找图拓扑发生变化的阈值。</li>
+<li><strong>训练—能耗联合目标</strong>：在相同吞吐候选上接 NVML 功耗
+trace，比较只最小化 makespan 与 Pareto 搜索（时间、峰值显存、kWh）；验证
+3.3% 时间误差是否足以保持 Pareto 排序。</li>
+</ul>
+</section><section class="card" aria-labelledby="14-近期工作雷达非核心证据"><h2 id="14-近期工作雷达非核心证据">14. 近期工作雷达（非核心证据）</h2>
+<ol type="1">
+<li><a
+href="https://arxiv.org/abs/2312.12391">vTrain</a>（2023/2024）：面向
+LLM 训练的成本与 compute-optimal 仿真，适合和 Lumos 比“从抽象 workload
+开始”与“从真 trace 开始”的冷启动代价。</li>
+<li><a href="https://arxiv.org/abs/2306.02267">Proteus</a>（EuroSys
+2024）：以 strategy tree 表达复杂并行策略，补足 Lumos 不改 TP
+的缺口；应在同一 Megatron 配置空间做等预算搜索。</li>
+<li><a
+href="https://www.bsg.ai/papers/Peng_ReaLLM_ASAP_2025.pdf">ReaLLM</a>（ASAP
+2025）：把芯片级 kernel library 与系统 trace-driven inference 连接，报告
+4×H100 平均 latency error 9.1%；范围是推理而非训练。</li>
+<li><a
+href="https://arxiv.org/abs/2510.15596">PRISM</a>（2025）：把系统变异作为概率分布而非固定
+duration，正面回应 Lumos
+无置信区间的问题；公开实现仍以作者承诺为准。</li>
+<li><a href="https://arxiv.org/abs/2508.05370">Simulating LLM training
+workloads for heterogeneous compute</a>（2025）：引入非均匀 workload
+partition，适合验证 Lumos 的均匀 layer/stage
+假设在异构集群何时失效。</li>
+<li><a href="https://arxiv.org/abs/2607.22432">TileSight</a>（2026）：从
+tile-first principles 建模 GPU，代表“低层解析+高层系统”重新汇合；与
+Lumos 的关键互补仍是新 kernel duration。</li>
+<li><a href="https://arxiv.org/abs/2605.17164">Charon</a>（MLSys
+2026）：统一训练与推理、以编译式逐层 lowering
+构造细粒度仿真；作者报告总体误差低于 5.35%、大规模训练低于 3.74%，是
+Lumos 最直接的新近 head-to-head 对手。</li>
+<li><a href="https://arxiv.org/abs/2605.11333">MLCommons
+Chakra</a>（MLSys 2026 Industry Track）：把
+compute、memory、communication、控制/数据依赖和资源约束做成开放
+execution-trace 交换格式；它可能解除 Lumos trace
+与其他模拟器之间的私有格式锁定。</li>
+</ol>
+</section><section class="card" aria-labelledby="15-结论值得看什么不该相信什么"><h2 id="15-结论值得看什么不该相信什么">15.
+结论：值得看什么，不该相信什么</h2>
+<p>Lumos 最值得复用的是“<strong>从真实 happens-before
+出发做局部反事实</strong>”：它证明现代 LLM 训练的性能误差，常不是 FLOPs
+方程不够精，而是 host、runtime、CUDA stream 和 synchronization
+的因果边没有被保留下来。平均重放误差从 14.0% 降至 3.3%（−10.7
+pp，−76.43%）是强结果；九个 scale-out 点又显示，局部误差从 0.62% 到
+7.76%，不是无条件的 3.3% 保证。</p>
+<p>真正的落地判断应更克制：在作者的 H100/RoCE/PyTorch/GPT-3
+邻域内，Lumos 是很有潜力的配置“沙盘”；但没有公开实现、内部 kernel
+predictor、TP
+变换、OOM/内存/能耗模型和统计区间之前，它还不是可独立复现的全栈容量规划器。最佳后续路线不是再堆一层更复杂
+DAG，而是把 Lumos 图、ASTRA-sim 通信、公开 kernel predictor
+和概率误差传播拼成可验证闭环。</p>
+<hr />
+<p><strong>核验脚注</strong>：本报告已读取 Lumos 13 页 arXiv v1/MLSys
+终稿、TraceSim 5
+页论文，并访问相关工作的会议、arXiv、代码/项目入口。候选池原始表保存为
+<code>2026-09-04_efficiency_candidates.tsv</code>；随机结果为
+16，无重抽。论文未报告的消融、标准差、显著性、精确图 8 数值与 profiling
+overhead 均明确保留为空白。<code>ml-report-index.md</code>
+已追加本次条目。HTML 已通过 Warm Editorial 结构验证器（0 warnings）及
+DOM/响应式静态检查；运行环境有 Playwright 包但没有
+<code>/usr/bin/chromium</code> 或 <code>/opt/pw-browsers</code>
+浏览器可执行文件，按要求未运行
+<code>playwright install</code>，故浅色、深色与移动端的浏览器截图检查<strong>本次无法执行</strong>，不作已完成声明。</p>
+</section>
+  </main>
+
+  <footer>核心来源：MLSys 2025 终稿、arXiv v1、TraceSim、dPRO、Daydream、ASTRA-sim 2.0 与 Calculon；生成于 2026-09-04。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

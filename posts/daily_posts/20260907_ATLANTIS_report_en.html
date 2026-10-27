@@ -1,0 +1,911 @@
+---
+layout: null
+title: "ATLANTIS"
+date: 2026-09-07
+topic: "rl-peft"
+tags: ["rl-peft", "supervised-fine-tuning", "data-selection"]
+excerpt: "ATLANTIS improves 23/24 main-table comparisons, by up to +7.19 pp. Yet a single seed, unknown weight variance, and a mismatch between p_r and the actual data distribution leave the importance-sampling interpretation incomplete."
+permalink: "/blog/2026/09/07/atlantis/en/"
+blog_post: false
+lang: "en"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_zh: "/blog/2026/09/07/atlantis/"
+sitemap: true
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>ATLANTIS: Turning What a Small Model Learned into Large-Model SFT Weights—Is This Really Importance Sampling? · 2026-09-07</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" aria-pressed="false">☾ Dark</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ML / AI DAILY DEEP PAPER · ACL 2025 MAIN</p>
+    <h1>ATLANTIS: Turning What a Small Model Learned into Large-Model SFT Weights—Is This Really Importance Sampling?</h1>
+    <p class="subtitle">Weak-to-strong probability shifts × continuous data weighting × change-of-measure audit</p>
+    <div class="meta" aria-label="Report metadata">
+      <span class="chip source">ACL 2025 Main · pp. 1042–1052</span>
+      <span class="chip">2026-09-07</span>
+      <span class="chip">LLM/NLP / Post-training</span>
+    </div>
+    <p class="lede">ATLANTIS improves 23/24 main-table comparisons, by up to +7.19 pp. Yet a single seed, unknown weight variance, and a mismatch between p_r and the actual data distribution leave the importance-sampling interpretation incomplete.</p>
+  </header>
+
+  <main>
+<section class="card" aria-labelledby="0-链接验证表与证据边界"><h2 id="0-链接验证表与证据边界">0. Verified links and evidence boundaries</h2>
+<p>These URLs were visited on 2026-09-07. All numbers come from PDFs downloaded and read page by page; web pages verify venues, version dates, and public assets. Core evidence follows the 11-page ACL Anthology final paper, proceedings pp.1042–1052. Exact-title searches found neither a core arXiv entry nor author code; these are marked not found, not nonexistent. OpenReview forums and attachments are reachable, but anonymous submissions do not replace the ACL final version. No dedicated entry was found through exact-title searches of Hugging Face Daily Papers or Papers with Code; Semantic Scholar has an official record.</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Paper / resource</th>
+<th scope="col">Conference or official page</th>
+<th scope="col">arXiv version and date</th>
+<th scope="col">Code</th>
+<th scope="col">Data / weights</th>
+<th scope="col">Project page / videos</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>ATLANTIS (core)</strong></td>
+<td><a href="https://aclanthology.org/2025.acl-long.52/">ACL 2025 Main /
+Anthology</a>，<a
+href="https://aclanthology.org/2025.acl-long.52.pdf">Official PDF</a>，<a
+href="https://2025.aclweb.org/program/main_papers/">ACL accepted
+list</a></td>
+<td><strong>Not found</strong></td>
+<td><strong>Not public / not found</strong></td>
+<td><a
+href="https://huggingface.co/datasets/teknium/OpenHermes-2.5">OpenHermes‑2.5</a>; official Llama2/Qwen2/Gemma2 weights are publicly obtainable, but the paper releases no trained checkpoints</td>
+<td><a
+href="https://openreview.net/forum?id=wXAl08qmyf">OpenReview</a>; no standalone project page found;<a
+href="https://underline.io/events/485/posters/20547/poster/122291-atlantis-weak-to-strong-learning-via-importance-sampling?tab=video">ACL Underline video entry</a></td>
+</tr>
+<tr class="even">
+<td><strong>Tuning Language Models by Proxy</strong></td>
+<td>COLM 2024 camera-ready</td>
+<td><a
+href="https://arxiv.org/abs/2401.08565">2401.08565v4</a>，2024‑08‑23</td>
+<td><a
+href="https://github.com/alisawuffles/proxy-tuning">Official code</a></td>
+<td>Code includes configurations; models use public weights</td>
+<td>No separate project page listed; video not found</td>
+</tr>
+<tr class="odd">
+<td><strong>Weak‑to‑Strong Generalization</strong></td>
+<td>arXiv technical report</td>
+<td><a
+href="https://arxiv.org/abs/2312.09390">2312.09390v1</a>，2023‑12‑14</td>
+<td><a href="https://github.com/openai/weak-to-strong">Official code</a></td>
+<td>Code and preprocessing scripts are public; GPT-4-family weights are not</td>
+<td>No standalone project page / video found</td>
+</tr>
+<tr class="even">
+<td><strong>IFD / From Quantity to Quality</strong></td>
+<td>NAACL 2024 camera-ready</td>
+<td><a
+href="https://arxiv.org/abs/2308.12032">2308.12032v5</a>，2024‑04‑06</td>
+<td><a
+href="https://github.com/tianyi-lab/Cherry_LLM">Code, data, and models</a></td>
+<td>Repository publishes data-processing and model assets</td>
+<td>Repository serves as project page; video not found</td>
+</tr>
+<tr class="odd">
+<td><strong>Superfiltering</strong></td>
+<td>ACL 2024</td>
+<td><a
+href="https://arxiv.org/abs/2402.00530">2402.00530v2</a>，2024‑06‑07</td>
+<td><a
+href="https://github.com/tianyi-lab/Superfiltering">Official code</a></td>
+<td>Repository publishes selection scripts and data descriptions</td>
+<td>Repository serves as project page; video not found</td>
+</tr>
+<tr class="even">
+<td><strong>LESS</strong></td>
+<td><a href="https://proceedings.mlr.press/v235/xia24c.html">ICML 2024 /
+PMLR</a></td>
+<td><a
+href="https://arxiv.org/abs/2402.04333">2402.04333v3</a>，2024‑06‑13</td>
+<td><a
+href="https://github.com/princeton-nlp/LESS">Official code and data</a></td>
+<td>Gradient-datastore construction scripts and selection results are public</td>
+<td>Repository serves as project page; video not found</td>
+</tr>
+</tbody>
+</table></div>
+<p>Index cross-check: the core paper can be found in <a
+href="https://www.semanticscholar.org/paper/ATLANTIS%3A-Weak-to-Strong-Learning-via-Importance-Liu-Wang/f9a29909c691679a389ed3d33e0b778b905e7227">Semantic
+Scholar</a> ; OpenReview and the official ACL page point to the same title. Candidates were first collected from ACL 2025 Main proceedings and ACL Anthology, then checked through arXiv, OpenReview, Hugging Face Daily Papers, Papers with Code, and Semantic Scholar for versions, code, and duplicates. Aggregator summaries were not numerical evidence.</p>
+</section><section class="card" aria-labelledby="1-候选池去重与随机选择"><h2 id="1-候选池去重与随机选择">1. Candidate pool, deduplication, and random selection</h2>
+<p>First read <code>ml-report-index.md</code>to exclude closely related topics and papers covered in the preceding 14 days, including
+<strong>Alignment Potential preference-data selection, AVUT multimodal evaluation, and Emergent Misalignment from narrow fine-tuning</strong>, as well as nearby systems, vision, and generation papers. All candidates are ACL 2025 Main long papers within 24 months. The complete three-column list is saved in
+<code>candidates_2026-09-07.tsv</code>. Running
+<code>shuf -i 1-24 -n 1</code>returned <strong>18</strong>, selecting ATLANTIS. The final paper contains main matrices, combinations with data selection, cross-architecture and scale tests, and proxy-tuning controls, providing sufficient material, so <strong>no redraw was needed</strong>。</p>
+<ol type="1">
+<li>M‑RewardBench: Evaluating Reward Models in Multilingual
+Settings</li>
+<li>ELABORATION: A Comprehensive Benchmark on Human‑LLM Competitive
+Programming</li>
+<li>Intuitive Fine‑Tuning: Towards Simplifying Alignment into a Single
+Process</li>
+<li>StrucText‑Eval: Evaluating LLM Reasoning in Structure‑Rich Text</li>
+<li>GAPO: Learning Preferential Prompt through Generative Adversarial
+Policy Optimization</li>
+<li>Tree‑of‑Evolution: Tree‑Structured Instruction Evolution for Code
+Generation</li>
+<li>FACT‑AUDIT: Adaptive Multi‑Agent Fact‑Checking Evaluation</li>
+<li>Capture the Key in Reasoning to Enhance CoT Distillation
+Generalization</li>
+<li>UniICL: Unifying Compression, Selection, and Generation</li>
+<li>RuleArena: Rule‑Guided Reasoning in Real‑World Scenarios</li>
+<li>Semantic Exploration with Adaptive Gating</li>
+<li>JuStRank: Benchmarking LLM Judges for System Ranking</li>
+<li>Efficient and Accurate Prompt Optimization with Memory</li>
+<li>BPP‑Search: Tree‑of‑Thought for Mathematical Modeling</li>
+<li>EvoWiki: Evaluating LLMs on Evolving Knowledge</li>
+<li>ProcessBench: Identifying Process Errors in Mathematical
+Reasoning</li>
+<li>Model Extrapolation Expedites Alignment</li>
+<li><strong>ATLANTIS: Weak‑to‑Strong Learning via Importance
+Sampling</strong></li>
+<li>HALoGEN: Fantastic LLM Hallucinations and Where to Find Them</li>
+<li>Wait, that’s not an option: Robustness with Incorrect MCQ
+Options</li>
+<li>MARS: Metaphysical Reasoning Benchmark</li>
+<li>Ask‑Before‑Detection: Conformity Bias in Math Error Detection</li>
+<li>Disentangling Memory and Reasoning Ability in LLMs</li>
+<li>UnSeenTimeQA: Time‑Sensitive QA Beyond Memorization</li>
+</ol>
+</section><section class="card" aria-labelledby="2-motivationsft-的问题不只是哪条数据质量高"><h2 id="2-motivationsft-的问题不只是哪条数据质量高">2. Motivation: SFT involves more than identifying high-quality examples</h2>
+<p>Ordinary SFT minimizes negative log-likelihood on training distribution <code>p_d</code>
+, whereas the desired coverage concerns an intractable real-world language distribution
+<code>p*</code>. The problem is not merely removing poor examples. Even individually high-quality human or synthetic data can differ from deployment in<strong>topics, expression, difficulty, and preferences</strong>. Expanding data continuously is costly, while quality-based deletion may not correct directional bias (core PDF p.1 / proceedings p.1042, §1).</p>
+<p>ATLANTIS converts this unobservable problem into a computable proxy. Given a small base model
+<code>p_b^S</code> and its official instruction-tuned version
+<code>p_r</code>, a large increase in an answer's probability is interpreted as movement toward a preferable direction. A same-family large base model
+<code>p_b^L</code>
+supplies a scale correction. Each training pair receives an influence weight without training a reward model or discarding most examples.</p>
+<p>Two comparisons motivate this quantitatively. First, across Llama2-13B, Qwen2-7B, Gemma2-9B, and eight metrics, ATLANTIS exceeds vanilla SFT in <strong>23/24</strong> comparisons. The sole decline is Qwen2-7B Arena-Hard-Auto,<strong>9.9→9.5（−0.40
+pp，−4.04%）</strong>(core PDF p.5 / p.1046, Table 2; recalculated here). Second, the appendix proxy-tuning control gives Qwen2-7B MT-Bench pairwise scores of SFT <strong>25.63</strong>、proxy‑tuning
+<strong>7.91</strong>、ATLANTIS
+<strong>26.25</strong>, suggesting that using small-model shifts as<strong>training weights</strong>is far stronger here than adding logits at decoding (core PDF p.11 / p.1052, Table 7). One model and two benchmarks, however, do not establish universal superiority.</p>
+</section><section class="card" aria-labelledby="3-论文故事线核心假设与权衡"><h2 id="3-论文故事线核心假设与权衡">3. Argument, core assumptions, and trade-offs</h2>
+<p>The argument has four steps. Define the ideal training objective under <code>p*</code>
+. Use importance sampling to rewrite its inaccessible expectation under an available reference distribution
+<code>p_r</code>. Because <code>p*/p_r</code> remains intractable, borrow proxy-tuning's assumption that<strong>probability shifts transfer across scale</strong>: the small model's base-to-tuned change is proportional to the large model's base-to-ideal change. Finally, turn the ratio into per-example weights and update the large model normally (core PDF pp.2–4 / pp.1043–1045, Equations 1–8, Algorithm 1).</p>
+<p>Three assumptions are required:</p>
+<ul>
+<li><strong>Target:</strong> A unified optimal real-world distribution
+<code>p*</code>can represent knowledge, instruction following, and human preferences simultaneously. Actual users and tasks often conflict; the paper does not specify the measure space or target population.</li>
+<li><strong>Proportional transfer:</strong>
+<code>p*/p_b^L ∝ p_r/p_b^S</code>. This is an empirically motivated proxy-tuning assumption, not a theorem proven here.</li>
+<li><strong>Data source:</strong> Training responses can be treated as samples from <code>p_r</code>
+. In fact, training uses OpenHermes-2.5's mixed synthetic corpus, while <code>p_r</code>
+is the conditional distribution of an official chat/instruct model; they are not inherently identical.</li>
+</ul>
+<p>ATLANTIS retains examples and combines with IFD or Superfiltering, but preprocessing requires large-base, small-base, and reference-model sequence probabilities for every example. Training adds only a scalar multiplication, whereas<strong>data preprocessing</strong>adds three forward passes. No tokens/s, GPU-hours, cache sizes, or total wall-clock costs are reported, so acceptable overhead remains an author judgment (core PDF p.9 / p.1050, Limitations).</p>
+</section><section class="card" aria-labelledby="4-方程级形式化从严格恒等式到代理启发式"><h2 id="4-方程级形式化从严格恒等式到代理启发式">4. Formalization: from exact identities to proxy heuristics</h2>
+<p>The ideal objective is:</p>
+<pre class="text"><code>L*(θ) = − E_{x~q, y~p*(·|x)} log p_θ(y|x)                         (1)</code></pre>
+<p>Ordinary SFT substitutes the actual data distribution <code>p_d</code> :</p>
+<pre class="text"><code>L_SFT(θ) = − E_{x~q, y~p_d(·|x)} log p_θ(y|x).                  (2)</code></pre>
+<p>If <code>p_r(y|x)&gt;0</code> overwritten <code>p*(y|x)&gt;0</code>
+covers the required support, the importance-sampling identity is:</p>
+<pre class="text"><code>L*(θ) = − E_{x~q, y~p_r} [ p*(y|x) / p_r(y|x) · log p_θ(y|x) ]. (6)</code></pre>
+<p>So far this is standard change of measure. The difficulty is that <code>p*</code> is intractable. The paper defines a large base model
+<code>p_b^L</code>, small base model <code>p_b^S</code> , and small reference model
+<code>p_r</code>, assuming:</p>
+<pre class="text"><code>p*(y|x) / p_b^L(y|x)  ∝  p_r(y|x) / p_b^S(y|x).</code></pre>
+<p>Then:</p>
+<pre class="text"><code>p*(y|x) / p_r(y|x)  ∝  p_b^L(y|x) / p_b^S(y|x),
+L_ATL(θ) ∝ −E_{x~q,y~p_r}[ w(x,y) log p_θ(y|x) ],
+w(x,y)=p_b^L(y|x)/p_b^S(y|x).                                 (7)</code></pre>
+<p>Algorithm 1 on core PDF p.4 also writes the precomputed collection with a term containing <code>p_r(y_i|x_i)</code>
+, then uses
+<code>W_i/|B|</code>inside minibatches. This reflects empirical weighting at implementation level, but no public code resolves whether sequence probability means a token product, mean log-probability, or length-normalized score; whether calculations use log space; whether clipping/self-normalization is applied; or how extreme weights are handled. With full-sequence probability ratios,<code>exp(Σ_t Δlog p_t)</code>
+can vary exponentially with length, allowing numerical stability and length bias to dominate.</p>
+<h3 id="训练流程伪代码">Training pseudocode</h3>
+<pre class="text"><code>Inputs: large base p_b^L, small base p_b^S, small instruct model p_r, OpenHermes data D
+for (x_i, y_i) in D:
+    a_i ← sequence_logprob(p_b^L, y_i | x_i)
+    b_i ← sequence_logprob(p_b^S, y_i | x_i)
+    c_i ← sequence_logprob(p_r,   y_i | x_i)
+    w_i ← exp(a_i − b_i)             # Core proxy in theoretical Equation 7
+    # Algorithm 1 also includes p_r; unpublished implementation prevents disambiguation
+cache {(x_i,y_i,w_i)}
+
+θ ← parameters(p_b^L)
+for minibatch B:
+    loss ← − Σ_{i∈B} w_i log p_θ(y_i|x_i) / |B|
+    θ ← AdamW(θ, ∇loss)
+Output: weighted-SFT model</code></pre>
+</section><section class="card" aria-labelledby="5-关键机制与工程细节"><h2 id="5-关键机制与工程细节">5. Key mechanisms and engineering details</h2>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Component</th>
+<th scope="col">Paper configuration</th>
+<th scope="col">Role</th>
+<th scope="col">Unresolved risk / evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Large base model <code>p_b^L</code></td>
+<td>Llama2‑13B；Qwen2‑7B/72B；Gemma2‑9B/27B</td>
+<td>Student being updated; numerator of the weight</td>
+<td>Examples already likely under the large model receive more weight, potentially reinforcing existing preferences</td>
+</tr>
+<tr class="even">
+<td>Small base model <code>p_b^S</code></td>
+<td>Llama2‑7B；Qwen2‑1.5B/7B；Gemma2‑2B/9B</td>
+<td>Weight denominator</td>
+<td>Low small-model probabilities can create heavy-tailed weights; no ESS or maximum weight is reported</td>
+</tr>
+<tr class="odd">
+<td>Reference model <code>p_r</code></td>
+<td>Corresponding chat/instruct/it version</td>
+<td>Supplies the post-SFT shift and theoretical sampling distribution</td>
+<td>Official instruction-training data are opaque and may overlap OpenHermes</td>
+</tr>
+<tr class="even">
+<td>Training data</td>
+<td>OpenHermes‑2.5</td>
+<td>Shared SFT corpus for all models</td>
+<td>Not explicitly sampled from <code>p_r</code> ; theoretical <code>E_{p_r}</code>
+and empirical data distributions are not aligned</td>
+</tr>
+<tr class="odd">
+<td>Hardware</td>
+<td>≤13B：16×A800；27B：32×A800；72B：64×A800</td>
+<td>Full-parameter training</td>
+<td>Memory specification and total duration are unreported (Appendix Table 6)</td>
+</tr>
+<tr class="even">
+<td>Steps</td>
+<td>≤13B：60K；27B：30K；72B：15K</td>
+<td>Fewer updates at larger scales</td>
+<td>Scales are not token- or FLOP-matched</td>
+</tr>
+<tr class="odd">
+<td>batch size</td>
+<td>2 / 1 / 1, with gradient accumulation 8 / 8 / 4</td>
+<td>Very small effective batches</td>
+<td>One seed cannot estimate variance</td>
+</tr>
+<tr class="even">
+<td>Learning rate</td>
+<td>2e‑5 / 5e‑6 / 5e‑7</td>
+<td>Decreases with scale</td>
+<td>No ATLANTIS-specific LR × weight-scale grid</td>
+</tr>
+<tr class="odd">
+<td>Optimizer</td>
+<td>AdamW，linear warmup/decay，DeepSpeed ZeRO‑3 + offload</td>
+<td>Standard SFT</td>
+<td>Unclear whether weights apply to token means or sequence means</td>
+</tr>
+<tr class="even">
+<td>Random seed</td>
+<td><strong>0, one run only</strong></td>
+<td>Reproducible fixed run</td>
+<td>No error bars, confidence intervals, or significance tests (core PDF p.11, Table 6)</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="6-数据集基准与指标"><h2 id="6-数据集基准与指标">6. Datasets, benchmarks, and metrics</h2>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Benchmark</th>
+<th scope="col">Evaluation target</th>
+<th scope="col">Metric</th>
+<th scope="col">Range / direction</th>
+<th scope="col">Key interpretive limitation</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Open LLM Leaderboard 2</td>
+<td>Aggregate of BBH, GPQA, IFEval, MATH-Hard, MMLU-Pro, and MuSR</td>
+<td>aggregate accuracy-like score</td>
+<td>Higher is better</td>
+<td>Table 2 gives only the aggregate; six individual values appear only in Figure 3 and cannot be transcribed losslessly</td>
+</tr>
+<tr class="even">
+<td>TruthfulQA</td>
+<td>Avoid repeating common false beliefs</td>
+<td>MC1、MC2 accuracy</td>
+<td>0–100, higher is better</td>
+<td>Multiple-choice truthfulness, not open-domain factuality</td>
+</tr>
+<tr class="odd">
+<td>MT‑Bench</td>
+<td>Conversation quality</td>
+<td>Single-answer scores and pairwise win rates</td>
+<td>Higher is better</td>
+<td>LLM judge; the scales are not directly comparable</td>
+</tr>
+<tr class="even">
+<td>AlpacaEval</td>
+<td>Instruction-response preferences</td>
+<td>Easy / hard win rates</td>
+<td>0–100, higher is better</td>
+<td>Sensitive to fixed baseline and judge</td>
+</tr>
+<tr class="odd">
+<td>Arena‑Hard‑Auto</td>
+<td>Automatic battles on difficult prompts</td>
+<td>Mean automatic score</td>
+<td>Higher is better</td>
+<td>Not actual user traffic; Qwen shows the only main-table decline</td>
+</tr>
+</tbody>
+</table></div>
+<p>The paper evaluates knowledge and understanding using <code>lm-evaluation-harness</code>and preferences using MT-Bench, AlpacaEval, and Arena-Hard-Auto; all metrics are higher-is-better (core PDF p.5 / p.1046, §3.2). There is no blinded human evaluation, out-of-domain deployment traffic, calibration, robustness, or safety regression testing.</p>
+</section><section class="card" aria-labelledby="7-完整主结果矩阵五类基准六行方法"><h2 id="7-完整主结果矩阵五类基准六行方法">7. Complete main-results matrix: five benchmark categories, six method rows</h2>
+<p>The table transcribes all eight metrics from core Table 2. Parentheses contain absolute differences recalculated as
+<code>(ATLANTIS−SFT)</code>
+. Accuracy/win-rate differences are percentage points; MT-Bench single and Arena differences retain their original units. Bold marks the better value within each model.</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Model / method</th>
+<th scope="col" style="text-align: right;">OLL2</th>
+<th scope="col" style="text-align: right;">TQA MC1</th>
+<th scope="col" style="text-align: right;">TQA MC2</th>
+<th scope="col" style="text-align: right;">MT single</th>
+<th scope="col" style="text-align: right;">MT pairwise</th>
+<th scope="col" style="text-align: right;">Alpaca easy</th>
+<th scope="col" style="text-align: right;">Alpaca hard</th>
+<th scope="col" style="text-align: right;">Arena‑Hard</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Llama2‑13B SFT</td>
+<td style="text-align: right;">32.37</td>
+<td style="text-align: right;">36.23</td>
+<td style="text-align: right;">53.36</td>
+<td style="text-align: right;">6.60</td>
+<td style="text-align: right;">19.06</td>
+<td style="text-align: right;">77.58</td>
+<td style="text-align: right;">6.81</td>
+<td style="text-align: right;">3.9</td>
+</tr>
+<tr class="even">
+<td><strong>Llama2‑13B ATLANTIS</strong></td>
+<td style="text-align: right;"><strong>33.50 (+1.13)</strong></td>
+<td style="text-align: right;"><strong>36.96 (+0.73)</strong></td>
+<td style="text-align: right;"><strong>54.07 (+0.71)</strong></td>
+<td style="text-align: right;"><strong>6.90 (+0.30)</strong></td>
+<td style="text-align: right;"><strong>21.56 (+2.50)</strong></td>
+<td style="text-align: right;"><strong>80.37 (+2.79)</strong></td>
+<td style="text-align: right;"><strong>7.80 (+0.99)</strong></td>
+<td style="text-align: right;"><strong>5.4 (+1.50)</strong></td>
+</tr>
+<tr class="odd">
+<td>Qwen2‑7B SFT</td>
+<td style="text-align: right;">36.22</td>
+<td style="text-align: right;">35.37</td>
+<td style="text-align: right;">51.45</td>
+<td style="text-align: right;">7.44</td>
+<td style="text-align: right;">25.63</td>
+<td style="text-align: right;">72.57</td>
+<td style="text-align: right;">6.41</td>
+<td style="text-align: right;"><strong>9.9</strong></td>
+</tr>
+<tr class="even">
+<td><strong>Qwen2‑7B ATLANTIS</strong></td>
+<td style="text-align: right;"><strong>38.19 (+1.97)</strong></td>
+<td style="text-align: right;"><strong>35.62 (+0.25)</strong></td>
+<td style="text-align: right;"><strong>52.65 (+1.20)</strong></td>
+<td style="text-align: right;"><strong>7.53 (+0.09)</strong></td>
+<td style="text-align: right;"><strong>26.25 (+0.62)</strong></td>
+<td style="text-align: right;"><strong>75.40 (+2.83)</strong></td>
+<td style="text-align: right;"><strong>6.51 (+0.10)</strong></td>
+<td style="text-align: right;">9.5 <strong>(−0.40)</strong></td>
+</tr>
+<tr class="odd">
+<td>Gemma2‑9B SFT</td>
+<td style="text-align: right;">33.51</td>
+<td style="text-align: right;">36.47</td>
+<td style="text-align: right;">52.85</td>
+<td style="text-align: right;">6.68</td>
+<td style="text-align: right;">20.31</td>
+<td style="text-align: right;">72.67</td>
+<td style="text-align: right;">6.28</td>
+<td style="text-align: right;">5.2</td>
+</tr>
+<tr class="even">
+<td><strong>Gemma2‑9B ATLANTIS</strong></td>
+<td style="text-align: right;"><strong>33.86 (+0.35)</strong></td>
+<td style="text-align: right;"><strong>39.41 (+2.94)</strong></td>
+<td style="text-align: right;"><strong>55.23 (+2.38)</strong></td>
+<td style="text-align: right;"><strong>6.98 (+0.30)</strong></td>
+<td style="text-align: right;"><strong>27.50 (+7.19)</strong></td>
+<td style="text-align: right;"><strong>76.31 (+3.64)</strong></td>
+<td style="text-align: right;"><strong>6.92 (+0.64)</strong></td>
+<td style="text-align: right;"><strong>5.6 (+0.40)</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>**Source:** core PDF p.5 / proceedings p.1046, Table 2. Differences and relative percentages below are recalculated here. Llama2's largest relative gain is Arena-Hard,
+<strong>+38.46%</strong>; Qwen2's OLL2 gain is <strong>+5.44%</strong>but Arena changes by <strong>−4.04%</strong>; Gemma2's MT pairwise gain is
+<strong>+35.40%</strong>. Of 24 comparisons, <strong>23 improve and one declines</strong>. This supports a broadly consistent direction, not statistical significance.</p>
+<p>Gains are heterogeneous: MT single improves by only
+<strong>+0.30、+0.09、+0.30</strong>across the three models, versus pairwise gains of
+<strong>+2.50、+0.62、+7.19</strong>. The authors argue pairwise judgment is easier and more objective (p.6 / p.1047), but the evaluator may instead favor training-induced style. Without human pairwise validation, genuine helpfulness cannot be distinguished from pleasing the automatic judge.</p>
+</section><figure class="figure" aria-labelledby="fig-mt-title">
+<p class="fig-title" id="fig-mt-title">ATLANTIS's largest main-table gains occur on MT-Bench pairwise</p>
+<p class="fig-sub">SFT versus ATLANTIS for three models; the single Y-axis is pairwise win rate. All values come from core Table 2.</p>
+<div class="legend"><span><span class="swatch" style="background:var(--chart-primary)"></span>SFT</span><span><span class="swatch" style="background:var(--chart-comparison)"></span>ATLANTIS</span></div>
+<svg class="chart" viewBox="0 0 860 390" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>MT-Bench pairwise win rates for SFT and ATLANTIS on three models</title><desc>Llama2-13B: 19.06 and 21.56; Qwen2-7B: 25.63 and 26.25; Gemma2-9B: 20.31 and 27.50.</desc>
+<line x1="80" y1="320" x2="830" y2="320" stroke="var(--grid)"/><line x1="80" y1="40" x2="80" y2="320" stroke="var(--grid)"/>
+<line x1="80" y1="250" x2="830" y2="250" stroke="var(--grid)" stroke-dasharray="4 5"/><line x1="80" y1="180" x2="830" y2="180" stroke="var(--grid)" stroke-dasharray="4 5"/><line x1="80" y1="110" x2="830" y2="110" stroke="var(--grid)" stroke-dasharray="4 5"/><line x1="80" y1="40" x2="830" y2="40" stroke="var(--grid)" stroke-dasharray="4 5"/>
+<text x="66" y="324" text-anchor="end" font-size="12">0</text><text x="66" y="254" text-anchor="end" font-size="12">7.5</text><text x="66" y="184" text-anchor="end" font-size="12">15</text><text x="66" y="114" text-anchor="end" font-size="12">22.5</text><text x="66" y="44" text-anchor="end" font-size="12">30</text>
+<g><rect x="155" y="142.1" width="62" height="177.9" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="Llama2-13B · SFT：19.06"/><rect x="223" y="118.8" width="62" height="201.2" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="Llama2-13B · ATLANTIS：21.56（+2.50 pp）"/><text x="220" y="347" text-anchor="middle" font-size="12">Llama2-13B</text></g>
+<g><rect x="390" y="80.8" width="62" height="239.2" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="Qwen2-7B · SFT：25.63"/><rect x="458" y="75.0" width="62" height="245.0" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="Qwen2-7B · ATLANTIS：26.25（+0.62 pp）"/><text x="455" y="347" text-anchor="middle" font-size="12">Qwen2-7B</text></g>
+<g><rect x="625" y="130.4" width="62" height="189.6" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="Gemma2-9B · SFT：20.31"/><rect x="693" y="63.3" width="62" height="256.7" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="Gemma2-9B · ATLANTIS：27.50（+7.19 pp）"/><text x="690" y="347" text-anchor="middle" font-size="12">Gemma2-9B</text></g>
+<text x="80" y="24" font-size="12">MT-Bench pairwise（%）</text>
+</svg><figcaption>Source: ACL 2025 final PDF p.5 / proceedings p.1046, Table 2. Hover over or keyboard-focus bars for exact values. All three experiments use only one random seed.</figcaption></figure><section class="card" aria-labelledby="8-逐层消融数据选择规模跨架构与-proxy-对照"><h2 id="8-逐层消融数据选择规模跨架构与-proxy-对照">8. Layered ablations: selection, scale, cross-architecture transfer, and proxy controls</h2>
+<h3 id="81-与-ifd--superfiltering-组合">8.1 Combining with IFD / Superfiltering</h3>
+<p>Table 3 (PDF p.6 / p.1047) varies selection rates of 5%, 10%, and 15%, comparing SFT with ATLANTIS. For Qwen2 with IFD at 10%, ATLANTIS changes TruthfulQA MC1 relative to corresponding SFT by
+<strong>32.68→35.86（+3.18）</strong>、MC2
+<strong>51.35→54.89（+3.54）</strong>、MT single
+<strong>7.19→7.86（+0.67）</strong>、pairwise
+<strong>24.53→32.81（+8.28）</strong>. This is the strongest combination evidence in the paper.</p>
+<p>Results are not consistent in every cell. For Gemma2 + IFD 5%, ATLANTIS changes MC1 versus SFT by
+<strong>31.33→28.76（−2.57）</strong>、MC2
+<strong>49.79→44.24（−5.55）</strong>、MT single
+<strong>3.93→2.73（−1.20）</strong>, with only pairwise
+<strong>6.60→6.88（+0.28）</strong>. Superfiltering 5% also yields Gemma2 MC1
+<strong>33.41→32.93（−0.48）</strong>、pairwise
+<strong>25.00→20.63（−4.37）</strong>. Compatibility with selectors is established; universal improvement from combining them is not.</p>
+<p>The authors call 10% generally best, but column-wise optima differ. Qwen2 + IFD reaches MT pairwise <strong>32.81</strong>at 10%, while Qwen2 + Superfiltering can peak at 15% or ordinary SFT at 10%. Unfiltered Gemma2 ATLANTIS exceeds filtered versions in several TruthfulQA/MT-Bench columns. This resembles task-dependent transitions in the quantity–noise trade-off, not a universal 10% rule.</p>
+<h3 id="82-模型规模">8.2 Model scale</h3>
+<p>Table 5 (PDF p.7 / p.1048) reports Qwen2-72B MT pairwise
+<strong>31.88→36.88（+5.00，+15.68%）</strong>，TruthfulQA MC1
+<strong>41.62→42.59（+0.97）</strong>and Gemma2-27B MT pairwise
+<strong>26.56→32.50（+5.94，+22.36%）</strong>, but TruthfulQA MC2
+<strong>61.24→59.30（−1.94）</strong>while MC1 stays at
+<strong>43.82→43.82</strong>. Scaling does not remove negative transfer; it changes which benchmark exhibits it.</p>
+<h3 id="83-跨架构权重迁移">8.3 Cross-architecture weight transfer</h3>
+<p>Table 4 (PDF p.7 / p.1048) swaps Qwen2 and Gemma2 small/reference models. Qwen2 using Gemma2 weights achieves TruthfulQA MC1 <strong>36.23</strong>, above same-family weights at
+<strong>35.62</strong> and SFT at <strong>35.37</strong>, but MT single
+<strong>6.89</strong>、pairwise <strong>21.56</strong>remains below same-family ATLANTIS's <strong>7.53 / 26.25</strong>. Gemma2 using Qwen2 weights has MT single <strong>7.31</strong> above its same-family value of <strong>6.98</strong>，pairwise
+<strong>25.00</strong> but below <strong>27.50</strong>. Figure 4 visualizes 2,000 examples and reports architecture disagreement in positive/negative weighting at threshold 1.0 of
+<strong>46.78%</strong>(PDF p.8 / p.1049). This is not architecture independence: nearly half the examples can reverse direction while some metrics still improve.</p>
+<h3 id="84-proxytuning-对照">8.4 Proxy-tuning control</h3>
+<p>Appendix Table 7 (PDF p.11 / p.1052) tests only Qwen2-7B. TruthfulQA MC1/MC2 and MT single/pairwise are, for SFT,
+<strong>35.37/51.45/7.44/25.63</strong>; for proxy-tuning,
+<strong>33.41/50.36/3.76/7.91</strong>; and for ATLANTIS,
+<strong>35.62/52.65/7.53/26.25</strong>. Training-time weighting of the shift signal is more effective here than direct decoding combination, but latency, memory, and total FLOPs are not matched. Proxy-tuning avoids large-model training and has a different cost structure.</p>
+</section><section class="card" aria-labelledby="9-超参敏感性权重相变与统计显著性"><h2 id="9-超参敏感性权重相变与统计显著性">9. Hyperparameter sensitivity, weight transitions, and statistical significance</h2>
+<p><strong>Reported sensitivity.</strong> Selection rates cover only 5%/10%/15%. Some Qwen metrics peak at 10%, while Gemma2 often prefers no selection. Scaling from 7→72B and 9→27B shows gains need not grow monotonically. Cross-architecture weighting shows 46.78% directional disagreement. These constitute discrete sensitivity analyses.</p>
+<p><strong>Important unreported sensitivity.</strong> No grids cover weight temperature
+<code>w^τ</code>, clipping caps, self-normalization, sequence-length normalization, reference-training strength, small-model size, or corpus source. Effective sample size
+<code>ESS=(Σw)^2/Σw²</code>, weight quantiles, and gradient norms are also absent. It is unclear whether smooth reweighting or a few extreme examples drive updates. The characteristic variance problem of importance sampling is unmeasured.</p>
+<p><strong>Statistical significance.</strong> The title, abstract, and text describe consistent and significant improvements, but Appendix Table 6 states that every experiment uses only seed
+<strong>0</strong>. Main tables provide no standard deviations, confidence intervals, bootstrap, or paired tests. This report can therefore state only that 23/24 comparisons improve, not that improvements are statistically significant. On finite-sample TruthfulQA or MT/Arena judging, +0.09 or +0.10 may fall within noise.</p>
+</section><section class="card" aria-labelledby="10-真正贡献可复用设计与迁移潜力"><h2 id="10-真正贡献可复用设计与迁移潜力">10. Contributions, reusable designs, and transfer potential</h2>
+<p>The substantive contribution is not the label of first using importance sampling, but a convenient post-training combination of three existing ideas. Proxy-tuning supplies<strong>transferable small-model shifts</strong>; weak-to-strong selection supplies<strong>small models as proxies for evaluating examples</strong>; weighted SFT supplies an implementation that<strong>leaves model architecture and the training loop unchanged</strong>. Once three-model probabilities are cached offline, the trainer reads one scalar weight per example.</p>
+<p>Three designs are reusable. First, define example value through<strong>changes in model state</strong>rather than an external absolute quality score, capturing family-specific utility. Second, combine continuous weights with hard selection: cheaply remove redundant examples using a small model, then refine the remainder. Third, partial cross-architecture transfer suggests shared score stores, but 46.78% directional disagreement must be treated as a version-compatibility metric.</p>
+<p>For code, medical, or multilingual training, a sensible approach is to train<strong>small in-domain reference models</strong>rather than reuse a general chat reference, and explicitly relate density ratios to deployment queries while recording ESS and length correlations. Continual learning could use old/new small-model shifts for each arriving batch. Preference optimization could use the ratio as an example prior, ablated separately from DPO margins. Private large models are difficult targets because training and scoring require large-base weights or at least token-level log-probabilities.</p>
+</section><section class="card" aria-labelledby="11-相关工作技术来源链"><h2 id="11-相关工作技术来源链">11. Technical lineage of related work</h2>
+<h3 id="111-weaktostrong-generalization提出问题但监督形式不同">11.1 Weak-to-Strong Generalization: the question, with a different supervision format</h3>
+<p><strong>Problem addressed:</strong> Burns et al. study weak-model labels supervising stronger models and observe students outperforming weak teachers on GPT-4-family NLP, chess, and reward modeling. The abstract also reports that an auxiliary confidence loss brings GPT-4 under GPT-2-level supervision toward GPT-3.5-level performance (W2S PDF p.1).<strong>Remaining gap:</strong>
+Weak-label supervision does not directly determine how much to weight each open-ended instruction response.<strong>ATLANTIS's response:</strong>
+Turn the weak teacher from a label generator into a probability-shift probe.<strong>Transferred design:</strong>
+The weak model is a probe for transferable training signals, not the final capability ceiling. W2S does not prove ATLANTIS's density-ratio identity.</p>
+<h3 id="112-proxytuning概率位移的直接技术母体">11.2 Proxy-tuning: the direct origin of probability shifts</h3>
+<p><strong>Problem addressed:</strong> At decoding, proxy-tuning adds small tuned-minus-base logits to the large base model, without updating it. Its abstract reports that a 7B proxy guiding Llama2-70B closes
+<strong>88%</strong>（Proxy PDF p.1）。<strong>Remaining gap:</strong> Multiple models run for every token, increasing inference cost. Core Appendix Table 7 also finds much worse Qwen2-7B MT-Bench results than SFT.<strong>ATLANTIS's response:</strong>
+Move the same shift signal to pretraining-time example weighting, eliminating multimodel decoding at deployment.<strong>Transferred design:</strong>
+Approximate additive/proportional transfer across model scales enters ATLANTIS Equation 7 almost unchanged and is its most important assumption to validate.</p>
+<h3 id="113-ifd从回答条件概率定义值得学">11.3 IFD: defining learning value through conditional answer probabilities</h3>
+<p><strong>Problem addressed:</strong> IFD compares answer perplexity with and without instructions to select examples that teach instruction following. Its abstract reports improved Alpaca/WizardLM training using only
+<strong>10%</strong> of the original data (IFD PDF p.1).<strong>Remaining gap:</strong> Scoring with the target model is costly, and hard top-k selection loses coverage.<strong>ATLANTIS's response:</strong>
+Construct continuous weights from small/reference-model probabilities while retaining all data.<strong>Transferred design:</strong>
+Both define value through conditional-probability changes rather than static semantic quality. ATLANTIS Table 3 directly uses IFD as a compatible preliminary selector.</p>
+<h3 id="114-superfiltering证明小模型评分可迁移">11.4 Superfiltering: evidence that small-model scores transfer</h3>
+<p><strong>Problem addressed:</strong> Superfiltering computes IFD using a GPT-2-scale model. Figure 1 / the abstract reports selection speedup of about <strong>20×</strong>and shows that 5% of data can outperform training on 100% (Superfiltering PDF p.1).<strong>Remaining gap:</strong> It remains hard selection with a tunable fraction, and changing model families may change rankings.<strong>ATLANTIS's response:</strong> Move from ranking to influence weights and test cross-architecture transfer.<strong>Transferred design:</strong>
+Weak models can proxy data value, but ATLANTIS's 46.78% cross-architecture directional disagreement warns that this transfer is fragile.</p>
+<h3 id="115-less优化轨迹导向的数据影响">11.5 LESS: data influence guided by optimization trajectories</h3>
+<p><strong>Problem addressed:</strong> LESS constructs a low-rank gradient datastore accounting for Adam and variable-length sequences, then selects training data using a few target-task examples. Its abstract reports that selecting
+<strong>5%</strong> often exceeds full-data training (LESS PDF p.1, ICML 2024).<strong>Remaining gap:</strong>
+Gradient features must be stored/retrieved, and target-task examples are needed.<strong>ATLANTIS's response:</strong> Use only forward probabilities, without target gradients or downstream few-shot examples.<strong>Transferred design:</strong>
+Data value should reflect where optimization moves the model. LESS measures this explicitly through gradient inner products; ATLANTIS approximates it with base-to-tuned probability changes.</p>
+<h3 id="非线性技术演进树">Nonlinear technical evolution</h3>
+<pre class="text"><code>                                                      ┌─ Weak-to-Strong supervision
+                           │   Can weak labels unlock a strong student?
+                           │                 │
+Full-data SFT → Data-value modeling ─┼─ IFD ─→ Superfiltering
+  p_d ≠ deployment distribution     │  Self-difficulty   Transferable small-model scores
+                           │        │          │
+                           │        └────┬─────┘
+                           │             ▼
+                           ├─ LESS: gradient / trajectory influence ─┐
+                           │                                         │
+                           └─ Proxy-tuning: logit shifts ────────────┼─→ ATLANTIS
+                                                                     │   Probability shifts × continuous SFT weights
+Importance sampling: change-of-measure identity ─────────────────────┘
+                                                                     │
+                       Unresolved: p* definition, p_r/data mismatch, heavy tails, statistical tests</code></pre>
+<p>Two shifts drive the evolution: from more instructions to identifying which instructions change the model; then from costly large-model/gradient scoring to transferable weak-model proxies. ATLANTIS connects the second shift to importance-sampling terminology, but target distributions and support conditions do not yet complete its theoretical justification.</p>
+<h3 id="跨论文对标">Cross-paper comparison</h3>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col">Signal</th>
+<th scope="col" style="text-align: right;">Target-task examples required?</th>
+<th scope="col" style="text-align: right;">Discards data?</th>
+<th scope="col" style="text-align: right;">Large-model training</th>
+<th scope="col" style="text-align: right;">Extra deployment models</th>
+<th scope="col">Main blind spot</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>IFD</td>
+<td>Conditional/unconditional answer-perplexity ratio</td>
+<td style="text-align: right;">No</td>
+<td style="text-align: right;">Yes</td>
+<td style="text-align: right;">Yes</td>
+<td style="text-align: right;">No</td>
+<td>Target-model scoring cost; fraction sensitivity</td>
+</tr>
+<tr class="even">
+<td>Superfiltering</td>
+<td>Small-model IFD ranking</td>
+<td style="text-align: right;">No</td>
+<td style="text-align: right;">Yes</td>
+<td style="text-align: right;">Yes</td>
+<td style="text-align: right;">No</td>
+<td>Cross-family ranking drift</td>
+</tr>
+<tr class="odd">
+<td>LESS</td>
+<td>Adam-aware gradient similarity</td>
+<td style="text-align: right;">Yes</td>
+<td style="text-align: right;">Yes</td>
+<td style="text-align: right;">Yes</td>
+<td style="text-align: right;">No</td>
+<td>Datastore and gradient costs</td>
+</tr>
+<tr class="even">
+<td>Proxy-tuning</td>
+<td>Small tuned-minus-base logits</td>
+<td style="text-align: right;">No</td>
+<td style="text-align: right;">No</td>
+<td style="text-align: right;">No</td>
+<td style="text-align: right;"><strong>Yes</strong></td>
+<td>Multiple models per decoded token</td>
+</tr>
+<tr class="odd">
+<td>W2S</td>
+<td>Weak-model labels</td>
+<td style="text-align: right;">Task supervision itself</td>
+<td style="text-align: right;">No</td>
+<td style="text-align: right;">Yes</td>
+<td style="text-align: right;">No</td>
+<td>Open generation and density ratios unaddressed</td>
+</tr>
+<tr class="even">
+<td><strong>ATLANTIS</strong></td>
+<td>Large/small base probability ratio + reference shift</td>
+<td style="text-align: right;">No</td>
+<td style="text-align: right;">No</td>
+<td style="text-align: right;"><strong>Yes</strong></td>
+<td style="text-align: right;">No</td>
+<td><code>p*</code> Unidentifiable target, data mismatch, unknown weight variance</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="12-论文自述限制"><h2 id="12-论文自述限制">12. Limitations acknowledged by the paper</h2>
+<ol type="1">
+<li><strong>Dependence on a smaller same-family model.</strong> The authors recommend smaller models from the same family to realize ATLANTIS's benefits. Cross-architecture influence-weight distributions affect performance and limit applicability (core PDF p.9 / p.1050, Limitations). Table 4 and 46.78% disagreement provide quantitative support.</li>
+<li><strong>Additional computation.</strong> Reference models increase cost relative to vanilla SFT; the authors deem this generally acceptable because the references are small (same page). Without cost figures, that assessment cannot be audited.</li>
+</ol>
+<p>The paper gives no third independent limitation, so none is invented. The following critiques are this report's own.</p>
+</section><section class="card" aria-labelledby="13-独立批判证据--推论"><h2 id="13-独立批判证据--推论">13. Independent critique: evidence → implications</h2>
+<ol type="1">
+<li><strong>[Theory / unidentifiable target]</strong> Because <code>p*</code>
+is defined as an optimal distribution covering all real-world knowledge and expression, without observable samples, a target population, or a utility function (pp.1–3). Finite-benchmark gains therefore cannot verify movement toward
+<code>p*</code>; the symbol functions more as an idealized narrative target.</li>
+<li><strong>[Theory / broken change of measure]</strong>
+Exact importance sampling requires samples from proposal distribution <code>p_r</code>, whereas experiments use OpenHermes-2.5 and<code>p_r</code> is an official chat/instruct model (p.5, Table 1). Equation 6 is therefore not equivalent to actual minibatch training. Without an additional data-density ratio, the method is more accurately proxy-probability-weighted SFT.</li>
+<li><strong>[Numerics / heavy tails]</strong>
+Sequence-probability ratios can exponentially accumulate small token differences on long responses. Without log-space implementation details, length normalization, clipping, or ESS, it is unclear whether stable distribution correction or extreme examples drive improvement.</li>
+<li><strong>[Statistics / overclaiming]</strong> All experiments use seed 0 (Appendix Table 6), without deviations or tests. Significant therefore lacks statistical support, especially for +0.09 Qwen MT single and +0.10 Qwen Alpaca hard, which cannot be distinguished from noise.</li>
+<li><strong>[Empirics / inconsistent gains]</strong> Main-table Qwen Arena
+<strong>9.9→9.5</strong>，Gemma2‑27B TQA MC2
+<strong>61.24→59.30</strong>and several substantial Gemma2+IFD 5% declines mean steady across models can describe an overall trend, not a per-task safety guarantee.</li>
+<li><strong>[Attribution / training-data leakage]</strong> Official instruct/chat training data are not fully disclosed, and OpenHermes is a broad synthetic mixture. High weights may mark reference-model familiarity or preferred style rather than proximity to a real-world optimum. Deduplication/contamination audits are needed to distinguish these explanations.</li>
+<li><strong>[Cost / incomplete accounting]</strong> Training ≤13B models already uses 16×A800 and 72B uses 64×A800, plus three-model forward precomputation. Without GPU-hours, tokens/s, or storage costs, small reference models do not establish acceptable end-to-end overhead.</li>
+<li><strong>[Evaluation / judge preferences]</strong> Largest gains concentrate in MT pairwise, up to +7.19, while MT single improves only +0.09–0.30. Both use automatic judges, so comparison-friendly response style may explain much of the gain. Human-preference improvement lacks blinded human evidence.</li>
+</ol>
+</section><section class="card" aria-labelledby="14-开放挑战可操作的-head-to-head-实验空白"><h2 id="14-开放挑战可操作的-head-to-head-实验空白">14. Open challenges: actionable head-to-head experiments</h2>
+<h3 id="理论">Theory</h3>
+<ul>
+<li><strong>True density ratios versus the ATLANTIS proxy.</strong>
+Construct known distributions on an enumerable synthetic language,
+<code>p*</code>、<code>p_d</code>、<code>p_r</code>then compare true ratios, ATLANTIS, random weights, IFD, and uniform SFT at equal FLOPs. Report KL to
+<code>p*</code>, ESS, and gradient cosine similarity to directly test proportional-transfer consistency.</li>
+<li><strong>Heavy-tail stabilization.</strong> Fix data and checkpoints; compare raw ratios, log-ratio z-scores, self-normalized IS, clipping at the 95/99/99.9th percentiles, and Pareto-smoothed weights. Across five seeds, report means, confidence intervals, ESS, and worst-task performance to identify performance–variance transitions.</li>
+<li><strong>Sequence-probability definitions.</strong> Compare token products, mean log-probabilities, length-bucket normalization, response-only scoring, and instruction+response scoring. Plot Spearman weight–length correlations to test length-bias explanations.</li>
+</ul>
+<h3 id="工程与应用">Engineering and applications</h3>
+<ul>
+<li><strong>Equal-GPU-hour cost curves.</strong> Under the same 8×H100 budget, compare more vanilla-SFT steps, ATLANTIS three-model scoring plus training, LESS datastore construction, 10% Superfiltering, and proxy-tuning. Plot end-to-end GPU-hours/disk use against five-benchmark macro averages and p95 latency.</li>
+<li><strong>Cross-domain references.</strong> For code, medicine, and multilingual tasks, compare general-chat and in-domain tuned small references with the same large base and token budget. Measure in-domain gains, out-of-domain forgetting, and safety regressions. Domain-only gains at the expense of general capability would challenge a unified p* account.</li>
+<li><strong>Contamination controls.</strong> Build dynamic QA and private-template sets after the training cutoff, with strict MinHash/embedding deduplication. Compare public instruct references with references trained on nonoverlapping data to test whether weights mainly detect memorization.</li>
+</ul>
+<h3 id="新兴方向">Emerging directions</h3>
+<ul>
+<li><strong>Combining with DPO/GRPO.</strong> On identical preference pairs, compare DPO, ATLANTIS-weighted SFT→DPO, ATLANTIS-weighted DPO, and margin-based weighting. Report reward, KL, length, hacking rate, and stability to separate sample priors from preference objectives.</li>
+<li><strong>Online continual weighting.</strong>
+Freeze old/new small references after each data arrival and compare static with time-conditioned weights. Measure knowledge acquisition, forgetting, and weight drift on knowledge-update benchmarks to test lightweight continual post-training.</li>
+<li><strong>Cross-architecture compatibility gates.</strong> Before training, score only 2,000 examples with both weighting schemes. If directional disagreement exceeds a threshold, fall back to same-family models. Compare against ungated ATLANTIS on worst-task performance, overhead, and calibration.</li>
+</ul>
+</section><section class="card" aria-labelledby="15-近期工作雷达"><h2 id="15-近期工作雷达">15. Recent-work radar</h2>
+<ul>
+<li><a href="https://aclanthology.org/2025.acl-long.51/">Model
+Extrapolation Expedites Alignment（ACL 2025
+Main）</a>: also targets cheaper alignment training, but through parameter extrapolation; compare post-training with ATLANTIS at equal total FLOPs.</li>
+<li><a href="https://aclanthology.org/2025.acl-long.6/">Intuitive
+Fine‑Tuning（ACL 2025 Main）</a>: decomposes SFT and preference optimization into preference estimation and transition optimization, then unifies them through temporal residuals—a more executable target than a real-world optimal distribution.</li>
+<li><a href="https://aclanthology.org/2025.findings-acl.256/">Packing
+Analysis（ACL 2025 Findings）</a>: studies SFT packing benefits across model/data scales, an infrastructure variable that matters when evaluating ATLANTIS's end-to-end efficiency.</li>
+<li><a href="https://arxiv.org/abs/2506.07434">Well Begun is Half Done:
+Low-resource Preference Alignment by Weak-to-Strong
+Decoding</a>: applies weak-to-strong transfer to low-resource preference decoding, helping distinguish costs of training-time weights from inference-time guidance.</li>
+<li><a
+href="https://arxiv.org/abs/2605.28421">DenoiseRL（arXiv:2605.28421）</a>: recovers noisy reasoning supervision through RL, suggesting weak signals need explicit noise modeling as well as weighting.</li>
+<li><a href="https://proceedings.mlr.press/v235/xia24c.html">LESS（ICML
+2024）</a>: optimizer-aware target-data selection remains a strong interpretable alternative. Without weight–gradient agreement, ATLANTIS cannot establish that probability ratios outperform direct optimization influence.</li>
+<li><a href="https://arxiv.org/abs/2402.00530">Superfiltering（arXiv
+v2）</a>: directly precedes transferable weak-model scoring and highlights selection fraction and model family as independent hyperparameters.</li>
+</ul>
+</section><section class="card" aria-labelledby="16-最终判断与复现优先级"><h2 id="16-最终判断与复现优先级">16. Final assessment and reproduction priorities</h2>
+<p>ATLANTIS compresses an expensive data-value problem into forward probabilities from three existing models and supplies broad experiments across five benchmark categories, three families, larger scales, and cross-architecture settings. Its strongest empirical result is
+<strong>23/24</strong> improving comparisons in the main table, including Gemma2-9B MT-Bench pairwise
+<strong>20.31→27.50（+7.19，+35.40%）</strong>. Counterevidence includes Qwen Arena regression, substantial negative transfer in some Gemma2 selection combinations, and a single seed without significance testing.</p>
+<p>The first reproduction priority is publishing weight computation and plotting weight quantiles, length correlations, ESS, minibatch gradient norms, and five-seed results. Next, separate OpenHermes's empirical distribution <code>p_d</code> from reference model <code>p_r</code>
+and incorporate an estimable data-source density ratio. Only then can importance sampling toward a real-world optimum become a testable method rather than an attractive interpretation. Until then, the best-supported description is:<strong>An effective continuous example-weighting heuristic based on small-model instruction-tuning shifts, with incomplete theoretical justification.</strong></p>
+<hr />
+<p><strong>Evidence and generation notes:</strong> All performance numbers come from core ACL Tables 2–7 or the five related PDFs read, with page/table references. Percentages are recalculated from original values, never inferred from pixels. Core code, error bars, weight-stabilization details, and complete costs are unavailable, and corresponding claims remain marked not reported / not inferable.<code>ml-report-index.md</code>
+was updated. HTML was generated from the Warm Editorial template and passed its validator with 0 warnings. Playwright loads, but
+<code>/usr/bin/chromium</code>、<code>/usr/bin/chromium-browser</code>、<code>/opt/pw-browsers</code>
+and its cache contain no executable Chromium, so<strong>real light/dark/mobile screenshot checks remain incomplete</strong>. Static responsive checks are not presented as browser validation.</p>
+</section>
+  </main>
+
+  <footer>Core sources: ACL Anthology final paper, accepted list, OpenReview, and Semantic Scholar; technical lineage includes Proxy-tuning, Weak-to-Strong, IFD, Superfiltering, and LESS. Generated on 2026-09-07.</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ Light' : '☾ Dark';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

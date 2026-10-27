@@ -1,0 +1,1483 @@
+---
+layout: null
+title: "VIKI-R"
+date: 2026-09-10
+topic: "rl-peft"
+tags: ["rl-peft", "robotics", "multi-agent"]
+excerpt: "分层具身协作基准 × CoT 冷启动 × GRPO 规则奖励 7B 的 L2 OOD 从 25.62% 提升至 33.25%，但 L2 ID 下降 1.67 pp，且真实世界表格没有测试 VIKI-R。"
+permalink: "/blog/2026/09/10/viki-r/"
+blog_post: true
+lang: "zh-CN"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_en: "/blog/2026/09/10/viki-r/en/"
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>VIKI-R：可验证强化学习如何训练异构多机器人协作 · 2026-09-10</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ML / AI DAILY DEEP PAPER · NEURIPS 2025 D&amp;B</p>
+    <h1>VIKI-R：可验证强化学习如何训练异构多机器人协作</h1>
+    <p class="subtitle">分层具身协作基准 × CoT 冷启动 × GRPO 规则奖励</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">NeurIPS 2025 Datasets &amp; Benchmarks Track</span>
+      <span class="chip">2026-09-10</span>
+      <span class="chip">强化学习 / Agent / 具身智能</span>
+    </div>
+    <p class="lede">7B 的 L2 OOD 从 25.62% 提升至 33.25%，但 L2 ID 下降 1.67 pp，且真实世界表格没有测试 VIKI-R。</p>
+  </header>
+
+  <main>
+<section class="card" aria-labelledby="0-链接验证与版本审计"><h2 id="0-链接验证与版本审计">0. 链接验证与版本审计</h2>
+<p>下表链接均于 <strong>2026-09-10</strong> 实际访问。会议身份以
+NeurIPS/CVF/IEEE 等正式入口为先，版本日期以 arXiv submission history
+为准；“未公开/未找到”表示在论文、项目页、官方仓库和常用论文索引中未找到可核实入口。核心定量来自
+NeurIPS 2025 正式 PDF（32 页）；arXiv 当前为 v3。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">论文</th>
+<th scope="col">会议/正式页</th>
+<th scope="col">arXiv 版本与日期</th>
+<th scope="col">代码</th>
+<th scope="col">数据/权重</th>
+<th scope="col">项目页/视频</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>核心：VIKI-R</strong></td>
+<td><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/ab16cc8f472cf94b282dbff7b99f5f8e-Abstract-Datasets_and_Benchmarks_Track.html">NeurIPS
+2025 D&amp;B 正式页</a>；DOI 10.52202/085713-3935</td>
+<td><a href="https://arxiv.org/abs/2506.09049v3">2506.09049v3</a>：v1
+2025-06-10，v2 2025-10-21，v3 2026-01-22</td>
+<td><a
+href="https://github.com/MARS-EAI/VIKI-R">MARS-EAI/VIKI-R</a>，Apache-2.0</td>
+<td><a
+href="https://huggingface.co/datasets/henggg/VIKI-R">数据集</a>；<a
+href="https://huggingface.co/collections/henggg/viki-r-68ef92c3a67e90535ecc1a9b">3B/7B
+权重集合</a></td>
+<td><a href="https://faceong.github.io/VIKI-R/">项目页</a>；<a
+href="https://mars-eai.github.io/MARS-Challenge-Webpage/">MARS
+Challenge</a>；独立讲解视频未找到</td>
+</tr>
+<tr class="even">
+<td>PARTNR</td>
+<td>正式会议入口未找到；论文标注 arXiv</td>
+<td><a
+href="https://arxiv.org/abs/2411.00081v1">2411.00081v1</a>，2024-10-31</td>
+<td><a
+href="https://github.com/facebookresearch/partnr-planner">facebookresearch/partnr-planner</a></td>
+<td>任务与 Habitat 资源见仓库；权重未找到</td>
+<td><a
+href="https://aihabitat.org/partnr/">项目页</a>；视频见项目页</td>
+</tr>
+<tr class="odd">
+<td>LLaMAR / MAP-THOR</td>
+<td><a
+href="https://proceedings.neurips.cc/paper_files/paper/2024/hash/bb3cfcb0284642a973dd631ec9184f2f-Abstract-Conference.html">NeurIPS
+2024 正式论文</a></td>
+<td><a href="https://arxiv.org/abs/2407.10031v2">2407.10031v2</a>：v1
+2024-07-14，v2 2025-01-13</td>
+<td><a href="https://github.com/nsidn98/LLaMAR">nsidn98/LLaMAR</a></td>
+<td>MAP-THOR/配置公开；专用权重未找到</td>
+<td><a href="https://llamar.info/">项目页</a>；视频见项目页</td>
+</tr>
+<tr class="even">
+<td>RoCo / RoCoBench</td>
+<td>IEEE ICRA 2024；可由论文题名与正式书目信息核验</td>
+<td><a
+href="https://arxiv.org/abs/2307.04738v1">2307.04738v1</a>，2023-07-10</td>
+<td><a
+href="https://github.com/MandiZhao/robot-collab">project-roco</a></td>
+<td>RoCoBench/示例公开；权重不适用</td>
+<td><a
+href="https://project-roco.github.io/">项目页</a>；视频见项目页</td>
+</tr>
+<tr class="odd">
+<td>RoboFactory</td>
+<td><a
+href="https://openaccess.thecvf.com/content/ICCV2025/html/Qin_RoboFactory_Exploring_Embodied_Agent_Collaboration_with_Compositional_Constraints_ICCV_2025_paper.html">ICCV
+2025 论文页</a></td>
+<td><a
+href="https://arxiv.org/abs/2503.16408v1">2503.16408v1</a>，2025-03-20</td>
+<td><a
+href="https://github.com/MARS-EAI/RoboFactory">RoboFactory</a></td>
+<td>数据与基准入口见仓库；专用权重未找到</td>
+<td><a
+href="https://robofactory-mars.github.io/">项目页</a>；视频见项目页</td>
+</tr>
+<tr class="even">
+<td>DeepSeek-R1（GRPO 技术来源）</td>
+<td>论文公开时为技术报告；正式扩展版见 Nature 2025</td>
+<td><a href="https://arxiv.org/abs/2501.12948v2">2501.12948v2</a>：v1
+2025-01-22，v2 2026-01-04</td>
+<td><a
+href="https://github.com/deepseek-ai/DeepSeek-R1">DeepSeek-R1</a></td>
+<td>模型权重公开；训练数据未完整公开</td>
+<td>项目/模型入口见仓库；独立论文视频未找到</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>公开资源一致性警报。</strong> 论文表 1、项目 README 与附录
+C.1 均称 <strong>23,737</strong> 个任务；Hugging Face datasets-server
+实际返回 <strong>22,637</strong> 行（train 17,134、validation
+1,218、test 4,285；约 813 MB 原始文件）。两者恰差
+<strong>1,100</strong>，而附录 D 报告冷启动 SFT 为 L1 500、L2 500、L3
+100，合计也为 1,100。这个等式强烈暗示“23,737”把冷启动样本计入总任务，而
+HF 标准 split
+未计入，但数据卡没有解释，故这里只能标为<strong>审慎推断</strong>，不能当成已证实的
+split 定义。</p>
+</section><section class="card" aria-labelledby="1-候选池近-14-天排除与随机选择"><h2 id="1-候选池近-14-天排除与随机选择">1. 候选池、近 14
+天排除与随机选择</h2>
+<p>先检查 <code>ml-report-index.md</code>：近 14 天已深读
+TARL（无奖励测试时适配）、DreamGen（世界模型合成机器人轨迹）以及相邻的
+VLA/视觉世界模型主题，因此排除同论文与高度重合的“视频世界模型造机器人数据”主线。本轮从
+arXiv、NeurIPS/ICML/CVF 正式 proceedings、OpenReview、Hugging Face Daily
+Papers、Papers with Code 与 Semantic Scholar 交叉收集 24 篇，移除已覆盖
+DreamGen 后得到 <strong>23 篇合格候选</strong>。</p>
+<p>第一次严格执行 <code>shuf -i 1-23 -n 1</code> 抽到
+<strong>OpenVLA-OFT</strong>。它未超过 24 个月，但距本轮已超过 12
+个月且仅为 arXiv，而池内存在最近 12
+个月正式顶会论文，因此按预先规则重抽，不因热度或结论重抽。第二次在近期候选中抽到
+<em>Grounding Multimodal LLMs to Embodied Agents that Ask for
+Help</em>，但无法在 ICLR 2026 正式 proceedings
+中核实接收身份、OpenReview
+又拒绝自动访问，故为避免把投稿误写成录用再重抽。第三次在正式 proceedings
+已核验的 Robot-R1 与 VIKI-R 中用
+<code>shuf -e Robot-R1 VIKI-R -n 1</code> 抽中
+<strong>VIKI-R</strong>。共重抽 <strong>2
+次</strong>，理由均为资料/身份约束，不是主观择优。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">#</th>
+<th scope="col">候选论文</th>
+<th scope="col">来源/身份</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td><a href="https://openreview.net/forum?id=hqFNqVQEUd">ERA:
+Transforming VLMs into Embodied Agents via RL</a></td>
+<td>ICLR 2026 OpenReview</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/file/ec46d737282bb408e642ed883a145c40-Paper-Conference.pdf">Robot-R1</a></td>
+<td>NeurIPS 2025 Main</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td><a href="https://openreview.net/forum?id=qwA04SZeCa">Grounding MLLMs
+to Embodied Agents that Ask for Help</a></td>
+<td>OpenReview；正式接收未核实</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;"><strong>4</strong></td>
+<td><strong><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/file/ab16cc8f472cf94b282dbff7b99f5f8e-Paper-Datasets_and_Benchmarks_Track.pdf">VIKI-R</a></strong></td>
+<td><strong>NeurIPS 2025 D&amp;B；抽中</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td><a href="https://arxiv.org/abs/2504.16054">π0.5</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td><a href="https://arxiv.org/abs/2503.14734">GR00T N1</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td><a href="https://arxiv.org/abs/2502.19645">OpenVLA-OFT</a></td>
+<td>arXiv 2025；首次抽中后按时间优先级重抽</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">8</td>
+<td><a href="https://arxiv.org/abs/2506.01844">SmolVLA</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td><a href="https://arxiv.org/abs/2502.05855">DexVLA</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td><a href="https://arxiv.org/abs/2501.15830">SpatialVLA</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td><a href="https://arxiv.org/abs/2503.20384">MoLe-VLA</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">12</td>
+<td><a href="https://arxiv.org/abs/2506.21539">WorldVLA</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td><a href="https://arxiv.org/abs/2506.09985">V-JEPA 2</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td><a href="https://arxiv.org/abs/2508.05635">Genie Envisioner</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td><a href="https://arxiv.org/abs/2502.19417">Hi Robot</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">16</td>
+<td><a href="https://arxiv.org/abs/2505.10911">ReWiND</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td><a href="https://arxiv.org/abs/2505.13031">VidMan</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td><a href="https://arxiv.org/abs/2506.07961">BridgeVLA</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">19</td>
+<td><a href="https://arxiv.org/abs/2508.17424">RDT-2</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">20</td>
+<td><a href="https://arxiv.org/abs/2509.09674">SimpleVLA-RL</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">21</td>
+<td><a href="https://arxiv.org/abs/2506.18088">RoboTwin 2.0</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">22</td>
+<td><a
+href="https://proceedings.mlr.press/v267/huang25y.html">Empowering World
+Models with Reflection</a></td>
+<td>ICML 2025 Main</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">23</td>
+<td><a
+href="https://proceedings.mlr.press/v267/shen25d.html">BiAssemble</a></td>
+<td>ICML 2025 Main</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="2-motivation多机器人问题的瓶颈不只是动作而是协作结构"><h2 id="2-motivation多机器人问题的瓶颈不只是动作而是协作结构">2.
+Motivation：多机器人问题的瓶颈不只是“动作”，而是协作结构</h2>
+<p>单机器人 VLA
+常把目标定义为从图像和指令直接预测动作；多机器人协作多出三个互相耦合的决策：哪些机器人值得唤醒、哪些子任务能够并行、每个机器人是否真的可达且不会互撞。只测最终
+success rate 会把这些错误揉在一起：失败可能来自选错
+embodiment、符号计划不可执行，也可能只是对伙伴轨迹看错。</p>
+<p>VIKI-Bench 的直接动机来自既有基准覆盖断裂。核心论文表
+1（p.3）列出：RoCo 只有 <strong>6</strong> 个任务，RoboFactory 有
+<strong>11</strong> 个组合约束任务，LLaMAR/MAP-THOR 有
+<strong>225</strong> 个任务；PARTNR 虽有 <strong>100,000</strong>
+个自然语言任务，却主要面向人机家务协作。VIKI-Bench
+选择中间规模：<strong>100 个场景、6 类异构机器人、超过 1,000
+种资产组合、23,737
+个任务实例</strong>，并同时提供全局视图和第一视角。它的真正差异不是“任务最多”，而是把能力分层并给出可程序验证的监督信号。</p>
+<p>零样本结果证明这种分层不是装饰。核心表 2（p.8）中，GPT-4o 的 L1
+激活准确率仅 <strong>18.40%</strong>，L2 平均
+<strong>17.50%</strong>；Gemini-2.5-Flash-preview 虽在 L1 达
+<strong>31.40%</strong>，L2 OOD 也只有
+<strong>10.51%</strong>。Qwen2.5-VL-7B 零样本 L2 OOD 为
+<strong>0%</strong>。这意味着通用 VLM
+即使能描述场景，也几乎不会自然产生满足严格动作语法、前置条件与步数预算的多智能体计划。</p>
+<p>更强的外部证据来自 PARTNR：其 100,000 个任务跨 60 个房屋、5,819
+个对象；无 privileged information 的 ReAct 成功率仅
+<strong>0.30</strong>，人类为 <strong>0.93</strong>（PARTNR 表 2
+与正文，pp.10–11）。因此 VIKI-R 的问题不是“让 VLM 多写一段
+CoT”，而是：能否把<strong>可验证协作约束</strong>转成稠密 enough
+的后训练信号，让模型从格式合规跨到组合协作。</p>
+</section><section class="card" aria-labelledby="3-论文故事线假设与权衡"><h2 id="3-论文故事线假设与权衡">3. 论文故事线、假设与权衡</h2>
+<p>论文故事线由“分解—合成—优化”三步构成。</p>
+<ol type="1">
+<li><strong>分解能力。</strong> L1 只选择需要的机器人集合；L2
+输出并行、带参数的动作计划；L3
+从某个机器人第一视角预测自己与伙伴的二维轨迹。三个任务分别对应 team
+formation、symbolic coordination 和 spatial anticipation。</li>
+<li><strong>合成数据。</strong> 在 RoboCasa 与 ManiSkill3
+资产上构建场景，用 GPT-4o 生成/修正计划，再经 Action Checker、World
+Simulator、Plan Refiner
+迭代过滤。监督不完全依赖人工，但尽量用可执行性规则封闭循环。</li>
+<li><strong>两阶段学习。</strong> 先用 CoT demonstrations 做
+SFT，让输出进入奖励可识别区域；再用 GRPO
+对同一输入采样一组答案，按格式和任务规则给
+reward，强化相对更好的样本。</li>
+</ol>
+<p>核心假设是：层级规则 reward 可以作为真实协作质量的代理。L1 exact
+match 假设唯一“正确团队”存在；L2 进一步假设 ground-truth plan
+的步数接近最优；L3 则把平均轨迹距离转换成
+reward。这样做的优点是奖励便宜、确定、无需训练 critic；代价是 reward
+只认 benchmark 的形式化世界。一个现实可行但比 GT 多一步的恢复计划，在 L2
+会得到 0；一个二维轨迹靠近标注、但实际碰撞或动力学不可行的答案，在 L3
+仍可能得高分。</p>
+<p>另一个关键权衡是冷启动。DeepSeek-R1 证明“纯 RL 也能出现推理”，但
+VIKI-R 的 L2 几乎无法从零开始：3B/7B 的 VIKI-R-Zero 在 L2 平均分别只有
+<strong>0.00/0.10</strong>，而加 CoT 冷启动后到
+<strong>68.78/69.25</strong>（核心表
+2，p.8）。这说明该工作更准确的故事是“<strong>SFT
+把策略带入可验证规划流形，RL 再重排其概率质量</strong>”，而不是“RL
+自发学出多机器人协作”。</p>
+</section><section class="card" aria-labelledby="4-方程级形式化奖励与算法流程"><h2 id="4-方程级形式化奖励与算法流程">4.
+方程级形式化、奖励与算法流程</h2>
+<h3 id="41-sft-冷启动">4.1 SFT 冷启动</h3>
+<p>令输入状态为视觉观测与问题 <span
+class="math inline"><em>s</em> = (<em>x</em>,<em>q</em>)</span>，CoT/答案序列为
+<span
+class="math inline"><em>y</em><sub>1 : <em>T</em></sub></span>，SFT
+目标是</p>
+<p><span class="math display">$$
+\mathcal L_{\mathrm{SFT}}(\theta)=-\mathbb E_{(x,q,y)}\sum_{t=1}^{T}\log
+\pi_\theta(y_t\mid x,q,y_{&lt;t}).
+$$</span></p>
+<p>这是核心式 (1)，p.6。每个层级单独训练：L1 激活、L2 计划、L3
+轨迹没有共享一个统一 policy head。因而“hierarchical”描述的是 benchmark
+与训练任务的层级组织，不是一个端到端 policy 在一次 rollout
+中依次完成三层。</p>
+<h3 id="42-组相对优势与-clipped-objective">4.2 组相对优势与 clipped
+objective</h3>
+<p>对同一状态从旧策略采样 <span class="math inline"><em>G</em></span>
+个输出 <span
+class="math inline">{<em>a</em><sub><em>i</em></sub>}<sub><em>i</em> = 1</sub><sup><em>G</em></sup></span>，先算组内标准化优势：</p>
+<p><span class="math display">$$
+A_i=\frac{R_i-\bar R}{\sigma_R},\qquad
+r_i(\theta)=\frac{\pi_\theta(a_i\mid s)}{\pi_0(a_i\mid s)}.
+$$</span></p>
+<p>再优化</p>
+<p><span
+class="math display">ℒ<sub>clip</sub> = 𝔼<sub><em>i</em></sub>[min(<em>r</em><sub><em>i</em></sub><em>A</em><sub><em>i</em></sub>, clip(<em>r</em><sub><em>i</em></sub>,1−<em>ϵ</em>,1+<em>ϵ</em>)<em>A</em><sub><em>i</em></sub>)],</span></p>
+<p><span
+class="math display"><em>J</em>(<em>θ</em>) = ℒ<sub>clip</sub> − <em>β</em><em>D</em><sub><em>K</em><em>L</em></sub>(<em>π</em><sub><em>θ</em></sub>∥<em>π</em><sub>0</sub>).</span></p>
+<p>对应式 (2)–(5)，pp.6–7。论文的 notation 有轻微歧义：<span
+class="math inline"><em>π</em><sub>0</sub></span> 同时被写作
+old/reference policy 的角色，而实现超参表使用 KL loss 系数
+0.01。复现时必须检查 rollout policy、更新前 old policy 与固定 reference
+model 是否真为同一个对象。</p>
+<h3 id="43-层级奖励">4.3 层级奖励</h3>
+<p>总奖励为</p>
+<p><span
+class="math display"><em>R</em> = <em>λ</em><sub>1</sub><em>R</em><sub>format</sub> + <em>λ</em><sub>2</sub><em>R</em><sub>acc</sub>.</span></p>
+<ul>
+<li><strong>L1：</strong> 只有解析成功且预测机器人集合与 ground truth
+完全相等，<span
+class="math inline"><em>R</em><sub><em>a</em><em>c</em><em>c</em></sub> = 1</span>。</li>
+<li><strong>L2：</strong> 计划 <span
+class="math inline"><em>A</em></span> 经执行器判为 feasible，且动作步数
+<span
+class="math inline"><em>N</em>(<em>A</em>) ≤ <em>N</em><sub><em>g</em><em>t</em></sub></span>，才得
+1： <span
+class="math display"><em>R</em><sub><em>L</em>2</sub> = <strong>1</strong>[feasible(<em>A</em>)]<strong>1</strong>[<em>N</em>(<em>A</em>)≤<em>N</em><sub><em>g</em><em>t</em></sub>].</span></li>
+<li><strong>L3：</strong> 对每个 agent 的 RMSE、Hausdorff、Dynamic
+Fréchet 距离先归一化成 <span class="math inline"><em>d̂</em></span>，转为
+<span class="math inline">1 − <em>d̂</em></span>，再跨 agent
+和指标求均值（式 (9)，p.8）。</li>
+</ul>
+<p>这三个 reward 的统计形态完全不同：L1/L2 近似稀疏 Bernoulli，L3 是连续
+shaped reward。也因此纯 RL 在 L3 可以从非零距离梯度爬升，在 L2
+却几乎没有可行样本作为学习信号。</p>
+<h3 id="44-伪代码">4.4 伪代码</h3>
+<pre class="text"><code>输入：层级数据 Dk，Qwen2.5-VL-Instruct，格式检查器与任务验证器
+1  用各层 CoT cold-start 子集对 backbone 做 SFT，得到 πsft
+2  对每个训练状态 s=(image, question)：
+3      从旧策略对同一 s 采样 G=5 个答案 a1...aG
+4      解析答案；不合格式者只得 format penalty/zero task reward
+5      L1: exact-match robot set
+6      L2: Action Checker → World Simulator；要求 feasible 且不长于 GT
+7      L3: 计算多 agent 的 RMSE/HD/DFD，再归一化为连续 reward
+8      在组内标准化 reward 得 Ai
+9      以 clipped ratio + KL regularization 更新策略
+10 重复各层预设 epoch；分别导出 L1/L2/L3 checkpoint
+输出：每层一个 VIKI-R 模型，而非一个闭环三层控制器</code></pre>
+</section><section class="card" aria-labelledby="5-关键机制与工程细节"><h2 id="5-关键机制与工程细节">5. 关键机制与工程细节</h2>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">组件</th>
+<th scope="col">论文实现</th>
+<th scope="col">设计作用</th>
+<th scope="col">审计结论</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Backbone</td>
+<td>Qwen2.5-VL-Instruct 3B/7B，附录另报 32B scale</td>
+<td>保留通用视觉语言能力</td>
+<td>不是 action-native VLA；输出仍是文本/坐标结构</td>
+</tr>
+<tr class="even">
+<td>CoT SFT</td>
+<td>L1/L2/L3 冷启动分别 500/500/100</td>
+<td>让稀疏 reward 可达</td>
+<td>对 L2 是必要条件，不只是加速器</td>
+</tr>
+<tr class="odd">
+<td>GRPO rollout</td>
+<td>每 prompt <strong>5</strong> 个响应</td>
+<td>用组内相对 reward 省去 critic</td>
+<td>小组下 <span
+class="math inline"><em>σ</em><sub><em>R</em></sub> = 0</span>
+的处理论文未说明</td>
+</tr>
+<tr class="even">
+<td>Reward</td>
+<td>format + task accuracy；KL coeff <strong>0.01</strong></td>
+<td>保格式并限制漂移</td>
+<td>L2 绑定 GT 步数，可能惩罚有效替代计划</td>
+</tr>
+<tr class="odd">
+<td>Context</td>
+<td>prompt 4096、response 2048</td>
+<td>容纳视觉与长计划</td>
+<td>未报告有效 token 分布及截断率</td>
+</tr>
+<tr class="even">
+<td>Optimization</td>
+<td>lr <span class="math inline">10<sup>−6</sup></span>，batch 256；PPO
+mini-batch 128，micro-batch 10</td>
+<td>统一三层设置</td>
+<td>“micro-batch 10”与 8 GPU/256 全局 batch 的整除/累积关系未解释</td>
+</tr>
+<tr class="odd">
+<td>Epoch</td>
+<td>L1 5、L2 15、L3 2</td>
+<td>难规划任务训练更久</td>
+<td>各层计算预算不等，不能把层间表现直接归因于 reward 难度</td>
+</tr>
+<tr class="even">
+<td>硬件</td>
+<td>单节点 <strong>8×A800 80GB</strong></td>
+<td>训练复现实验</td>
+<td>7B 三层合计 36h，即约 <strong>288 A800-GPU-hour</strong></td>
+</tr>
+<tr class="odd">
+<td>数据生成</td>
+<td>GPT-4o + Action Checker + World Simulator + Plan Refiner</td>
+<td>扩大可执行监督</td>
+<td>teacher/style 与评测规则存在同源性</td>
+</tr>
+</tbody>
+</table></div>
+<p>所有超参来自附录 D 与表 13（pp.23, 28–29）；训练耗时来自表
+12（p.28）。3B 三层总计 <strong>21.5h×8=172 A800-GPU-hour</strong>；7B
+为 <strong>36h×8=288 A800-GPU-hour</strong>，但论文没有给 SFT 与 GRPO
+各自耗时、生成 5 个 rollouts 的吞吐、数据生成 API 成本或能耗。</p>
+</section><section class="card" aria-labelledby="6-数据集任务与指标到底测什么"><h2 id="6-数据集任务与指标到底测什么">6.
+数据集、任务与指标到底测什么</h2>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">层级</th>
+<th scope="col">输入→输出</th>
+<th scope="col">规模/切分</th>
+<th scope="col">指标</th>
+<th scope="col">能推出什么 / 不能推出什么</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>VIKI-L1 激活</td>
+<td>场景图+指令→机器人集合</td>
+<td class="num">10,714；train 8,171、test 2,043、cold-start 500</td>
+<td>Exact-set accuracy↑</td>
+<td>测 team selection；不测后续控制能否完成</td>
+</tr>
+<tr class="even">
+<td>VIKI-L2 规划</td>
+<td>场景/能力+指令→并行动作序列</td>
+<td>正文称 10,714；附录 D 又写 10,174；OOD 1,218，ID train 7,196、test
+1,800、cold-start 500</td>
+<td>ID/OOD plan accuracy↑、平均↑</td>
+<td>测符号可执行性与步数约束；不等于物理机器人成功率</td>
+</tr>
+<tr class="odd">
+<td>VIKI-L3 轨迹感知</td>
+<td>ego 图+描述→自己/伙伴二维轨迹</td>
+<td class="num">2,309；train 1,767、test 442、cold-start 100</td>
+<td>RMSE/HD/DFD↓</td>
+<td>测静态观测到轨迹坐标；不测闭环预测—控制—再观测</td>
+</tr>
+<tr class="even">
+<td>Real-world L1</td>
+<td>真实照片+GPT-4o 生成指令→机器人集合</td>
+<td class="num">100 条</td>
+<td>accuracy↑</td>
+<td>只测零样本商用 VLM；<strong>未测 VIKI-R</strong></td>
+</tr>
+<tr class="odd">
+<td>Human comparison</td>
+<td>每层 150 样本</td>
+<td class="num">450 条人工评估</td>
+<td>与同层指标相同</td>
+<td>给上限参照；样本量有限且未给人间一致性</td>
+</tr>
+</tbody>
+</table></div>
+<p>三种距离的语义不同。RMSE 惩罚点对点偏差；Hausdorff
+看最坏最近点距离；Dynamic Fréchet 还保持曲线顺序。论文把三者简单平均成
+AVG，实际上单位和尺度虽然都像素化/归一化，却未证明等权符合控制风险。更关键的是，L3
+是 trajectory <strong>perception/prediction</strong>，不是 policy
+rollout；它可以辅助避碰，但不能据此宣称“实现了多机器人轨迹协调”。</p>
+</section><section class="card" aria-labelledby="7-完整主结果矩阵"><h2 id="7-完整主结果矩阵">7. 完整主结果矩阵</h2>
+<h3 id="71-表-2三层八指标十四种系统">7.1 表
+2：三层、八指标、十四种系统</h3>
+<p>下表完整转录核心论文表 2（p.8）。L1/L2 越高越好；L3
+越低越好。粗体标各列最优。论文没有跨 5 个独立 benchmark
+的六方法矩阵，因为其评测对象是一个 benchmark
+的三个层级；本报告保留原始结构，不把层级伪装成独立 benchmark。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">L1 ID↑</th>
+<th scope="col" style="text-align: right;">L2 ID↑</th>
+<th scope="col" style="text-align: right;">L2 OOD↑</th>
+<th scope="col" style="text-align: right;">L2 Avg↑</th>
+<th scope="col" style="text-align: right;">L3 RMSE↓</th>
+<th scope="col" style="text-align: right;">L3 HD↓</th>
+<th scope="col" style="text-align: right;">L3 DFD↓</th>
+<th scope="col" style="text-align: right;">L3 Avg↓</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>GPT-4o</td>
+<td style="text-align: right;">18.40</td>
+<td style="text-align: right;">22.56</td>
+<td style="text-align: right;">10.02</td>
+<td style="text-align: right;">17.50</td>
+<td style="text-align: right;">100.80</td>
+<td style="text-align: right;">115.34</td>
+<td style="text-align: right;">131.05</td>
+<td style="text-align: right;">115.73</td>
+</tr>
+<tr class="even">
+<td>Claude-3.7-Sonnet</td>
+<td style="text-align: right;">12.40</td>
+<td style="text-align: right;">19.44</td>
+<td style="text-align: right;">0.57</td>
+<td style="text-align: right;">11.82</td>
+<td style="text-align: right;">283.31</td>
+<td style="text-align: right;">323.53</td>
+<td style="text-align: right;">346.88</td>
+<td style="text-align: right;">317.91</td>
+</tr>
+<tr class="odd">
+<td>Gemini-2.5-Flash-preview</td>
+<td style="text-align: right;">31.40</td>
+<td style="text-align: right;">20.00</td>
+<td style="text-align: right;">10.51</td>
+<td style="text-align: right;">16.17</td>
+<td style="text-align: right;">453.89</td>
+<td style="text-align: right;">519.14</td>
+<td style="text-align: right;">540.80</td>
+<td style="text-align: right;">504.61</td>
+</tr>
+<tr class="even">
+<td>Qwen2.5-VL-72B-Instruct</td>
+<td style="text-align: right;">11.31</td>
+<td style="text-align: right;">8.40</td>
+<td style="text-align: right;">1.20</td>
+<td style="text-align: right;">5.49</td>
+<td style="text-align: right;">81.31</td>
+<td style="text-align: right;">94.62</td>
+<td style="text-align: right;">113.15</td>
+<td style="text-align: right;">96.36</td>
+</tr>
+<tr class="odd">
+<td>Qwen2.5-VL-32B-Instruct</td>
+<td style="text-align: right;">9.50</td>
+<td style="text-align: right;">3.60</td>
+<td style="text-align: right;">0.00</td>
+<td style="text-align: right;">2.15</td>
+<td style="text-align: right;">88.48</td>
+<td style="text-align: right;">99.80</td>
+<td style="text-align: right;">119.78</td>
+<td style="text-align: right;">102.69</td>
+</tr>
+<tr class="even">
+<td>Llama-3.2-11B-Vision</td>
+<td style="text-align: right;">0.40</td>
+<td style="text-align: right;">0.50</td>
+<td style="text-align: right;">0.00</td>
+<td style="text-align: right;">0.30</td>
+<td style="text-align: right;">192.69</td>
+<td style="text-align: right;">223.57</td>
+<td style="text-align: right;">231.85</td>
+<td style="text-align: right;">216.04</td>
+</tr>
+<tr class="odd">
+<td>Qwen2.5-VL-3B Zero-shot</td>
+<td style="text-align: right;">1.95</td>
+<td style="text-align: right;">0.22</td>
+<td style="text-align: right;">0.00</td>
+<td style="text-align: right;">0.13</td>
+<td style="text-align: right;">96.22</td>
+<td style="text-align: right;">114.93</td>
+<td style="text-align: right;">130.98</td>
+<td style="text-align: right;">114.04</td>
+</tr>
+<tr class="even">
+<td class="num">3B + Ans-SFT</td>
+<td style="text-align: right;">35.29</td>
+<td style="text-align: right;">81.06</td>
+<td style="text-align: right;">30.71</td>
+<td style="text-align: right;">60.74</td>
+<td style="text-align: right;"><strong>74.70</strong></td>
+<td style="text-align: right;">90.28</td>
+<td style="text-align: right;"><strong>102.26</strong></td>
+<td style="text-align: right;"><strong>89.08</strong></td>
+</tr>
+<tr class="odd">
+<td class="num">3B + VIKI-R-Zero</td>
+<td style="text-align: right;">20.40</td>
+<td style="text-align: right;">0.00</td>
+<td style="text-align: right;">0.00</td>
+<td style="text-align: right;">0.00</td>
+<td style="text-align: right;">80.36</td>
+<td style="text-align: right;">95.36</td>
+<td style="text-align: right;">120.27</td>
+<td style="text-align: right;">98.66</td>
+</tr>
+<tr class="even">
+<td class="num">3B + VIKI-R</td>
+<td style="text-align: right;"><strong>74.10</strong></td>
+<td style="text-align: right;"><strong>93.61</strong></td>
+<td style="text-align: right;"><strong>32.11</strong></td>
+<td style="text-align: right;"><strong>68.78</strong></td>
+<td style="text-align: right;">75.69</td>
+<td style="text-align: right;"><strong>90.25</strong></td>
+<td style="text-align: right;">103.65</td>
+<td style="text-align: right;">89.86</td>
+</tr>
+<tr class="odd">
+<td>Qwen2.5-VL-7B Zero-shot</td>
+<td style="text-align: right;">4.26</td>
+<td style="text-align: right;">0.44</td>
+<td style="text-align: right;">0.00</td>
+<td style="text-align: right;">0.26</td>
+<td style="text-align: right;">81.93</td>
+<td style="text-align: right;">103.82</td>
+<td style="text-align: right;">112.91</td>
+<td style="text-align: right;">99.55</td>
+</tr>
+<tr class="even">
+<td class="num">7B + Ans-SFT</td>
+<td style="text-align: right;">72.20</td>
+<td style="text-align: right;"><strong>96.89</strong></td>
+<td style="text-align: right;">25.62</td>
+<td style="text-align: right;">68.13</td>
+<td style="text-align: right;">65.32</td>
+<td style="text-align: right;">81.20</td>
+<td style="text-align: right;">90.89</td>
+<td style="text-align: right;">79.14</td>
+</tr>
+<tr class="odd">
+<td class="num">7B + VIKI-R-Zero</td>
+<td style="text-align: right;"><strong>93.59</strong></td>
+<td style="text-align: right;">0.17</td>
+<td style="text-align: right;">0.00</td>
+<td style="text-align: right;">0.10</td>
+<td style="text-align: right;">67.42</td>
+<td style="text-align: right;">85.30</td>
+<td style="text-align: right;">95.32</td>
+<td style="text-align: right;">82.68</td>
+</tr>
+<tr class="even">
+<td class="num">7B + VIKI-R</td>
+<td style="text-align: right;">93.00</td>
+<td style="text-align: right;">95.22</td>
+<td style="text-align: right;"><strong>33.25</strong></td>
+<td style="text-align: right;"><strong>69.25</strong></td>
+<td style="text-align: right;"><strong>64.87</strong></td>
+<td style="text-align: right;"><strong>79.23</strong></td>
+<td style="text-align: right;"><strong>89.36</strong></td>
+<td style="text-align: right;"><strong>77.82</strong></td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="72-rl-相对-sft-的逐项复算">7.2 RL 相对 SFT 的逐项复算</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">规模</th>
+<th scope="col">指标</th>
+<th scope="col" style="text-align: right;">Ans-SFT→VIKI-R</th>
+<th scope="col" style="text-align: right;">绝对变化</th>
+<th scope="col" style="text-align: right;">相对变化</th>
+<th scope="col">判断</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td class="num">3B</td>
+<td>L1</td>
+<td style="text-align: right;">35.29→74.10</td>
+<td style="text-align: right;"><strong>+38.81 pp</strong></td>
+<td style="text-align: right;">+109.98%</td>
+<td>RL 明显收益</td>
+</tr>
+<tr class="even">
+<td class="num">3B</td>
+<td>L2 ID</td>
+<td style="text-align: right;">81.06→93.61</td>
+<td style="text-align: right;"><strong>+12.55 pp</strong></td>
+<td style="text-align: right;">+15.48%</td>
+<td>RL 明显收益</td>
+</tr>
+<tr class="odd">
+<td class="num">3B</td>
+<td>L2 OOD</td>
+<td style="text-align: right;">30.71→32.11</td>
+<td style="text-align: right;">+1.40 pp</td>
+<td style="text-align: right;">+4.56%</td>
+<td>小幅，未给显著性</td>
+</tr>
+<tr class="even">
+<td class="num">3B</td>
+<td>L2 Avg</td>
+<td style="text-align: right;">60.74→68.78</td>
+<td style="text-align: right;">+8.04 pp</td>
+<td style="text-align: right;">+13.24%</td>
+<td>总体正向</td>
+</tr>
+<tr class="odd">
+<td class="num">3B</td>
+<td>L3 Avg↓</td>
+<td style="text-align: right;"><strong>89.08→89.86</strong></td>
+<td style="text-align: right;"><strong>+0.78（更差）</strong></td>
+<td style="text-align: right;">−0.88% error reduction</td>
+<td>RL 反向</td>
+</tr>
+<tr class="even">
+<td class="num">7B</td>
+<td>L1</td>
+<td style="text-align: right;">72.20→93.00</td>
+<td style="text-align: right;"><strong>+20.80 pp</strong></td>
+<td style="text-align: right;">+28.81%</td>
+<td>RL 明显收益</td>
+</tr>
+<tr class="odd">
+<td class="num">7B</td>
+<td>L2 ID</td>
+<td style="text-align: right;"><strong>96.89→95.22</strong></td>
+<td style="text-align: right;"><strong>−1.67 pp</strong></td>
+<td style="text-align: right;">−1.72%</td>
+<td>RL 反向</td>
+</tr>
+<tr class="even">
+<td class="num">7B</td>
+<td>L2 OOD</td>
+<td style="text-align: right;">25.62→33.25</td>
+<td style="text-align: right;"><strong>+7.63 pp</strong></td>
+<td style="text-align: right;">+29.78%</td>
+<td>最可信的泛化收益</td>
+</tr>
+<tr class="odd">
+<td class="num">7B</td>
+<td>L2 Avg</td>
+<td style="text-align: right;">68.13→69.25</td>
+<td style="text-align: right;">+1.12 pp</td>
+<td style="text-align: right;">+1.64%</td>
+<td>很小，未给显著性</td>
+</tr>
+<tr class="even">
+<td class="num">7B</td>
+<td>L3 Avg↓</td>
+<td style="text-align: right;">79.14→77.82</td>
+<td style="text-align: right;">−1.32</td>
+<td style="text-align: right;"><strong>1.67% error
+reduction</strong></td>
+<td>小幅正向</td>
+</tr>
+</tbody>
+</table></div>
+<p>所以“显著超过 baseline、跨所有层级有效”的正确读法是：<strong>L1 与 L2
+OOD 受益最稳，L2 ID 和 3B L3 并非全胜。</strong> 7B VIKI-R-Zero 的 L1
+还以 93.59 略高于完整 VIKI-R 的 93.00（+0.59 pp），说明 CoT
+冷启动不是每个层级都提高终点精度。</p>
+<h3 id="73-与人类反馈式推理和真实世界的边界">7.3
+与人类、反馈式推理和真实世界的边界</h3>
+<p>核心表 6（p.10，三层各 150 样本）报告：</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">L1↑</th>
+<th scope="col" style="text-align: right;">L2↑</th>
+<th scope="col" style="text-align: right;">L3 RMSE↓</th>
+<th scope="col" style="text-align: right;">L3 HD↓</th>
+<th scope="col" style="text-align: right;">L3 DFD↓</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>VIKI-R 7B</td>
+<td style="text-align: right;">93.00</td>
+<td style="text-align: right;">69.25</td>
+<td style="text-align: right;">64.87</td>
+<td style="text-align: right;">79.23</td>
+<td style="text-align: right;">89.36</td>
+</tr>
+<tr class="even">
+<td><strong>Human</strong></td>
+<td style="text-align: right;"><strong>98.00</strong></td>
+<td style="text-align: right;"><strong>96.50</strong></td>
+<td style="text-align: right;"><strong>48.84</strong></td>
+<td style="text-align: right;"><strong>58.97</strong></td>
+<td style="text-align: right;"><strong>71.30</strong></td>
+</tr>
+<tr class="odd">
+<td>差距</td>
+<td style="text-align: right;">−5.00 pp</td>
+<td style="text-align: right;"><strong>−27.25 pp</strong></td>
+<td style="text-align: right;">+16.03（+32.82%）</td>
+<td style="text-align: right;">+20.26（+34.36%）</td>
+<td style="text-align: right;">+18.06（+25.33%）</td>
+</tr>
+</tbody>
+</table></div>
+<p>因此“human-comparable”只在 L1 勉强成立，不能覆盖 L2/L3。反馈式商业
+VLM 表 3（p.9）也很有信息：GPT-4o pass@1 为 18.4，普通 pass@6 仍只有
+18.7，而 feedback pass@6 到 22.3；Gemini 从 31.4 到
+34.7。多采样几乎不增益，显式反馈才带来约 3 pp，暗示错误高度系统化而非纯
+sampling variance。</p>
+<p>真实世界表 5（p.9）只测 100 条由 GPT-4o 生成的 L1 指令：Qwen-32B
+8%、Qwen-72B 14%、Claude 15%、Gemini 28%。<strong>VIKI-R
+没有出现在该表。</strong> 所以论文的“beyond simulation”实验验证的是
+benchmark task 对真实图像仍困难，不是 VIKI-R 的 sim-to-real 成功。</p>
+</section><figure class="figure" aria-labelledby="rl-chart-title">
+<p class="fig-title" id="rl-chart-title">7B：RL 的增益集中在 L1 与 L2 OOD</p>
+<p class="fig-sub">纵轴为准确率（%）；同一方法在 L1、L2 ID、L2 OOD 三个指标上的对比。L2 ID 中 Ans-SFT 反而更高。</p>
+<div class="legend"><span><span class="swatch" style="background:#2a78d6"></span>Ans-SFT</span><span><span class="swatch" style="background:#eb6834"></span>VIKI-R</span></div>
+<svg class="chart" viewBox="0 0 860 385" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>7B Ans-SFT 与 VIKI-R 在三个准确率指标上的比较</title>
+<desc>VIKI-R 在 L1 和 L2 OOD 更高，在 L2 ID 比 Ans-SFT 低 1.67 个百分点。</desc>
+<line x1="80" y1="320" x2="820" y2="320" stroke="var(--grid)"/>
+<line x1="80" y1="60" x2="80" y2="320" stroke="var(--grid)"/>
+<line x1="80" y1="190" x2="820" y2="190" stroke="var(--grid)" stroke-dasharray="4 5"/>
+<line x1="80" y1="60" x2="820" y2="60" stroke="var(--grid)" stroke-dasharray="4 5"/>
+<text x="68" y="324" text-anchor="end" font-size="12">0</text>
+<text x="68" y="194" text-anchor="end" font-size="12">50</text>
+<text x="68" y="64" text-anchor="end" font-size="12">100%</text>
+<rect x="165" y="132.3" width="46" height="187.7" rx="5" fill="#2a78d6" tabindex="0" data-tip="7B · L1 · Ans-SFT: 72.20%"/><rect x="223" y="78.2" width="46" height="241.8" rx="5" fill="#eb6834" tabindex="0" data-tip="7B · L1 · VIKI-R: 93.00%"/><text x="217" y="348" text-anchor="middle" font-size="13">L1</text><rect x="380" y="68.1" width="46" height="251.9" rx="5" fill="#2a78d6" tabindex="0" data-tip="7B · L2 ID · Ans-SFT: 96.89%"/><rect x="438" y="72.4" width="46" height="247.6" rx="5" fill="#eb6834" tabindex="0" data-tip="7B · L2 ID · VIKI-R: 95.22%"/><text x="432" y="348" text-anchor="middle" font-size="13">L2 ID</text><rect x="595" y="253.4" width="46" height="66.6" rx="5" fill="#2a78d6" tabindex="0" data-tip="7B · L2 OOD · Ans-SFT: 25.62%"/><rect x="653" y="233.6" width="46" height="86.5" rx="5" fill="#eb6834" tabindex="0" data-tip="7B · L2 OOD · VIKI-R: 33.25%"/><text x="647" y="348" text-anchor="middle" font-size="13">L2 OOD</text>
+</svg>
+<figcaption>来源：核心论文表 2，正式版 p.8；下方逐项复算表给出绝对 pp 与相对变化。悬停或键盘聚焦柱形可查看数值。</figcaption>
+</figure><section class="card" aria-labelledby="8-逐层消融超参敏感性与相变"><h2 id="8-逐层消融超参敏感性与相变">8. 逐层消融、超参敏感性与相变</h2>
+<h3 id="81-step-penalty挑战子集很大全量-split-很小">8.1 Step
+penalty：挑战子集很大，全量 split 很小</h3>
+<p>正文表 4（p.9）在“challenging L2”上报告：去掉 step penalty 时
+OOD-H/ID-H 为 <strong>7.1/8.0</strong>，加入后为
+<strong>46.8/96.0</strong>，绝对提升 <strong>39.7/88.0
+pp</strong>，平均多余步数从 1.97 降到 0.05。可是在附录表 7（p.26）的全量
+L2 split 上，同一消融只是 ID <strong>92.06→95.22（+3.16
+pp）</strong>、OOD <strong>29.51→33.25（+3.74
+pp）</strong>。这不是矛盾，但说明收益高度集中在专门挑出的难例；论文没有说明
+challenging subset 的采样准则和规模，不能把 88 pp 当作总体效果。</p>
+<h3 id="82-model-scale不同层级存在不同相变">8.2 Model
+scale：不同层级存在不同相变</h3>
+<p>附录表 8（p.26）：3B/7B/32B 的 L1 为
+<strong>74.10/93.00/95.30</strong>，L2 为
+<strong>68.78/69.25/74.74</strong>。3B→7B 给 L1 +18.90 pp，却只给 L2
++0.47 pp；7B→32B 又主要提高 L2（+5.49 pp），L1 仅 +2.30
+pp。由此可以提出而不能证明两个相变：team selection 在 7B
+附近趋于饱和，而组合规划需要更大容量；论文没有更密集 scale 点或等
+compute 曲线。</p>
+<h3 id="83-prompt-guidance-与-optimizer">8.3 Prompt guidance 与
+optimizer</h3>
+<p>附录表 9（p.26）移除引导 prompt 后，3B L1 从 74.10 到 73.47（−0.63
+pp），7B 从 93.00 到 92.95（−0.05
+pp）；作者称收敛更慢，但没有给到达阈值的 step 数。说明 prompt
+更像优化加速而非终点性能来源。</p>
+<p>附录表 10（p.26）比较 GRPO 与 DAPO：3B 的 ID/OOD 为 GRPO
+93.61/32.11、DAPO 93.22/<strong>33.33</strong>；7B 为 GRPO
+95.22/33.25、DAPO <strong>95.44/33.58</strong>。DAPO
+在四项中三项更好，优势 0.22–1.22 pp。没有方差时不能说 DAPO
+显著更优，但足以说明“GRPO 本身”不是主要 novelty；核心是可验证层级 reward
+与冷启动数据。</p>
+<h3 id="84-训练曲线揭示的-reward-support-相变">8.4 训练曲线揭示的
+reward-support 相变</h3>
+<p>附录 Figures 5–7（pp.24–25）只能从图读趋势，故以下数字均标“约”。L2 的
+3B R-Zero reward 从约 0.009 上升到约 0.019 后回落，7B R-Zero 也只在约
+0.06–0.075；加 SFT 后两者在约 60 step 到 0.9 左右。L3 则不同：7B R-Zero
+最终约 0.80，完整 VIKI-R 约 0.75，纯 RL 甚至更高。因为 L2 reward 是离散
+feasible gate、L3 是连续距离，所以是否需要 cold start
+取决于初始策略对非零 reward 的覆盖率；这比“CoT 总是有益”更可迁移。</p>
+<h3 id="85-统计显著性">8.5 统计显著性</h3>
+<p><strong>论文未报告</strong>随机种子数、均值±标准差、bootstrap CI
+或显著性检验。表 2 也没有逐 episode 预测，因此无法在本报告中补做 paired
+test。由此，大幅差异（例如 7B L2 R-Zero 0.10→VIKI-R
+69.25）方向可信；0.05、0.22、0.47、1.12 pp
+量级的差异不能被解释为稳定优劣。</p>
+</section><section class="card" aria-labelledby="9-相关工作链解决什么遗留缺口viki-r-如何回应设计如何传递"><h2 id="9-相关工作链解决什么遗留缺口viki-r-如何回应设计如何传递">9.
+相关工作链：解决什么—遗留缺口—VIKI-R 如何回应—设计如何传递</h2>
+<h3 id="91-roco从语言协商到可执行多臂轨迹">9.1
+RoCo：从语言协商到可执行多臂轨迹</h3>
+<p>RoCo 解决多个机器人如何用 LLM 对话形成高层策略，并把 waypoint
+交给低层 motion planner；RoCoBench 只有 6 类任务，但包含 collision
+feedback 和真实多臂演示。论文表 2（p.5）在每任务 20 次运行上报告
+success/steps/replans，另有真实世界每设置 10 次（表
+3，p.7）。遗留缺口是任务规模小、依赖昂贵 LLM in-context
+dialectic，且缺少统一的“激活—规划—轨迹感知”诊断。VIKI-R
+把对话闭环改为离线可学习 policy，把 RoCo 的“环境反馈修计划”传递成 Action
+Checker/World Simulator 奖励，但舍弃了真实执行闭环。</p>
+<h3 id="92-llamarplanactcorrectverify-的长时闭环">9.2
+LLaMAR：plan–act–correct–verify 的长时闭环</h3>
+<p>LLaMAR 解决部分可观测、多智能体长时规划，在 MAP-THOR/SAR 中用
+Planner、Actor、Corrector、Verifier 形成闭环，并在摘要/结论报告相对既有
+planner 约 <strong>30%</strong> 的 success-rate 提升（论文
+pp.1,11；完整表 2 在 p.9）。遗留缺口是 MAP-THOR 只有 225
+个任务、主要依赖推理时模块编排。VIKI-R
+继承“验证器提供结构反馈”的思想，但将其从 inference-time correction 转为
+training-time reward，换来单次推理低交互成本；代价是遇到环境变化时没有
+LLaMAR 式在线重规划。</p>
+<h3 id="93-partnr规模化人机协作暴露-trackingrecovery-缺陷">9.3
+PARTNR：规模化人机协作暴露 tracking/recovery 缺陷</h3>
+<p>PARTNR 用 LLM + simulator-in-the-loop 生成 <strong>100,000</strong>
+个自然语言任务，覆盖 60 个房屋与 5,819 个对象（论文 p.1、表 1
+p.3）。它解决的是大规模 household human–robot planning；还发现无
+privileged perception 的 ReAct 成功率 0.30，人类 0.93，8B fine-tuned
+planner 可接近 70B 并快 <strong>8.6×</strong>（表 2
+与正文，pp.10–11）。遗留缺口是视觉协作分层诊断与多种机器人形态不足。VIKI-R
+将 PARTNR 的 simulator-verified generation 传递到多 embodiment
+视觉设置，并新增 team activation 和 partner trajectory
+perception；但规模从 100k 降至 23.7k，真实人机互动证据也更弱。</p>
+<h3 id="94-robofactory组合约束让数据生成先变得安全可行">9.4
+RoboFactory：组合约束让数据生成先变得安全可行</h3>
+<p>RoboFactory 解决异构多智能体 manipulation
+数据自动生成，显式编码视角、空间、时间等 compositional constraints；它有
+11 个任务，并以 diffusion policy/imitation learning
+比较数据量和共享/独立架构（表 2/3，p.7）。遗留缺口是它更接近低层
+imitation/control，对“为什么选这些 agent、如何评价长计划与
+OOD”覆盖有限。VIKI-R 直接复用了同一 MARS
+技术脉络，把组合约束上移为可验证符号
+reward，并将任务扩到三个认知层；反过来，VIKI-R 没有保留 RoboFactory
+的实际动作成功率闭环。</p>
+<h3 id="95-deepseek-r1grpo-与-cold-start-不是机器人专属发明">9.5
+DeepSeek-R1：GRPO 与 cold-start 不是机器人专属发明</h3>
+<p>DeepSeek-R1 解决大语言模型推理后训练，以组内 reward 代替 value
+model，并使用规则 accuracy/format reward；GRPO 定义见其 §2.1（p.2），PPO
+对照见附录
+A.3（pp.16–18）。遗留缺口是数学/代码答案天然可验证，却不包含视觉、物理与多
+agent feasibility。VIKI-R 的方法传递非常直接：仍然是 group-relative
+advantage、clipping、KL 与 format/task
+reward；真正新增的是三类具身验证器。由此应把贡献写成“把 verifiable RL
+移植到分层协作 benchmark”，而不是提出新的 RL 算法。</p>
+<h3 id="96-非线性技术演进树">9.6 非线性技术演进树</h3>
+<pre class="text"><code>        RoCo 2023/24：LLM 对话协商 + motion/collision feedback
+                    │
+                    ├──────────────┐
+                    ▼              ▼
+ LLaMAR 2024：plan-act-correct-verify     PARTNR 2024：100k simulator-verified tasks
+        │ inference-time 闭环             │ 规模化、human-robot
+        └──────────────┬───────────────────┘
+                       ▼
+      RoboFactory 2025：组合约束 + 多 agent imitation/control
+                       │
+ DeepSeek-R1/GRPO ─────┼── rule reward + cold start
+ （文本可验证推理）      │
+                       ▼
+          VIKI-Bench / VIKI-R 2025
+   激活 ── 规划 ── 轨迹感知；SFT → GRPO
+           │                   │
+           ▼                   ▼
+  下一步 A：统一闭环 policy     下一步 B：OOD embodiment / sim-to-real</code></pre>
+<p>演进动力有两个转折：第一，从“让 LLM
+在推理时反复对话”转向“用验证器把协作轨迹固化为训练信号”；第二，从单一最终成功率转向能力分解。尚未完成的第三个转折是把三层重新接回同一个真实闭环：模型先选
+agent，再执行计划、观察偏差并更新轨迹，而不是分别在三个静态数据集上得分。</p>
+<h3 id="97-跨论文对标">9.7 跨论文对标</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">核心对象</th>
+<th scope="col">视觉/异构</th>
+<th scope="col">在线反馈</th>
+<th scope="col">学习方式</th>
+<th scope="col" style="text-align: right;">规模</th>
+<th scope="col">最大证据空白</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>RoCo</td>
+<td>多臂协商与 waypoint</td>
+<td>有/有限</td>
+<td>有</td>
+<td>prompt-only</td>
+<td style="text-align: right;">6 tasks</td>
+<td>规模与成本</td>
+</tr>
+<tr class="even">
+<td>LLaMAR</td>
+<td>部分可观测长时规划</td>
+<td>有/多 agent</td>
+<td>强</td>
+<td>模块化 prompting</td>
+<td style="text-align: right;">225</td>
+<td>训练式泛化</td>
+</tr>
+<tr class="odd">
+<td>PARTNR</td>
+<td>人机家务规划</td>
+<td>有/人+机器人</td>
+<td>有</td>
+<td>prompt + fine-tune</td>
+<td style="text-align: right;">100,000</td>
+<td>多形态机器人</td>
+</tr>
+<tr class="even">
+<td>RoboFactory</td>
+<td>组合约束 manipulation</td>
+<td>有/有</td>
+<td>执行评估</td>
+<td>imitation/diffusion policy</td>
+<td style="text-align: right;">11 tasks</td>
+<td>高层 reasoning</td>
+</tr>
+<tr class="odd">
+<td><strong>VIKI-R</strong></td>
+<td>激活、符号计划、二维轨迹</td>
+<td><strong>有/6 种</strong></td>
+<td>训练时验证器</td>
+<td><strong>SFT+GRPO</strong></td>
+<td style="text-align: right;">23,737（作者口径）</td>
+<td>统一闭环与真机</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="10-真正贡献可复用设计与迁移潜力"><h2 id="10-真正贡献可复用设计与迁移潜力">10.
+真正贡献、可复用设计与迁移潜力</h2>
+<p>真正贡献有三点。第一是<strong>评测分解</strong>：把 team
+selection、symbolic planning、trajectory perception
+分开，使模型可以在“会选人但不会排并行步骤”这类结构性失败上被定位。第二是<strong>规则接口</strong>：format
+checker、Action Checker、World Simulator、轨迹距离都能直接变成
+reward，避免再训练黑盒 reward model。第三是<strong>reward support
+诊断</strong>：实验意外显示，离散可行性 reward 需要 cold start，连续距离
+reward 则可纯 RL；这比单一 SOTA 数字更有方法价值。</p>
+<p>最可复用的设计不是具体的 Qwen/GRPO
+配方，而是“先写验证器，再决定后训练方法”：</p>
+<ul>
+<li>对能 exact-match 的 team formation，优先用集合 reward，并另外报告
+precision/recall 以识别过度激活。</li>
+<li>对组合计划，用执行器判可行，同时把 length、碰撞风险、能耗作为多目标
+reward，不应只用 <span
+class="math inline"><em>N</em>(<em>A</em>) ≤ <em>N</em><sub><em>g</em><em>t</em></sub></span>
+的硬门槛。</li>
+<li>对稀疏 reward，先用少量 CoT/trajectory demonstrations 进入
+support；对连续 reward，可比较纯 RL 以减少 teacher imitation bias。</li>
+<li>在部署上保留 LLaMAR/RoCo 式 feedback loop，让训练得到的 policy 负责
+proposal、验证器负责 correction，而不是把闭环全部压进一次生成。</li>
+</ul>
+<p>迁移到真实机器人时需要再加三层：相机标定与遮挡不确定性、动力学/安全控制器、通信延迟与
+agent failure。迁移到用户当前关注的 Agent Memory 也有启发：把“写入哪些
+agent/事实、如何并行计划、怎样预测协作者状态”分别设计成可验证子任务，再用连续/离散
+reward 的 support 特性决定是否需要 cold start；但 VIKI-R
+本身没有长期记忆、冲突更新或跨 session 评测。</p>
+</section><section class="card" aria-labelledby="11-论文自述限制与独立批判"><h2 id="11-论文自述限制与独立批判">11. 论文自述限制与独立批判</h2>
+<h3 id="111-作者自述限制">11.1 作者自述限制</h3>
+<ol type="1">
+<li><strong>模拟环境限制</strong>：Limitations
+第一段（pp.22–23）承认实验主要在模拟中进行，固定层级无法覆盖突发障碍、变化目标和自适应
+agent 行为；因此外推到开放世界要谨慎。</li>
+<li><strong>计算成本</strong>：同节第二段承认多层级 fine-tuning
+成本高；表 12（p.28）显示 7B 三层需 8×A800 共 36
+小时，但没有更完整成本核算。</li>
+<li><strong>可解释性不足</strong>：同节第三段承认复杂场景中的 reasoning
+interpretability 仍未深入；当前 CoT 只作为训练/输出形式，不是 faithful
+causal trace。</li>
+</ol>
+<h3 id="112-独立批判每点均为因为-x所以-y">11.2 独立批判（每点均为“因为
+X，所以 Y”）</h3>
+<ol type="1">
+<li><strong>[RL 归因/统计]</strong> 因为 7B VIKI-R 相对 Ans-SFT 在 L2 ID
+反而低 <strong>1.67 pp</strong>、3B L3 Avg 反而差
+<strong>0.78</strong>，DAPO 在四个 L2 数字中有三个略高于 GRPO（表
+10，p.26），而主表又没有
+seeds、标准差或置信区间，所以不能把“所有层级提升”或这些小差异唯一归因于
+GRPO；更像是数据、验证器与 RL 的组合收益。</li>
+<li><strong>[缺失强基线]</strong> 因为论文没有 compute-matched 的更长
+SFT、SFT+best-of-5、rejection sampling、DPO/DAPO 全层级矩阵，而 GRPO 每
+prompt 采 5 个 rollout，所以无法判断收益来自 policy
+gradient，还是来自额外采样与规则筛选。</li>
+<li><strong>[真实世界外推]</strong> 因为表 5
+的真实照片实验只包含四个零样本通用 VLM，<strong>没有
+VIKI-R</strong>，所以“beyond simulation”不能证明所提方法能
+sim-to-real；最多证明 L1 任务可被搬到真实照片且仍困难。</li>
+<li><strong>[人类可比性]</strong> 因为 VIKI-R 在 L2 比人类低
+<strong>27.25 pp</strong>，L3 三项误差高
+<strong>25.33%–34.36%</strong>（表
+6，p.10），所以“human-comparable”只可限定为 L1
+激活，不能成为整体能力结论。</li>
+<li><strong>[奖励有效性]</strong> 因为 L2 把所有 <span
+class="math inline"><em>N</em>(<em>A</em>) &gt; <em>N</em><sub><em>g</em><em>t</em></sub></span>
+的可执行计划都判 0，而一个替代
+embodiment、容错恢复或更安全计划可能自然更长，所以 reward 把“复现 GT
+效率”与“任务正确性”混在一起，可能压制多样但合理的协作策略。</li>
+<li><strong>[数据/统计口径]</strong> 因为论文同时出现 L2
+<strong>10,714</strong>（附录 C.1）与 <strong>10,174</strong>（附录
+D），总任务 23,737 又与 HF 的 22,637 行相差 1,100，所以 split 与
+cold-start
+是否重叠无法无歧义复现；恰好相等只能作为线索，不能替代数据卡说明。</li>
+<li><strong>[消融选择偏差]</strong> 因为 step penalty 在未说明采样方式的
+challenging subset 上提高 <strong>39.7/88.0 pp</strong>，而全量 ID/OOD
+只提高 <strong>3.16/3.74 pp</strong>，所以其 headline
+效果依赖子集；需要公开 subset 清单和预注册难度标准。</li>
+<li><strong>[静态任务替代闭环]</strong> 因为 L1/L2/L3
+分别训练、分别测，L3 只输出二维标注轨迹，论文没有一次“选
+agent→执行→观察→重规划”的联合 rollout，所以它证明的是分层视觉推理
+benchmark 表现，而非端到端多机器人合作成功率。</li>
+</ol>
+</section><section class="card" aria-labelledby="12-开放挑战必须能落地为-head-to-head-实验"><h2 id="12-开放挑战必须能落地为-head-to-head-实验">12.
+开放挑战：必须能落地为 head-to-head 实验</h2>
+<h3 id="121-理论">12.1 理论</h3>
+<ol type="1">
+<li><strong>稀疏 reward support 定理。</strong> 固定相同
+Qwen2.5-VL、数据与 288 A800-GPU-hour，对 L2 比较
+RL-zero、SFT→GRPO、curriculum reward、continuous feasibility
+score；横轴用初始非零 reward 概率，纵轴用最终 OOD accuracy，检验是否存在
+cold-start 相变。</li>
+<li><strong>GT 长度门槛是否一致。</strong> 在同一批可行计划上比较硬门槛
+<span
+class="math inline"><strong>1</strong>[<em>N</em>≤<em>N</em><sub><em>g</em><em>t</em></sub>]</span>、soft
+length penalty、Pareto
+reward（success/safety/energy）；由三名机器人专家盲评多样计划，测 reward
+与人类偏好 Kendall <span class="math inline"><em>τ</em></span>。</li>
+<li><strong>组内标准化稳定性。</strong> 在 <span
+class="math inline"><em>G</em> ∈ {2, 5, 8, 16}</span> 下报告 <span
+class="math inline"><em>σ</em><sub><em>R</em></sub> = 0</span>
+比例、有效 gradient batch、KL 和 OOD；与带 critic PPO head-to-head，确定
+GRPO 节省显存是否以稀疏层级的不稳定为代价。</li>
+</ol>
+<h3 id="122-工程应用">12.2 工程应用</h3>
+<ol type="1">
+<li><strong>闭环统一控制。</strong> 同一 100 个未见场景比较“三个独立
+VIKI-R checkpoint 串联”与“共享 backbone、多头联合训练”以及 LLaMAR
+feedback planner；报告最终任务 success、碰撞率、步骤、p95 latency
+和恢复次数。</li>
+<li><strong>真机 sim-to-real。</strong> 在至少 3 种物理 robot、20
+个任务、每任务 10 次上对比 base Qwen、Ans-SFT、VIKI-R、VIKI-R+online
+verifier；视觉扰动分光照/遮挡/相机位姿，报告 paired bootstrap
+CI，而不是只拍成功视频。</li>
+<li><strong>等算力后训练。</strong> 把 7B 的 288 A800-GPU-hour固定，比较
+SFT、SFT+best-of-5、rejection
+fine-tuning、DPO、DAPO、GRPO；所有方法使用同一生成 token 数，主指标为 L2
+OOD 和真实 closed-loop success。</li>
+<li><strong>数据口径审计。</strong> 对论文 23,737、附录两种 L2 数量和 HF
+22,637 建 manifest；按唯一 sample id 检查 cold-start/train/test
+重叠，公开 hash 与去重脚本，再重跑表 2。</li>
+</ol>
+<h3 id="123-新兴方向">12.3 新兴方向</h3>
+<ol type="1">
+<li><strong>动态队伍与 agent failure。</strong>
+测试中随机让一台机器人在第 30%/60% 进度失效，对比静态 VIKI-R、online
+replanning、communication-aware
+MARL；指标是恢复成功率、无效激活数和重规划 token。</li>
+<li><strong>记忆增强协作。</strong> 给模型跨 episode 的 robot
+reliability/history，比较无记忆、向量记忆、动态图记忆；注入旧事实冲突与能力更新，测选人准确率、错误事实引用和更新延迟。</li>
+<li><strong>三维/概率轨迹。</strong> 用 3D probabilistic trajectory
+与二维 point prediction head-to-head，在遮挡场景报告
+ADE/FDE、NLL、collision calibration
+ECE；检验低二维误差是否真的减少物理碰撞。</li>
+</ol>
+</section><section class="card" aria-labelledby="13-近期值得跟踪的-7-篇工作"><h2 id="13-近期值得跟踪的-7-篇工作">13. 近期值得跟踪的 7 篇工作</h2>
+<ol type="1">
+<li>**<a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/file/ec46d737282bb408e642ed883a145c40-Paper-Conference.pdf">Robot-R1（NeurIPS
+2025）</a>**：把 RL 用于具身推理与控制，比 VIKI-R 更靠近 action
+execution；应重点看其 reward 是否真正闭环、是否有同算力 SFT。</li>
+<li>**<a href="https://openreview.net/forum?id=hqFNqVQEUd">ERA（ICLR
+2026 OpenReview）</a>**：直接讨论把 VLM 转成 embodied agent 的 RL
+路径；OpenReview 身份和最终版本需在引用前再次核验。</li>
+<li>**<a
+href="https://arxiv.org/abs/2509.09674">SimpleVLA-RL</a>**：探索 VLA
+强化微调的可扩展配方，是检验“verifiable text planning
+能否传到连续动作”的近邻对照。</li>
+<li>**<a href="https://arxiv.org/abs/2508.17424">RDT-2</a>**：面向
+generalist robot policy 的 reinforcement fine-tuning；值得对比 VIKI-R
+的符号 reward 与动作级 reward 所需的安全约束。</li>
+<li>**<a href="https://arxiv.org/abs/2504.16054">π0.5</a>**：关注
+open-world generalization；它提醒 VIKI-R 的 OOD
+只是一组符号/场景划分，尚不是开放世界部署。</li>
+<li>**<a href="https://arxiv.org/abs/2506.18088">RoboTwin
+2.0</a>**：用强 domain randomization 扩大数据生成与 benchmark；可作为
+VIKI-R 真机迁移实验的数据侧补充。</li>
+<li>**<a href="https://arxiv.org/abs/2511.21510">Tool-RoCo</a>**：把其他
+agent 当作工具并测自组织，报告 cooperative tools 只占 7.09%、activation
+tools 占 96.42%（论文摘要）；它直指 VIKI-L1 exact-set
+之外的“何时停用伙伴、何时主动求助”。</li>
+</ol>
+</section><section class="card" aria-labelledby="14-结论"><h2 id="14-结论">14. 结论</h2>
+<p>VIKI-R 值得看，不是因为它“用 GRPO
+把机器人做到了人类水平”，而是因为它把多智能体视觉协作拆成可验证、可训练、可审计的层级接口。最强结果是
+7B 相对 Ans-SFT 的 L2 OOD 从 <strong>25.62% 到 33.25%（+7.63
+pp，+29.78%）</strong>，以及 L1 从 72.20% 到 93.00%；最关键反证则是 L2
+ID 下降 1.67 pp、3B L3 反向 0.78、真实实验不含
+VIKI-R。因而合理结论是：<strong>CoT 冷启动 + 层级规则 reward
+能显著扩大可行计划的支持集，但三层静态推理还没有被证明等价于真实闭环协作。</strong></p>
+<hr />
+<p><strong>来源与复算说明。</strong> 核心数字均来自实际读取的 NeurIPS
+2025 正式 PDF 表 1–13、Figures 5–7 与附录；相关工作数字来自实际读取的
+PARTNR、LLaMAR、RoCo、RoboFactory、DeepSeek-R1 PDF。百分比和 pp
+为本报告按原表单点复算，未把曲线目测值伪装成精确值。全部 URL
+在生成日访问；OpenReview
+个别页面有自动访问限制，故接收身份无法独立核实者已明确标注。HTML 已通过
+Warm Editorial 验证器（0 warnings）和静态响应式/占位符检查；运行环境有
+Playwright 包但没有
+<code>/usr/bin/chromium</code>、<code>/opt/pw-browsers</code>
+或已下载的本机 Chromium 可执行文件，且按要求未运行
+<code>playwright install</code>，所以无法诚实声称已完成三视图浏览器截图检查。<code>ml-report-index.md</code>
+已追加本条记录。</p>
+</section>
+  </main>
+
+  <footer>核心来源：NeurIPS 正式论文、arXiv v3、官方代码与 Hugging Face 数据/权重；技术链深读 PARTNR、LLaMAR、RoCo、RoboFactory、DeepSeek-R1。生成于 2026-09-10。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1095 @@
+---
+layout: null
+title: "ATLANTIS"
+date: 2026-09-07
+topic: "rl-peft"
+tags: ["rl-peft", "supervised-fine-tuning", "data-selection"]
+excerpt: "弱到强概率位移 × 连续数据加权 × 理论换测度审计 ATLANTIS 在主表 23/24 配对上升、最大 +7.19 pp，但单 seed、权重方差未知与 p_r≠实际数据分布使重要性采样解释尚未闭环。"
+permalink: "/blog/2026/09/07/atlantis/"
+blog_post: true
+lang: "zh-CN"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_en: "/blog/2026/09/07/atlantis/en/"
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>ATLANTIS：把“小模型学会了什么”变成大模型的 SFT 样本权重，真的是重要性采样吗？ · 2026-09-07</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ML / AI DAILY DEEP PAPER · ACL 2025 MAIN</p>
+    <h1>ATLANTIS：把“小模型学会了什么”变成大模型的 SFT 样本权重，真的是重要性采样吗？</h1>
+    <p class="subtitle">弱到强概率位移 × 连续数据加权 × 理论换测度审计</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">ACL 2025 Main · pp. 1042–1052</span>
+      <span class="chip">2026-09-07</span>
+      <span class="chip">LLM/NLP / Post-training</span>
+    </div>
+    <p class="lede">ATLANTIS 在主表 23/24 配对上升、最大 +7.19 pp，但单 seed、权重方差未知与 p_r≠实际数据分布使重要性采样解释尚未闭环。</p>
+  </header>
+
+  <main>
+<section class="card" aria-labelledby="0-链接验证表与证据边界"><h2 id="0-链接验证表与证据边界">0. 链接验证表与证据边界</h2>
+<p>下列 URL 均在 2026‑09‑07
+实际访问。所有数字来自本次下载、逐页读取的论文 PDF；网页只用于核验
+venue、版本日期和公开资产。核心证据采用 ACL Anthology 定稿，PDF 共 11
+页、论文集页码 1042–1052。精确标题检索未找到核心论文的 arXiv
+条目和作者代码；这与“绝对不存在”不同，故均写成“未找到”。OpenReview
+论坛与附件可到达，但其匿名投稿稿不替代 ACL 定稿。Hugging Face Daily
+Papers 与 Papers with Code
+的精确标题检索未返回核心论文独立条目；Semantic Scholar 有正式记录。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">论文 / 资源</th>
+<th scope="col">会议或正式页</th>
+<th scope="col">arXiv（具体版本、日期）</th>
+<th scope="col">代码</th>
+<th scope="col">数据 / 权重</th>
+<th scope="col">项目页 / 视频</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>ATLANTIS（核心）</strong></td>
+<td><a href="https://aclanthology.org/2025.acl-long.52/">ACL 2025 Main /
+Anthology</a>，<a
+href="https://aclanthology.org/2025.acl-long.52.pdf">正式 PDF</a>，<a
+href="https://2025.aclweb.org/program/main_papers/">ACL accepted
+list</a></td>
+<td><strong>未找到</strong></td>
+<td><strong>未公开 / 未找到</strong></td>
+<td><a
+href="https://huggingface.co/datasets/teknium/OpenHermes-2.5">OpenHermes‑2.5</a>；Llama2/Qwen2/Gemma2
+官方权重可公开取得，但论文未发布训练 checkpoint</td>
+<td><a
+href="https://openreview.net/forum?id=wXAl08qmyf">OpenReview</a>；独立项目页未找到；<a
+href="https://underline.io/events/485/posters/20547/poster/122291-atlantis-weak-to-strong-learning-via-importance-sampling?tab=video">ACL
+Underline 视频入口</a></td>
+</tr>
+<tr class="even">
+<td><strong>Tuning Language Models by Proxy</strong></td>
+<td>COLM 2024 camera-ready</td>
+<td><a
+href="https://arxiv.org/abs/2401.08565">2401.08565v4</a>，2024‑08‑23</td>
+<td><a
+href="https://github.com/alisawuffles/proxy-tuning">官方代码</a></td>
+<td>代码含配置；模型沿用公开权重</td>
+<td>项目页未单列；视频未找到</td>
+</tr>
+<tr class="odd">
+<td><strong>Weak‑to‑Strong Generalization</strong></td>
+<td>arXiv technical report</td>
+<td><a
+href="https://arxiv.org/abs/2312.09390">2312.09390v1</a>，2023‑12‑14</td>
+<td><a href="https://github.com/openai/weak-to-strong">官方代码</a></td>
+<td>代码与处理脚本公开；所用 GPT‑4 系列权重不公开</td>
+<td>独立项目页 / 视频未找到</td>
+</tr>
+<tr class="even">
+<td><strong>IFD / From Quantity to Quality</strong></td>
+<td>NAACL 2024 camera-ready</td>
+<td><a
+href="https://arxiv.org/abs/2308.12032">2308.12032v5</a>，2024‑04‑06</td>
+<td><a
+href="https://github.com/tianyi-lab/Cherry_LLM">代码、数据与模型</a></td>
+<td>仓库公开数据处理与模型资产</td>
+<td>项目页即仓库；视频未找到</td>
+</tr>
+<tr class="odd">
+<td><strong>Superfiltering</strong></td>
+<td>ACL 2024</td>
+<td><a
+href="https://arxiv.org/abs/2402.00530">2402.00530v2</a>，2024‑06‑07</td>
+<td><a
+href="https://github.com/tianyi-lab/Superfiltering">官方代码</a></td>
+<td>仓库公开选择脚本与数据说明</td>
+<td>项目页即仓库；视频未找到</td>
+</tr>
+<tr class="even">
+<td><strong>LESS</strong></td>
+<td><a href="https://proceedings.mlr.press/v235/xia24c.html">ICML 2024 /
+PMLR</a></td>
+<td><a
+href="https://arxiv.org/abs/2402.04333">2402.04333v3</a>，2024‑06‑13</td>
+<td><a
+href="https://github.com/princeton-nlp/LESS">官方代码与数据</a></td>
+<td>梯度 datastore 构建脚本和选择结果公开</td>
+<td>项目页即仓库；视频未找到</td>
+</tr>
+</tbody>
+</table></div>
+<p>索引交叉检查：核心论文可在 <a
+href="https://www.semanticscholar.org/paper/ATLANTIS%3A-Weak-to-Strong-Learning-via-Importance-Liu-Wang/f9a29909c691679a389ed3d33e0b778b905e7227">Semantic
+Scholar</a> 检索；OpenReview 与 ACL 正式页一致指向该标题。候选首先从 ACL
+2025 Main 正式 proceedings 与 ACL Anthology 建立，再用
+arXiv、OpenReview、Hugging Face Daily Papers、Papers with Code 和
+Semantic Scholar
+做版本、代码与重复项核对。未把聚合站摘要当作数字证据。</p>
+</section><section class="card" aria-labelledby="1-候选池去重与随机选择"><h2 id="1-候选池去重与随机选择">1. 候选池、去重与随机选择</h2>
+<p>先读取 <code>ml-report-index.md</code>，排除最近 14 天已深度覆盖的
+<strong>Alignment Potential 偏好数据筛选、AVUT 多模态评测、Emergent
+Misalignment
+窄域微调错位</strong>，并避开同期系统、视觉和生成论文。候选全部来自 ACL
+2025 Main 长文，距本次运行不足 24 个月；完整三列清单保存为
+<code>candidates_2026-09-07.tsv</code>。执行
+<code>shuf -i 1-24 -n 1</code>，真实输出 <strong>18</strong>；命中
+ATLANTIS。其定稿含主矩阵、数据选择组合、跨架构、模型规模和 proxy-tuning
+对照，资料足够，故 <strong>0 次重抽</strong>。</p>
+<ol type="1">
+<li>M‑RewardBench: Evaluating Reward Models in Multilingual
+Settings</li>
+<li>ELABORATION: A Comprehensive Benchmark on Human‑LLM Competitive
+Programming</li>
+<li>Intuitive Fine‑Tuning: Towards Simplifying Alignment into a Single
+Process</li>
+<li>StrucText‑Eval: Evaluating LLM Reasoning in Structure‑Rich Text</li>
+<li>GAPO: Learning Preferential Prompt through Generative Adversarial
+Policy Optimization</li>
+<li>Tree‑of‑Evolution: Tree‑Structured Instruction Evolution for Code
+Generation</li>
+<li>FACT‑AUDIT: Adaptive Multi‑Agent Fact‑Checking Evaluation</li>
+<li>Capture the Key in Reasoning to Enhance CoT Distillation
+Generalization</li>
+<li>UniICL: Unifying Compression, Selection, and Generation</li>
+<li>RuleArena: Rule‑Guided Reasoning in Real‑World Scenarios</li>
+<li>Semantic Exploration with Adaptive Gating</li>
+<li>JuStRank: Benchmarking LLM Judges for System Ranking</li>
+<li>Efficient and Accurate Prompt Optimization with Memory</li>
+<li>BPP‑Search: Tree‑of‑Thought for Mathematical Modeling</li>
+<li>EvoWiki: Evaluating LLMs on Evolving Knowledge</li>
+<li>ProcessBench: Identifying Process Errors in Mathematical
+Reasoning</li>
+<li>Model Extrapolation Expedites Alignment</li>
+<li><strong>ATLANTIS: Weak‑to‑Strong Learning via Importance
+Sampling</strong></li>
+<li>HALoGEN: Fantastic LLM Hallucinations and Where to Find Them</li>
+<li>Wait, that’s not an option: Robustness with Incorrect MCQ
+Options</li>
+<li>MARS: Metaphysical Reasoning Benchmark</li>
+<li>Ask‑Before‑Detection: Conformity Bias in Math Error Detection</li>
+<li>Disentangling Memory and Reasoning Ability in LLMs</li>
+<li>UnSeenTimeQA: Time‑Sensitive QA Beyond Memorization</li>
+</ol>
+</section><section class="card" aria-labelledby="2-motivationsft-的问题不只是哪条数据质量高"><h2 id="2-motivationsft-的问题不只是哪条数据质量高">2. Motivation：SFT
+的问题不只是哪条数据“质量高”</h2>
+<p>普通 SFT 最小化训练分布 <code>p_d</code>
+上的负对数似然，但我们真正希望模型覆盖的是不可枚举的现实语言分布
+<code>p*</code>。论文的痛点不是单纯清洗坏样本，而是：即使每条训练样本本身高质量，有限的人类标注或模型合成语料仍可能在<strong>话题、表达方式、难度与偏好</strong>上偏离部署分布。持续扩充数据昂贵；只按“质量分”删数据也未必修正方向偏差（核心
+PDF p.1 / 论文集 p.1042，§1）。</p>
+<p>ATLANTIS
+试图把这个不可观测问题改造成一个可计算的代理问题。设一个小基座模型
+<code>p_b^S</code> 与其官方指令微调版本
+<code>p_r</code>；若某条回答从基座到指令模型概率上升得多，作者把它解释为“这条样本沿着更理想的方向”。同系列大基座
+<code>p_b^L</code>
+再提供尺度校正。于是，不额外训练奖励模型，也不先选掉大部分样本，便可给每条训练对一个
+influence weight。</p>
+<p>量化动机来自两个对照。第一，主表覆盖 Llama2‑13B、Qwen2‑7B、Gemma2‑9B
+和八个指标，ATLANTIS 在 <strong>23/24</strong> 个配对上高于 vanilla
+SFT；唯一退步是 Qwen2‑7B 的 Arena‑Hard‑Auto，<strong>9.9→9.5（−0.40
+pp，−4.04%）</strong>（核心 PDF p.5 / p.1046，表
+2；本报告复算）。第二，附录 proxy-tuning 对照中，Qwen2‑7B 的 MT‑Bench
+pairwise 为 SFT <strong>25.63</strong>、proxy‑tuning
+<strong>7.91</strong>、ATLANTIS
+<strong>26.25</strong>，表明把小模型位移用于<strong>训练权重</strong>，在该设置下远强于直接在解码时叠加
+logits（核心 PDF p.11 / p.1052，表 7）。但这只是一个模型、两个
+benchmark，不能推出普遍优越。</p>
+</section><section class="card" aria-labelledby="3-论文故事线核心假设与权衡"><h2 id="3-论文故事线核心假设与权衡">3. 论文故事线、核心假设与权衡</h2>
+<p>论文故事分四步。第一，写出理想目标：在 <code>p*</code>
+下训练。第二，用重要性采样把不可直接采样的期望改写到可用参考分布
+<code>p_r</code>。第三，因为 <code>p*/p_r</code> 仍不可算，借用
+proxy-tuning 的<strong>概率位移可迁移</strong>假设：小模型从 base 到
+tuned 的变化，与大模型从 base
+到理想状态的变化成比例。第四，把得到的比值变成样本权重，照常更新大模型（核心
+PDF pp.2–4 / pp.1043–1045，式 1–8、算法 1）。</p>
+<p>它依赖三层假设：</p>
+<ul>
+<li><strong>目标假设：</strong> 存在一个统一“真实世界最优分布”
+<code>p*</code>，可同时代表知识、指令遵循和人类偏好。现实中不同用户与任务常互相冲突，论文没有定义该分布的测度空间或目标人群。</li>
+<li><strong>比例迁移假设：</strong>
+<code>p*/p_b^L ∝ p_r/p_b^S</code>。这是由 proxy-tuning
+的经验动机借来，并非本论文证明的定理。</li>
+<li><strong>数据来源假设：</strong> 训练回答可以视作从 <code>p_r</code>
+采样；但实际训练集是 OpenHermes‑2.5 的混合合成语料，而 <code>p_r</code>
+是官方 chat/instruct 模型条件分布，两者并不天然相同。</li>
+</ul>
+<p>权衡也很直接：ATLANTIS 不丢样本，能和 IFD、Superfiltering
+组合；代价是预先对每条样本运行大基座、小基座和参考模型以计算序列概率。训练时只多一个标量乘法，<strong>数据预处理</strong>却多出三路前向推理。论文没有报告
+token/s、GPU-hour、缓存大小或整体墙钟，因此“额外成本可接受”只能视为作者判断（核心
+PDF p.9 / p.1050，Limitations）。</p>
+</section><section class="card" aria-labelledby="4-方程级形式化从严格恒等式到代理启发式"><h2 id="4-方程级形式化从严格恒等式到代理启发式">4.
+方程级形式化：从严格恒等式到代理启发式</h2>
+<p>理想目标为：</p>
+<pre class="text"><code>L*(θ) = − E_{x~q, y~p*(·|x)} log p_θ(y|x)                         (1)</code></pre>
+<p>普通 SFT 用实际数据分布 <code>p_d</code> 代替：</p>
+<pre class="text"><code>L_SFT(θ) = − E_{x~q, y~p_d(·|x)} log p_θ(y|x).                  (2)</code></pre>
+<p>若 <code>p_r(y|x)&gt;0</code> 覆盖 <code>p*(y|x)&gt;0</code>
+的支撑集，重要性采样恒等式是：</p>
+<pre class="text"><code>L*(θ) = − E_{x~q, y~p_r} [ p*(y|x) / p_r(y|x) · log p_θ(y|x) ]. (6)</code></pre>
+<p>到这里是标准换测度。困难是 <code>p*</code> 不可计算。论文设大基座
+<code>p_b^L</code>、小基座 <code>p_b^S</code> 和小参考模型
+<code>p_r</code>，假定：</p>
+<pre class="text"><code>p*(y|x) / p_b^L(y|x)  ∝  p_r(y|x) / p_b^S(y|x).</code></pre>
+<p>于是：</p>
+<pre class="text"><code>p*(y|x) / p_r(y|x)  ∝  p_b^L(y|x) / p_b^S(y|x),
+L_ATL(θ) ∝ −E_{x~q,y~p_r}[ w(x,y) log p_θ(y|x) ],
+w(x,y)=p_b^L(y|x)/p_b^S(y|x).                                 (7)</code></pre>
+<p>核心 PDF p.4 的算法 1 又将预计算集合写成含 <code>p_r(y_i|x_i)</code>
+的项，再在 minibatch 中使用
+<code>W_i/|B|</code>。这反映了实现层面的经验加权，但论文没有公开代码来确认：序列概率是
+token 乘积、平均 log-prob 还是长度归一化；是否在 log
+域计算；是否裁剪/自归一化；极端权重如何处理。若直接使用全序列概率比，<code>exp(Σ_t Δlog p_t)</code>
+会随长度指数变化，数值稳定和长度偏置都可能主导结果。</p>
+<h3 id="训练流程伪代码">训练流程伪代码</h3>
+<pre class="text"><code>输入：大基座 p_b^L，小基座 p_b^S，小指令模型 p_r，OpenHermes 数据 D
+for (x_i, y_i) in D:
+    a_i ← sequence_logprob(p_b^L, y_i | x_i)
+    b_i ← sequence_logprob(p_b^S, y_i | x_i)
+    c_i ← sequence_logprob(p_r,   y_i | x_i)
+    w_i ← exp(a_i − b_i)             # 论文理论式 7 的核心代理
+    # 算法 1 的记号还出现 p_r 项；实现细节未公开，无法消歧
+cache {(x_i,y_i,w_i)}
+
+θ ← parameters(p_b^L)
+for minibatch B:
+    loss ← − Σ_{i∈B} w_i log p_θ(y_i|x_i) / |B|
+    θ ← AdamW(θ, ∇loss)
+输出：加权 SFT 模型</code></pre>
+</section><section class="card" aria-labelledby="5-关键机制与工程细节"><h2 id="5-关键机制与工程细节">5. 关键机制与工程细节</h2>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">组件</th>
+<th scope="col">论文设置</th>
+<th scope="col">作用</th>
+<th scope="col">未决风险 / 证据</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>大基座 <code>p_b^L</code></td>
+<td>Llama2‑13B；Qwen2‑7B/72B；Gemma2‑9B/27B</td>
+<td>被更新的学生，也是权重分子</td>
+<td>大模型自身高概率样本会获更高权重，可能强化已有偏好</td>
+</tr>
+<tr class="even">
+<td>小基座 <code>p_b^S</code></td>
+<td>Llama2‑7B；Qwen2‑1.5B/7B；Gemma2‑2B/9B</td>
+<td>权重分母</td>
+<td>小模型低概率会制造重尾权重；论文未给 ESS/最大权重</td>
+</tr>
+<tr class="odd">
+<td>参考模型 <code>p_r</code></td>
+<td>对应 chat/instruct/it 版本</td>
+<td>提供 SFT 后位移方向与理论采样分布</td>
+<td>官方指令模型训练数据不透明，可能与 OpenHermes 重叠</td>
+</tr>
+<tr class="even">
+<td>训练数据</td>
+<td>OpenHermes‑2.5</td>
+<td>所有模型共同 SFT 语料</td>
+<td>不是从 <code>p_r</code> 显式采样；理论 <code>E_{p_r}</code>
+与经验数据分布未对齐</td>
+</tr>
+<tr class="odd">
+<td>硬件</td>
+<td>≤13B：16×A800；27B：32×A800；72B：64×A800</td>
+<td>全参数训练</td>
+<td>论文未写显存规格与总时长（附录表 6）</td>
+</tr>
+<tr class="even">
+<td>步数</td>
+<td>≤13B：60K；27B：30K；72B：15K</td>
+<td>随规模降低更新数</td>
+<td>不同规模非等 token/等 FLOP 比较</td>
+</tr>
+<tr class="odd">
+<td>batch size</td>
+<td>2 / 1 / 1，梯度累积 8 / 8 / 4</td>
+<td>有效 batch 很小</td>
+<td>单随机种子下方差不可估</td>
+</tr>
+<tr class="even">
+<td>学习率</td>
+<td>2e‑5 / 5e‑6 / 5e‑7</td>
+<td>随规模递减</td>
+<td>没有 ATLANTIS 专属 LR×权重尺度网格</td>
+</tr>
+<tr class="odd">
+<td>优化器</td>
+<td>AdamW，linear warmup/decay，DeepSpeed ZeRO‑3 + offload</td>
+<td>常规 SFT</td>
+<td>权重是否作用于 token 均值或序列均值未写</td>
+</tr>
+<tr class="even">
+<td>随机种子</td>
+<td><strong>0，且仅一次</strong></td>
+<td>可复现固定运行</td>
+<td>无误差条、置信区间或显著性检验（核心 PDF p.11，表 6）</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="6-数据集基准与指标"><h2 id="6-数据集基准与指标">6. 数据集、基准与指标</h2>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">基准</th>
+<th scope="col">评估对象</th>
+<th scope="col">指标</th>
+<th scope="col">范围 / 方向</th>
+<th scope="col">关键解释限制</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Open LLM Leaderboard 2</td>
+<td>BBH、GPQA、IFEval、MATH‑Hard、MMLU‑Pro、MuSR 六任务综合</td>
+<td>aggregate accuracy-like score</td>
+<td>越高越好</td>
+<td>表 2只给聚合值；六任务细值仅图 3，无法无损抄录</td>
+</tr>
+<tr class="even">
+<td>TruthfulQA</td>
+<td>避免复述常见错误信念</td>
+<td>MC1、MC2 accuracy</td>
+<td>0–100，越高越好</td>
+<td>是多选真实性，不等于开放域事实性</td>
+</tr>
+<tr class="odd">
+<td>MT‑Bench</td>
+<td>对话质量</td>
+<td>single 评分、pairwise 胜率</td>
+<td>越高越好</td>
+<td>LLM judge；两种刻度不可横比</td>
+</tr>
+<tr class="even">
+<td>AlpacaEval</td>
+<td>指令回答偏好</td>
+<td>easy / hard 胜率</td>
+<td>0–100，越高越好</td>
+<td>对固定基线和 judge 敏感</td>
+</tr>
+<tr class="odd">
+<td>Arena‑Hard‑Auto</td>
+<td>困难提示上的自动对战</td>
+<td>平均自动评分</td>
+<td>越高越好</td>
+<td>非真实线上用户流量；Qwen 出现唯一退步</td>
+</tr>
+</tbody>
+</table></div>
+<p>论文称知识与理解使用 <code>lm-evaluation-harness</code>，偏好使用
+MT‑Bench、AlpacaEval、Arena‑Hard‑Auto；全部方向为越高越好（核心 PDF p.5
+/
+p.1046，§3.2）。没有人工盲评、领域外部署流量、校准、鲁棒性或安全回归测试。</p>
+</section><section class="card" aria-labelledby="7-完整主结果矩阵五类基准六行方法"><h2 id="7-完整主结果矩阵五类基准六行方法">7.
+完整主结果矩阵：五类基准、六行方法</h2>
+<p>下表完整转录核心论文表 2 的八个指标。括号内是本报告按
+<code>(ATLANTIS−SFT)</code>
+复算的绝对差；对准确率/胜率列可读作百分点，MT‑Bench single 与 Arena
+则是原量纲分数差。粗体标每个模型内部更优值。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">模型 / 方法</th>
+<th scope="col" style="text-align: right;">OLL2</th>
+<th scope="col" style="text-align: right;">TQA MC1</th>
+<th scope="col" style="text-align: right;">TQA MC2</th>
+<th scope="col" style="text-align: right;">MT single</th>
+<th scope="col" style="text-align: right;">MT pairwise</th>
+<th scope="col" style="text-align: right;">Alpaca easy</th>
+<th scope="col" style="text-align: right;">Alpaca hard</th>
+<th scope="col" style="text-align: right;">Arena‑Hard</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Llama2‑13B SFT</td>
+<td style="text-align: right;">32.37</td>
+<td style="text-align: right;">36.23</td>
+<td style="text-align: right;">53.36</td>
+<td style="text-align: right;">6.60</td>
+<td style="text-align: right;">19.06</td>
+<td style="text-align: right;">77.58</td>
+<td style="text-align: right;">6.81</td>
+<td style="text-align: right;">3.9</td>
+</tr>
+<tr class="even">
+<td><strong>Llama2‑13B ATLANTIS</strong></td>
+<td style="text-align: right;"><strong>33.50 (+1.13)</strong></td>
+<td style="text-align: right;"><strong>36.96 (+0.73)</strong></td>
+<td style="text-align: right;"><strong>54.07 (+0.71)</strong></td>
+<td style="text-align: right;"><strong>6.90 (+0.30)</strong></td>
+<td style="text-align: right;"><strong>21.56 (+2.50)</strong></td>
+<td style="text-align: right;"><strong>80.37 (+2.79)</strong></td>
+<td style="text-align: right;"><strong>7.80 (+0.99)</strong></td>
+<td style="text-align: right;"><strong>5.4 (+1.50)</strong></td>
+</tr>
+<tr class="odd">
+<td>Qwen2‑7B SFT</td>
+<td style="text-align: right;">36.22</td>
+<td style="text-align: right;">35.37</td>
+<td style="text-align: right;">51.45</td>
+<td style="text-align: right;">7.44</td>
+<td style="text-align: right;">25.63</td>
+<td style="text-align: right;">72.57</td>
+<td style="text-align: right;">6.41</td>
+<td style="text-align: right;"><strong>9.9</strong></td>
+</tr>
+<tr class="even">
+<td><strong>Qwen2‑7B ATLANTIS</strong></td>
+<td style="text-align: right;"><strong>38.19 (+1.97)</strong></td>
+<td style="text-align: right;"><strong>35.62 (+0.25)</strong></td>
+<td style="text-align: right;"><strong>52.65 (+1.20)</strong></td>
+<td style="text-align: right;"><strong>7.53 (+0.09)</strong></td>
+<td style="text-align: right;"><strong>26.25 (+0.62)</strong></td>
+<td style="text-align: right;"><strong>75.40 (+2.83)</strong></td>
+<td style="text-align: right;"><strong>6.51 (+0.10)</strong></td>
+<td style="text-align: right;">9.5 <strong>(−0.40)</strong></td>
+</tr>
+<tr class="odd">
+<td>Gemma2‑9B SFT</td>
+<td style="text-align: right;">33.51</td>
+<td style="text-align: right;">36.47</td>
+<td style="text-align: right;">52.85</td>
+<td style="text-align: right;">6.68</td>
+<td style="text-align: right;">20.31</td>
+<td style="text-align: right;">72.67</td>
+<td style="text-align: right;">6.28</td>
+<td style="text-align: right;">5.2</td>
+</tr>
+<tr class="even">
+<td><strong>Gemma2‑9B ATLANTIS</strong></td>
+<td style="text-align: right;"><strong>33.86 (+0.35)</strong></td>
+<td style="text-align: right;"><strong>39.41 (+2.94)</strong></td>
+<td style="text-align: right;"><strong>55.23 (+2.38)</strong></td>
+<td style="text-align: right;"><strong>6.98 (+0.30)</strong></td>
+<td style="text-align: right;"><strong>27.50 (+7.19)</strong></td>
+<td style="text-align: right;"><strong>76.31 (+3.64)</strong></td>
+<td style="text-align: right;"><strong>6.92 (+0.64)</strong></td>
+<td style="text-align: right;"><strong>5.6 (+0.40)</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>**来源：**核心 PDF p.5 / 论文集 p.1046，表
+2；差值和以下相对百分比为本报告复算。Llama2 的最大相对提升是 Arena‑Hard
+<strong>+38.46%</strong>；Qwen2 的 OLL2 为 <strong>+5.44%</strong>，但
+Arena 为 <strong>−4.04%</strong>；Gemma2 的 MT pairwise 为
+<strong>+35.40%</strong>。24 个配对里 <strong>23 个上升、1
+个下降</strong>。这一覆盖率支持“整体方向稳定”，却不支持统计学意义上的“显著”。</p>
+<p>更值得注意的是增益异质性：MT single 的三组绝对增益只有
+<strong>+0.30、+0.09、+0.30</strong>，而 pairwise 是
+<strong>+2.50、+0.62、+7.19</strong>。作者解释 pairwise
+比单点评分更容易、更客观（p.6 /
+p.1047），但另一种可能是评测器与训练风格更匹配。没有人类成对偏好复核，无法区分“真正更有帮助”与“更讨自动
+judge 喜欢”。</p>
+</section><figure class="figure" aria-labelledby="fig-mt-title">
+<p class="fig-title" id="fig-mt-title">ATLANTIS 的最大主表增益集中在 MT-Bench pairwise</p>
+<p class="fig-sub">三种模型的 SFT 与 ATLANTIS；纵轴为 pairwise 胜率，单 Y 轴。所有数值来自核心论文表 2。</p>
+<div class="legend"><span><span class="swatch" style="background:var(--chart-primary)"></span>SFT</span><span><span class="swatch" style="background:var(--chart-comparison)"></span>ATLANTIS</span></div>
+<svg class="chart" viewBox="0 0 860 390" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>SFT 与 ATLANTIS 在三种模型上的 MT-Bench pairwise 胜率</title><desc>Llama2-13B 为 19.06 与 21.56，Qwen2-7B 为 25.63 与 26.25，Gemma2-9B 为 20.31 与 27.50。</desc>
+<line x1="80" y1="320" x2="830" y2="320" stroke="var(--grid)"/><line x1="80" y1="40" x2="80" y2="320" stroke="var(--grid)"/>
+<line x1="80" y1="250" x2="830" y2="250" stroke="var(--grid)" stroke-dasharray="4 5"/><line x1="80" y1="180" x2="830" y2="180" stroke="var(--grid)" stroke-dasharray="4 5"/><line x1="80" y1="110" x2="830" y2="110" stroke="var(--grid)" stroke-dasharray="4 5"/><line x1="80" y1="40" x2="830" y2="40" stroke="var(--grid)" stroke-dasharray="4 5"/>
+<text x="66" y="324" text-anchor="end" font-size="12">0</text><text x="66" y="254" text-anchor="end" font-size="12">7.5</text><text x="66" y="184" text-anchor="end" font-size="12">15</text><text x="66" y="114" text-anchor="end" font-size="12">22.5</text><text x="66" y="44" text-anchor="end" font-size="12">30</text>
+<g><rect x="155" y="142.1" width="62" height="177.9" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="Llama2-13B · SFT：19.06"/><rect x="223" y="118.8" width="62" height="201.2" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="Llama2-13B · ATLANTIS：21.56（+2.50 pp）"/><text x="220" y="347" text-anchor="middle" font-size="12">Llama2-13B</text></g>
+<g><rect x="390" y="80.8" width="62" height="239.2" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="Qwen2-7B · SFT：25.63"/><rect x="458" y="75.0" width="62" height="245.0" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="Qwen2-7B · ATLANTIS：26.25（+0.62 pp）"/><text x="455" y="347" text-anchor="middle" font-size="12">Qwen2-7B</text></g>
+<g><rect x="625" y="130.4" width="62" height="189.6" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="Gemma2-9B · SFT：20.31"/><rect x="693" y="63.3" width="62" height="256.7" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="Gemma2-9B · ATLANTIS：27.50（+7.19 pp）"/><text x="690" y="347" text-anchor="middle" font-size="12">Gemma2-9B</text></g>
+<text x="80" y="24" font-size="12">MT-Bench pairwise（%）</text>
+</svg><figcaption>来源：核心论文 ACL 2025 定稿 PDF p.5 / 论文集 p.1046，表 2。悬停或键盘聚焦柱形可查看精确值；三组实验均只运行一个随机种子。</figcaption></figure><section class="card" aria-labelledby="8-逐层消融数据选择规模跨架构与-proxy-对照"><h2 id="8-逐层消融数据选择规模跨架构与-proxy-对照">8.
+逐层消融：数据选择、规模、跨架构与 proxy 对照</h2>
+<h3 id="81-与-ifd--superfiltering-组合">8.1 与 IFD / Superfiltering
+组合</h3>
+<p>核心表 3（PDF p.6 / p.1047）改变选择率 5%、10%、15%，并比较普通 SFT
+与 ATLANTIS。Qwen2 在 IFD 10% 时，ATLANTIS 相对对应 SFT：TruthfulQA MC1
+<strong>32.68→35.86（+3.18）</strong>、MC2
+<strong>51.35→54.89（+3.54）</strong>、MT single
+<strong>7.19→7.86（+0.67）</strong>、pairwise
+<strong>24.53→32.81（+8.28）</strong>。这是整篇最强的组合证据。</p>
+<p>但并非逐格稳定。Gemma2 + IFD 5% 时，ATLANTIS 相对 SFT 的 MC1
+<strong>31.33→28.76（−2.57）</strong>、MC2
+<strong>49.79→44.24（−5.55）</strong>、MT single
+<strong>3.93→2.73（−1.20）</strong>，只有 pairwise
+<strong>6.60→6.88（+0.28）</strong>。Superfiltering 5% 上也有 Gemma2 MC1
+<strong>33.41→32.93（−0.48）</strong>、pairwise
+<strong>25.00→20.63（−4.37）</strong>。所以“能与选择器组合”成立，“组合后普遍提升”不成立。</p>
+<p>作者称 10% 一般最好，但表 3 的逐列最优分散：Qwen2 + IFD 的 MT
+pairwise 在 10% 为 <strong>32.81</strong>，而 Qwen2 + Superfiltering
+的高值可出现在 15% 或普通 SFT 的 10%；Gemma2 不选择数据的 ATLANTIS 在
+TruthfulQA/MT‑Bench
+多列反而高于筛选版本。这里更像数据量—噪声的任务相关相变，不是统一的 10%
+定律。</p>
+<h3 id="82-模型规模">8.2 模型规模</h3>
+<p>表 5（PDF p.7 / p.1048）显示：Qwen2‑72B 的 MT pairwise
+<strong>31.88→36.88（+5.00，+15.68%）</strong>，TruthfulQA MC1
+<strong>41.62→42.59（+0.97）</strong>；Gemma2‑27B 的 MT pairwise
+<strong>26.56→32.50（+5.94，+22.36%）</strong>，但 TruthfulQA MC2
+<strong>61.24→59.30（−1.94）</strong>，MC1 完全不变
+<strong>43.82→43.82</strong>。规模扩大没有消除负迁移，只改变它出现在哪个
+benchmark。</p>
+<h3 id="83-跨架构权重迁移">8.3 跨架构权重迁移</h3>
+<p>表 4（PDF p.7 / p.1048）把 Qwen2 与 Gemma2 的小/参考模型互换。Qwen2
+使用 Gemma2 权重时 TruthfulQA MC1 <strong>36.23</strong>，高于同族权重
+<strong>35.62</strong> 和 SFT <strong>35.37</strong>；但 MT single
+<strong>6.89</strong>、pairwise <strong>21.56</strong>，均低于同族
+ATLANTIS 的 <strong>7.53 / 26.25</strong>。Gemma2 使用 Qwen2 权重的 MT
+single <strong>7.31</strong> 高于同族的 <strong>6.98</strong>，pairwise
+<strong>25.00</strong> 又低于 <strong>27.50</strong>。Figure 4 对 2,000
+个样本可视化，并报告以权重 1.0 划分正负时两架构不一致率
+<strong>46.78%</strong>（PDF p.8 /
+p.1049）。这不是“结构无关”，而是近半样本方向可翻转、某些指标仍可碰巧获益。</p>
+<h3 id="84-proxytuning-对照">8.4 Proxy‑tuning 对照</h3>
+<p>附录表 7（PDF p.11 / p.1052）只测 Qwen2‑7B。TruthfulQA MC1/MC2 与 MT
+single/pairwise：SFT 为
+<strong>35.37/51.45/7.44/25.63</strong>；proxy‑tuning 为
+<strong>33.41/50.36/3.76/7.91</strong>；ATLANTIS 为
+<strong>35.62/52.65/7.53/26.25</strong>。该结果说明同一位移信号在训练期加权比直接解码组合有效，但没有等延迟、等显存、等总
+FLOPs 对比；proxy-tuning无需大模型训练，目标成本结构不同。</p>
+</section><section class="card" aria-labelledby="9-超参敏感性权重相变与统计显著性"><h2 id="9-超参敏感性权重相变与统计显著性">9.
+超参敏感性、权重相变与统计显著性</h2>
+<p><strong>论文报告的敏感性。</strong> 数据选择率只有 5%/10%/15%
+三点，可见某些 Qwen 指标在 10% 达峰，Gemma2
+则常在“不筛选”更好。模型规模覆盖 7→72B 与
+9→27B，说明增益不会随规模单调扩大。跨架构则给出 46.78%
+的权重方向不一致率。这些可以称为离散敏感性分析。</p>
+<p><strong>论文未报告的关键敏感性。</strong> 没有权重温度
+<code>w^τ</code>、clip
+上界、自归一化、序列长度归一化、参考模型训练强度、不同小模型尺寸、不同训练语料来源的网格；也没有有效样本量
+<code>ESS=(Σw)^2/Σw²</code>、权重分位数或梯度范数。因此无法知道性能来自平滑重加权，还是少数极大权重样本控制更新。重要性采样最典型的方差问题恰好未被测量。</p>
+<p><strong>统计显著性。</strong> 论文标题、摘要与正文使用“consistent and
+significant improvements”，但附录表 6 明确所有实验只有随机种子
+<strong>0</strong>；主表无标准差、置信区间、bootstrap
+或配对检验。因而本报告只能说“观察到 23/24
+配对上升”，不能说“统计显著”。对 TruthfulQA、MT/Arena judge
+这类有限样本评测，+0.09 或 +0.10 尤其可能落在运行噪声内。</p>
+</section><section class="card" aria-labelledby="10-真正贡献可复用设计与迁移潜力"><h2 id="10-真正贡献可复用设计与迁移潜力">10.
+真正贡献、可复用设计与迁移潜力</h2>
+<p>真正贡献不是“首次用重要性采样”这句标签，而是把三类已有思想接成低摩擦
+post-training 插件：proxy-tuning
+提供<strong>小模型位移可迁移</strong>；弱到强数据筛选提供<strong>小模型可替大模型评估样本</strong>；SFT
+加权提供<strong>不改变模型结构与训练循环</strong>的落点。只要能离线缓存每条样本的三路概率，训练器只需读取一个标量权重。</p>
+<p>可复用设计有三点。第一，把“样本价值”定义为<strong>模型状态变化</strong>而不是外部绝对质量分，能捕捉某条数据对特定模型族的作用。第二，权重与
+hard selection
+可组合：先用廉价小模型筛掉明显冗余，再用连续权重细调剩余样本。第三，跨架构表明权重有部分迁移性，可建设共享
+score store；但必须把 46.78% 方向分歧当成版本兼容指标。</p>
+<p>迁移到代码、医学或多语训练时，最合理的做法不是直接复用通用 chat
+参考模型，而是训练<strong>域内小参考模型</strong>，并和部署查询建立显式密度比；同时记录权重
+ESS
+与长度相关性。对持续学习，可每个数据批次计算旧/新小模型的位移，形成时间条件权重；对偏好优化，可将
+ratio 当作样本 prior，再与 DPO margin
+分离消融。对私有大模型则难直接用，因为 ATLANTIS
+训练和概率计算都需要大基座权重或至少 token-level logprobs。</p>
+</section><section class="card" aria-labelledby="11-相关工作技术来源链"><h2 id="11-相关工作技术来源链">11. 相关工作技术来源链</h2>
+<h3 id="111-weaktostrong-generalization提出问题但监督形式不同">11.1
+Weak‑to‑Strong Generalization：提出问题，但监督形式不同</h3>
+<p><strong>解决什么：</strong> Burns et al.
+研究弱模型标签能否监督更强模型，并在 GPT‑4 系列的 NLP、chess 与 reward
+modeling 上观察到强学生超过弱教师；论文摘要还报告辅助 confidence loss
+可把 GPT‑4 + GPT‑2 级监督推近 GPT‑3.5 级表现（W2S PDF
+p.1）。<strong>遗留缺口：</strong>
+核心是弱标签监督，不能直接告诉我们每条开放式指令回答该加多少权。<strong>ATLANTIS
+如何回应：</strong>
+把“弱教师”从标签生成器改成概率位移测量器。<strong>关键设计如何传递：</strong>
+弱模型不是最终能力上限，而是可迁移训练信号的探针；但 W2S 并未证明
+ATLANTIS 的密度比等式。</p>
+<h3 id="112-proxytuning概率位移的直接技术母体">11.2
+Proxy‑tuning：概率位移的直接技术母体</h3>
+<p><strong>解决什么：</strong> Proxy-tuning 在解码时把“小 tuned − 小
+base”的 logits 差加到大 base 上，无需更新大模型；其摘要报告用 7B proxy
+引导 Llama2‑70B，可闭合与真正 chat 模型差距的
+<strong>88%</strong>（Proxy PDF p.1）。<strong>遗留缺口：</strong> 每个
+token 要同时运行多个模型，推理成本高，而且核心附录表 7 显示它在 Qwen2‑7B
+的 MT‑Bench 上远低于 SFT。<strong>ATLANTIS 如何回应：</strong>
+把同一位移信号移到训练前，为样本定权，部署时无需多模型解码。<strong>关键设计如何传递：</strong>
+“模型尺度间位移近似可加/可比例迁移”几乎原样进入 ATLANTIS 式
+7；这也是其最需实证的假设。</p>
+<h3 id="113-ifd从回答条件概率定义值得学">11.3
+IFD：从回答条件概率定义“值得学”</h3>
+<p><strong>解决什么：</strong> IFD 比较带 instruction 与不带 instruction
+时回答困惑度，选择能教会模型遵循指令的样本；原文摘要称只用原数据
+<strong>10%</strong> 仍改善 Alpaca/WizardLM 训练结果（IFD PDF
+p.1）。<strong>遗留缺口：</strong> 分数由目标模型自身计算，成本高，且
+hard top-k 会丢弃覆盖。<strong>ATLANTIS 如何回应：</strong>
+使用小模型与参考模型概率构造连续权重，并保留全量数据。<strong>关键设计如何传递：</strong>
+都不把质量当作静态语义标签，而从条件概率变化定义样本价值；ATLANTIS 表
+3直接把 IFD 当可组合前置选择器。</p>
+<h3 id="114-superfiltering证明小模型评分可迁移">11.4
+Superfiltering：证明“小模型评分可迁移”</h3>
+<p><strong>解决什么：</strong> Superfiltering 用更小的 GPT‑2 级模型计算
+IFD，论文 Figure 1/摘要报告筛选速度约 <strong>20×</strong>，且 5%
+数据可超过 100% 数据训练（Superfiltering PDF
+p.1）。<strong>遗留缺口：</strong> 仍是 hard
+selection，选取比例必须调；模型族变化可能改排序。<strong>ATLANTIS
+如何回应：</strong> 从排序转成 influence
+weight，并测试跨架构迁移。<strong>关键设计如何传递：</strong>
+弱模型可充当数据价值代理；ATLANTIS 的跨架构 46.78%
+方向分歧又提醒这种迁移并不稳固。</p>
+<h3 id="115-less优化轨迹导向的数据影响">11.5
+LESS：优化轨迹导向的数据影响</h3>
+<p><strong>解决什么：</strong> LESS 为 Adam 与变长序列构造低秩梯度
+datastore，用少量目标任务示例选择训练数据；论文摘要称选择
+<strong>5%</strong> 数据常可超过全量（LESS PDF p.1，ICML
+2024）。<strong>遗留缺口：</strong>
+要保存/检索梯度特征，并需要目标任务示例。<strong>ATLANTIS
+如何回应：</strong> 只需前向概率、无需目标梯度或下游
+few-shot。<strong>关键设计如何传递：</strong>
+样本价值应和“优化会把模型推向哪里”相关；LESS
+用梯度内积显式衡量，ATLANTIS 用 base→tuned 概率变化近似。</p>
+<h3 id="非线性技术演进树">非线性技术演进树</h3>
+<pre class="text"><code>                           ┌─ Weak-to-Strong supervision
+                           │   弱标签能否释放强学生能力？
+                           │                 │
+SFT 全量拟合 ──→ 数据价值建模 ─┼─ IFD ─→ Superfiltering
+  p_d ≠ 部署分布             │  自身难度    小模型可迁移评分
+                           │        │          │
+                           │        └────┬─────┘
+                           │             ▼
+                           ├─ LESS：梯度/优化轨迹影响 ──┐
+                           │                            │
+                           └─ Proxy-tuning：logit 位移 ─┼─→ ATLANTIS
+                                                        │   概率位移 × 连续 SFT 权重
+重要性采样：换测度恒等式 ───────────────────────────────┘
+                                                        │
+                         未解决：p* 定义、p_r≠数据来源、重尾方差、统计检验</code></pre>
+<p>演进动力有两次转折。第一次从“更多指令”转向“哪些指令真正改变模型”；第二次从强模型/梯度评分的高成本，转向弱模型的可迁移代理。ATLANTIS
+的新意是把第二次转折接到重要性采样语言上，但理论身份尚未由目标分布与支撑条件闭环。</p>
+<h3 id="跨论文对标">跨论文对标</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col">信号</th>
+<th scope="col" style="text-align: right;">是否需目标任务样例</th>
+<th scope="col" style="text-align: right;">是否丢数据</th>
+<th scope="col" style="text-align: right;">大模型训练</th>
+<th scope="col" style="text-align: right;">部署额外模型</th>
+<th scope="col">主要盲点</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>IFD</td>
+<td>条件/无条件回答困惑度比</td>
+<td style="text-align: right;">否</td>
+<td style="text-align: right;">是</td>
+<td style="text-align: right;">是</td>
+<td style="text-align: right;">否</td>
+<td>目标模型评分成本、比例敏感</td>
+</tr>
+<tr class="even">
+<td>Superfiltering</td>
+<td>小模型 IFD 排序</td>
+<td style="text-align: right;">否</td>
+<td style="text-align: right;">是</td>
+<td style="text-align: right;">是</td>
+<td style="text-align: right;">否</td>
+<td>跨族排序漂移</td>
+</tr>
+<tr class="odd">
+<td>LESS</td>
+<td>Adam-aware 梯度相似度</td>
+<td style="text-align: right;">是</td>
+<td style="text-align: right;">是</td>
+<td style="text-align: right;">是</td>
+<td style="text-align: right;">否</td>
+<td>datastore 与梯度计算成本</td>
+</tr>
+<tr class="even">
+<td>Proxy-tuning</td>
+<td>小 tuned−base logits</td>
+<td style="text-align: right;">否</td>
+<td style="text-align: right;">否</td>
+<td style="text-align: right;">否</td>
+<td style="text-align: right;"><strong>是</strong></td>
+<td>多模型逐 token 解码</td>
+</tr>
+<tr class="odd">
+<td>W2S</td>
+<td>弱模型标签</td>
+<td style="text-align: right;">任务监督本身</td>
+<td style="text-align: right;">否</td>
+<td style="text-align: right;">是</td>
+<td style="text-align: right;">否</td>
+<td>开放生成与密度比未处理</td>
+</tr>
+<tr class="even">
+<td><strong>ATLANTIS</strong></td>
+<td>大/小 base 概率比 + 参考位移</td>
+<td style="text-align: right;">否</td>
+<td style="text-align: right;">否</td>
+<td style="text-align: right;"><strong>是</strong></td>
+<td style="text-align: right;">否</td>
+<td><code>p*</code> 不可识别、数据分布不匹配、权重方差未知</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="12-论文自述限制"><h2 id="12-论文自述限制">12. 论文自述限制</h2>
+<ol type="1">
+<li><strong>同系列小模型依赖。</strong> 作者指出，为充分发挥
+ATLANTIS，最好有与大模型同系列的较小模型；跨结构的 influence-weight
+分布差异会影响表现，限制适用域（核心 PDF p.9 / p.1050，Limitations）。表
+4与 46.78% 分歧率为此提供了量化旁证。</li>
+<li><strong>额外计算。</strong> 引入参考模型会增加相对 vanilla SFT
+的计算成本；作者认为参考模型较小，因此通常可接受（同页）。但论文未报告成本数字，所以该判断无法审计。</li>
+</ol>
+<p>论文没有第三条独立 limitation；本报告不补造。以下为独立批判。</p>
+</section><section class="card" aria-labelledby="13-独立批判证据--推论"><h2 id="13-独立批判证据--推论">13. 独立批判：证据 → 推论</h2>
+<ol type="1">
+<li><strong>[理论 / 目标不可识别]</strong> 因为 <code>p*</code>
+被定义为覆盖现实全部知识与表达的“最优分布”，却没有可观测样本、目标人群或效用函数（pp.1–3），所以任何有限
+benchmark 上升都不能验证模型真的更接近
+<code>p*</code>；该符号更像叙事性理想点。</li>
+<li><strong>[理论 / 换测度断裂]</strong>
+因为严格重要性采样要求样本来自提议分布 <code>p_r</code>，而实验样本来自
+OpenHermes‑2.5、<code>p_r</code> 是官方 chat/instruct 模型（p.5、表
+1），所以 Eq.6→实际 minibatch 的等价性不成立；方法应被称为代理概率加权
+SFT，除非补上数据密度比。</li>
+<li><strong>[数值 / 重尾风险]</strong>
+因为权重包含序列概率比且论文未报告 log-domain、长度归一化、clip 或
+ESS，所以长序列上的微小 token
+差可指数累积；由此不能判断改进来自稳定分布校正还是少数极端样本。</li>
+<li><strong>[统计 / 过度声称]</strong> 因为所有实验只用 seed 0（附录表
+6），无标准差或检验，所以摘要的“significant”没有统计证据；尤其
++0.09（Qwen MT single）和 +0.10（Qwen Alpaca hard）不能和噪声区分。</li>
+<li><strong>[经验 / 非一致增益]</strong> 因为主表 Qwen Arena
+<strong>9.9→9.5</strong>，Gemma2‑27B TQA MC2
+<strong>61.24→59.30</strong>，且 Gemma2+IFD 5% 多项明显下降，所以“steady
+across models”只能作为总体趋势，不能作为逐任务安全保证。</li>
+<li><strong>[归因 / 训练数据泄漏]</strong> 因为官方 instruct/chat
+参考模型训练数据未完全公开，且 OpenHermes
+是广泛合成混合语料，所以高权重可能标记“参考模型见过或偏好的风格”，而不是接近现实最优；没有去重/污染审计就无法区分。</li>
+<li><strong>[成本 / 不完整核算]</strong> 因为 ≤13B 训练已用 16×A800，72B
+用 64×A800，还需三模型前向预计算，却无 GPU-hour、token/s
+或存储量，所以不能从“参考模型较小”推出端到端成本可接受。</li>
+<li><strong>[评测 / judge 偏好]</strong> 因为最大增益集中在 MT
+pairwise（最高 +7.19），而 MT single 仅 +0.09–0.30，且都依赖自动
+judge，所以可能主要优化了比较器偏好的回答风格；缺少人工盲评使“人类偏好改善”证据不足。</li>
+</ol>
+</section><section class="card" aria-labelledby="14-开放挑战可操作的-head-to-head-实验空白"><h2 id="14-开放挑战可操作的-head-to-head-实验空白">14.
+开放挑战：可操作的 head-to-head 实验空白</h2>
+<h3 id="理论">理论</h3>
+<ul>
+<li><strong>真实密度比 vs. ATLANTIS 代理。</strong>
+在可完全枚举的合成语言上构造已知
+<code>p*</code>、<code>p_d</code>、<code>p_r</code>，等 FLOPs
+比较：真密度比、ATLANTIS、随机权重、IFD 与 uniform SFT；报告 KL 到
+<code>p*</code>、权重 ESS
+和梯度余弦。这样可直接检验比例迁移是否一致。</li>
+<li><strong>重尾稳定化。</strong> 固定数据和
+checkpoint，比较原始比值、log-ratio z-score、self-normalized IS、clip
+95/99/99.9 分位与 Pareto-smoothed
+weights；五种种子报告均值、置信区间、ESS
+和最坏任务，寻找性能—方差相变。</li>
+<li><strong>序列概率定义。</strong> head-to-head 比较 token 乘积、平均
+log-prob、长度分桶归一化、只看 response 与
+instruction+response；同时画权重对长度的 Spearman
+相关，判断增益是否由长度偏置驱动。</li>
+</ul>
+<h3 id="工程与应用">工程与应用</h3>
+<ul>
+<li><strong>等 GPU-hour 成本曲线。</strong> 在同一 8×H100 预算下比较
+vanilla SFT 多训练步、ATLANTIS 三路打分+训练、LESS
+datastore、Superfiltering 10% 与 proxy-tuning；横轴端到端
+GPU-hour/磁盘，纵轴五基准宏平均与 p95 延迟。</li>
+<li><strong>跨域参考模型。</strong> 对代码、医学、多语三域，分别使用通用
+chat 小参考与域内 tuned 小参考；统一大基座和训练
+token，测域内收益、域外遗忘、安全回归。若域内参考只提升本域而伤害通用能力，就否定“统一
+p*”叙事。</li>
+<li><strong>污染控制。</strong> 构建训练截止日之后的动态 QA
+与私有模板集，严格 MinHash/embedding 去重；比较公开 instruct
+参考与从无重叠数据训练的参考，检验权重是否只是记忆探测器。</li>
+</ul>
+<h3 id="新兴方向">新兴方向</h3>
+<ul>
+<li><strong>与 DPO/GRPO 联合。</strong> 在同一偏好对上比较
+DPO、ATLANTIS‑weighted SFT→DPO、ATLANTIS-weighted DPO 与基于 margin
+的权重；报告 reward、KL、长度、hack rate 与训练稳定性，分离“样本
+prior”和“偏好目标”。</li>
+<li><strong>在线持续加权。</strong>
+每轮数据到达后冻结旧/新小参考模型，比较静态权重与时间条件权重；在知识更新
+benchmark 上测新知识吸收、旧知识遗忘和权重漂移，验证该方法能否成为轻量
+continual post-training 模块。</li>
+<li><strong>跨架构兼容门。</strong> 训练前只抽 2,000
+条计算两套权重，若方向不一致率超过阈值则回退同族模型；与无门控 ATLANTIS
+head-to-head，报告最坏任务、额外成本和校准曲线。</li>
+</ul>
+</section><section class="card" aria-labelledby="15-近期工作雷达"><h2 id="15-近期工作雷达">15. 近期工作雷达</h2>
+<ul>
+<li><a href="https://aclanthology.org/2025.acl-long.51/">Model
+Extrapolation Expedites Alignment（ACL 2025
+Main）</a>：同样追求降低对齐训练成本，但从参数外推切入；适合与 ATLANTIS
+做等总 FLOPs 的 post-training 对照。</li>
+<li><a href="https://aclanthology.org/2025.acl-long.6/">Intuitive
+Fine‑Tuning（ACL 2025 Main）</a>：把 SFT 与 preference optimization 拆成
+preference estimation / transition
+optimization，再用时间残差统一；比“真实最优分布”更贴近可执行训练目标。</li>
+<li><a href="https://aclanthology.org/2025.findings-acl.256/">Packing
+Analysis（ACL 2025 Findings）</a>：关注 SFT packing
+在模型/数据规模变化下的收益，是评估 ATLANTIS
+端到端训练效率时不能忽略的基础设施变量。</li>
+<li><a href="https://arxiv.org/abs/2506.07434">Well Begun is Half Done:
+Low-resource Preference Alignment by Weak-to-Strong
+Decoding</a>：把弱到强迁移用于低资源偏好解码；可与 ATLANTIS
+区分“训练期权重”与“推理期引导”的成本边界。</li>
+<li><a
+href="https://arxiv.org/abs/2605.28421">DenoiseRL（arXiv:2605.28421）</a>：把
+noisy reasoning supervision
+的恢复放进强化学习；提示弱监督信号不应只加权，还可显式建模噪声来源。</li>
+<li><a href="https://proceedings.mlr.press/v235/xia24c.html">LESS（ICML
+2024）</a>：优化器感知的目标数据选择仍是最强可解释替代之一；ATLANTIS
+若不报告权重—梯度一致性，就无法证明概率比优于直接优化影响。</li>
+<li><a href="https://arxiv.org/abs/2402.00530">Superfiltering（arXiv
+v2）</a>：提供弱模型打分可迁移的直接前史，也提醒选择率和模型族是独立超参。</li>
+</ul>
+</section><section class="card" aria-labelledby="16-最终判断与复现优先级"><h2 id="16-最终判断与复现优先级">16. 最终判断与复现优先级</h2>
+<p>ATLANTIS
+值得看，因为它把一个昂贵的数据价值问题压缩成三个现成模型的前向概率，并在五类
+benchmark、三种模型族、扩规模和跨架构设置中给出广泛实验。最硬的经验结论是：主表
+<strong>23/24</strong> 配对上升，Gemma2‑9B 的 MT‑Bench pairwise
+<strong>20.31→27.50（+7.19，+35.40%）</strong>；最硬的反证是：Qwen Arena
+退步、Gemma2 的某些筛选组合明显负迁移、单 seed 无显著性。</p>
+<p>如果只复现一件事，优先公开权重计算代码并画出：权重分位数、序列长度相关、ESS、每批梯度范数和五种种子结果。若再做一件事，应把
+OpenHermes 的经验分布 <code>p_d</code> 与参考模型 <code>p_r</code>
+分开，加入可估计的数据来源密度比。只有这两步通过后，“importance sampling
+toward the real-world
+optimum”才从漂亮解释升级为可检验方法；在此之前，最可信的定位是：<strong>利用小模型指令化位移构造的、有效但理论未闭环的连续样本加权启发式。</strong></p>
+<hr />
+<p><strong>证据与生成说明：</strong> 所有性能数字来自核心 ACL 定稿表
+2–7或五篇相关论文的已读
+PDF，并在段落内标明页/表；百分比为本报告基于原值复算，未从图形像素估值。核心论文没有公开代码、误差条、权重稳定化细节或完整成本，因此相应位置明确标注“未报告/无法推出”。<code>ml-report-index.md</code>
+已追加本次条目。HTML 由 Warm Editorial 模板生成并通过 validator（0
+warning）；本机可加载 Playwright，但
+<code>/usr/bin/chromium</code>、<code>/usr/bin/chromium-browser</code>、<code>/opt/pw-browsers</code>
+与 Playwright 缓存中均未发现可执行
+Chromium，因此<strong>未完成真实的浅色、深色和移动端截图检查</strong>，不以静态响应式检查冒充浏览器验证。</p>
+</section>
+  </main>
+
+  <footer>核心来源：ACL Anthology 定稿、ACL accepted list、OpenReview 与 Semantic Scholar；技术链深读 Proxy-tuning、Weak-to-Strong、IFD、Superfiltering、LESS。生成于 2026-09-07。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

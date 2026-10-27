@@ -1,0 +1,1387 @@
+---
+layout: null
+title: "ReActR"
+date: 2026-10-05
+topic: "rl-peft"
+tags: ["rl-peft", "reflection", "curriculum-learning"]
+excerpt: "Six error types, difficulty curricula, and staged reflection rewards raise Qwen3-4B five-benchmark Overall from LEMMA52.4 to 57.3. Yet reflection is not directly measured; code, data, weights, and statistical intervals are unreleased."
+permalink: "/blog/2026/10/05/reactr/en/"
+blog_post: false
+lang: "en"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_zh: "/blog/2026/10/05/reactr/"
+sitemap: true
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>ReActR: In-Depth Research Report · 2026-10-05</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  main { display: grid; gap: 22px; min-width: 0; }
+  .card.level2 { margin: 0; min-width: 0; }
+  .subsection { margin-top: 24px; }
+  .subsection h3 { margin-top: 0; }
+  blockquote { margin: 14px 0; padding: 10px 14px; border-left: 4px solid var(--chart-primary); background: var(--surface-2); color: var(--text-secondary); }
+  pre { overflow-x: auto; padding: 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); font-size: 12.5px; line-height: 1.55; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  p code, li code, td code { padding: .08em .3em; border-radius: 4px; background: var(--surface-2); }
+  ol, ul { padding-left: 1.35em; }
+  li + li { margin-top: .38em; }
+  .table-scroll { margin: 15px 0 22px; }
+  table { min-width: 760px; }
+  .figure { margin: 0; min-width: 0; max-width: 100%; }
+  p, li, td, th, a { overflow-wrap: anywhere; }
+  math[display="block"] { display: block; max-width: 100%; margin: 14px 0; padding: 10px 12px; overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+  .chart circle { outline: none; }
+  .chart circle:focus { stroke: var(--text-primary); stroke-width: 2; }
+  @media (max-width: 640px) {
+    .toolbar { position: static; justify-content: flex-end; margin-bottom: 10px; }
+    .hero { margin-top: 0; }
+    .chart { width: 760px; max-width: none; }
+    .figure { overflow-x: auto; }
+  }
+
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" aria-pressed="false">☾ Dark</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ACL 2026 Main · LLM Reasoning · Error-Activated Post-Training</p>
+    <h1>ReActR</h1>
+    <p class="subtitle">Turning Error Trajectories into Trainable Reflection</p>
+    <div class="meta" aria-label="Report metadata">
+      <span class="chip source">ACL 2026 Long · 43017–43028</span>
+      <span class="chip">2026-10-05</span>
+      <span class="chip">Error Taxonomy · SFT · GRPO</span>
+    </div>
+    <p class="lede">Six error types, difficulty curricula, and staged reflection rewards raise Qwen3-4B five-benchmark Overall from LEMMA52.4 to 57.3. Yet reflection is not directly measured; code, data, weights, and statistical intervals are unreleased.</p>
+  </header>
+
+  <main>
+
+<blockquote>
+<p><strong>Core positioning in one sentence.</strong> ReActR organizes mathematical errors into multiturn supervision covering error type, propagation, local correction, and transferable lessons, then applies GRPO rewards separating detection from correction. It is an<strong>error-activated post-training curriculum</strong>rather than simply more correct-answer data.</p>
+</blockquote>
+<p><strong>Field:</strong> LLM/NLP—reasoning, post-training, evaluation<br />
+<strong>Core paper:</strong> Lina Sun. <em>ReActR: Reasoning through
+Error-Activated Reflection for LLM Post-Training</em>. ACL 2026 Main,
+Long Paper, pp. 43017–43028. DOI: 10.18653/v1/2026.acl-long.1993.<br />
+<strong>Report date:</strong> 2026-10-05<br />
+<strong>Evidence boundaries:</strong> All performance figures come from the official ACL PDF actually read; pp means percentage points. Unreported seeds, SDs, CIs, significance tests, serving latency, and memory are not invented.</p>
+<section id="链接验证表" class="card level2">
+<h2>0. Link verification table</h2>
+<p>All links were visited. Not found means no verifiable link in the paper, ACL page, or targeted search, not an explicit author declaration of nonexistence.</p>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0">
+<table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Conference / official page</th>
+<th scope="col">arXiv version and date</th>
+<th scope="col">Code</th>
+<th scope="col">Data / weights</th>
+<th scope="col">Project page / videos</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>ReActR</strong></td>
+<td><a href="https://aclanthology.org/2026.acl-long.1993/">Official ACL 2026 Main page</a>；<a
+href="https://aclanthology.org/2026.acl-long.1993.pdf">PDF</a></td>
+<td><strong>Not found</strong></td>
+<td><strong>Not found</strong></td>
+<td><strong>Not public / not found</strong></td>
+<td><strong>Not found</strong></td>
+</tr>
+<tr class="even">
+<td>Self-Refine</td>
+<td><a href="https://openreview.net/forum?id=S37hOerQLB">NeurIPS 2023
+OpenReview</a></td>
+<td><a
+href="https://arxiv.org/abs/2303.17651">arXiv:2303.17651</a>，v1，2023-03-30</td>
+<td><a href="https://github.com/madaan/self-refine">GitHub</a></td>
+<td>No dedicated weights; tasks/prompts in code</td>
+<td><a href="https://selfrefine.info/">Project page</a></td>
+</tr>
+<tr class="odd">
+<td>RefAug / Learn Beyond the Answer</td>
+<td><a href="https://aclanthology.org/2024.emnlp-main.754.pdf">EMNLP
+2024 Main PDF</a></td>
+<td><a
+href="https://arxiv.org/abs/2406.12050">arXiv:2406.12050</a>，v1，2024-06-17</td>
+<td><a href="https://github.com/ytyz1307zzh/RefAug">GitHub</a></td>
+<td>Repository provides construction scripts/data descriptions; standalone weights not found</td>
+<td><strong>Not found</strong></td>
+</tr>
+<tr class="even">
+<td>LEMMA</td>
+<td><a href="https://aclanthology.org/2025.findings-acl.694/">Official Findings of ACL 2025 page</a></td>
+<td><a
+href="https://arxiv.org/abs/2503.17439">arXiv:2503.17439</a>，v2，2025-05-30</td>
+<td><a href="https://github.com/pzs19/LEMMA">GitHub</a></td>
+<td>Code page links public models/data</td>
+<td><a href="https://huggingface.co/papers/2503.17439">Hugging Face
+Papers</a></td>
+</tr>
+<tr class="odd">
+<td>DeepSeek-R1</td>
+<td><a href="https://www.nature.com/articles/s41586-025-09422-z">Nature paper page</a></td>
+<td><a
+href="https://arxiv.org/abs/2501.12948">arXiv:2501.12948</a>，v1，2025-01-22</td>
+<td><a href="https://github.com/deepseek-ai/DeepSeek-R1">GitHub</a></td>
+<td><a href="https://huggingface.co/deepseek-ai">Hugging Face model collection</a></td>
+<td><strong>Separate project page/video not found</strong></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="候选池排重与随机选择" class="card level2">
+<h2>1. Candidate pool, deduplication, and random selection</h2>
+<p>Monday rotation selects <strong>LLM/NLP(reasoning, test-time scaling, post-training, evaluation)</strong>. First checked
+<code>ml-report-index.md</code>, excluding recent HPS/RGM and neighboring multimodal/generative/agent/systems/safety/AI4Science topics. Candidates cross-search ACL Anthology, ICML/OpenReview, arXiv, Hugging Face Papers, Papers with Code, and Semantic Scholar, favoring main-conference papers within 12 months.</p>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0">
+<table>
+<colgroup>
+<col style="width: 40%" />
+<col style="width: 30%" />
+<col style="width: 30%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">#</th>
+<th scope="col">Candidate paper</th>
+<th scope="col">Main direction/source</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td>T1: Advancing Language Model Reasoning through RL and Inference
+Scaling</td>
+<td>Reasoning survey / ACL 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td>Satori</td>
+<td>Reasoning self-improvement / ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td>BRiTE</td>
+<td>Reasoning training / ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td>Optimizing Language Models for Inference-Time Objectives using
+RL</td>
+<td>test-time objective / ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td>Language Models as Implicit Tree Search</td>
+<td>Implicit search / ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td>The Surprising Effectiveness of Test-Time Training for Few-Shot
+Learning</td>
+<td>TTT / ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td>Accelerating LLM Reasoning via Speculative Search</td>
+<td>Reasoning acceleration / ACL 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">8</td>
+<td>Token Assorted</td>
+<td>Token-level reasoning scheduling / ACL 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td>Do LLMs Overthink Basic Math Reasoning? / LLMThinkBench</td>
+<td>Overthinking evaluation / ACL 2026 Findings</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td>Benchmarking LLM Reasoning over Conflicting Web References</td>
+<td>Conflicting-evidence reasoning / ACL 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td>Challenging the Boundaries of Reasoning</td>
+<td>Olympiad reasoning evaluation / ACL 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">12</td>
+<td>SATQuest</td>
+<td>SAT reasoning / ACL 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td>Reasoning Gets Harder for LLMs Inside A Dialogue</td>
+<td>In-dialogue reasoning / ACL 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td>SMART</td>
+<td>Structured reasoning evaluation / ACL 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td>ReEfBench</td>
+<td>Reflection-effectiveness evaluation / ACL 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">16</td>
+<td>Your Reasoning Benchmark May Not Test Reasoning</td>
+<td>Evaluation validity / ACL 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td>Scaling Behaviors of LLM RL Post-Training</td>
+<td>RL post-training scaling / ACL 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td>How Instruction and Reasoning Data Shape Post-Training</td>
+<td>Data mixtures / ACL 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">19</td>
+<td>Why Does Reinforcement Learning Generalize?</td>
+<td>RL generalization / ACL 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;"><strong>20</strong></td>
+<td><strong>ReActR: Reasoning through Error-Activated Reflection for LLM
+Post-Training</strong></td>
+<td><strong>Error-reflection post-training / ACL 2026 Main</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">21</td>
+<td>What Makes a Good Curriculum?</td>
+<td>Curriculum learning / ACL 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">22</td>
+<td>Rethinking Expert Trajectory Utilization</td>
+<td>Trajectory utilization / ACL 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">23</td>
+<td>Can Post-Training Transform LLMs into Causal Reasoners?</td>
+<td>Causal reasoning / ACL 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">24</td>
+<td>LRBench and Judge-R1</td>
+<td>Long-reasoning evaluation / ACL 2026 Findings</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">25</td>
+<td>Do LLMs Catch Their Own Mistakes?</td>
+<td>Self-correction evaluation / recent arXiv</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>After fixing/deduplicating these25 entries, executed
+<code>shuf -i 1-25 -n 1</code>returned <strong>20</strong>, selecting ReActR. Official paper/PDF, main tables, ablations, and appendices suffice for quantitative review, so<strong>no redraw was needed</strong>。</p>
+</section>
+<section id="motivation为什么只学正确答案不够" class="card level2">
+<h2>2. Motivation: why correct answers alone are insufficient</h2>
+<p>Conventional post-training favors correct solutions and filters errors. ReActR asks where models learn when to doubt, where errors propagate, and what lessons corrections imply if they see only polished proofs. Correct traces chiefly teach<strong>how to succeed</strong>while error–correction pairs explicitly teach<strong>how to recover from failure</strong>。</p>
+<p>For Qwen3-4B, ordinary SFT scores GSM8K79.8/MATH48.6 versus ReActR91.1/65.7,+11.3/+17.1 pp. Overall rises 42.4→57.3,+14.9 pp or 35.14%(Table 2, PDF p.7/conference p.43023). OOD gains include DeepMind Mathematics47.9→68.9, College Math22.5→35.2, OlympiadBench-Math13.2→25.6,+21.0/+12.7/+12.4 pp. This supports:<strong>the combined data/reward recipe substantially outperforming the authors’ ordinary SFT implementation on these math tasks</strong>, not exclusive attribution to reflection, since data volume, teacher, difficulty, and GRPO change together.</p>
+<p>Six error categories(Table 1, PDF p.3/conference p.43019): Calculation Error(CA), Formula Confusion(FC), Question Misinterpretation(QM), Missing Step(MS), Confusing Concept(CC), and Nonsensical Output(NO). These actionable labels matter through their control of data generation, coverage, and rewards, beyond taxonomy alone.</p>
+</section>
+<section id="论文故事线假设与权衡" class="card level2">
+<h2>3. Argument, assumptions, and trade-offs</h2>
+<p>Four narrative steps:</p>
+<ol type="1">
+<li><strong>Expose student failures.</strong> Qwen3-4B generates MATH/GSM8K reasoning at temperature0.6; wrong answers reveal naturally occurring errors.</li>
+<li><strong>Use strong teachers to supply difficult useful errors.</strong> Gemini2.5 Pro targets MATH levels3–5, emphasizing frequent QM/CC/CA rather than allowing easy arithmetic mistakes to dominate.</li>
+<li><strong>Convert errors into structured reflection supervision.</strong>
+Teachers label/localize errors, explain propagation, provide corrected reasoning, and summarize transferable lessons.25K error–correction traces plus25K correct traces form50K multiturn examples(method/Appendix A.2, PDF pp.3–5,11).</li>
+<li><strong>Reward detection and correction separately.</strong> GRPO gives0.3 for correctly detecting an initially wrong answer and another0.7 for correcting it; confirming an initially correct answer earns1.0. This encourages repair without blindly reversing correct answers(Figure 6, PDF p.5/conference p.43021).</li>
+</ol>
+<p>Assumptions: error traces expose local boundaries absent from correct traces; explicit categories allocate teaching budgets efficiently; verifiable math answers stabilize reflection rewards. Teacher generation scales but inherits bias; staged rewards attribute detection/correction but compress reflection into discrete states; multiturn reflection raises training/inference token costs.</p>
+</section>
+<section id="方程级形式化与流程" class="card level2">
+<h2>4. Formalization and procedure</h2>
+<section id="数据单元" class="subsection level3">
+<h3>4.1 Data units</h3>
+<p>Let the problem be
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>x</mi><annotation encoding="application/x-tex">x</annotation></semantics></math>, the student's initial trajectory be
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi>y</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>0</mn><mo stretchy="true" form="postfix">)</mo></mrow></msup><annotation encoding="application/x-tex">y^{(0)}</annotation></semantics></math>, and the answer checker be
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>∈</mo><mo stretchy="false" form="prefix">{</mo><mn>0</mn><mo>,</mo><mn>1</mn><mo stretchy="false" form="postfix">}</mo></mrow><annotation encoding="application/x-tex">V(x,y)\in\{0,1\}</annotation></semantics></math>. For an incorrect trajectory, the teacher generates a structured reflection:</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>c</mi><mo>,</mo><mo>ℓ</mo><mo>,</mo><mi>e</mi><mo>,</mo><msup><mi>y</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo stretchy="true" form="postfix">)</mo></mrow></msup><mo>,</mo><mi>g</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>,</mo></mrow><annotation encoding="application/x-tex">
+z=(c,\ell,e,y^{(1)},g),
+</annotation></semantics></math></p>
+<p>where
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>c</mi><annotation encoding="application/x-tex">c</annotation></semantics></math>
+denotes one of six error labels,<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mo>ℓ</mo><annotation encoding="application/x-tex">\ell</annotation></semantics></math>
+the error location,<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>e</mi><annotation encoding="application/x-tex">e</annotation></semantics></math>
+an explanation of error propagation,<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi>y</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo stretchy="true" form="postfix">)</mo></mrow></msup><annotation encoding="application/x-tex">y^{(1)}</annotation></semantics></math>
+the corrected trajectory, and<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>g</mi><annotation encoding="application/x-tex">g</annotation></semantics></math>
+a transferable lesson. A training example can be written as
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><msup><mi>y</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>0</mn><mo stretchy="true" form="postfix">)</mo></mrow></msup><mo>,</mo><mi>z</mi><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">(x,y^{(0)},z)</annotation></semantics></math>. Correct trajectories also retain a reflection turn confirming correctness, preventing the model from learning to overturn every answer whenever it reflects.</p>
+<p>The supervised stage optimizes standard autoregressive negative log-likelihood:</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>ℒ</mi><mtext mathvariant="normal">SFT</mtext></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>θ</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mo>−</mo><munder><mo>∑</mo><mrow><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><mi>s</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>∈</mo><mi>𝒟</mi></mrow></munder><munder><mo>∑</mo><mi>t</mi></munder><mo>log</mo><msub><mi>π</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>s</mi><mi>t</mi></msub><mo>∣</mo><mi>x</mi><mo>,</mo><msub><mi>s</mi><mrow><mo>&lt;</mo><mi>t</mi></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>,</mo></mrow><annotation encoding="application/x-tex">
+\mathcal L_{\text{SFT}}(\theta)=-\sum_{(x,s)\in\mathcal D}\sum_t
+\log \pi_\theta(s_t\mid x,s_{&lt;t}),
+</annotation></semantics></math></p>
+<p>where
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>s</mi><annotation encoding="application/x-tex">s</annotation></semantics></math>
+concatenates initial reasoning, reflection, correction, and summary. The paper introduces no new SFT equation; the expression above is simply a standard formalization of the described training process.</p>
+</section>
+<section id="五种奖励状态" class="subsection level3">
+<h3>4.2 Five reward states</h3>
+<p>Write
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>a</mi><mn>0</mn></msub><mo>=</mo><mi>V</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><msup><mi>y</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>0</mn><mo stretchy="true" form="postfix">)</mo></mrow></msup><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">a_0=V(x,y^{(0)})</annotation></semantics></math>, the reflection judgment as
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>d</mi><mo>∈</mo><mo stretchy="false" form="prefix">{</mo><mtext mathvariant="normal">correct</mtext><mo>,</mo><mtext mathvariant="normal">wrong</mtext><mo stretchy="false" form="postfix">}</mo></mrow><annotation encoding="application/x-tex">d\in\{\text{correct},\text{wrong}\}</annotation></semantics></math>, and the corrected answer as
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>a</mi><mn>1</mn></msub><mo>=</mo><mi>V</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><msup><mi>y</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo stretchy="true" form="postfix">)</mo></mrow></msup><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">a_1=V(x,y^{(1)})</annotation></semantics></math>. Figure 6 gives five cases:</p>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">Initial answer</th>
+<th scope="col">Reflection judgment</th>
+<th scope="col">Correction outcome</th>
+<th scope="col" style="text-align: right;">Reward</th>
+<th scope="col">Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Correct</td>
+<td>Confirms correctness</td>
+<td>No correction needed</td>
+<td style="text-align: right;"><strong>1.0</strong></td>
+<td>Correct calibration without introducing errors</td>
+</tr>
+<tr class="even">
+<td>Correct</td>
+<td>Incorrectly judges it wrong</td>
+<td>Changes it to an incorrect answer</td>
+<td style="text-align: right;"><strong>0.0</strong></td>
+<td>Penalizes blind self-doubt</td>
+</tr>
+<tr class="odd">
+<td>Incorrect</td>
+<td>Detects the error</td>
+<td>Corrects successfully</td>
+<td style="text-align: right;"><strong>0.3 + 0.7 = 1.0</strong></td>
+<td>Both detection and correction succeed</td>
+</tr>
+<tr class="even">
+<td>Incorrect</td>
+<td>Detects the error</td>
+<td>Correction remains wrong</td>
+<td style="text-align: right;"><strong>0.3</strong></td>
+<td>Useful diagnosis, but failed repair</td>
+</tr>
+<tr class="odd">
+<td>Incorrect</td>
+<td>Incorrectly judges it correct</td>
+<td>No correction</td>
+<td style="text-align: right;"><strong>0.0</strong></td>
+<td>Reflection is not activated</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>This can be written as:</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>r</mi><mo>=</mo><mn>𝟙</mn><mrow><mo stretchy="true" form="prefix">[</mo><msub><mi>a</mi><mn>0</mn></msub><mo>=</mo><mn>1</mn><mo>,</mo><mi>d</mi><mo>=</mo><mtext mathvariant="normal">correct</mtext><mo stretchy="true" form="postfix">]</mo></mrow><mo>+</mo><mn>0.3</mn><mspace width="0.167em"></mspace><mn>𝟙</mn><mrow><mo stretchy="true" form="prefix">[</mo><msub><mi>a</mi><mn>0</mn></msub><mo>=</mo><mn>0</mn><mo>,</mo><mi>d</mi><mo>=</mo><mtext mathvariant="normal">wrong</mtext><mo stretchy="true" form="postfix">]</mo></mrow><mo>+</mo><mn>0.7</mn><mspace width="0.167em"></mspace><mn>𝟙</mn><mrow><mo stretchy="true" form="prefix">[</mo><msub><mi>a</mi><mn>0</mn></msub><mo>=</mo><mn>0</mn><mo>,</mo><mi>d</mi><mo>=</mo><mtext mathvariant="normal">wrong</mtext><mo>,</mo><msub><mi>a</mi><mn>1</mn></msub><mo>=</mo><mn>1</mn><mo stretchy="true" form="postfix">]</mo></mrow><mi>.</mi></mrow><annotation encoding="application/x-tex">
+r=\mathbb 1[a_0=1,d=\text{correct}]
++0.3\,\mathbb 1[a_0=0,d=\text{wrong}]
++0.7\,\mathbb 1[a_0=0,d=\text{wrong},a_1=1].
+</annotation></semantics></math></p>
+<p>This definition reveals an easily overlooked property: correctly confirming a correct answer and fully repairing an incorrect one both earn 1.0. The reward therefore encourages<strong>task success</strong>, rather than more reflection for its own sake. However, it does not distinguish confident correctness from lucky correctness or score the causal faithfulness of the reflection text.</p>
+</section>
+<section id="grpo-的组内比较" class="subsection level3">
+<h3>4.3 Within-group comparison in GRPO</h3>
+<p>The paper specifies 5 responses sampled per problem, 3 training epochs, a fixed learning rate of
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mrow><mo>−</mo><mn>6</mn></mrow></msup><annotation encoding="application/x-tex">10^{-6}</annotation></semantics></math>, and
+<code>verl</code> to run GRPO (Appendix A.2, PDF p.11). It does not provide the complete objective. Standard GRPO can formalize the description as follows: for
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mo>=</mo><mn>5</mn></mrow><annotation encoding="application/x-tex">G=5</annotation></semantics></math>
+responses to the same problem, first compute group-normalized advantages,</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mover><mi>A</mi><mo accent="true">̂</mo></mover><mi>i</mi></msub><mo>=</mo><mfrac><mrow><msub><mi>r</mi><mi>i</mi></msub><mo>−</mo><msub><mi>μ</mi><mi>r</mi></msub></mrow><mrow><msub><mi>σ</mi><mi>r</mi></msub><mo>+</mo><mi>ϵ</mi></mrow></mfrac><mo>,</mo></mrow><annotation encoding="application/x-tex">
+\widehat{A}_i=\frac{r_i-\mu_r}{\sigma_r+\epsilon},
+</annotation></semantics></math></p>
+<p>then use a clipped ratio,
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>ρ</mi><mi>i</mi></msub><mo>=</mo><msub><mi>π</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>y</mi><mi>i</mi></msub><mo>∣</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mi>/</mi><msub><mi>π</mi><msub><mi>θ</mi><mrow><mi>o</mi><mi>l</mi><mi>d</mi></mrow></msub></msub><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>y</mi><mi>i</mi></msub><mo>∣</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">\rho_i=\pi_\theta(y_i\mid x)/\pi_{\theta_{old}}(y_i\mid x)</annotation></semantics></math>
+Optimization</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>J</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>θ</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mfrac><mn>1</mn><mi>G</mi></mfrac><munder><mo>∑</mo><mi>i</mi></munder><mo>min</mo><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>ρ</mi><mi>i</mi></msub><msub><mover><mi>A</mi><mo accent="true">̂</mo></mover><mi>i</mi></msub><mo>,</mo><mrow><mi mathvariant="normal">c</mi><mi mathvariant="normal">l</mi><mi mathvariant="normal">i</mi><mi mathvariant="normal">p</mi></mrow><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>ρ</mi><mi>i</mi></msub><mo>,</mo><mn>1</mn><mo>−</mo><mi>ε</mi><mo>,</mo><mn>1</mn><mo>+</mo><mi>ε</mi><mo stretchy="true" form="postfix">)</mo></mrow><msub><mover><mi>A</mi><mo accent="true">̂</mo></mover><mi>i</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>−</mo><mi>β</mi><mspace width="0.167em"></mspace><mrow><mi mathvariant="normal">K</mi><mi mathvariant="normal">L</mi></mrow><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>π</mi><mi>θ</mi></msub><mo>,</mo><msub><mi>π</mi><mrow><mi>r</mi><mi>e</mi><mi>f</mi></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow><mi>.</mi></mrow><annotation encoding="application/x-tex">
+J(\theta)=\frac{1}{G}\sum_i \min\left(
+\rho_i\widehat{A}_i,
+\mathrm{clip}(\rho_i,1-\varepsilon,1+\varepsilon)\widehat{A}_i\right)
+-\beta\,\mathrm{KL}(\pi_\theta,\pi_{ref}).
+</annotation></semantics></math></p>
+<p>This is<strong>a standard restatement of the procedure, not an equation explicitly presented in the ReActR paper</strong>. The paper does not report
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>ε</mi><annotation encoding="application/x-tex">\varepsilon</annotation></semantics></math>、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>β</mi><annotation encoding="application/x-tex">\beta</annotation></semantics></math>, KL implementation details, or their sensitivity, so this is insufficient to reproduce the full GRPO configuration.</p>
+</section>
+<section id="伪代码" class="subsection level3">
+<h3>4.4 Pseudocode</h3>
+<pre class="text"><code>Input: MATH and GSM8K problems; Qwen3-4B student; Gemini 2.5 Pro teacher
+1  Sample initial student reasoning at temperature=0.6, retaining actual errors
+2  Use the teacher to synthesize difficult QM/CC/CA errors on MATH levels 3–5
+3  For each error: label type → locate the first critical error → analyze propagation
+                  → generate a corrected trajectory → summarize a lesson
+4  Mix 25K error–correction examples with 25K correct trajectories
+5  Perform 4 epochs of LoRA SFT
+6  Sample 5 responses per problem and compute group advantages using five-state rewards
+7  Train with GRPO for 3 epochs
+Output: a reasoning model that confirms correct answers, detects errors, and corrects them</code></pre>
+</section>
+</section>
+<section id="关键机制与工程细节" class="card level2">
+<h2>5. Key mechanisms and engineering details</h2>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0">
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Stage</th>
+<th scope="col">Paper configuration</th>
+<th scope="col">Why it matters</th>
+<th scope="col">Evidence location</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Student error sampling</td>
+<td>Qwen3-4B，temperature 0.6；MATH + GSM8K</td>
+<td>Captures real base-model failures rather than relying entirely on teacher inventions</td>
+<td>Method, PDF pp.3–4</td>
+</tr>
+<tr class="even">
+<td>Targeted difficult errors</td>
+<td>Gemini 2.5 Pro; MATH levels 3–5; emphasis on QM/CC/CA</td>
+<td>Improves coverage of complex reasoning errors</td>
+<td>Method, PDF p.4</td>
+</tr>
+<tr class="odd">
+<td>Error ontology</td>
+<td>Six categories: CA, FC, QM, MS, CC, and NO</td>
+<td>Turns errors from binary labels into curriculum control variables</td>
+<td>Table 1，PDF p.3</td>
+</tr>
+<tr class="even">
+<td>Reflection structure</td>
+<td>Type, location, propagation, correction, lesson</td>
+<td>Supervises both diagnosis and recovery</td>
+<td>Figure 3–4，PDF pp.4–5</td>
+</tr>
+<tr class="odd">
+<td>Training mixture</td>
+<td>25K error–correction + 25K correct = 50K</td>
+<td>Avoids both degradation from all-error training and the lack of correction practice in all-correct training</td>
+<td>Method / Table 3, PDF pp.5, 7</td>
+</tr>
+<tr class="even">
+<td>SFT</td>
+<td>LLaMA-Factory；LoRA；4 epochs；batch 4；lr
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mrow><mo>−</mo><mn>5</mn></mrow></msup><annotation encoding="application/x-tex">10^{-5}</annotation></semantics></math>；cosine</td>
+<td>Provides a reproducible experimental outline, but omits details such as LoRA rank</td>
+<td>Appendix A.2，PDF p.11</td>
+</tr>
+<tr class="odd">
+<td>RL</td>
+<td><code>verl</code>；GRPO；5 responses/group；3 epochs；lr
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mrow><mo>−</mo><mn>6</mn></mrow></msup><annotation encoding="application/x-tex">10^{-6}</annotation></semantics></math></td>
+<td>Shapes reflection policies with verifiable outcomes</td>
+<td>Appendix A.2，PDF p.11</td>
+</tr>
+<tr class="even">
+<td>Data generation cost</td>
+<td>Over 100M tokens; API cost slightly above US$700</td>
+<td>Shows synthesis is not free, but excludes training cost</td>
+<td>Appendix A.2，PDF p.11</td>
+</tr>
+<tr class="odd">
+<td>Evaluation</td>
+<td>Greedy / Pass@1; 5 mathematical benchmarks</td>
+<td>Interpretable results, but no diverse sampling or cost curves</td>
+<td>Experimental setup, PDF p.6</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="数据集基准与指标" class="card level2">
+<h2>6. Datasets, benchmarks, and metrics</h2>
+<p>Training domains include GSM8K and MATH. GSM8K mainly contains multistep word problems in elementary- to middle-school styles; MATH is harder and covers algebra, geometry, number theory, and more. MATH levels 3–5 are also the main source for targeted teacher-generated errors, making MATH a central source of the difficult curriculum as well as a test benchmark.</p>
+<p>Evaluation is divided into two groups:<strong>in-domain</strong> comprises GSM8K and MATH;<strong>out-of-domain</strong> comprises DeepMind Mathematics, College Math, and OlympiadBench-Math. The primary metric is Pass@1: whether a single output per problem produces the correct final answer. In the tables, <code>In AVG</code>
+is the mean over the first two benchmarks, and<code>Overall</code>
+is the mean over all five. This design tests transfer from training domains to other mathematical distributions, but not code, open-ended scientific reasoning, or tasks without automatically checkable answers.</p>
+<p>The evaluation protocol has three further limits. First, Pass@1 measures only final answers, not whether reflection locates errors correctly. Second, the paper does not report benchmark subsampling, complete prompt templates, or decoding length limits. Third, Figure 5 states that MATH difficulty-stratified results average 10 inference runs, but Tables 2 / 3 provide no standard deviations or confidence intervals. This report therefore treats main-table differences as observed point estimates, not statistically significant effects.</p>
+</section>
+<section id="完整主结果矩阵" class="card level2">
+<h2>7. Complete main-results matrix</h2>
+<section id="qwen3-4b" class="subsection level3">
+<h3>7.1 Qwen3-4B</h3>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0">
+<table>
+<colgroup>
+<col style="width: 9%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Method (training examples)</th>
+<th scope="col" style="text-align: right;">GSM8K ↑</th>
+<th scope="col" style="text-align: right;">MATH ↑</th>
+<th scope="col" style="text-align: right;">In AVG ↑</th>
+<th scope="col" style="text-align: right;">DeepMind Math ↑</th>
+<th scope="col" style="text-align: right;">College Math ↑</th>
+<th scope="col" style="text-align: right;">Olympiad ↑</th>
+<th scope="col" style="text-align: right;">Overall ↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>SFT (15K)</td>
+<td style="text-align: right;">79.8</td>
+<td style="text-align: right;">48.6</td>
+<td style="text-align: right;">64.2</td>
+<td style="text-align: right;">47.9</td>
+<td style="text-align: right;">22.5</td>
+<td style="text-align: right;">13.2</td>
+<td style="text-align: right;">42.4</td>
+</tr>
+<tr class="even">
+<td>RefAug (30K)</td>
+<td style="text-align: right;">83.3</td>
+<td style="text-align: right;">51.9</td>
+<td style="text-align: right;">67.6</td>
+<td style="text-align: right;">58.6</td>
+<td style="text-align: right;">26.0</td>
+<td style="text-align: right;">18.1</td>
+<td style="text-align: right;">47.6</td>
+</tr>
+<tr class="odd">
+<td>MetaMath (60K)</td>
+<td style="text-align: right;">86.5</td>
+<td style="text-align: right;">59.3</td>
+<td style="text-align: right;">72.9</td>
+<td style="text-align: right;">58.2</td>
+<td style="text-align: right;">30.4</td>
+<td style="text-align: right;">17.2</td>
+<td style="text-align: right;">50.3</td>
+</tr>
+<tr class="even">
+<td>LEMMA (60K)</td>
+<td style="text-align: right;">86.6</td>
+<td style="text-align: right;">60.5</td>
+<td style="text-align: right;">73.5</td>
+<td style="text-align: right;">62.1</td>
+<td style="text-align: right;">29.9</td>
+<td style="text-align: right;">22.7</td>
+<td style="text-align: right;">52.4</td>
+</tr>
+<tr class="odd">
+<td><strong>ReActR (50K)</strong></td>
+<td style="text-align: right;"><strong>91.1</strong></td>
+<td style="text-align: right;"><strong>65.7</strong></td>
+<td style="text-align: right;"><strong>78.4</strong></td>
+<td style="text-align: right;"><strong>68.9</strong></td>
+<td style="text-align: right;"><strong>35.2</strong></td>
+<td style="text-align: right;"><strong>25.6</strong></td>
+<td style="text-align: right;"><strong>57.3</strong></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Source: core paper, Table 2 (PDF p.7 / proceedings p.43023). Relative to the strongest comparison, LEMMA, ReActR improves the five individual benchmarks by <strong>4.5、5.2、6.8、5.3、2.9
+pp</strong>, and Overall by <strong>4.9 pp / 9.35%</strong>. Relative to ordinary SFT, Overall improves by <strong>14.9 pp / 35.14%</strong>。</p>
+</section>
+<section id="mistral-7b" class="subsection level3">
+<h3>7.2 Mistral-7B</h3>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0">
+<table>
+<colgroup>
+<col style="width: 9%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">GSM8K ↑</th>
+<th scope="col" style="text-align: right;">MATH ↑</th>
+<th scope="col" style="text-align: right;">In AVG ↑</th>
+<th scope="col" style="text-align: right;">DeepMind Math ↑</th>
+<th scope="col" style="text-align: right;">College Math ↑</th>
+<th scope="col" style="text-align: right;">Olympiad ↑</th>
+<th scope="col" style="text-align: right;">Overall ↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>SFT</td>
+<td style="text-align: right;">56.3</td>
+<td style="text-align: right;">12.8</td>
+<td style="text-align: right;">34.5</td>
+<td style="text-align: right;">19.3</td>
+<td style="text-align: right;">8.4</td>
+<td style="text-align: right;">2.2</td>
+<td style="text-align: right;">19.8</td>
+</tr>
+<tr class="even">
+<td>RefAug</td>
+<td style="text-align: right;">62.2</td>
+<td style="text-align: right;">13.4</td>
+<td style="text-align: right;">37.8</td>
+<td style="text-align: right;">15.8</td>
+<td style="text-align: right;">10.4</td>
+<td style="text-align: right;">3.1</td>
+<td style="text-align: right;">21.0</td>
+</tr>
+<tr class="odd">
+<td>MetaMath</td>
+<td style="text-align: right;">71.6</td>
+<td style="text-align: right;">24.7</td>
+<td style="text-align: right;">48.1</td>
+<td style="text-align: right;">26.9</td>
+<td style="text-align: right;">14.6</td>
+<td style="text-align: right;">5.3</td>
+<td style="text-align: right;">28.6</td>
+</tr>
+<tr class="even">
+<td>LEMMA</td>
+<td style="text-align: right;">71.9</td>
+<td style="text-align: right;">26.4</td>
+<td style="text-align: right;">49.2</td>
+<td style="text-align: right;">30.8</td>
+<td style="text-align: right;">13.9</td>
+<td style="text-align: right;">5.9</td>
+<td style="text-align: right;">29.8</td>
+</tr>
+<tr class="odd">
+<td><strong>ReActR</strong></td>
+<td style="text-align: right;"><strong>75.8</strong></td>
+<td style="text-align: right;"><strong>31.2</strong></td>
+<td style="text-align: right;"><strong>53.5</strong></td>
+<td style="text-align: right;"><strong>34.1</strong></td>
+<td style="text-align: right;"><strong>19.7</strong></td>
+<td style="text-align: right;"><strong>6.2</strong></td>
+<td style="text-align: right;"><strong>33.4</strong></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Source: Table 2 (PDF p.7). Relative to LEMMA, the five individual improvements are
+<strong>3.9、4.8、3.3、5.8、0.3 pp</strong>, and Overall by <strong>3.6 pp
+/ 12.08%</strong>. Relative to SFT, Overall improves by <strong>13.6 pp /
+68.69%</strong>. The large relative percentage partly reflects Mistral's low SFT baseline of 19.8; 68.69% should not be read as an almost twofold increase in absolute capability.</p>
+</section>
+<section id="llama3-8b" class="subsection level3">
+<h3>7.3 Llama3-8B</h3>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0">
+<table>
+<colgroup>
+<col style="width: 9%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">GSM8K ↑</th>
+<th scope="col" style="text-align: right;">MATH ↑</th>
+<th scope="col" style="text-align: right;">In AVG ↑</th>
+<th scope="col" style="text-align: right;">DeepMind Math ↑</th>
+<th scope="col" style="text-align: right;">College Math ↑</th>
+<th scope="col" style="text-align: right;">Olympiad ↑</th>
+<th scope="col" style="text-align: right;">Overall ↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>SFT</td>
+<td style="text-align: right;">65.6</td>
+<td style="text-align: right;">21.6</td>
+<td style="text-align: right;">43.6</td>
+<td style="text-align: right;">22.5</td>
+<td style="text-align: right;">14.1</td>
+<td style="text-align: right;">4.7</td>
+<td style="text-align: right;">25.7</td>
+</tr>
+<tr class="even">
+<td>RefAug</td>
+<td style="text-align: right;">73.2</td>
+<td style="text-align: right;">27.3</td>
+<td style="text-align: right;">50.2</td>
+<td style="text-align: right;">25.9</td>
+<td style="text-align: right;">18.2</td>
+<td style="text-align: right;">4.9</td>
+<td style="text-align: right;">29.9</td>
+</tr>
+<tr class="odd">
+<td>MetaMath</td>
+<td style="text-align: right;">77.8</td>
+<td style="text-align: right;">34.5</td>
+<td style="text-align: right;">56.1</td>
+<td style="text-align: right;">32.3</td>
+<td style="text-align: right;">19.7</td>
+<td style="text-align: right;">5.6</td>
+<td style="text-align: right;">33.9</td>
+</tr>
+<tr class="even">
+<td>LEMMA</td>
+<td style="text-align: right;">76.6</td>
+<td style="text-align: right;">36.4</td>
+<td style="text-align: right;">56.5</td>
+<td style="text-align: right;">37.1</td>
+<td style="text-align: right;">22.3</td>
+<td style="text-align: right;">6.3</td>
+<td style="text-align: right;">35.7</td>
+</tr>
+<tr class="odd">
+<td><strong>ReActR</strong></td>
+<td style="text-align: right;"><strong>81.3</strong></td>
+<td style="text-align: right;"><strong>39.2</strong></td>
+<td style="text-align: right;"><strong>60.2</strong></td>
+<td style="text-align: right;"><strong>41.5</strong></td>
+<td style="text-align: right;"><strong>26.4</strong></td>
+<td style="text-align: right;"><strong>7.5</strong></td>
+<td style="text-align: right;"><strong>39.2</strong></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Source: Table 2 (PDF p.7). Relative to LEMMA, the five individual improvements are
+<strong>4.7、2.8、4.4、4.1、1.2 pp</strong>, and Overall by <strong>3.5 pp
+/ 9.80%</strong>; relative to SFT, Overall improves by <strong>13.5 pp /
+52.53%</strong>。</p>
+</section>
+<section id="跨骨干结论" class="subsection level3">
+<h3>7.4 Conclusions across backbones</h3>
+<p>ReActR exceeds LEMMA in all 15 model × individual-benchmark cells across three backbones, stronger evidence of consistency than a single average. Yet this is not statistical significance: shared training data and teacher signals could bias all three backbones in the same direction, and the paper lacks multiple random seeds. Quantitatively, ReActR's Overall advantage over LEMMA is <strong>3.5–4.9 pp</strong>, much smaller than its <strong>13.5–14.9 pp</strong>
+advantage over ordinary SFT. This suggests that a substantial share of the gains comes from the broader category of better mathematical training data, rather than solely from ReActR's distinctive staged rewards.</p>
+</section>
+</section>
+<figure class="figure" aria-labelledby="main-chart-title">
+      <p class="fig-title" id="main-chart-title">Qwen3-4B: ReActR versus the strongest error-correction baseline, LEMMA</p>
+      <p class="fig-sub">All five benchmarks improve; the largest absolute gap is on DeepMind Mathematics (+6.8 pp).</p>
+      <div class="legend" aria-label="Legend">
+        <span><span class="swatch" style="background:var(--chart-primary)"></span>ReActR</span>
+        <span><span class="swatch" style="background:var(--chart-comparison)"></span>LEMMA</span>
+      </div>
+      <svg class="chart" viewBox="0 0 900 360" role="img" xmlns="http://www.w3.org/2000/svg">
+        <title>Five-benchmark Pass@1 for ReActR and LEMMA on Qwen3-4B</title>
+        <desc>ReActR scores 91.1, 65.7, 68.9, 35.2, and 25.6 on GSM8K, MATH, DeepMind, College, and Olympiad; LEMMA scores 86.6, 60.5, 62.1, 29.9, and 22.7.</desc>
+        <line x1="85" x2="850" y1="300.0" y2="300.0" stroke="var(--border)" stroke-width="1" /><text x="69" y="304.0" text-anchor="end" font-size="12">0</text><line x1="85" x2="850" y1="252.0" y2="252.0" stroke="var(--border)" stroke-width="1" /><text x="69" y="256.0" text-anchor="end" font-size="12">20</text><line x1="85" x2="850" y1="204.0" y2="204.0" stroke="var(--border)" stroke-width="1" /><text x="69" y="208.0" text-anchor="end" font-size="12">40</text><line x1="85" x2="850" y1="156.0" y2="156.0" stroke="var(--border)" stroke-width="1" /><text x="69" y="160.0" text-anchor="end" font-size="12">60</text><line x1="85" x2="850" y1="108.0" y2="108.0" stroke="var(--border)" stroke-width="1" /><text x="69" y="112.0" text-anchor="end" font-size="12">80</text><line x1="85" x2="850" y1="60.0" y2="60.0" stroke="var(--border)" stroke-width="1" /><text x="69" y="64.0" text-anchor="end" font-size="12">100</text><polyline points="130,81.4 300,142.3 470,134.6 640,215.5 810,238.6" fill="none" stroke="var(--chart-primary)" stroke-width="3" /><polyline points="130,92.2 300,154.8 470,151.0 640,228.2 810,245.5" fill="none" stroke="var(--chart-comparison)" stroke-width="3" /><circle cx="130" cy="81.4" r="7" fill="var(--chart-primary)" tabindex="0" data-tip="ReActR · GSM8K: 91.1" /><circle cx="300" cy="142.3" r="7" fill="var(--chart-primary)" tabindex="0" data-tip="ReActR · MATH: 65.7" /><circle cx="470" cy="134.6" r="7" fill="var(--chart-primary)" tabindex="0" data-tip="ReActR · DeepMind: 68.9" /><circle cx="640" cy="215.5" r="7" fill="var(--chart-primary)" tabindex="0" data-tip="ReActR · College: 35.2" /><circle cx="810" cy="238.6" r="7" fill="var(--chart-primary)" tabindex="0" data-tip="ReActR · Olympiad: 25.6" /><circle cx="130" cy="92.2" r="7" fill="var(--chart-comparison)" tabindex="0" data-tip="LEMMA · GSM8K: 86.6" /><circle cx="300" cy="154.8" r="7" fill="var(--chart-comparison)" tabindex="0" data-tip="LEMMA · MATH: 60.5" /><circle cx="470" cy="151.0" r="7" fill="var(--chart-comparison)" tabindex="0" data-tip="LEMMA · DeepMind: 62.1" /><circle cx="640" cy="228.2" r="7" fill="var(--chart-comparison)" tabindex="0" data-tip="LEMMA · College: 29.9" /><circle cx="810" cy="245.5" r="7" fill="var(--chart-comparison)" tabindex="0" data-tip="LEMMA · Olympiad: 22.7" /><text x="130" y="329" text-anchor="middle" font-size="12">GSM8K</text><text x="300" y="329" text-anchor="middle" font-size="12">MATH</text><text x="470" y="329" text-anchor="middle" font-size="12">DeepMind</text><text x="640" y="329" text-anchor="middle" font-size="12">College</text><text x="810" y="329" text-anchor="middle" font-size="12">Olympiad</text>
+        <text x="24" y="180" transform="rotate(-90 24 180)" text-anchor="middle" font-size="12">Pass@1</text>
+        <text x="470" y="351" text-anchor="middle" font-size="12">Evaluation benchmark</text>
+      </svg>
+      <figcaption>Data: core paper, Table 2 (PDF p.7 / proceedings p.43023). Hover over or focus data points with the keyboard to see exact values; the text retains the complete three-backbone matrix.</figcaption>
+    </figure>
+<section id="逐层消融超参敏感性与相变" class="card level2">
+<h2>8. Layered ablations, hyperparameter sensitivity, and transitions</h2>
+<section id="数据设计与-rl-消融" class="subsection level3">
+<h3>8.1 Data design and RL ablations</h3>
+<p>The paper provides the following table for Qwen3-4B (Table 3, PDF p.7 / proceedings p.43023):</p>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0">
+<table>
+<colgroup>
+<col style="width: 13%" />
+<col style="width: 18%" />
+<col style="width: 18%" />
+<col style="width: 18%" />
+<col style="width: 18%" />
+<col style="width: 13%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Configuration</th>
+<th scope="col" style="text-align: right;">GSM8K ↑</th>
+<th scope="col" style="text-align: right;">Relative to the full model</th>
+<th scope="col" style="text-align: right;">MATH ↑</th>
+<th scope="col" style="text-align: right;">Relative to the full model</th>
+<th scope="col">Explanation</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Out-Error</td>
+<td style="text-align: right;">84.6</td>
+<td style="text-align: right;">−6.5 pp</td>
+<td style="text-align: right;">56.2</td>
+<td style="text-align: right;">−9.5 pp</td>
+<td>Without error-type guidance</td>
+</tr>
+<tr class="even">
+<td>Out-Difficulty</td>
+<td style="text-align: right;">87.5</td>
+<td style="text-align: right;">−3.6 pp</td>
+<td style="text-align: right;">60.3</td>
+<td style="text-align: right;">−5.4 pp</td>
+<td>Without difficulty guidance</td>
+</tr>
+<tr class="odd">
+<td>Out-Both</td>
+<td style="text-align: right;">82.6</td>
+<td style="text-align: right;">−8.5 pp</td>
+<td style="text-align: right;">46.3</td>
+<td style="text-align: right;">−19.4 pp</td>
+<td>Without either</td>
+</tr>
+<tr class="even">
+<td>All-Correct</td>
+<td style="text-align: right;">79.8</td>
+<td style="text-align: right;">−11.3 pp</td>
+<td style="text-align: right;">48.6</td>
+<td style="text-align: right;">−17.1 pp</td>
+<td>Correct trajectories only</td>
+</tr>
+<tr class="odd">
+<td>All-Error</td>
+<td style="text-align: right;">Training failed / no valid result</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">Training failed / no valid result</td>
+<td style="text-align: right;">—</td>
+<td>Cannot learn stably from incorrect trajectories alone</td>
+</tr>
+<tr class="even">
+<td>Out-GRPO</td>
+<td style="text-align: right;">88.4</td>
+<td style="text-align: right;">−2.7 pp</td>
+<td style="text-align: right;">62.1</td>
+<td style="text-align: right;">−3.6 pp</td>
+<td>Supervision only, without reinforcement learning</td>
+</tr>
+<tr class="odd">
+<td><strong>ReActR</strong></td>
+<td style="text-align: right;"><strong>91.1</strong></td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;"><strong>65.7</strong></td>
+<td style="text-align: right;">—</td>
+<td>Full method</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Three nonlinear observations are more informative than the routine conclusion that every component helps. First,<code>Out-Both</code>
+scores 19.4 pp below the full model on MATH, a larger loss than the sum of separately removing error type (9.5) and difficulty (5.4), 14.9 pp. The two curriculum signals may reinforce each other, but without multiple seeds, the extra 4.5 pp cannot be established as a stable interaction. Second, All-Error fails outright: valuable errors do not imply that more errors are always better; 25K correct trajectories anchor correct policies. Third, removing GRPO still yields 88.4 / 62.1, showing that most gains are established during SFT. GRPO adds 2.7 / 3.6 pp rather than accounting for the entire improvement.</p>
+</section>
+<section id="数据规模曲线" class="subsection level3">
+<h3>8.2 Data scaling curves</h3>
+<p>Figure 7a (PDF p.7) shows GSM8K and MATH generally improving as augmented data grows from 10K to 50K, with a stronger rise on MATH. The plot lacks per-point numerical labels, so this report does not fabricate an exact matrix; it supports only the conclusion that clear saturation has not occurred in the tested range. Figure 7c also shows average performance increasing with more MetaMath data, again as a plot without an exact table. This supports complementing the error curriculum with high-quality correct trajectories, but does not permit calculating marginal gains per 1K examples.</p>
+</section>
+<section id="错误分布变化" class="subsection level3">
+<h3>8.3 Changes in error distribution</h3>
+<p>Figure 7b shows the proportions of QM and CA falling after augmentation, while CC and
+<code>Others</code>
+increase. The authors attribute this to targeted synthesis adding more complex conceptual errors. Without exact numerical labels on the bars, this report retains only the directional conclusion. Data curation actively changes the error distribution rather than simply replicating natural frequencies; the resulting distribution may reflect Gemini 2.5 Pro's pedagogical imagination more than real user mistakes.</p>
+</section>
+<section id="超参数敏感性" class="subsection level3">
+<h3>8.4 Hyperparameter sensitivity</h3>
+<p><strong>Not reported in the paper.</strong> The reward split is fixed at 0.3 for detection + 0.7 for correction, with no comparison against 0.1/0.9, 0.5/0.5, or continuous scores. GRPO group size is fixed at 5, with no scaling curve. The SFT learning rate
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mrow><mo>−</mo><mn>5</mn></mrow></msup><annotation encoding="application/x-tex">10^{-5}</annotation></semantics></math>, GRPO learning rate
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mrow><mo>−</mo><mn>6</mn></mrow></msup><annotation encoding="application/x-tex">10^{-6}</annotation></semantics></math>, 4 / 3 epochs, and temperature 0.6 also lack sensitivity analyses. It is therefore unknown whether the method is fragile to reward ratios, sampling temperature, or training duration, or whether 0.3/0.7 is mechanistically justified or simply a tuned setting.</p>
+</section>
+<section id="相变判断" class="subsection level3">
+<h3>8.5 Assessing phase transitions</h3>
+<p>There are two candidate phase transitions, with different evidence strengths.<code>All-Error</code>
+failure shows training collapse when the mixture moves from having correct anchors to all errors: a qualitative transition. However, the authors do not sweep error proportions of 10%, 25%, 50%, 75%, and 100%, so the threshold is unknown. The 10K→50K data curve shows continuing gains without an abrupt change, offering no basis for a scaling phase-transition claim.</p>
+</section>
+</section>
+<section id="统计显著性与可重复性" class="card level2">
+<h2>9. Statistical significance and reproducibility</h2>
+<p>Tables 2 / 3 report no seed counts, standard deviations, confidence intervals, or significance tests. Figure 5 explicitly averages 10 inference runs for difficulty-stratified MATH results, but still omits error bars. Problem-level bootstrap intervals could be constructed for Pass@1, but the authors do not provide them. Therefore:</p>
+<ul>
+<li>The point estimates move consistently across three backbones, with some large gaps;</li>
+<li>The 0.3 pp Mistral Olympiad advantage cannot be called stable, nor can 3.5 versus 3.6 pp establish which is stronger;</li>
+<li>The 2.7–3.6 pp GRPO gains in Table 3 cannot directly be treated as causal effects across seeds;</li>
+<li>Without code, data, or weight links, independent replication cannot begin from the resources available at the report date.</li>
+</ul>
+<p>A more appropriate minimum statistical protocol would use three training seeds, problem-level paired bootstrap, means, standard deviations, and 95% CIs, plus Holm correction across five benchmarks. Reflection detection itself should also report precision, recall, ECE, and an error-type confusion matrix.</p>
+</section>
+<section id="真正贡献可复用设计与迁移潜力" class="card level2">
+<h2>10. Actual contributions, reusable designs, and transfer potential</h2>
+<section id="真正贡献" class="subsection level3">
+<h3>10.1 Actual contributions</h3>
+<p><strong>First, errors become curriculum units.</strong>
+Many earlier methods either repeatedly self-evaluate at inference time or use wrong answers as negative training examples. ReActR connects error type, difficulty, and propagation analysis into a curation loop, making errors control variables for training coverage rather than merely negative labels.</p>
+<p><strong>Second, rewards separate diagnosis from repair.</strong>
+Successful error detection earns 0.3 even when correction fails, providing a learning signal for partially correct internal decisions. Though coarse, this reward better matches reflection's staged structure than an all-or-nothing final-answer reward.</p>
+<p><strong>Third, mixing positive and negative trajectories becomes necessary.</strong> All-Error fails and All-Correct substantially underperforms. The reusable design is to stabilize the basic policy with correct trajectories and develop recovery with incorrect ones, not simply to feed the model errors. This lesson is more transferable than any particular error label.</p>
+</section>
+<section id="可复用模块" class="subsection level3">
+<h3>10.2 Reusable modules</h3>
+<ol type="1">
+<li><strong>Error ontology + quota sampling.</strong>
+For code, categories could include syntax, types, boundaries, algorithms, complexity, and tool calls; for agents, omitted observations, conflicting plans, tool selection, state updates, and stopping errors.</li>
+<li><strong>Locating the first error.</strong>
+Identify the earliest decision that causes subsequent divergence before rewriting everything; this can shorten the credit-assignment horizon.</li>
+<li><strong>Reflection lessons.</strong>
+Produce a retrievable rule after each correction to support episodic memory or an error notebook.</li>
+<li><strong>Staged verifiable rewards.</strong>
+Where unit tests, theorem checkers, simulator states, or database constraints exist, reward detection, repair, and final completion separately.</li>
+<li><strong>Mixed correct/incorrect curricula.</strong>
+Retain anchors for correct policies while gradually increasing difficult errors, avoiding a policy that only learns to doubt.</li>
+</ol>
+</section>
+<section id="迁移潜力" class="subsection level3">
+<h3>10.3 Transfer potential</h3>
+<p>Code is the most direct transfer target because unit tests can check both initial and corrected versions, though test deletion and hard-coding must be prevented. For tool agents, error propagation can describe how a wrong tool call contaminates later state, with environment rollback verifying repairs. Scientific QA is harder because final answers may not be automatically checkable; it requires citation consistency, unit checks, symbolic constraints, or external simulators rather than direct mathematical answer matching. Open-ended writing is the weakest fit because correction lacks an objective verifier, allowing teacher preferences to dominate rewards.</p>
+</section>
+</section>
+<section id="问题来源-技术来源链" class="card level2">
+<h2>11. Problem origins and technical lineage</h2>
+<section id="self-refine从推理时自反馈到可训练反思" class="subsection level3">
+<h3>11.1 Self-Refine: from inference-time self-feedback to trainable reflection</h3>
+<p><strong>Problem solved.</strong> Self-Refine uses the same model to generate, provide feedback, and iteratively revise without additional training. It reports approximately 20% average absolute improvement across 7 task types (NeurIPS 2023).<br />
+<strong>Remaining gap.</strong>
+It operates mainly at inference time, without training-level guarantees of reliable error detection, appropriate stopping, or feedback identifying the first critical error.<br />
+<strong>ReActR's response.</strong> ReActR moves generate–feedback–correct loops into post-training data and uses an answer verifier to reward error discovery and final correction.<br />
+<strong>Design transfer.</strong> Self-Refine's iterative loop becomes ReActR's multiturn sample structure, augmented with an error ontology, mixed curriculum, and RL signal.</p>
+</section>
+<section id="refaug从答案之外学习反思说明" class="subsection level3">
+<h3>11.2 RefAug: learning reflective explanations beyond the answer</h3>
+<p><strong>Problem solved.</strong> RefAug adds reflection and extended information to instruction data, teaching explanations and alternative approaches beyond answer imitation.<br />
+<strong>Remaining gap.</strong>
+General reflection augmentation does not explicitly control error type and difficulty or split detection and correction into separate rewards.<br />
+<strong>ReActR's response.</strong> ReActR targets difficult errors using six categories and MATH levels 3–5, and includes RefAug as a 30K baseline. Qwen Overall is 47.6 versus 57.3, a 9.7 pp gap (Table 2).<br />
+<strong>Design transfer.</strong>
+The idea of learning an additional layer of metadata after the answer is retained, but general reflection becomes first-error localization, propagation analysis, and lessons.</p>
+</section>
+<section id="lemma从错误修正数据到类型难度课程" class="subsection level3">
+<h3>11.3 LEMMA: from error-correction data to a type–difficulty curriculum</h3>
+<p><strong>Problem solved.</strong> LEMMA systematically trains mathematical reasoning on incorrect solutions and corrections, making it ReActR's most direct technical predecessor.<br />
+<strong>Remaining gap.</strong>
+Without curation by type and difficulty, error examples can be dominated by frequent, shallow mistakes; supervised correction alone also cannot separately reward detection.<br />
+<strong>ReActR's response.</strong> ReActR adds error categorization and difficulty guidance, followed by GRPO. Overall exceeds LEMMA on all three backbones: Qwen +4.9, Mistral +3.6, and Llama +3.5 pp (Table 2).<br />
+<strong>Design transfer.</strong> LEMMA's error–correction trajectories provide the data skeleton; ReActR adds curriculum control and staged rewards. LEMMA uses 60K examples versus ReActR's 50K, suggesting some sample efficiency, though this is not a strictly compute-matched experiment.</p>
+</section>
+<section id="deepseek-r1从可验证结果奖励到反思专用奖励" class="subsection level3">
+<h3>11.4 DeepSeek-R1: from verifiable outcome rewards to reflection-specific rewards</h3>
+<p><strong>Problem solved.</strong> DeepSeek-R1 shows that large-scale RL can induce long reasoning chains and self-checking from verifiable mathematical and coding rewards.<br />
+<strong>Remaining gap.</strong>
+Sparse final-correctness rewards cannot readily distinguish detecting an error without fixing it from failing to detect it at all, creating a long credit-assignment horizon.<br />
+<strong>ReActR's response.</strong> ReActR explicitly assigns 0.3 to error detection, 0.7 to final correction, and 1.0 to correctly confirming a correct answer.<br />
+<strong>Design transfer.</strong> The verifiable-outcome RL framework remains, but its reward structure is redesigned around a reflection state machine. Dependence on gold answers limits open-domain transfer.</p>
+</section>
+<section id="非线性技术演进树" class="subsection level3">
+<h3>11.5 Nonlinear technical evolution tree</h3>
+<pre class="text"><code>                         ┌─ Self-Refine: inference-time generation→feedback→revision
+                         │          └─ Multiturn reflection format ──────┐
+Correct-trajectory SFT ──┼─ RefAug: metadata beyond answers ─────────────┤
+                         │                                               ├─ ReActR
+Error-trajectory learning┼─ LEMMA: error→correction supervision ──────────┤   ├─ Six error types
+                         │          └─ Correction-data skeleton ─────────┤   ├─ Type×difficulty curriculum
+Verifiable-outcome RL ───┴─ DeepSeek-R1: final-answer reward ─────────────┘   └─ 0.3 detection+0.7 correction</code></pre>
+<p>The technical turning point is the convergence of three strands: inference-time self-revision supplies the interaction format, error-correction data supplies supervision, and verifiable RL supplies optimization. ReActR connects curation and reward design through error types and difficulty.</p>
+</section>
+<section id="跨论文对标" class="subsection level3">
+<h3>11.6 Cross-paper comparison</h3>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0">
+<table style="width:100%;">
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Stage</th>
+<th scope="col">Needs error trajectories?</th>
+<th scope="col">Explicit error categories?</th>
+<th scope="col">Feedback / teacher</th>
+<th scope="col">Main optimization signal</th>
+<th scope="col">Main gap</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Self-Refine</td>
+<td>Inference time</td>
+<td>Optional</td>
+<td>No</td>
+<td>Same-model self-feedback</td>
+<td>Iterative prompting</td>
+<td>High cost; difficult stopping and faithfulness calibration</td>
+</tr>
+<tr class="even">
+<td>RefAug</td>
+<td>SFT</td>
+<td>Not required</td>
+<td>No</td>
+<td>Teacher augmentation</td>
+<td>token likelihood</td>
+<td>Broad reflection objectives</td>
+</tr>
+<tr class="odd">
+<td>LEMMA</td>
+<td>SFT</td>
+<td>Yes</td>
+<td>Correction, but not ReActR's curriculum</td>
+<td>Teacher correction</td>
+<td>token likelihood</td>
+<td>Limited type / difficulty control</td>
+</tr>
+<tr class="even">
+<td>DeepSeek-R1</td>
+<td>RL</td>
+<td>Arise naturally from rollouts</td>
+<td>No</td>
+<td>Rule-based verifier</td>
+<td>Final-correctness reward</td>
+<td>Sparse credit for intermediate reflection</td>
+</tr>
+<tr class="odd">
+<td><strong>ReActR</strong></td>
+<td><strong>SFT + RL</strong></td>
+<td><strong>Yes</strong></td>
+<td><strong>Six categories</strong></td>
+<td><strong>Gemini 2.5 Pro + verifier</strong></td>
+<td><strong>Staged rewards of 0 / 0.3 / 1.0</strong></td>
+<td><strong>Teacher bias, open-domain verification, missing reflection metrics</strong></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</section>
+<section id="论文自述限制" class="card level2">
+<h2>12. Limitations acknowledged by the paper</h2>
+<ol type="1">
+<li><strong>Teacher quality ceiling.</strong> The authors acknowledge that Gemini 2.5 Pro's data may still contain subtle inaccuracies or ambiguities, limiting the model by its teacher's capabilities (Limitations, PDF p.8 / proceedings p.43024). The error curriculum itself can therefore teach mistakes.</li>
+<li><strong>Compound errors are difficult to fix in one pass.</strong> The current procedure targets the dominant error; correcting it may expose another, motivating iterative multiround correction (Limitations, PDF p.8). The current reward state machine is thus better suited to one primary error.</li>
+<li><strong>Limited scale and task coverage.</strong>
+The data remains limited, and the authors explicitly propose scaling it and transferring to other verifiable domains such as code (Limitations, PDF p.8). The evidence does not establish general open-domain reflection.</li>
+</ol>
+</section>
+<section id="独立批判" class="card level2">
+<h2>13. Independent critique</h2>
+<ol type="1">
+<li><strong>[Measurement validity]</strong>
+Although the central claim concerns learning reflection, the main table reports only final-answer Pass@1, without error-detection precision / recall, first-error localization accuracy, conditional correction success, or lesson quality. Gains therefore cannot distinguish better reflection from the acquisition of more mathematical knowledge.</li>
+<li><strong>[Attribution]</strong> ReActR simultaneously changes data quantity, error-type distribution, difficulty distribution, teacher quality, and GRPO, while baseline sizes range from SFT's 15K and RefAug's 30K to MetaMath/LEMMA's 60K. Table 2 establishes overall system effectiveness, but cannot uniquely attribute the 3.5–4.9 pp advantage over LEMMA to error-activated rewards.</li>
+<li><strong>[Teacher bias]</strong> Gemini 2.5 Pro synthesizes difficult errors, diagnoses them, generates corrections, and writes lessons. These highly correlated signals may teach the teacher's particular wording and conception of errors rather than reflection robust to natural user mistakes.</li>
+<li><strong>[Reward design]</strong>
+Correct→confirmed-correct and incorrect→detected-and-corrected both earn 1.0, judged only by the final answer. The reward cannot distinguish a good causal explanation from a lucky guess; brief recomputation may earn the same reward without locating the propagation chain.</li>
+<li><strong>[Statistics]</strong> Tables 2 / 3 omit seeds, standard deviations, intervals, and tests. Mistral's 0.3 pp Olympiad advantage may be smaller than training and decoding noise; consistent direction across three backbones does not replace paired statistics.</li>
+<li><strong>[Reproducibility]</strong> The ACL page provides no code, data, weights, or arXiv link, while the appendix omits key settings such as LoRA rank and GRPO clipping / KL. Independent teams therefore cannot fully reproduce the 50K-example construction and RL stage.</li>
+<li><strong>[Cost]</strong> The paper reports over 100M synthesis tokens and slightly above US$700 in API costs, but no GPU hours, peak memory, training throughput, inference tokens, or latency. It is therefore impossible to judge whether the 2.7–3.6 pp GRPO improvement justifies production deployment.</li>
+<li><strong>[Extrapolation]</strong> Rewards depend on gold answers, and all five evaluations are mathematical. The supported conclusion concerns verifiable mathematical reflection, not equivalent effectiveness for open-ended fact-checking, long-horizon agents, or scientific explanations.</li>
+</ol>
+</section>
+<section id="开放挑战可执行的-head-to-head-实验空白" class="card level2">
+<h2>14. Open challenges: actionable head-to-head experiment gaps</h2>
+<section id="理论" class="subsection level3">
+<h3>14.1 Theory</h3>
+<p><strong>Why do incorrect trajectories add information?</strong> Run a strict head-to-head with fixed problems, token counts, teacher, and final correct solutions. Divide 50K examples into (A) repeated correct solutions, (B) random errors + correct solutions, (C) actual errors + correct solutions, and (D) type-quota errors + correct solutions. Compare sample complexity and error-detection mutual information to separate decision-boundary information from simply longer text.</p>
+<p><strong>Is the reward decomposition identifiable?</strong> Fix the SFT checkpoint and compare five rewards: final-only, 0.1/0.9, 0.3/0.7, 0.5/0.5, and a learned critic. Besides final accuracy, measure error-detection AUPRC, conditional correction rate
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>a</mi><mn>1</mn></msub><mo>=</mo><mn>1</mn><mo>∣</mo><msub><mi>a</mi><mn>0</mn></msub><mo>=</mo><mn>0</mn><mo>,</mo><mi>d</mi><mo>=</mo><mi>w</mi><mi>r</mi><mi>o</mi><mi>n</mi><mi>g</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">P(a_1=1\mid a_0=0,d=wrong)</annotation></semantics></math>
+, and unnecessary answer-reversal rate. This is needed to establish whether 0.3 has mechanistic significance.</p>
+<p><strong>Collapse threshold of the correct/incorrect mixture.</strong> Sweep error proportions from 0% to 100% in 10% increments, with 3 seeds each. Plot capability, calibration, and training stability to locate the critical region before All-Error failure rather than comparing only endpoints.</p>
+</section>
+<section id="工程与应用" class="subsection level3">
+<h3>14.2 Engineering and applications</h3>
+<p><strong>Compute-matched comparisons.</strong> Give ReActR, LEMMA, RefAug, and correct-trajectory SFT the same 50K examples, total tokens, LoRA rank, and GPU hours. Report training cost and Pass@1 together. Current differences in sample counts confound sample efficiency with method gains.</p>
+<p><strong>Service-level value.</strong>
+At the same accuracy target, compare no reflection, one fixed reflection, confidence-triggered reflection, and ReActR on mean output tokens, P50/P95 latency, energy, and cost. Test whether activation only when errors are likely can offset multiturn overhead.</p>
+<p><strong>Transfer to code.</strong> On reproducible subsets of HumanEval+, MBPP+, and SWE-bench Verified, compare final-only RL, a unit-test error taxonomy, and ReActR-style first-error localization. Rewards must prevent test tampering. Determine whether gains concern compilation errors, logic errors, or repository navigation.</p>
+</section>
+<section id="新兴方向" class="subsection level3">
+<h3>14.3 Emerging directions</h3>
+<p><strong>Rollback-enabled reflection for tool agents.</strong> Record the first incorrect tool call in WebArena or τ-bench, and compare full restart, rollback to the first error, and textual reflection without rollback. Measure task success, additional calls, and depth of state contamination to test whether propagation analysis actually shortens recovery.</p>
+<p><strong>Joint training with process verifiers.</strong> Compare ReActR head-to-head with an independent process reward model: under equal rollout counts, test final-answer rewards, step rewards, and their combination. Use a human-labeled subset to determine whether the verifier merely reproduces teacher bias.</p>
+<p><strong>Iterative correction of compound errors.</strong>
+Construct a diagnostic set with two known errors per problem, comparing one-round dominant-error repair against up to three rounds of sequential correction. Measure first-error localization, exposure of the second error, cumulative success, and token cost, directly addressing the authors' limitation.</p>
+</section>
+</section>
+<section id="近期值得跟踪的工作" class="card level2">
+<h2>15. Recent work worth tracking</h2>
+<ol type="1">
+<li><a
+href="https://aclanthology.org/2026.findings-acl.122/">LLMThinkBench: Do
+LLMs Overthink Basic Math Reasoning?</a>(ACL 2026 Findings)—separates longer-is-better reasoning into overthinking and correctness, providing an external test of redundant reflection in ReActR.</li>
+<li><a
+href="https://aclanthology.org/2026.acl-long.1687/">SATQuest</a>(ACL 2026)—extends evaluation to standardized-exam-style reasoning across domains, testing transfer of the mathematical error ontology.</li>
+<li><a
+href="https://aclanthology.org/2026.acl-long.1115/">ReEfBench</a>(ACL 2026)—directly investigates reflection effectiveness, providing a better framework for the missing measurement of reflection itself.</li>
+<li><a href="https://aclanthology.org/2026.acl-long.1477/">Scaling
+Behaviors of LLM Reinforcement Learning Post-Training</a>(ACL 2026)—examines RL post-training across scales, helping assess whether ReActR's 5-rollout GRPO is already in a diminishing-returns regime.</li>
+<li><a href="https://aclanthology.org/2026.acl-long.1682/">Why Does
+Reinforcement Learning Generalize?</a>(ACL 2026)—studies sources of RL generalization; combined with ReActR, it could separate OOD contributions from error-curriculum coverage and policy optimization.</li>
+<li><a href="https://aclanthology.org/2026.findings-acl.1079/">LRBench
+and Judge-R1</a>(ACL 2026 Findings)—addresses long reasoning and judge training, suitable for testing reflection reward credit assignment over long trajectories.</li>
+<li><a href="https://aclanthology.org/2026.acl-long.1759/">How
+Instruction and Reasoning Data Shape Post-Training</a>(ACL 2026)—systematically studies post-training data composition, offering stronger mixture baselines for ReActR's 50:50 correct/incorrect ratio.</li>
+</ol>
+</section>
+<section id="结论" class="card level2">
+<h2>16. Conclusion</h2>
+<p>ReActR's key contribution is making errors a controllable curriculum: real errors supply the distribution, the teacher fills difficult categories, structured correction provides supervision, and staged rewards distinguish discovery from repair. Overall gains over LEMMA range from 3.5–4.9 pp across three backbones. Qwen3-4B reaches 57.3 versus LEMMA's 52.4, a 4.9 pp / 9.35% improvement. Ablations are sharper: removing error-type guidance lowers MATH from 65.7 to 56.2; removing both type and difficulty lowers it to 46.3, a 19.4 pp loss.</p>
+<p>Yet reflection itself remains the central unresolved issue: the paper does not directly measure error detection, first-error localization, or lesson quality; it lacks multiseed significance, fully compute-matched comparisons, and public code, data, or weights. The most defensible conclusion is therefore:<strong>Error type × difficulty curriculum × correct/incorrect mixing × staged GRPO is a strong, transferable recipe for mathematical post-training. Whether it produces reliable, calibrated, cross-domain self-reflection requires dedicated evaluation.</strong></p>
+<hr />
+<p><strong>Footnote.</strong> This report has been added to the local index
+<code>ml-report-index.md</code> . The HTML follows the Warm Editorial specification, with the same evidence and conclusions as the Markdown / plain-text versions. If a working Playwright browser is unavailable, the pre-delivery validation record will explicitly state this rather than claiming an unperformed visual check.</p>
+</section>
+
+  </main>
+
+  <footer>Based on the official ACL 2026 paper, official paper page, and four technical predecessors; generated on 2026-10-05.</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ Light' : '☾ Dark';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1291 @@
+---
+layout: null
+title: "Embodied-R1"
+date: 2026-09-17
+topic: "rl-peft"
+tags: ["rl-peft", "robotics", "reasoning"]
+excerpt: "Embodied-R1 in-depth report: methods, quantitative results, related work, and limitations."
+permalink: "/blog/2026/09/17/embodied-r1/en/"
+blog_post: false
+lang: "en"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_zh: "/blog/2026/09/17/embodied-r1/"
+sitemap: true
+---
+<!DOCTYPE html>
+<html data-theme="light" xmlns="http://www.w3.org/1999/xhtml" lang="zh-CN" xml:lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Embodied-R1: Point-Centric Embodied Reasoning, RL, and Evidence Boundaries</title>
+  <style>
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      background-color: #1a1a1a;
+      border: none;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+  <style>
+  :root{color-scheme:light;--page:#f9f9f7;--surface:#fcfcfb;--text:#0b0b0b;--secondary:#52514e;--muted:#6f6e69;--grid:#e1e0d9;--border:rgba(11,11,11,.11);--primary:#2a78d6;--comparison:#eb6834;--highlight:#dceafa;--focus:#195fae}
+  :root[data-theme="dark"]{color-scheme:dark;--page:#0d0d0d;--surface:#1a1a19;--text:#fff;--secondary:#c3c2b7;--muted:#a09f98;--grid:#343431;--border:rgba(255,255,255,.12);--primary:#3987e5;--comparison:#d95926;--highlight:rgba(57,135,229,.18);--focus:#83b8f4}
+  *{box-sizing:border-box}html{background:var(--page);scroll-behavior:smooth}body{margin:0;background:var(--page);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:16px;line-height:1.75;overflow-wrap:anywhere}body>header,body>main,body>footer,.toolbar{max-width:980px;margin-left:auto;margin-right:auto}body>header{padding:26px 28px 8px}body>main{padding:0 28px 80px}.toolbar{display:flex;justify-content:flex-end;padding:24px 28px 0}.theme-toggle{border:1px solid var(--border);border-radius:999px;padding:6px 14px;background:var(--surface);color:var(--secondary);font:inherit;font-size:13px;cursor:pointer;position:sticky;top:12px;z-index:20}h1{margin:0 0 12px;font-size:31px;line-height:1.28;letter-spacing:-.015em}h2{margin:0 0 16px;font-size:22px;line-height:1.35}h3{margin:26px 0 10px;font-size:18px;line-height:1.4}p{margin:0 0 14px}.section.level2{margin:0 0 20px;padding:26px 30px;border:1px solid var(--border);border-radius:12px;background:var(--surface)}.section.level3{margin-top:24px}blockquote{margin:18px 0 24px;padding:12px 18px;border-left:3px solid var(--primary);background:var(--surface);color:var(--secondary)}a{color:var(--primary);text-decoration-thickness:1px;text-underline-offset:3px}ul,ol{margin:0 0 14px;padding-left:24px}li{margin-bottom:7px}code{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace}pre{max-width:100%;margin:12px 0;padding:13px 16px;overflow-x:auto;border:1px solid var(--border);border-radius:8px;background:var(--page);font-size:13.5px}.table-wrap{width:100%;margin:16px 0 20px;overflow-x:auto;-webkit-overflow-scrolling:touch}table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:9px 11px;border-bottom:1px solid var(--grid);vertical-align:top}th{color:var(--muted);font-size:12.5px;font-weight:700;letter-spacing:.04em;text-transform:none}td:nth-child(n+2){font-variant-numeric:tabular-nums}.figure{margin:20px 0;padding:22px 24px;border:1px solid var(--border);border-radius:12px;background:var(--page)}.fig-title{margin:0 0 4px;font-size:17px;font-weight:700}.fig-sub,figcaption{color:var(--muted);font-size:13.5px}.legend{display:flex;flex-wrap:wrap;gap:18px;margin:12px 0;color:var(--secondary);font-size:13px}.swatch{display:inline-block;width:11px;height:11px;margin-right:7px;border-radius:3px;vertical-align:-1px}.swatch.primary,.bar.primary{fill:var(--primary);background:var(--primary)}.swatch.comparison,.bar.comparison{fill:var(--comparison);background:var(--comparison)}.chart{display:block;width:100%;height:auto;margin:8px 0}.chart .axis{stroke:var(--muted);stroke-width:1}.chart .gridline line{stroke:var(--grid);stroke-width:1}.chart text{fill:var(--secondary);font-family:system-ui,sans-serif;font-size:13px}.chart .strong{font-weight:700}.bar{cursor:help;outline:none}.bar:focus{stroke:var(--focus);stroke-width:4}.tip{position:fixed;z-index:50;max-width:min(320px,calc(100vw - 24px));padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);box-shadow:0 6px 20px rgba(0,0,0,.18);font-size:13px;opacity:0;pointer-events:none;transform:translateY(4px);transition:opacity .1s ease,transform .1s ease}.tip.visible{opacity:1;transform:translateY(0)}:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+  @media(max-width:640px){body>header{padding:20px 16px 6px}body>main{padding:0 16px 56px}.toolbar{padding:18px 16px 0}.section.level2{padding:21px 18px}h1{font-size:25px}.table-wrap{border:1px solid var(--border);border-radius:8px}table{min-width:620px;font-size:13px}th,td{padding:7px 8px}.figure{padding:18px 14px}}
+  @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition-duration:.01ms!important}}
+  @media print{:root{color-scheme:light;--page:#fff;--surface:#fff;--text:#000;--secondary:#333;--muted:#555}.toolbar,.tip{display:none!important}body>header,body>main{max-width:none;padding-left:0;padding-right:0}.section.level2,.figure{break-inside:avoid;box-shadow:none}a{color:inherit}}
+  </style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="toolbar"><button class="theme-toggle" type="button" aria-label="Toggle light and dark themes">Switch to dark</button></div>
+<section
+id="embodiedr1把点变成跨机器人本体接口强化推理证据边界与复现实审"
+class="level1">
+<h1>Embodied-R1: Points as a Cross-Embodiment Interface—Reinforced Reasoning, Evidence, and Reproducibility</h1>
+<blockquote>
+<p><strong>Core positioning in one sentence.</strong> Embodied-R1 does not directly output joint actions as an end-to-end VLA. A 3B VLM first answers where, where to place, where to grasp, and how to move using interpretable points, target regions, functional parts, and eight-point trajectories, then passes this embodiment-independent representation to conventional planners or downstream policies.</p>
+</blockquote>
+<p><strong>Field:</strong> Reinforcement learning / agents / embodied intelligence　
+<strong>Core paper:</strong> <em>Embodied‑R1: Reinforced Embodied
+Reasoning for General Robotic Manipulation</em>，ICLR 2026。<br />
+<strong>Evidence conventions:</strong> Original values refer only to read PDF text/appendices. Recomputations use arithmetic with source cells identified; missing values are not filled from plots or common knowledge. Page numbers follow the PDF. Links verified 2026-09-17.</p>
+<section id="0-先读结论为什么值得看又不该怎样解读" class="level2">
+<h2>0. Why it matters, and how not to interpret it</h2>
+<p>The appeal is not a generic 87.5% success rate, but four programmatically scorable, cross-arm pointing capabilities: REG (referred object), RRG (placement region), OFG (functional part), VTG (visual trajectory). This recasts the difficult interface between language and control as 2D points/short paths, trained with staged GRPO and task-composed rule rewards. Versus same-data SFT, Table 2 gains on RoboRefIt / Where2Place / VABench-P / Part-Afford are
+<strong>1.73 / 28.25 / 15.54 / 16.43 pp</strong>(Table 2, p.8; recomputed). RL helps most on open-space, part, and trajectory tasks with multiple valid answers and unnatural string supervision, rather than simple object localization.</p>
+<p>External action evidence is less clear-cut than the abstract suggests. SIMPLEREnv average
+<strong>56.2%</strong> exceeds strongest baseline SoFar's <strong>53.8%</strong> by only
+<strong>2.4 pp / 4.46% relative</strong>, and is not best on two of four tasks (Table 4, p.10). Real-robot <strong>87.5%</strong> comes from 46 trials across eight tasks, averaged by task (Table 5, p.11), without CIs. With five or six trials each, one outcome changes scores by 16.7–20 pp. More seriously, the main-text RRG reward is
+<code>0.1 format + 0.2 distance + 0.7 mask</code>(p.7), while Appendix Table 9 gives <code>0.1 + 0.3 + 0.6</code>(p.24). The defensible conclusion is:<strong>point-based intermediate interfaces plus verifiable RL help connect perception to action, but evidence does not establish universal VLA superiority or open-world success at 87.5%.</strong></p>
+<figure class="figure" aria-labelledby="sim-title">
+  <p class="fig-title" id="sim-title">SIMPLEREnv average success: the actual margin</p>
+  <p class="fig-sub">Table 4, p.10; one y-axis, %. Hover/focus bars for values.</p>
+  <div class="legend"><span><i class="swatch primary"></i>Embodied‑R1</span><span><i class="swatch comparison"></i>Comparator</span></div>
+  <svg class="chart" viewBox="0 0 760 330" role="img" aria-label="FSD 40.6，SoFar 53.8，Embodied-R1 56.2">
+    <title>SIMPLEREnv average-success comparison</title><desc>FSD 40.6%, SoFar 53.8%, Embodied-R1 56.2%.</desc>
+    <line x1="82" y1="270" x2="730" y2="270" class="axis"/><line x1="82" y1="30" x2="82" y2="270" class="axis"/>
+    <g class="gridline"><line x1="82" y1="270" x2="730" y2="270"/><line x1="82" y1="190" x2="730" y2="190"/><line x1="82" y1="110" x2="730" y2="110"/><line x1="82" y1="30" x2="730" y2="30"/></g>
+    <g class="labels"><text x="68" y="275">0</text><text x="60" y="195">20</text><text x="60" y="115">40</text><text x="60" y="35">60</text></g>
+    <rect x="150" y="107.6" width="120" height="162.4" rx="5" class="bar comparison" tabindex="0" data-tip="FSD：40.6%"/>
+    <rect x="340" y="54.8" width="120" height="215.2" rx="5" class="bar comparison" tabindex="0" data-tip="SoFar: 53.8% (strongest average baseline)"/>
+    <rect x="530" y="45.2" width="120" height="224.8" rx="5" class="bar primary" tabindex="0" data-tip="Embodied-R1: 56.2%; +2.4 pp / +4.46% relative over SoFar"/>
+    <g class="labels strong"><text x="185" y="100">40.6</text><text x="375" y="47">53.8</text><text x="565" y="38">56.2</text></g>
+    <g class="labels"><text x="190" y="298">FSD</text><text x="372" y="298">SoFar</text><text x="542" y="298">Embodied‑R1</text></g>
+  </svg>
+  <figcaption>Figure 1 | The system-level average margin is much smaller than the abstract's intuitive 62% improvement; that claim lacks a clear denominator in main tables.</figcaption>
+</figure>
+
+</section>
+<section id="1-链接验证表" class="level2">
+<h2>1. Link verification table</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr class="header">
+<th scope="col">Item</th>
+<th scope="col">Conference / official page</th>
+<th scope="col">arXiv version and date</th>
+<th scope="col">Code</th>
+<th scope="col">Data / weights</th>
+<th scope="col">Project page / videos</th>
+<th scope="col">Verification conclusion</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Embodied-R1 (core)</strong></td>
+<td><a href="https://openreview.net/forum?id=i5wlozMFsQ">OpenReview /
+ICLR 2026</a></td>
+<td><a
+href="https://arxiv.org/abs/2508.13998">arXiv:2508.13998v2</a>, 2026-04-06; v1 dated 2025-08-19</td>
+<td><a
+href="https://github.com/pickxiguapi/Embodied-R1">Official repository</a>, Apache-2.0; training, inference, evaluation directories</td>
+<td><a
+href="https://huggingface.co/IffYuan/Embodied-R1-3B-v1">Model</a>；<a
+href="https://huggingface.co/datasets/IffYuan/Embodied-R1-Dataset">Data</a>；<a
+href="https://huggingface.co/collections/IffYuan/embodied-r1">Collection</a></td>
+<td><a href="https://embodied-r1.github.io/">Project page and video examples</a></td>
+<td>All accessible; HF model page shows about 4B parameters versus paper's 3B, and data viewer about 321k rows despite 200K naming; see reproducibility audit</td>
+</tr>
+<tr class="even">
+<td>RoboPoint</td>
+<td>CoRL 2024</td>
+<td><a
+href="https://arxiv.org/abs/2406.10721">arXiv:2406.10721v1</a>，2024‑06‑15</td>
+<td><a href="https://github.com/wentaoyuan/RoboPoint">Official code</a></td>
+<td><a
+href="https://huggingface.co/wentao-yuan/robopoint-v1-vicuna-v1.5-7b-lora">7B LoRA weights</a>; synthetic-data description in paper</td>
+<td><a href="https://robo-point.github.io/">Project page</a></td>
+<td>PDF read; direct source of points as affordances</td>
+</tr>
+<tr class="odd">
+<td>FSD / From Seeing to Doing</td>
+<td>ICLR 2026</td>
+<td><a
+href="https://arxiv.org/abs/2505.08548">arXiv:2505.08548v3</a>，2026‑04‑05</td>
+<td><a
+href="https://github.com/pickxiguapi/embodied-fsd">Official code</a></td>
+<td>Repository provides model/data links</td>
+<td><a href="https://embodied-fsd.github.io/">Project page</a></td>
+<td>PDF read; direct precursor for Sr-CoT, visual aids, and zero-shot control</td>
+</tr>
+<tr class="even">
+<td>OpenVLA‑OFT</td>
+<td>RSS 2025</td>
+<td><a
+href="https://arxiv.org/abs/2502.19645">arXiv:2502.19645v2</a>，2025‑04‑28</td>
+<td>Project page links code</td>
+<td>Project page releases LIBERO weights</td>
+<td><a href="https://openvla-oft.github.io/">Project page</a></td>
+<td>PDF read; represents adapted end-to-end VLA performance and speed–success tradeoffs</td>
+</tr>
+<tr class="odd">
+<td>Qwen2.5‑VL</td>
+<td>Technical report</td>
+<td><a
+href="https://arxiv.org/abs/2502.13923">arXiv:2502.13923v1</a>，2025‑02‑19</td>
+<td><a href="https://github.com/QwenLM/Qwen2.5-VL">Official repository</a></td>
+<td><a
+href="https://huggingface.co/collections/Qwen/qwen25-vl">Model collection</a></td>
+<td>Separate video not found</td>
+<td>PDF read; Embodied-R1's vision-language foundation</td>
+</tr>
+<tr class="even">
+<td>DeepSeekMath / GRPO</td>
+<td>Technical report</td>
+<td><a
+href="https://arxiv.org/abs/2402.03300">arXiv:2402.03300v3</a>，2024‑04‑27</td>
+<td><a
+href="https://github.com/deepseek-ai/DeepSeek-Math">Official repository</a></td>
+<td>Weights linked in official repository</td>
+<td>No standalone project page / video found</td>
+<td>PDF read; source of critic-free group-relative policy optimization</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Search boundaries.</strong> This round checked arXiv, ICLR/OpenReview, RSS/CoRL, Hugging Face Papers, Semantic Scholar, Papers with Code, and ACL Anthology. ACL yielded no more direct candidates than robotics/ICLR sources. Some Papers with Code entries were unstable, so they served only identity checks. All numbers below come from six PDFs, not search snippets, leaderboards, or project pages.</p>
+</section>
+<section id="2-候选池去重与随机选择" class="level2">
+<h2>2. Candidate pool, deduplication, and random selection</h2>
+<p>First read <code>ml-report-index.md</code>. The past 14 days covered DreamGen (world-model robot trajectories, 09-03) and VIKI-R (multi-robot rewards, 09-10), excluding those neighboring themes. Today's scope retains single-robot zero-shot manipulation, embodied reasoning, and agent RL. Proceedings/OpenReview, arXiv, and Hugging Face Daily Papers supplied 24 candidates, checked through Semantic Scholar/Papers with Code; all core candidates are within 24 months.</p>
+<div class="table-scroll"><table>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">Number</th>
+<th scope="col">Candidate paper</th>
+<th scope="col">Primary entry</th>
+<th scope="col">Direction</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td>WebAgent‑R1</td>
+<td>arXiv / HF Papers</td>
+<td>Web-agent RL</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td>WebRL</td>
+<td>arXiv / OpenReview</td>
+<td>Self-evolving web agents</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td>RAGEN</td>
+<td>arXiv</td>
+<td>Reasoning-agent RL</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td>Agent‑R</td>
+<td>arXiv</td>
+<td>Iterative agent training</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td>ToolRL</td>
+<td>arXiv</td>
+<td>Tool-use RL</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td>Search‑R1</td>
+<td>arXiv / HF Papers</td>
+<td>Retrieval-agent RL</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td>DeepResearcher</td>
+<td>arXiv</td>
+<td>Long-horizon research agents</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">8</td>
+<td>SWE‑RL</td>
+<td>arXiv</td>
+<td>Coding-agent RL</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td>SWE‑Gym</td>
+<td>NeurIPS / arXiv</td>
+<td>Software-engineering environments</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td>Guided Search Strategies in Non‑Serializable Environments with
+Applications to Software Engineering Agents</td>
+<td>ICML 2025</td>
+<td>Nonserializable agent search</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td>OpenVLA‑OFT</td>
+<td>RSS 2025</td>
+<td>VLA adaptation</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">12</td>
+<td>π0.5</td>
+<td>arXiv / project</td>
+<td>Open-world VLA</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td>GR00T N1</td>
+<td>arXiv / project</td>
+<td>Humanoid foundation models</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td>SmolVLA</td>
+<td>arXiv / HF</td>
+<td>Lightweight VLA</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td>SpatialVLA</td>
+<td>arXiv</td>
+<td>Spatial-representation VLA</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">16</td>
+<td>DexVLA</td>
+<td>arXiv</td>
+<td>Dexterous manipulation</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td>CogACT</td>
+<td>arXiv</td>
+<td>Cognitive action generation</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td>ConRFT</td>
+<td>arXiv</td>
+<td>Embodied-consistency RFT</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">19</td>
+<td>SimpleVLA‑RL</td>
+<td>arXiv</td>
+<td>VLA reinforcement learning</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;"><strong>20</strong></td>
+<td><strong>Embodied‑R1</strong></td>
+<td><strong>ICLR 2026 / arXiv</strong></td>
+<td><strong>Point-centric embodied reasoning; selected</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">21</td>
+<td>ReTool</td>
+<td>arXiv</td>
+<td>Tool-augmented RL</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">22</td>
+<td>DAPO</td>
+<td>arXiv</td>
+<td>Large-scale policy optimization</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">23</td>
+<td>ProRL</td>
+<td>arXiv</td>
+<td>Long-horizon RL training</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">24</td>
+<td>VideoAgent2</td>
+<td>arXiv / HF Papers</td>
+<td>Video agents</td>
+</tr>
+</tbody>
+</table></div>
+<p>Fixed <code>N=24</code> then executed <code>shuf -i 1-24 -n 1</code>returned
+<strong>20</strong>. Embodied-R1 has formal ICLR 2026 status, a 31-page PDF/appendix, open models/data/code, and real-robot results, providing sufficient material, so<strong>no redraw was needed</strong>. Selection preceded deep reading, without ranking by popularity or subjective interest.</p>
+</section>
+<section id="3-motivation感知行动鸿沟到底是什么-motivation-gap"
+class="level2">
+<h2>3. Motivation: what is the perception–action gap? {#motivation-gap}</h2>
+<p>End-to-end VLAs map images/instructions directly to robot-specific action tokens. Large trajectory corpora enable closed-loop control, but outputs depend on arm, camera, control rate, and joints; new embodiments often require data collection/fine-tuning. OpenVLA-OFT shows strong specialized adaptation: average LIBERO success rises from <strong>76.5% to 97.1%</strong>and action-generation throughput increases <strong>26×</strong>(Table I, p.6). This is target-robot/task fine-tuning, not action-data-free cross-embodiment zero-shot transfer.</p>
+<p>Modular VLM-plus-planner systems separate semantics/control. RoboPoint uses synthetic data to predict feasible image points conditioned on actions, improving spatial-affordance accuracy over GPT-4o/PIVOT by <strong>21.8%</strong>and downstream success by
+<strong>30.5%</strong>(abstract/experimental summary, pp.1,10). Its points mainly address REG/RRG, not systematic functional parts or continuous paths. FSD adds Spatial-relationship CoT and visual aids, reaching SIMPLEREnv <strong>40.6%</strong>and eight-real-task success
+<strong>72%</strong>(abstract, Table 4/real experiments, pp.1,11), but remains primarily SFT-based, where one labeled point can penalize other valid answers.</p>
+<p>Embodied-R1 identifies four specific issues: scarce heterogeneous action data; language too coarse and joint actions too specific; multiple valid points/paths penalized by cross-entropy when unlabeled; and spatial reasoning chains needing consistency with final points. It chooses
+<code>pointing</code> as an intermediate bandwidth: more geometric than language, more general than actions, and automatically rewardable through masks, distances, and trajectory RMSE.</p>
+</section>
+<section id="4-论文故事线假设与权衡" class="level2">
+<h2>4. Narrative, assumptions, and tradeoffs</h2>
+<p>Four steps define the system. REG predicts a point inside the manipulated object; RRG inside a relationally valid placement region; OFG on a graspable/pressable/pullable part; VTG predicts eight object-center path points. Existing VQA, spatial, and robotics data form a two-stage curriculum: general spatial reasoning, then point-centric specialization. GRPO updates grouped image–instruction responses with relative rewards, avoiding a critic. At inference, points/paths are back-projected into 3D and executed through grasping, IK, path planning, or Diffusion Policy.</p>
+<p>Four assumptions underlie this:<strong>Geometric sufficiency</strong>—2D points capture most pre-action decisions;<strong>Scoring sufficiency</strong>—masks, distances, and trajectory RMSE approximate real action value;<strong>Transferable decomposition</strong>—after perception/reasoning transfers, low-level planners are not the main bottleneck;<strong>Acceptable open-loop planning</strong>—plans from one image/short sequence do not rapidly fail under occlusion, contact, or moving objects. Benefits are interpretability, cross-embodiment use, and no task-action fine-tuning; points cannot fully express contact forces, twisting, wiping, deformables, or long-horizon correction.</p>
+</section>
+<section id="5-方程级形式化与算法流程" class="level2">
+<h2>5. Equation-level formalization and algorithm</h2>
+<section id="51-多任务指点空间" class="level3">
+<h3>5.1 Multitask pointing space</h3>
+<p>Let observed image be <code>I</code>, instruction <code>x</code>, and model response
+<code>y=(c,p)</code>, where <code>c</code> Yes
+<code>&lt;think&gt;…&lt;/think&gt;</code> reasoning text, while<code>p</code>
+is a point, set, or trajectory. Valid sets are object mask
+<code>M_obj</code>, target region <code>M_goal</code>, functional mask
+<code>M_fun</code> , and reference trajectory
+<code>G=(g_1,…,g_K)</code>. The key is set-valued reward rather than one coordinate label.</p>
+<p>Format, accuracy, and mask rewards are:</p>
+<p><code>r_format(y)=1[valid tags and coordinate format]</code></p>
+<p><code>r_acc(y,g)=1[y=g]</code></p>
+<p><code>r_mask(p,M)=1[p∈M]</code></p>
+<p>Distance rewards normalize against nearest/farthest reasonable distances:</p>
+<p><code>r_dis(p,g)=clip(1-(||p-g||_2-D_min)/(D_max-D_min),0,1)</code>。</p>
+<p>VTG interpolates predicted/reference trajectories to equal length, then maps RMSE through the same threshold scheme to obtain
+<code>r_trace</code>. Total reward is</p>
+<p><code>R(y)=Σ_{r∈F_task} w_r r(y),  Σ w_r=1,  R∈[0,1]</code>。</p>
+<p>The main text's RRG example uses
+<code>0.1 r_format + 0.2 r_dis + 0.7 r_mask</code>(p.7), but Appendix Table 9 uses <code>0.1 + 0.3 + 0.6</code>(p.24). This prevents determining actual weights from the paper alone; this report does not guess which implementation was used.</p>
+</section>
+<section id="52-grpo-更新" class="level3">
+<h3>5.2 GRPO update</h3>
+<p>For each input <code>q=(I,x)</code>, the old policy samples <code>G=8</code> responses
+<code>{o_i}</code>, normalized by group mean/standard deviation:</p>
+<p><code>A_i=(R_i-mean(R_1…R_G))/(std(R_1…R_G)+ε)</code>。</p>
+<p>Token ratio
+<code>ρ_{i,t}=π_θ(o_{i,t}|q,o_{i,&lt;t})/π_old(o_{i,t}|q,o_{i,&lt;t})</code>
+forms a PPO-style clipped objective with reference-policy KL:</p>
+<p><code>L_GRPO = - E[min(ρ A, clip(ρ,1-ε,1+ε)A) - β KL(π_θ||π_ref)]</code>。</p>
+<p>DeepSeekMath supplies the technique: group scores estimate the baseline without PPO's value model (§4.1.1, p.13). Embodied-R1 uses KL coefficient
+<code>β=10^-2</code>, eight samples/question, and global batch 128 (implementation appendix, p.23). If all eight rewards match, normalized advantages approach zero; very easy/hard examples may supply no effective gradient. This is a structural boundary, not a measured failure rate here.</p>
+</section>
+<section id="53-两阶段训练与执行伪代码" class="level3">
+<h3>5.3 Two-stage training and execution pseudocode</h3>
+<pre class="text"><code>Input: Qwen2.5-VL-3B-Instruct, Stage-1 spatial/general data,
+       Stage-2 Embodied-Points tasks, task reward library
+
+Stage 1: 2 epochs RFT
+  for image, instruction in Embodied-Spatial-84K + ViRL subset(18K):
+    sample 8 responses; score format + exact/spatial correctness
+    normalize group rewards; GRPO update with KL to reference
+
+Stage 2: 1 epoch RFT
+  for task in {REG, RRG, 3D-RRG, OFG, VTG, QA}:
+    sample 8 &lt;think&gt; + coordinate responses
+    choose task-specific rewards {format, acc, mask, distance, trace, env}
+    GRPO update
+
+Deployment:
+  RGB(/D) + instruction -&gt; reasoning + point(s)/8-point trace
+  -&gt; pixel-to-world / detector / IK / motion planner (or DP)
+  -&gt; robot executes; no task-specific fine-tuning in zero-shot setting</code></pre>
+</section>
+</section>
+<section id="6-数据构造工程细节与可复现性" class="level2">
+<h2>6. Data construction, engineering, and reproducibility</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr class="header">
+<th scope="col">Component</th>
+<th scope="col">Paper procedure</th>
+<th scope="col" style="text-align: right;">Count / configuration</th>
+<th scope="col">Evidence location</th>
+<th scope="col">Reproduction implication</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Backbone</td>
+<td>Qwen2.5‑VL‑3B‑Instruct</td>
+<td style="text-align: right;">Paper says 3B</td>
+<td>PDF p.23</td>
+<td>Inherits dynamic resolution and point/box grounding; HF lists about 4B parameters, requiring naming clarification</td>
+</tr>
+<tr class="even">
+<td>Stage 1</td>
+<td>Embodied-Spatial-84K + ViRL subset</td>
+<td style="text-align: right;">84K + 18K；2 epochs</td>
+<td>Figure 3 / p.7; implementation p.23</td>
+<td>Establish spatial-reasoning anchors before sparse point rewards</td>
+</tr>
+<tr class="odd">
+<td>OFG</td>
+<td>HandAL images + GPT-4o question generation</td>
+<td style="text-align: right;">40K</td>
+<td>PDF p.6</td>
+<td>Closed-source teacher bias in question language; no teacher-swap ablation</td>
+</tr>
+<tr class="even">
+<td>VTG</td>
+<td>Object recognition, Grounded-SAM, keypoints, CoTracker3, eight-point downsampling, rule/manual filtering</td>
+<td style="text-align: right;">Fixed eight points</td>
+<td>PDF p.6、p.27</td>
+<td>Scalable automation includes tracking noise; fixed length also prevents reward hacking</td>
+</tr>
+<tr class="odd">
+<td>Context</td>
+<td>Maximum context / response</td>
+<td style="text-align: right;">4096 / 2048 tokens</td>
+<td>PDF p.23</td>
+<td>Reasoning can be long, but deployment latency/token distributions are unreported</td>
+</tr>
+<tr class="even">
+<td>Optimization</td>
+<td>AdamW</td>
+<td style="text-align: right;">lr <code>1e-6</code>，wd
+<code>1e-2</code></td>
+<td>PDF p.23</td>
+<td>One setting only; no LR/KL/group-size sensitivity</td>
+</tr>
+<tr class="odd">
+<td>GRPO</td>
+<td>Candidates per question / KL / global batch</td>
+<td style="text-align: right;">8 / <code>1e-2</code> / 128</td>
+<td>PDF p.23</td>
+<td>Within-group reward variance/effective-group fraction unreported</td>
+</tr>
+<tr class="even">
+<td>Hardware</td>
+<td>8× A100 40GB</td>
+<td style="text-align: right;">Stage 1 about 48h; Stage 2 about 48h</td>
+<td>PDF p.23</td>
+<td>Recomputed here: approximately
+<code>8×96=768 A100 GPU-hour</code>; excludes generation, baselines, evaluation</td>
+</tr>
+<tr class="odd">
+<td>SFT control</td>
+<td>Same data and batch</td>
+<td style="text-align: right;">3 epochs</td>
+<td>PDF p.23</td>
+<td>Data controlled, but equal tokens/GPU-hours not established</td>
+</tr>
+</tbody>
+</table></div>
+<p>Qwen2.5-VL already uses native dynamic-resolution ViT, Window Attention, and variable visual tokens (technical report §2, Table 1, pp.3–4). Point grounding is inherited, not created from nothing. Embodied-R1 reorganizes it into embodied tasks/data/rewards. Without a matched-size backbone lacking native grounding, one cannot claim any 3B VLM would gain equally from GRPO.</p>
+</section>
+<section id="7-基准与指标数字在测什么" class="level2">
+<h2>7. Benchmarks and metrics: what numbers measure</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr class="header">
+<th scope="col">Group</th>
+<th scope="col">Benchmark / metric</th>
+<th scope="col">Direction</th>
+<th scope="col">Measured capability</th>
+<th scope="col">Not covered</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Spatial understanding</td>
+<td>CVBench、CRPE、SAT、BLINK、EmbSpatial</td>
+<td>Accuracy / mean score, ↑</td>
+<td>Relative position, depth, object relations</td>
+<td>Not robot executability</td>
+</tr>
+<tr class="even">
+<td>Point predictions</td>
+<td>RoboRefIt、Where2Place、VABench‑P、Part‑Afford</td>
+<td>Fraction inside valid regions, ↑</td>
+<td>Object, free-space, part localization</td>
+<td>Grasp-quality differences within valid regions</td>
+</tr>
+<tr class="odd">
+<td>Trajectories</td>
+<td>VABench‑V RMSE/MAE ↓，LLM score ↑</td>
+<td>Pixel errors and semantic scores</td>
+<td>Movement-path shape</td>
+<td>Dynamics, collisions, contact</td>
+</tr>
+<tr class="even">
+<td>Simulated actions</td>
+<td>SIMPLEREnv success, ↑</td>
+<td>24 episodes per task</td>
+<td>Cross-scene zero-shot manipulation</td>
+<td>Long-horizon, multi-robot, cross-embodiment system comparisons</td>
+</tr>
+<tr class="odd">
+<td>Real actions</td>
+<td>XArm eight-task success, ↑</td>
+<td>Five or six trials per task</td>
+<td>Real perception–planning–execution loop</td>
+<td>CIs, cross-lab reproduction, recovery</td>
+</tr>
+<tr class="even">
+<td>3D placement</td>
+<td>Open6DOR Level 0/1/Overall，↑</td>
+<td>Spatial-relation success</td>
+<td>RGB / RGB-D 3D relations</td>
+<td>Depth noise, camera-extrinsic drift</td>
+</tr>
+<tr class="odd">
+<td>Downstream policies</td>
+<td>LIBERO DP vs DP+ER1，↑</td>
+<td>Four-suite success</td>
+<td>Whether point priors help learned policies</td>
+<td>Fair comparisons with compute-matched VLAs/stronger DP</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section id="8-主结果从感知到执行的完整矩阵" class="level2">
+<h2>8. Main results: perception-to-execution matrices</h2>
+<section id="81-四类点式能力论文表-2pdf-p8单位-" class="level3">
+<h3>8.1 Four pointing capabilities (Table 2, p.8; %, ↑)</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">RoboRefIt</th>
+<th scope="col" style="text-align: right;">Where2Place</th>
+<th scope="col" style="text-align: right;">VABench‑P</th>
+<th scope="col" style="text-align: right;">Part‑Afford</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>GPT‑4o</td>
+<td style="text-align: right;">15.28</td>
+<td style="text-align: right;">29.06</td>
+<td style="text-align: right;">9.30</td>
+<td style="text-align: right;">10.15</td>
+</tr>
+<tr class="even">
+<td>ASMv2</td>
+<td style="text-align: right;">48.40</td>
+<td style="text-align: right;">22.00</td>
+<td style="text-align: right;">10.07</td>
+<td style="text-align: right;">13.75</td>
+</tr>
+<tr class="odd">
+<td>RoboBrain</td>
+<td style="text-align: right;">10.10</td>
+<td style="text-align: right;">16.60</td>
+<td style="text-align: right;">7.00</td>
+<td style="text-align: right;">25.25</td>
+</tr>
+<tr class="even">
+<td>RoboPoint</td>
+<td style="text-align: right;">49.82</td>
+<td style="text-align: right;">46.01</td>
+<td style="text-align: right;">19.09</td>
+<td style="text-align: right;">27.60</td>
+</tr>
+<tr class="odd">
+<td>FSD</td>
+<td style="text-align: right;">56.73</td>
+<td style="text-align: right;">45.81</td>
+<td style="text-align: right;">61.82</td>
+<td style="text-align: right;">9.55</td>
+</tr>
+<tr class="even">
+<td>Qwen2.5‑VL‑3B</td>
+<td style="text-align: right;">74.90</td>
+<td style="text-align: right;">31.11</td>
+<td style="text-align: right;">9.89</td>
+<td style="text-align: right;">23.42</td>
+</tr>
+<tr class="odd">
+<td>Embodied‑SFT</td>
+<td style="text-align: right;">83.85</td>
+<td style="text-align: right;">41.25</td>
+<td style="text-align: right;">50.46</td>
+<td style="text-align: right;">40.20</td>
+</tr>
+<tr class="even">
+<td><strong>Embodied‑R1</strong></td>
+<td style="text-align: right;"><strong>85.58</strong></td>
+<td style="text-align: right;"><strong>69.50</strong></td>
+<td style="text-align: right;"><strong>66.00</strong></td>
+<td style="text-align: right;"><strong>56.63</strong></td>
+</tr>
+<tr class="odd">
+<td>R1 − SFT (recomputed)</td>
+<td style="text-align: right;">+1.73 pp / +2.06%</td>
+<td style="text-align: right;">+28.25 pp / +68.48%</td>
+<td style="text-align: right;">+15.54 pp / +30.80%</td>
+<td style="text-align: right;">+16.43 pp / +40.87%</td>
+</tr>
+</tbody>
+</table></div>
+<p>Uneven gains matter more than winning all columns. RoboRefIt starts at 74.90, reaches 83.85 with SFT, then gains only 1.73 pp with RL; Where2Place jumps 41.25→69.50. A plausible, unproven explanation is that mask/distance rewards suit multivalued placement better than single-coordinate SFT.</p>
+</section>
+<section id="82-视觉轨迹论文表-3pdf-p8" class="level3">
+<h3>8.2 Visual trajectories (Table 3, p.8)</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">RMSE ↓</th>
+<th scope="col" style="text-align: right;">MAE ↓</th>
+<th scope="col" style="text-align: right;">LLM score ↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>GPT‑4o</td>
+<td style="text-align: right;">136.1</td>
+<td style="text-align: right;">113.5</td>
+<td style="text-align: right;">4.4</td>
+</tr>
+<tr class="even">
+<td>DINOv2 predictor</td>
+<td style="text-align: right;">128.3</td>
+<td style="text-align: right;">117.5</td>
+<td style="text-align: right;">4.0</td>
+</tr>
+<tr class="odd">
+<td>RoboBrain</td>
+<td style="text-align: right;">121.6</td>
+<td style="text-align: right;">103.8</td>
+<td style="text-align: right;">4.5</td>
+</tr>
+<tr class="even">
+<td>FSD</td>
+<td style="text-align: right;">78.3</td>
+<td style="text-align: right;">63.4</td>
+<td style="text-align: right;">6.2</td>
+</tr>
+<tr class="odd">
+<td>Embodied‑SFT</td>
+<td style="text-align: right;">109.4</td>
+<td style="text-align: right;">65.2</td>
+<td style="text-align: right;">6.2</td>
+</tr>
+<tr class="even">
+<td><strong>Embodied‑R1</strong></td>
+<td style="text-align: right;"><strong>77.8</strong></td>
+<td style="text-align: right;"><strong>45.0</strong></td>
+<td style="text-align: right;"><strong>7.3</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>Versus FSD, R1's RMSE falls only <strong>0.5 / 0.64%</strong>, but MAE falls
+<strong>18.4 / 29.02%</strong>and LLM score rises <strong>1.1 /
+17.74%</strong>(recomputed). A few large errors may still dominate RMSE while typical points improve, but without distributions/sample-level statistics the tail cannot be localized.</p>
+</section>
+<section id="83-simplerenv-零样本操作论文表-4pdf-p10每任务-24-episodes"
+class="level3">
+<h3>8.3 SIMPLEREnv zero-shot manipulation (Table 4, p.10; 24 episodes/task, %)</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">Spoon→Towel</th>
+<th scope="col" style="text-align: right;">Carrot→Plate</th>
+<th scope="col" style="text-align: right;">Stack Green/Yellow</th>
+<th scope="col" style="text-align: right;">Eggplant→Basket</th>
+<th scope="col" style="text-align: right;">Avg</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Octo</td>
+<td style="text-align: right;">41.7</td>
+<td style="text-align: right;">8.2</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">56.7</td>
+<td style="text-align: right;">26.7</td>
+</tr>
+<tr class="even">
+<td>π0</td>
+<td style="text-align: right;">29.1</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">16.6</td>
+<td style="text-align: right;">62.5</td>
+<td style="text-align: right;">27.1</td>
+</tr>
+<tr class="odd">
+<td>π0‑fast</td>
+<td style="text-align: right;">29.1</td>
+<td style="text-align: right;">21.9</td>
+<td style="text-align: right;">10.8</td>
+<td style="text-align: right;"><strong>66.6</strong></td>
+<td style="text-align: right;">48.3</td>
+</tr>
+<tr class="even">
+<td>OpenVLA</td>
+<td style="text-align: right;">4.2</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">16.7</td>
+<td style="text-align: right;">5.2</td>
+</tr>
+<tr class="odd">
+<td>OpenVLA‑OFT</td>
+<td style="text-align: right;">34.2</td>
+<td style="text-align: right;">30.0</td>
+<td style="text-align: right;">30.0</td>
+<td style="text-align: right;">72.5</td>
+<td style="text-align: right;">41.8</td>
+</tr>
+<tr class="even">
+<td>ThinkAct</td>
+<td style="text-align: right;">58.3</td>
+<td style="text-align: right;">37.5</td>
+<td style="text-align: right;">8.7</td>
+<td style="text-align: right;">70.8</td>
+<td style="text-align: right;">43.8</td>
+</tr>
+<tr class="odd">
+<td>Magma</td>
+<td style="text-align: right;">37.5</td>
+<td style="text-align: right;">31.0</td>
+<td style="text-align: right;">12.7</td>
+<td style="text-align: right;">60.5</td>
+<td style="text-align: right;">35.4</td>
+</tr>
+<tr class="even">
+<td>MOKA</td>
+<td style="text-align: right;">45.8</td>
+<td style="text-align: right;">41.6</td>
+<td style="text-align: right;">33.3</td>
+<td style="text-align: right;">12.5</td>
+<td style="text-align: right;">33.3</td>
+</tr>
+<tr class="odd">
+<td>SoFar</td>
+<td style="text-align: right;">55.5</td>
+<td style="text-align: right;">56.9</td>
+<td style="text-align: right;"><strong>62.5</strong></td>
+<td style="text-align: right;">40.2</td>
+<td style="text-align: right;"><strong>53.8</strong></td>
+</tr>
+<tr class="even">
+<td>RoboPoint</td>
+<td style="text-align: right;">16.7</td>
+<td style="text-align: right;">20.8</td>
+<td style="text-align: right;">8.3</td>
+<td style="text-align: right;">25.0</td>
+<td style="text-align: right;">17.7</td>
+</tr>
+<tr class="odd">
+<td>FSD</td>
+<td style="text-align: right;">41.6</td>
+<td style="text-align: right;">50.0</td>
+<td style="text-align: right;">33.3</td>
+<td style="text-align: right;">37.5</td>
+<td style="text-align: right;">40.6</td>
+</tr>
+<tr class="even">
+<td><strong>Embodied‑R1</strong></td>
+<td style="text-align: right;"><strong>62.5</strong></td>
+<td style="text-align: right;"><strong>68.0</strong></td>
+<td style="text-align: right;">36.1</td>
+<td style="text-align: right;">58.3</td>
+<td style="text-align: right;"><strong>56.2</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>R1's average lead comes from the first two columns; Stack trails SoFar by <strong>26.4
+pp</strong>and Eggplant trails OpenVLA-OFT by <strong>14.2 pp</strong>. The relative gain of 56.2 versus 53.8 is <strong>4.46%</strong>, not a direct justification of the abstract's 62% improvement over strong baselines. Its denominator, metric, or aggregation is unclear, so it is marked an<strong>unrecomputable abstract claim</strong>。</p>
+</section>
+<section id="84-真实-xarm论文表-5pdf-p11" class="level3">
+<h3>8.4 Real XArm (Table 5, p.11)</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">Mean success over eight tasks</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>MOKA</td>
+<td style="text-align: right;">9.2%</td>
+</tr>
+<tr class="even">
+<td>RoboPoint</td>
+<td style="text-align: right;">12.5%</td>
+</tr>
+<tr class="odd">
+<td>FSD</td>
+<td style="text-align: right;">25.0%</td>
+</tr>
+<tr class="even">
+<td>Embodied-R1-P (points)</td>
+<td style="text-align: right;">83.3%</td>
+</tr>
+<tr class="odd">
+<td><strong>Embodied-R1-T (trajectories)</strong></td>
+<td style="text-align: right;"><strong>87.5%</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>The first two tasks use five trials each, the remaining six use six: 46 total. The reported mean is task-averaged, not an aggregate raw-success count. R1-T exceeds R1-P by
+<strong>+4.2 pp /
++5.04%</strong>, but absent paired trials, seeds, or binomial CIs, significance cannot be claimed. The trajectory interface works; universal superiority over points is not established.</p>
+</section>
+<section id="85-3d-与下游策略扩展" class="level3">
+<h3>8.5 3D and downstream-policy extensions</h3>
+<p>On Open6DOR, Embodied-R1-RGBD Level 0 / Level 1 / Overall is
+<strong>99.2 / 74.5 / 94.3</strong>versus SoFar <strong>96.0 / 81.5 /
+93.0</strong>(Table 13, p.29), only <strong>1.3
+pp</strong>higher overall and lower on complex Level 1 by <strong>7.0 pp</strong>. On LIBERO, Diffusion Policy mean improves from <strong>64.4</strong> to
+<strong>79.4</strong>(Table 12, p.28), a gain of <strong>15.0 pp / 23.29% relative</strong>. The header's ↑15% should say fifteen percentage points. Both support transferable point priors, but one exposes RGB-D depth/relation bottlenecks, the other lacks equally trained stronger priors.</p>
+</section>
+</section>
+<section id="9-消融超参敏感性与相变" class="level2">
+<h2>9. Ablations, sensitivity, and transitions</h2>
+<section id="91-rl-与-thinking-的二因素消融" class="level3">
+<h3>9.1 Two-factor RL × thinking ablation</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr class="header">
+<th scope="col">RL</th>
+<th scope="col">Explicit <code>&lt;think&gt;</code></th>
+<th scope="col" style="text-align: right;">Where2Place</th>
+<th scope="col" style="text-align: right;">VABench‑P</th>
+<th scope="col">Source</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>✓</td>
+<td>✓</td>
+<td style="text-align: right;"><strong>65.50</strong></td>
+<td style="text-align: right;"><strong>65.39</strong></td>
+<td>Table 6, p.11</td>
+</tr>
+<tr class="even">
+<td>✓</td>
+<td>✗</td>
+<td style="text-align: right;">63.00</td>
+<td style="text-align: right;">60.50</td>
+<td>Same as above</td>
+</tr>
+<tr class="odd">
+<td>✗</td>
+<td>✓</td>
+<td style="text-align: right;">41.25</td>
+<td style="text-align: right;">47.67</td>
+<td>Same as above</td>
+</tr>
+<tr class="even">
+<td>✗</td>
+<td>✗</td>
+<td style="text-align: right;">36.85</td>
+<td style="text-align: right;">50.46</td>
+<td>Same as above</td>
+</tr>
+</tbody>
+</table></div>
+<p>With thinking, RL adds <strong>+24.25 / +17.72 pp</strong>; with RL, thinking adds <strong>+2.50 / +4.89 pp</strong>. Without RL on VABench-P, thinking instead lowers 50.46→47.67, <strong>−2.79
+pp</strong>. Writing reasoning chains alone is not monotonically useful; RFT may primarily provide<strong>consistency calibration between reasoning and points</strong>。</p>
+</section>
+<section id="92-混合任务训练" class="level3">
+<h3>9.2 Mixed-task training</h3>
+<p>Mixed versus Unmixed on Part-Afford / Where2Place / VABench-P is
+<strong>56.63 vs 51.25、69.50 vs 65.50、66.00 vs 65.39</strong>(Table 8, p.15), or <strong>+5.38 / +4.00 / +0.61
+pp</strong>. The first two support shared learning; the third is near plausible measurement noise. No variance means no claim of stable positive transfer everywhere.</p>
+</section>
+<section id="93-点数约束揭示的-reward-hacking" class="level3">
+<h3>9.3 Point-count constraints expose reward hacking</h3>
+<p>With eight-point constraints, VTG RMSE / MAE / GPT score is <strong>77.83 / 44.97 /
+7.27</strong>; without them, <strong>105.2 / 59.7 / 5.57</strong>(Table 11, p.27). Models tend to output only start/end points. This is a clear shortcut transition rather than smooth reward degradation: zero reward for non-eight-point answers removes it. Structured RL format constraints must cover<strong>exploitable degrees of freedom</strong>or the model optimizes the scoring proxy instead of complete trajectories.</p>
+</section>
+<section id="94-论文没有报告的敏感性" class="level3">
+<h3>9.4 Unreported sensitivity</h3>
+<p>The paper<strong>Not reported</strong> sweeps of learning rate, KL, group size, mask/distance weights, stage-data ratios, or response length, nor the hard-question fraction with eight identical rewards. Thus stability around
+<code>β=10^-2</code> or group=8 is unknown, and the two-stage order is not proved indispensable. The only observed hyperparameter transition is the two-point shortcut after removing the eight-point constraint; other curves must be tested, not invented.</p>
+</section>
+</section>
+<section id="10-统计显著性与成本" class="level2">
+<h2>10. Statistical significance and cost</h2>
+<p>Apart from fixed episode counts in some experiments, main tables lack CIs, standard deviations, multiple seeds, or significance tests. At 24 SIMPLEREnv episodes/task, even an approximate independent-binomial view requires raw episodes to judge 56.2% versus 53.8%. Real tasks with five/six trials are weaker still: one trial changes 16.7–20 pp. Larger pointing benchmarks still omit training randomness.</p>
+<p>Training is approximately 8×A100×(48+48)h = <strong>768 A100
+GPU-hour</strong>(recomputed from Appendix p.23), excluding GPT-4o generation, Grounded-SAM, CoTracker3, baselines, and repeated trials. Dollar costs, energy, generation throughput, and total wall-clock are absent. Execution time is given for only two tasks: R1 10s/8s, OpenVLA-FT 23s/12s, MOKA 28s/18s, FSD 14s/10s (Table 10, p.25), without hardware, variance, or stage latency. This supports faster demonstrations, not a universal serving curve.</p>
+</section>
+<section id="11-真正贡献可复用设计与迁移潜力" class="level2">
+<h2>11. Genuine contributions, reusable design, and transfer potential</h2>
+<p>The first contribution is<strong>interface design</strong>: points, regions, functional parts, and short trajectories unify grounding, affordances, placement, and traces. Second,<strong>a composable reward library</strong>combines format, exact, mask, distance, trace, and environment rewards by task, scaling better than bespoke losses. Third,<strong>a spatial-first, action-second RFT curriculum</strong>builds semantics through general spatial questions before aligning embodied point outputs. Fourth,<strong>a bridge from modular planning to learned policies</strong>: Table 12 shows point priors can condition or prompt Diffusion Policy rather than remain tied to conventional planners.</p>
+<p>For GUI agents, REG maps to controls, RRG to drop zones, and VTG to cursor paths. Surgery/industry can map OFG to safe contact regions but need uncertainty/force constraints. Navigation can use points/curves as waypoints, extending single images to spatiotemporal maps. Data selection can prioritize group-reward variance as remaining learning signal. Direct transfer is unsuitable for sustained contact forces, deformation, or hidden-state estimation because 2D rewards lack sufficient dynamics information.</p>
+</section>
+<section id="12-相关工作技术来源链解决什么留下什么如何回应设计怎样传递"
+class="level2">
+<h2>12. Technical lineage: problems solved, gaps, responses, and transferred designs</h2>
+<section id="121-qwen25vl原生点定位底座" class="level3">
+<h3>12.1 Qwen2.5-VL: native point grounding</h3>
+<p>It handles varied resolutions, localization, documents, and long videos with dynamic-resolution ViT/Window Attention (§2, pp.3–4). Generic grounding is not manipulation affordance or robot-success reward. Embodied-R1 inherits visual tokens/point outputs, narrows syntax into four embodied interfaces, and calibrates them with task rewards. The transferred design is:<strong>retain general VLM coordinate abilities; the additions are embodied data, reasoning formats, and RL objectives, not a new detection head.</strong></p>
+</section>
+<section id="122-robopoint点式-affordance-的直接问题来源"
+class="level3">
+<h3>12.2 RoboPoint: the direct source of point affordances</h3>
+<p>RoboPoint addresses coarse language outputs using synthetic action-conditioned keypoints without human demonstrations, reporting affordance accuracy +21.8% and downstream success +30.5% (pp.1,10). It mainly covers objects/free regions, lacking functional parts, continuous paths, and explicit reasoning, with instruction tuning predominant. Embodied-R1 expands to four capabilities and multivalued mask/distance/trace rewards. It retains<strong>points as an embodiment-independent interface</strong>while extending task coverage and learning paradigm.</p>
+</section>
+<section id="123-fsd从-srcot-到可奖励推理" class="level3">
+<h3>12.3 FSD: from Sr-CoT to rewardable reasoning</h3>
+<p>FSD connects spatial understanding with action aids through spatial-relation-graph-anchored Sr-CoT and affordance boxes/points/traces. It achieves 40.6% SIMPLEREnv and 72% over eight real tasks (pp.1,11). Single-answer SFT limits multiple valid outputs, and reasoning can diverge from coordinates. Embodied-R1 inherits visual aids, using group-relative rewards to score reasoning and landing points together. The design is:<strong>structured spatial explanation before action hints</strong>, shifting from imitation to verifiable RFT.</p>
+</section>
+<section id="124-deepseekmath--grpo从数学答案验分到几何验分"
+class="level3">
+<h3>12.4 DeepSeekMath / GRPO: from answer scoring to geometry scoring</h3>
+<p>DeepSeekMath removes PPO's memory-intensive, difficult critic by using grouped same-question scores as a baseline (§4.1.1, p.13). Mathematical answers are usually definite; robot points are continuous, multivalued, and partly feasible. Embodied-R1 supplements/replaces exact rewards with masks, distances, and trajectories composed by task. The transferred design is:<strong>verifiable outcomes plus group-relative policy optimization</strong>, with domain transfer hinging on replacing discrete-answer checks with set/geometric checks.</p>
+</section>
+<section id="125-openvlaoft另一条端到端路线" class="level3">
+<h3>12.5 OpenVLA-OFT: the alternative end-to-end route</h3>
+<p>OpenVLA-OFT improves VLA fine-tuning through parallel decoding, action chunking, continuous actions, and L1 regression: LIBERO 76.5→97.1, throughput 26× (Table I, p.6). It still needs target-robot data/adaptation. The two approaches operate at different levels: OFT optimizes action policies; R1 supplies zero-shot intermediate representations. DP+R1 in Table 12 suggests combination. The inherited element is a comparison axis:<strong>specialized end-to-end performance versus cross-embodiment modular transfer</strong>。</p>
+</section>
+<section id="126-非线性技术演进树" class="level3">
+<h3>12.6 Nonlinear technical evolution tree</h3>
+<pre class="text"><code>General VLM backbone (Qwen2.5-VL: dynamic resolution, native points/boxes)
+          │
+          ├──────────────► End-to-end actions
+          │                 OpenVLA ──► OFT: chunking + continuous actions + L1
+          │                                      │
+          │                                      └── high in-task success, adaptation data required
+          │
+          └──► Embodiment-independent representations
+                RoboPoint: REG / RRG points
+                    │
+                    ├──► FSD: Sr-CoT + visual aids (SFT)
+                    │        │
+DeepSeekMath: GRPO ─┴────────┴──► Embodied-R1
+                                     ├─ REG / RRG / OFG / VTG
+                                     ├─ mask / distance / trace rewards
+                                     ├─ zero-shot planner
+                                     └─► DP + point prior (back into closed-loop policies)</code></pre>
+<p>Three representational shifts drive progress: language→coordinates, single points→functions/trajectories, and unique SFT answers→RL feasible sets. The likely next shift is from open-loop points to uncertain spatiotemporal constraints updated through feedback.</p>
+</section>
+<section id="127-跨论文对标" class="level3">
+<h3>12.7 Cross-paper comparison</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr class="header">
+<th scope="col">The paper</th>
+<th scope="col">Output interface</th>
+<th scope="col">Training signal</th>
+<th scope="col">Target-robot trajectories required?</th>
+<th scope="col">Closed-loop control</th>
+<th scope="col">Representative result</th>
+<th scope="col">Core gap</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Qwen2.5‑VL</td>
+<td>Text / points / boxes</td>
+<td>Pretraining + SFT</td>
+<td>No</td>
+<td>No</td>
+<td>General grounding foundation</td>
+<td>Non-embodied objectives</td>
+</tr>
+<tr class="even">
+<td>RoboPoint</td>
+<td>Points</td>
+<td>Synthetic instruction tuning</td>
+<td>No</td>
+<td>Through external modules</td>
+<td>affordance +21.8%</td>
+<td>Narrow task coverage</td>
+</tr>
+<tr class="odd">
+<td>FSD</td>
+<td>box / point / trace + Sr‑CoT</td>
+<td>Hierarchical SFT</td>
+<td>No</td>
+<td>External planner</td>
+<td>SIMPLER 40.6%</td>
+<td>Weak multiple-solution/consistency handling</td>
+</tr>
+<tr class="even">
+<td>DeepSeekMath</td>
+<td>Reasoning text</td>
+<td>GRPO verifiable rewards</td>
+<td>Not applicable</td>
+<td>No</td>
+<td>No critic</td>
+<td>Original rewards are discrete math answers</td>
+</tr>
+<tr class="odd">
+<td>OpenVLA‑OFT</td>
+<td>Action chunks</td>
+<td>L1 imitation</td>
+<td><strong>Yes</strong></td>
+<td><strong>Yes</strong></td>
+<td>LIBERO 97.1%</td>
+<td>Embodiment-bound</td>
+</tr>
+<tr class="even">
+<td><strong>Embodied‑R1</strong></td>
+<td>Points / functional points / eight-point paths</td>
+<td>Two-stage GRPO + geometric rewards</td>
+<td>No in the core zero-shot setup</td>
+<td>Mainly external planners</td>
+<td>SIMPLER 56.2%; real 87.5%</td>
+<td>Small samples, open-loop plans, limited mechanics</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+</section>
+<section id="13-作者自述限制" class="level2">
+<h2>13. Author-stated limitations</h2>
+<ol type="1">
+<li><strong>Limited policy integration.</strong> The authors primarily connect to traditional motion planners, with only preliminary DP validation; deeper learned-policy integration is future work (Limitations p.29). Main results are not unified end-to-end system comparisons.</li>
+<li><strong>Limited long-horizon tasks and expressiveness.</strong>
+Instructions are mostly single-step without automatic decomposition. Points poorly express force control, twisting, wiping, and deformable manipulation (p.29). General manipulation means generalization within current task families, not open-world sufficiency.</li>
+<li><strong>Fragile 3D and physical common sense.</strong> RGB-D experiments exhibit depth hallucination and slightly worse complex relations; intermediate reasoning can contradict physics (p.29).</li>
+</ol>
+</section>
+<section id="14-独立批判每条都给证据推论链" class="level2">
+<h2>14. Independent critique: evidence-to-inference chains</h2>
+<ol type="1">
+<li><strong>[Attribution] Because</strong> R1 improves same-data SFT by only
+<strong>1.73 pp</strong>on RoboRefIt but by <strong>28.25
+pp</strong>on Where2Place (Table 2, p.8),<strong>therefore</strong> evidence favors RL for multivalued geometry, not uniform gains across grounding. Report results by task reward entropy.</li>
+<li><strong>[Statistics] Because</strong> real tasks have five/six trials each, 46 total, without CIs (Table 5, p.11),<strong>therefore</strong> 87.5% is not a stable population success estimate; one outcome changes a task by 16.7–20 pp.</li>
+<li><strong>[External validity] Because</strong> SIMPLEREnv Stack trails SoFar by <strong>26.4 pp</strong>and Eggplant trails OpenVLA-OFT by <strong>14.2
+pp</strong>(Table 4, p.10),<strong>therefore</strong> the 56.2% mean hides task heterogeneity and cannot mean universal SOTA.</li>
+<li><strong>[Internal consistency] Because</strong> main text and Table 9 give RRG mask/distance weights 0.7/0.2 versus 0.6/0.3 (pp.7,24),<strong>therefore</strong>
+the key training configuration is ambiguous; reproduction without code checks may differ.</li>
+<li><strong>[Recomputability] Because</strong> Table 4's strongest mean baseline is 53.8% versus R1 56.2%, only <strong>4.46% relative improvement</strong>, while real-table baselines move 25.0%→87.5%,<strong>therefore</strong> the abstract's 62% improvement lacks a clear denominator in main tables and remains an underspecified aggregate claim.</li>
+<li><strong>[Reward proxies] Because</strong> removing eight-point constraints yields only endpoints and raises RMSE 77.83→105.2 (Table 11, p.27),<strong>therefore</strong>
+models exploit scoring gaps. A point inside a mask may still be ungraspable; future rewards need collision, reachability, and execution value.</li>
+<li><strong>[Data definitions] Because</strong> the paper says Embodied-Points-200K/3B while HF shows about 321k rows/about 4B parameters,<strong>therefore</strong>
+deduplication, stage mixing, and parameter accounting remain unresolved, preventing exact compute/sample-efficiency recomputation.</li>
+<li><strong>[Comparison fairness] Because</strong> modular R1 uses external perception/planning/IK while VLA baselines output actions end to end, without equal hardware, control frequency, or wall-clock (Tables 4,10),<strong>therefore</strong>
+success cannot be attributed solely to representations. External-module failure rates and latency belong in system comparisons.</li>
+</ol>
+</section>
+<section id="15-开放挑战可执行的-headtohead-实验空白" class="level2">
+<h2>15. Open challenges: executable head-to-head gaps</h2>
+<section id="理论" class="level3">
+<h3>Theory</h3>
+<ul>
+<li><strong>Are set rewards consistent?</strong> Fix Qwen2.5-VL-3B/data and compare single-coordinate CE, masks, distance transforms, and reachability/collision value rewards at 768 GPU-hours. Report valid-solution coverage, execution success, and reward–success Spearman correlation. High mask scores without success reveal proxy mismatch.</li>
+<li><strong>When does GRPO lose gradients?</strong> Across group sizes
+<code>{4,8,16,32}</code>, record identical-reward-group fractions, within-group variance, KL, and success. Compare learned-critic PPO and DPO/SFT at equal sampling budgets to test sparse-reward degeneration.</li>
+<li><strong>Point-interface sufficiency.</strong> For identical tasks, generate points, boxes, 6D poses, dense affordance maps, and language programs. With strong downstream controllers, compare success/mutual-information lower bounds to locate point failure as geometry grows complex.</li>
+</ul>
+</section>
+<section id="工程与应用" class="level3">
+<h3>Engineering and applications</h3>
+<ul>
+<li><strong>Zero-shot modular systems versus adapted VLAs.</strong>
+Compare Embodied-R1 plus one planner, OpenVLA-OFT, and π0.5 on three new embodiments with 0/10/50 demonstrations, shared cameras and 10Hz control. Plot adaptation-cost–success Pareto curves using success, human setup minutes, P50/P95 latency, and GPU-hours.</li>
+<li><strong>Open-loop versus feedback replanning.</strong> With fixed R1 weights, compare one-shot plans, repointing every second, and contact-triggered repointing under varying occlusion/target motion. Report recovery to test observation-to-subgoal agent loops.</li>
+<li><strong>Real-world statistics.</strong> Expand eight tasks to at least 50 trials each, three scene seeds, two arms, and independent operators. Preregister Wilson CIs and paired McNemar/bootstrap tests with power for 2.4-pp differences.</li>
+</ul>
+</section>
+<section id="新兴方向" class="level3">
+<h3>Emerging directions</h3>
+<ul>
+<li><strong>Uncertain pointing.</strong> Compare single points, top-k points, probability heatmaps, and conformal regions under one planner. Measure coverage, area, success, and abstention so models can express uncertainty rather than always output coordinates.</li>
+<li><strong>From geometric to physical rewards.</strong>
+On twisting, wiping, and deformables, compare 2D masks, 6D poses, force trajectories, and simulator-rollout rewards. High 2D scores with failed execution quantify the stated mechanics gap.</li>
+<li><strong>Decouple data teachers.</strong> Train equally sized OFG sets with GPT-4o, open VLM, and human questions; cross-test language styles and real execution to separate functional understanding from teacher phrasing imitation.</li>
+</ul>
+</section>
+</section>
+<section id="16-近期工作雷达未作本文核心数字依据" class="level2">
+<h2>16. Recent-work radar (not sources for core numbers)</h2>
+<ol type="1">
+<li><a
+href="https://huggingface.co/papers/2509.09674">SimpleVLA‑RL</a>: applies RL directly to VLA policies, suitable for compute-matched closed-loop comparison with pointing-then-control.</li>
+<li><a
+href="https://arxiv.org/search/?query=ConRFT+robot&amp;searchtype=all">ConRFT</a>: emphasizes embodied reasoning/output consistency, matching the finding that thinking needs reward calibration.</li>
+<li><a
+href="https://www.physicalintelligence.company/blog/pi05">π0.5</a>: open-world VLA generalization provides stronger end-to-end priors, but evaluation cost/adaptation accounting must align.</li>
+<li><a href="https://developer.nvidia.com/isaac/gr00t">NVIDIA GR00T
+N1</a>: humanoid foundation models expand action complexity, testing whether point interfaces remain sufficient.</li>
+<li><a href="https://huggingface.co/blog/smolvla">SmolVLA</a>: small open VLA, a closer parameter/deployment-cost end-to-end comparator.</li>
+<li><a
+href="https://arxiv.org/abs/2501.15830">SpatialVLA</a>: explicit spatial representations can separate reward gains from backbone spatial inductive biases.</li>
+<li><a href="https://arxiv.org/abs/2502.19645">OpenVLA‑OFT</a>: strong RSS 2025 adaptation baseline; 97.1% LIBERO and 26× throughput emphasize different goals of zero-shot modularity and in-task performance.</li>
+<li><a href="https://arxiv.org/abs/2505.08548">FSD</a>: direct ICLR 2026 precursor; SIMPLER 40.6%→R1 56.2% illustrates SFT→RFT evolution, not a strict equal-data/compute causal experiment.</li>
+</ol>
+</section>
+<section id="17-最终判断与复现蓝图" class="level2">
+<h2>17. Final assessment and reproduction blueprint</h2>
+<p>Embodied-R1 abstracts pre-action decisions into shared, automatically scorable geometry. RL can align reasoning/points on large image–instruction datasets without expensive real episodes. Tables 6/11 show thinking calibration and structural constraints suppressing reward hacking—more reusable than the slogan of a 3B model at 87.5%.</p>
+<p>A credible reproduction should lock arXiv v2/repository commit, record HF snapshots and deduplicated row counts, reproduce both stages, verify RRG weights from code, and run minimal three-point sweeps of eight-point constraints, group=8, and KL=<code>1e-2</code> . Reproduce Tables 2,6,11 before SIMPLEREnv, then use at least 30–50 real trials/task. System superiority requires R1+planner to reliably beat FSD/RoboPoint at equal hardware/latency and approach OpenVLA-OFT on new embodiments with substantially less adaptation data.</p>
+</section>
+<section id="脚注产出索引与审计状态" class="level2">
+<h2>Footnote: artifacts, index, and audit status</h2>
+<ul>
+<li><code>ml-report-index.md</code> This issue's entry has been appended.</li>
+<li>The Warm Editorial single-file HTML uses inline CSS/JS, system-ui plus PingFang SC/Microsoft YaHei, top-right theme switching, result tables, and a single-axis chart with hover values.</li>
+<li>Playwright loads, but
+<code>/usr/bin/chromium</code>、<code>/usr/bin/chromium-browser</code>、<code>/opt/pw-browsers</code>
+and its default cache contain no Chromium executable. As instructed,
+<code>playwright install</code>was not run, so<strong>browser screenshot checks were not completed</strong>. Warm Editorial validation (0 warnings), HTML structure checks, and responsive mobile table scrolling were completed, but do not replace actual rendering; this remains a delivery limitation.</li>
+<li>This report neither invents a denominator for the unverified 62% nor estimates unreported standard deviations, sensitivity curves, or failure rates from plots.</li>
+</ul>
+</section>
+</section>
+<div class="tip" role="status" aria-live="polite"></div>
+<script>
+(()=>{const root=document.documentElement,btn=document.querySelector('.theme-toggle'),tip=document.querySelector('.tip');const apply=t=>{root.dataset.theme=t;btn.textContent=t==='dark'?'Switch to light':'Switch to dark';localStorage.setItem('report-theme',t)};const saved=localStorage.getItem('report-theme');apply(saved||'light');btn.addEventListener('click',()=>apply(root.dataset.theme==='dark'?'light':'dark'));document.querySelectorAll('table').forEach(t=>{const w=document.createElement('div');w.className='table-wrap';t.parentNode.insertBefore(w,t);w.appendChild(t)});const show=(e,el)=>{tip.textContent=el.dataset.tip;tip.classList.add('visible');const x=Math.min(e.clientX+14,innerWidth-tip.offsetWidth-12),y=Math.min(e.clientY+14,innerHeight-tip.offsetHeight-12);tip.style.left=Math.max(12,x)+'px';tip.style.top=Math.max(12,y)+'px'};document.querySelectorAll('[data-tip]').forEach(el=>{el.addEventListener('mousemove',e=>show(e,el));el.addEventListener('mouseenter',e=>show(e,el));el.addEventListener('mouseleave',()=>tip.classList.remove('visible'));el.addEventListener('focus',()=>{const r=el.getBoundingClientRect();show({clientX:r.left+r.width/2,clientY:r.top},el)});el.addEventListener('blur',()=>tip.classList.remove('visible'))})})();
+</script>
+</body>
+</html>

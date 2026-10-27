@@ -1,0 +1,863 @@
+---
+layout: null
+title: "ThinkSLM"
+date: 2026-09-14
+topic: "llm-systems"
+tags: ["llm-systems", "small-language-models", "reasoning"]
+excerpt: "Eight-bit quantization usually preserves existing reasoning, while structured pruning can push intermediate reasoning from usable to failure."
+permalink: "/blog/2026/09/14/thinkslm/en/"
+blog_post: false
+lang: "en"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_zh: "/blog/2026/09/14/thinkslm/"
+sitemap: true
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>ThinkSLM: A Comprehensive Audit of Small-Language-Model Reasoning · 2026-09-14</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #246fca;
+    --chart-comparison: #c95224;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  :root { --chart-primary:#2a78d6; --chart-primary-soft:#3987e5; --chart-comparison:#eb6834; --chart-comparison-dark:#d95926; }
+  :root[data-theme="dark"] { --chart-primary:#3987e5; --chart-comparison:#eb6834; }
+  blockquote { margin:16px 0; padding:10px 18px; border-left:3px solid var(--chart-primary); color:var(--text-secondary); background:var(--page); }
+  h2 { scroll-margin-top:20px; }
+  h3 { color:var(--text-primary); }
+  table th:not(:first-child), table td:not(:first-child) { text-align:right; font-variant-numeric:tabular-nums; }
+  table td:first-child, table th:first-child { min-width:150px; }
+  strong { color:var(--text-primary); }
+  .card > :last-child { margin-bottom:0; }
+  @media (max-width:640px) { .toolbar { position:sticky; top:8px; z-index:20; } .theme-toggle { box-shadow:0 2px 12px rgba(0,0,0,.12); } pre { font-size:12px; } }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" aria-pressed="false">☾ Dark</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">EMNLP 2025 MAIN · LLM/NLP</p>
+    <h1>ThinkSLM: A Comprehensive Audit of Small-Language-Model Reasoning</h1>
+    <p class="subtitle">A six-axis matrix of training origins, prompting, compression, and robustness</p>
+    <div class="meta" aria-label="Report metadata">
+      <span class="chip source">ACL Anthology · 2025.emnlp-main.1659</span>
+      <span class="chip">2026-09-14</span>
+      <span class="chip">Reasoning · Compression · Evaluation</span>
+    </div>
+    <p class="lede">Eight-bit quantization usually preserves existing reasoning, while structured pruning can push intermediate reasoning from usable to failure.</p>
+  </header>
+
+  <main>
+<section class="card" aria-label="Report introduction 0">
+<p><strong>Core paper:</strong> Gaurav Srivastava, Shuxiang Cao, Xuan Wang. <em>ThinkSLM: Towards Reasoning in Small Language Models</em>. EMNLP 2025 Main，ACL Anthology 2025.emnlp-main.1659，pp. 32612–32662。<br />
+<strong>Report date:</strong> 2026-09-14　<strong>Field:</strong> LLM/NLP (reasoning, post-training, evaluation)　<strong>Evidence convention:</strong> Prioritize the final ACL version; all recomputations are marked as this report's calculations.</p>
+</section>
+<section class="card" aria-label="Report section 1">
+<h2 id="链接验证与版本审计">0. Verified links and version audit</h2>
+<p>All URLs were accessed on 2026-09-14. “Not public/not found” reflects public-page status that day, not inference.</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Conference / official page</th>
+<th scope="col">arXiv version and date</th>
+<th scope="col">Code</th>
+<th scope="col">Data / weights</th>
+<th scope="col">Project page / videos</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>ThinkSLM</strong></td>
+<td><a href="https://aclanthology.org/2025.emnlp-main.1659/">EMNLP 2025 Main / ACL</a>；<a href="https://aclanthology.org/2025.emnlp-main.1659.pdf">PDF</a></td>
+<td><a href="https://arxiv.org/abs/2502.11569">2502.11569v3</a>, 2025-09-30; v1 dated 2025-02-17; arXiv retains the old title</td>
+<td>The project's Code link targets <a href="https://github.com/ctrl-gaurav/thinkslm">GitHub URL</a> and returns 404, so it is marked <strong>not public</strong></td>
+<td>No dedicated weights released; complete results/scripts repository not found</td>
+<td><a href="https://ctrl-gaurav.github.io/thinkslm.github.io/">Leaderboard project page</a>; video not found</td>
+</tr>
+<tr class="even">
+<td><strong>GSM-Plus</strong></td>
+<td><a href="https://aclanthology.org/2024.acl-long.163/">ACL 2024 Long</a>；<a href="https://aclanthology.org/2024.acl-long.163.pdf">PDF</a></td>
+<td><a href="https://arxiv.org/abs/2402.19255">2402.19255v1</a>，2024-02-29</td>
+<td><a href="https://github.com/qtli/GSM-Plus">qtli/GSM-Plus</a></td>
+<td>Repository provides data/evaluation; weights not applicable</td>
+<td>Project page/video not found</td>
+</tr>
+<tr class="odd">
+<td><strong>MR-GSM8K</strong></td>
+<td>No formal conference page seen</td>
+<td><a href="https://arxiv.org/abs/2312.17080">2312.17080v4</a>，2024-06-05</td>
+<td><a href="https://github.com/JIA-Lab-research/MR-GSM8K">JIA-Lab-research/MR-GSM8K</a></td>
+<td>Repository provides data/evaluation; weights not applicable</td>
+<td>Project page/video not found</td>
+</tr>
+<tr class="even">
+<td><strong>DeepSeek-R1</strong></td>
+<td><a href="https://doi.org/10.1038/s41586-025-09422-z">Nature 2025 DOI</a></td>
+<td><a href="https://arxiv.org/abs/2501.12948">2501.12948v2</a>, 2026-01-04; v1 dated 2025-01-22</td>
+<td><a href="https://github.com/deepseek-ai/DeepSeek-R1">Official DeepSeek-R1 repository</a></td>
+<td><a href="https://huggingface.co/deepseek-ai/DeepSeek-R1">Official weights and six distilled models</a></td>
+<td>Repository/model cards double as project pages; paper video not found</td>
+</tr>
+<tr class="odd">
+<td><strong>Minitron</strong></td>
+<td>No formal conference page seen</td>
+<td><a href="https://arxiv.org/abs/2408.11796">2408.11796v4</a>，2024-12-09</td>
+<td><a href="https://github.com/NVlabs/Minitron">NVlabs/Minitron</a></td>
+<td>Repository links public 4B/8B weights</td>
+<td>Repository includes blog/demo links; paper video not found</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Version risk.</strong> The final ACL abstract states <strong>72 models, six families, 17 benchmarks, and 1,000 human-validated examples</strong>(ACL PDF pp.1,4), while the project page still says <strong>14 benchmarks and 800 human examples</strong>and its “Code (Will be available soon)” link returns 404. More seriously, §3.3 describes majority voting by three annotators, while Appendix G (p.50) describes one graduate student repeating each judgment three times. This report treats final-PDF tables as final results, but the human-evaluation design is not fully reproducible.</p>
+</section>
+<section class="card" aria-label="Report section 2">
+<h2 id="候选池排重与随机选择">1. Candidate pool, deduplication, and random selection</h2>
+<p>First check <code>ml-report-index.md</code>: recently covered ATLANTIS (SFT data weighting), DEFAME (multimodal retrieval evidence), and Emergent Misalignment (safety fine-tuning) were excluded. Candidates all came from <a href="https://aclanthology.org/events/emnlp-2025/">EMNLP 2025 Main Proceedings</a>, with arXiv, Hugging Face Daily Papers, and Semantic Scholar checking titles/versions. OpenReview is not EMNLP's formal publication venue, and some Papers with Code records are unstable, so missing entries were not grounds for exclusion.</p>
+<p>There were 24 candidates:</p>
+<ol type="1">
+<li>Thinking Out Loud: Do Reasoning Models Know When They’re Right?</li>
+<li>Learning Like Humans: Adaptive Difficulty Curriculum Learning and Expert-Guided Self-Reformulation</li>
+<li>How Far Can LLMs Improve from Experience?</li>
+<li>LaMDAgent: An Autonomous Framework for Post-training Large Language Models</li>
+<li>Warm Up Before You Train: Unlocking General Reasoning in Resource-Constrained Settings</li>
+<li>Table-R1: Inference-Time Scaling for Table Reasoning</li>
+<li>Forget What You Know about LLMs Evaluations—LLMs Are Like a Chameleon</li>
+<li>Order Doesn’t Matter, But Reasoning Does: Training LLMs with Order-Centric Augmentation</li>
+<li><strong>ThinkSLM: Towards Reasoning in Small Language Models</strong></li>
+<li>Let’s Reason Formally: Natural–Formal Hybrid Reasoning Enhances LLM Math Capability</li>
+<li>CODI: Compressing Chain-of-Thought into Continuous Space via Self-Distillation</li>
+<li>Parallel Continuous Chain-of-Thought with Jacobi Iteration</li>
+<li>Direct Judgement Preference Optimization</li>
+<li>reWordBench: Benchmarking and Improving Instruction-Level Reward Models</li>
+<li>Critique Fine-Tuning on One Problem Is Enough to Improve Math Reasoning</li>
+<li>TokenSkip: Controllable Chain-of-Thought Compression in LLMs</li>
+<li>Diverse Reasoning Paths are Better than One</li>
+<li>Two Heads Are Better Than One: Test-time Scaling of Verbal Reflection</li>
+<li>Diagnosing Memorization in Chain-of-Thought Reasoning, One Token at a Time</li>
+<li>AdaptThink: Reasoning Models Can Learn When to Think</li>
+<li>T²: An Adaptive Test-Time Scaling Strategy for Contextual Question Answering</li>
+<li>A Systematic Analysis of Base Model Choice for Reward Modeling</li>
+<li>From Generation to Judgment: Opportunities and Risks of LLM-as-a-Judge</li>
+<li>LLMs Have Intrinsic Meta-Cognition but Need a Good Lens</li>
+</ol>
+<p>The system command executed was <code>shuf -i 1-24 -n 1</code>returned <strong>9</strong>, selecting ThinkSLM. No redraw was needed: the 51-page final paper, complete appendices, main results, and robustness tables were accessible and sufficient.</p>
+</section>
+<section class="card" aria-label="Report section 3">
+<h2 id="motivation真正的痛点不是模型小而是比较轴混在一起">2. Motivation: the problem is confounded comparison axes, not simply small models</h2>
+<p>“More parameters mean better reasoning” often confounds scale with more pretraining data, stronger post-training, longer output budgets, and different evaluators. Existing work separately examines distillation, quantization, CoT, or mathematics datasets, rarely in one matrix. ThinkSLM evaluates 72 models, six families, and 17 benchmarks across six axes: capacity/family, training/architecture, prompting, compression, task domain, and robustness (abstract, §3.1, pp.1,3).</p>
+<p>Three quantitative observations motivate this.</p>
+<p>First,<strong>family differences at equal size can dwarf some scaling gains</strong>. Qwen2.5-7B reaches 91.76% on GSM8K versus Mistral-v0.3-7B at 55.98%, a 35.78 pp or 63.91% relative gap. Scaling Qwen2.5 from 7B to 14B adds only 2.53 pp, 91.76→94.29, or 2.76% relative (Table 3, pp.5–6; percentages recomputed here). Training recipes are at least as consequential as scale.</p>
+<p>Second,<strong>common automatic scoring systematically underestimates small models</strong>. On 1,000 human-judged examples, agreement is 0.51 for lm-eval-harness, 0.36 for regex parsing, and 0.60 for direct-answer extraction, versus 0.99 for GPT-4-turbo and 0.98 for GPT-4o (Table 1, p.4). With unstable formatting, evaluations may measure instruction following rather than solution correctness.</p>
+<p>Third,<strong>compression is not one operation</strong>. Qwen2.5-32B GPTQ 8-bit reduces measured GPU memory from 125 GB to 33.81 GB (−72.95%) while Overall moves 92.64→92.65. Conversely, 2:4 pruning of Sparse-Llama-3.1-8B drops MR-GSM8K from 24.2 to zero (Tables 3,8, pp.5,33; reduction recomputed). The question becomes which capabilities survive under which training origins, compression routes, and evaluation definitions.</p>
+</section>
+<section class="card" aria-label="Report section 4">
+<h2 id="论文故事线假设与权衡">3. Argument, assumptions, and trade-offs</h2>
+<p>The study proceeds in four steps. First, select scorers against human judgments rather than assuming exact match: compare lm-eval, parsers, direct answers, and four GPT judges. Second, build a 72-model matrix across family, scale, training/architecture, and prompting. Third, compare quantization, pruning, and distillation. Fourth, extend static GSM8K accuracy to GSM-Plus perturbations, MR-GSM8K intermediate steps, and MR-Ben error recognition.</p>
+<p>Three assumptions underlie the design:</p>
+<ul>
+<li>High judge–human agreement permits scaled evaluation, at the cost of embedding closed-source judge bias and expense in the metric.</li>
+<li>Changing size/bitwidth within one family and prompt approximately isolates capacity/compression, although community checkpoints, defaults, and hardware paths are not fully controlled.</li>
+<li>Sorting tasks unlikely to occur in pretraining can proxy low-contamination algorithmic reasoning, but generating correct sequences also demands format compliance.</li>
+</ul>
+<p>The strength is a broad comparison matrix, not causal identification. It offers practical safe operating regions, but observational rankings cannot identify whether 18T tokens, RLHF, or architecture caused gains.</p>
+</section>
+<section class="card" aria-label="Report section 5">
+<h2 id="方程级形式化与评测流程">4. Equation-level formalization and evaluation flow</h2>
+<p>Given model output (y) and reference answer (y^<em>), evaluator (m) produces binary score (S_m(y,y^</em>){0,1}). The authors choose the evaluator with greatest agreement with human score (S_h):</p>
+<p>[ m^*=_{mM}(S_m,S_h). ]</p>
+<p>The parsing baseline is (S_{parse}(y,y^*)=[extract(y)=y^*]). Paired judge–human differences use McNemar's statistic:</p>
+<p>[ ^2=, ]</p>
+<p>Here (b) counts human-correct/method-wrong cases and (c) human-wrong/method-correct cases (Eqs.1–2, p.4). The authors also define (C_{total}=n(c_{token}l_{avg}+c_{base})) and use (Utility=-Cost) to explain GPT-4-turbo for GSM8K and GPT-4o for ARC/CommonsenseQA.</p>
+<p>MR-GSM8K combines correctness judgments, first-error localization, and error explanations:</p>
+<p>[ MR=w_1(0,MCC)+w_2ACC_{step}+w_3ACC_{reason}. ]</p>
+<p>Weights are chosen empirically, without sensitivity analysis (Appendix A.5, p.16).</p>
+<p>Evaluation pseudocode:</p>
+<pre class="text"><code>Input: model checkpoint, task, prompt template, compression variant
+1. Generate outputs; repeat three times unless otherwise stated
+2. GSM8K → GPT-4-turbo; ARC-E/C and CSQ → GPT-4o
+3. Sorting → deterministic parser covering 13 output formats
+4. Robustness → original benchmark scripts + GPT-4o
+5. Aggregate task accuracies, Sorting_Avg, and equally weighted five-column Overall
+6. Slice by family/scale/prompt/compression/robustness rather than only overall ranking
+Output: performance, GPU memory, disk space, means/selected standard deviations</code></pre>
+</section>
+<section class="card" aria-label="Report section 6">
+<h2 id="关键机制与工程细节">5. Key mechanisms and engineering details</h2>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Module</th>
+<th scope="col">Implementation</th>
+<th scope="col">Key settings</th>
+<th scope="col">Reproducibility assessment</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Generation backend</td>
+<td>vLLM</td>
+<td>v0.7.3; Accelerate for multiple GPUs</td>
+<td>Version reported, but sampling temperatures/seed lists not centrally specified (Appendix F, p.50)</td>
+</tr>
+<tr class="even">
+<td>Model collection</td>
+<td>Qwen2/2.5, Llama3.x, Mistral, Phi, SmolLM2, Hymba, Minitron, etc.</td>
+<td>Default Hugging Face settings; maximum multi-shot input 4096</td>
+<td>Defaults introduce model-specific template differences</td>
+</tr>
+<tr class="odd">
+<td>Hardware</td>
+<td>H100-80GB、A100-80GB、L40-48GB、A40-48GB</td>
+<td>GPU memory reportedly measured on A100-80GB; about 24,000 GPU-hours total</td>
+<td>No per-model wall-clock, energy, or throughput (Appendix F, p.50)</td>
+</tr>
+<tr class="even">
+<td>Judge</td>
+<td>Mixed GPT-4-turbo / GPT-4o judging</td>
+<td>GPT-4-turbo for mathematics; GPT-4o for science/common sense</td>
+<td>High agreement, but evaluator regime changes by task</td>
+</tr>
+<tr class="odd">
+<td>Sorting</td>
+<td>Thirteen regex formats</td>
+<td>Lengths 8/16/32; positive-only and mixed-sign numbers</td>
+<td>98.8% agreement on 400 human-checked examples (Table 2, p.4)</td>
+</tr>
+<tr class="even">
+<td>Quantization</td>
+<td>GPTQ-8/4、W8A8、W8A16、W4A16、FP8</td>
+<td>Checkpoints from Qwen/Neural Magic community collections</td>
+<td>Not a controlled ablation using one quantization toolchain</td>
+</tr>
+<tr class="odd">
+<td>Pruning/distillation</td>
+<td>SparseGPT, 2:4, Minitron, etc.</td>
+<td>Varying retraining/distillation status and data quantities</td>
+<td>Heterogeneous methods suit risk screening, not causal ranking</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section class="card" aria-label="Report section 7">
+<h2 id="数据集基准与指标">6. Datasets, benchmarks, and metrics</h2>
+<p>Mathematics includes GSM8K, MATH, MathQA; science ARC-Easy/Challenge; common sense CommonsenseQA, OpenBookQA, HellaSwag; algorithms six custom Sorting tasks; robustness GSM-Plus, MR-GSM8K, MR-Ben (§3.2 and appendices, pp.3,14–17). The main table shows GSM8K, ARC-E, ARC-C, CSQ, and Sorting_Avg with a simple equal-weight average:</p>
+<p>[ Overall=. ]</p>
+<p>For Qwen2.5-0.5B, ((46.80+62.50+44.28+46.90+2.61)/5=40.62), matching Table 3 (recomputed here). This is convenient for ranking, but averages six sorting subsets into one column weighted equally with individual datasets. It is neither sample-weighted nor justified by task importance.</p>
+<p>Table 19 (p.51) lists test sizes: GSM8K 1,319; ARC-E 2,376; ARC-C 1,172; CommonsenseQA 1,140; HellaSwag 10,003; MathQA 2,985; OpenBookQA 500; MATH 5,000. Sorting subset counts are not clearly listed there, preventing overall-CI recomputation.</p>
+</section>
+<section class="card" aria-label="Report section 8">
+<h2 id="完整主结果矩阵同一家族六个规模">7. Complete main-results matrix: six scales within one family</h2>
+<p>The table fixes Qwen2.5, no quantization, and Direct I/O to avoid mixing family/compression with scale. Bold marks column bests; Overall Δ is versus the preceding size. Pp and relative changes are recomputed here; original values come from Table 3 (p.5).</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<colgroup>
+<col style="width: 9%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Model</th>
+<th scope="col" style="text-align: right;">GSM8K</th>
+<th scope="col" style="text-align: right;">ARC-E</th>
+<th scope="col" style="text-align: right;">ARC-C</th>
+<th scope="col" style="text-align: right;">CSQ</th>
+<th scope="col" style="text-align: right;">Sorting Avg</th>
+<th scope="col" style="text-align: right;">Overall</th>
+<th scope="col" style="text-align: right;">Overall Δ</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Qwen2.5-0.5B</td>
+<td style="text-align: right;">46.80±0.77</td>
+<td style="text-align: right;">62.50±0.21</td>
+<td style="text-align: right;">44.28±1.03</td>
+<td style="text-align: right;">46.90±1.49</td>
+<td style="text-align: right;">2.61</td>
+<td style="text-align: right;">40.62</td>
+<td style="text-align: right;">—</td>
+</tr>
+<tr class="even">
+<td>Qwen2.5-1.5B</td>
+<td style="text-align: right;">70.00±0.53</td>
+<td style="text-align: right;">87.58±0.21</td>
+<td style="text-align: right;">73.81±0.30</td>
+<td style="text-align: right;">71.85±0.48</td>
+<td style="text-align: right;">29.11</td>
+<td style="text-align: right;">66.47</td>
+<td style="text-align: right;">+25.85 pp / +63.64%</td>
+</tr>
+<tr class="odd">
+<td>Qwen2.5-3B</td>
+<td style="text-align: right;">84.74±0.28</td>
+<td style="text-align: right;">93.49±0.07</td>
+<td style="text-align: right;">83.73±0.38</td>
+<td style="text-align: right;">76.25±0.29</td>
+<td style="text-align: right;">39.89</td>
+<td style="text-align: right;">75.62</td>
+<td style="text-align: right;">+9.15 pp / +13.77%</td>
+</tr>
+<tr class="even">
+<td>Qwen2.5-7B</td>
+<td style="text-align: right;">91.76±0.20</td>
+<td style="text-align: right;">96.03±0.17</td>
+<td style="text-align: right;">90.53±0.12</td>
+<td style="text-align: right;">82.66±0.14</td>
+<td style="text-align: right;">57.67</td>
+<td style="text-align: right;">83.73</td>
+<td style="text-align: right;">+8.11 pp / +10.72%</td>
+</tr>
+<tr class="odd">
+<td>Qwen2.5-14B</td>
+<td style="text-align: right;">94.29±0.40</td>
+<td style="text-align: right;">97.87±0.05</td>
+<td style="text-align: right;">93.37±0.22</td>
+<td style="text-align: right;">84.08±0.54</td>
+<td style="text-align: right;">74.61</td>
+<td style="text-align: right;">88.84</td>
+<td style="text-align: right;">+5.11 pp / +6.10%</td>
+</tr>
+<tr class="even">
+<td><strong>Qwen2.5-32B</strong></td>
+<td style="text-align: right;"><strong>95.40±0.29</strong></td>
+<td style="text-align: right;"><strong>98.26±0.10</strong></td>
+<td style="text-align: right;"><strong>95.25±0.18</strong></td>
+<td style="text-align: right;"><strong>87.11±0.37</strong></td>
+<td style="text-align: right;"><strong>87.39</strong></td>
+<td style="text-align: right;"><strong>92.64</strong></td>
+<td style="text-align: right;">+3.80 pp / +4.28%</td>
+</tr>
+</tbody>
+</table></div>
+<p>Saturation is clear but asynchronous: GSM8K gains only another 3.64 pp beyond 7B, whereas Sorting rises from 57.67 to 87.39, another 29.72 pp. Diminishing scale returns on an established math set do not automatically transfer to longer algorithmic execution.</p>
+</section>
+<section class="card" aria-label="Report section 9">
+<h2 id="量化真正稳定的是-8-bit4-bit-的风险集中在小模型和长执行">8. Quantization: 8-bit is stable; 4-bit risk concentrates in small models and long execution</h2>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Qwen2.5</th>
+<th scope="col">Variant</th>
+<th scope="col" style="text-align: right;">GPU GB</th>
+<th scope="col" style="text-align: right;">Overall</th>
+<th scope="col" style="text-align: right;">Δ versus full precision</th>
+<th scope="col" style="text-align: right;">Sorting Avg Δ</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>0.5B</td>
+<td>GPTQ-8</td>
+<td style="text-align: right;">0.71</td>
+<td style="text-align: right;">40.36</td>
+<td style="text-align: right;">−0.26 pp / −0.64%</td>
+<td style="text-align: right;">0.00 pp</td>
+</tr>
+<tr class="even">
+<td>0.5B</td>
+<td>GPTQ-4</td>
+<td style="text-align: right;">1.12</td>
+<td style="text-align: right;">32.55</td>
+<td style="text-align: right;">−8.07 pp / −19.87%</td>
+<td style="text-align: right;">−1.11 pp</td>
+</tr>
+<tr class="odd">
+<td>3B</td>
+<td>GPTQ-8</td>
+<td style="text-align: right;">4.21</td>
+<td style="text-align: right;">75.72</td>
+<td style="text-align: right;">+0.10 pp / +0.13%</td>
+<td style="text-align: right;">−0.33 pp</td>
+</tr>
+<tr class="even">
+<td>3B</td>
+<td>GPTQ-4</td>
+<td style="text-align: right;">2.88</td>
+<td style="text-align: right;">71.23</td>
+<td style="text-align: right;">−4.39 pp / −5.81%</td>
+<td style="text-align: right;">−10.45 pp</td>
+</tr>
+<tr class="odd">
+<td>7B</td>
+<td>GPTQ-8</td>
+<td style="text-align: right;">9.63</td>
+<td style="text-align: right;">83.97</td>
+<td style="text-align: right;">+0.24 pp / +0.29%</td>
+<td style="text-align: right;">+1.11 pp</td>
+</tr>
+<tr class="even">
+<td>7B</td>
+<td>GPTQ-4</td>
+<td style="text-align: right;">6.48</td>
+<td style="text-align: right;">78.40</td>
+<td style="text-align: right;">−5.33 pp / −6.37%</td>
+<td style="text-align: right;">−23.78 pp</td>
+</tr>
+<tr class="odd">
+<td>14B</td>
+<td>GPTQ-8</td>
+<td style="text-align: right;">17.24</td>
+<td style="text-align: right;">89.02</td>
+<td style="text-align: right;">+0.18 pp / +0.20%</td>
+<td style="text-align: right;">+0.17 pp</td>
+</tr>
+<tr class="even">
+<td>14B</td>
+<td>GPTQ-4</td>
+<td style="text-align: right;">10.65</td>
+<td style="text-align: right;">87.63</td>
+<td style="text-align: right;">−1.21 pp / −1.36%</td>
+<td style="text-align: right;">−5.05 pp</td>
+</tr>
+<tr class="odd">
+<td>32B</td>
+<td>GPTQ-8</td>
+<td style="text-align: right;">33.81</td>
+<td style="text-align: right;">92.65</td>
+<td style="text-align: right;">+0.01 pp / +0.01%</td>
+<td style="text-align: right;">−0.22 pp</td>
+</tr>
+<tr class="even">
+<td>32B</td>
+<td>GPTQ-4</td>
+<td style="text-align: right;">52.42</td>
+<td style="text-align: right;">92.67</td>
+<td style="text-align: right;">+0.03 pp / +0.03%</td>
+<td style="text-align: right;">−0.11 pp</td>
+</tr>
+</tbody>
+</table></div>
+<p>Original scores: Table 3 (p.5); differences recomputed here. The ±0.24 pp 8-bit fluctuations are near individual-task run variability and should not be interpreted as improved reasoning, only no detectable substantial loss. Four-bit shows a scale transition: 0.5B Overall loses 19.87% relatively, 7B mainly loses Sorting performance, and 32B barely changes. Notably, measured 32B GPTQ-4 memory is 52.42 GB, exceeding GPTQ-8's 33.81 GB: bitwidth is not end-to-end memory, so kernels, caches, and implementation paths require measurement.</p>
+</section>
+
+<figure class="figure" aria-labelledby="figure-q-title">
+  <p class="fig-title" id="figure-q-title">Qwen2.5 scale–8-bit capability frontier</p>
+  <p class="fig-sub">Overall accuracy (%); curves nearly overlap, but this is not proof of statistical equivalence.</p>
+  <div class="legend"><span><span class="swatch" style="background:#2a78d6"></span>Full precision</span><span><span class="swatch" style="background:#eb6834"></span>GPTQ 8-bit</span></div>
+  <svg class="chart" viewBox="0 0 900 360" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>Full-precision versus GPTQ 8-bit Overall across six Qwen2.5 sizes</title>
+    <desc>From 0.5B to 32B, both series rise from about 40 to about 93, with small gaps throughout.</desc>
+    <line x1="72" y1="265.7" x2="820" y2="265.7" stroke="var(--grid)"/><text x="58" y="270.7" text-anchor="end" font-size="13">40</text><line x1="72" y1="197.1" x2="820" y2="197.1" stroke="var(--grid)"/><text x="58" y="202.1" text-anchor="end" font-size="13">60</text><line x1="72" y1="128.6" x2="820" y2="128.6" stroke="var(--grid)"/><text x="58" y="133.6" text-anchor="end" font-size="13">80</text><line x1="72" y1="60.0" x2="820" y2="60.0" stroke="var(--grid)"/><text x="58" y="65.0" text-anchor="end" font-size="13">100</text><line x1="72" y1="60" x2="72" y2="300" stroke="var(--grid)"/><text x="90" y="330" text-anchor="middle" font-size="13">0.5B</text><text x="230" y="330" text-anchor="middle" font-size="13">1.5B</text><text x="370" y="330" text-anchor="middle" font-size="13">3B</text><text x="510" y="330" text-anchor="middle" font-size="13">7B</text><text x="650" y="330" text-anchor="middle" font-size="13">14B</text><text x="790" y="330" text-anchor="middle" font-size="13">32B</text>
+    <polyline points="90,263.6 230,175.0 370,143.6 510,115.8 650,98.3 790,85.2" fill="none" stroke="#2a78d6" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/><circle cx="90" cy="263.6" r="6" fill="#2a78d6" tabindex="0" data-tip="Full precision 0.5B: 40.62" aria-label="Full precision 0.5B 40.62"/><circle cx="230" cy="175.0" r="6" fill="#2a78d6" tabindex="0" data-tip="Full precision 1.5B: 66.47" aria-label="Full precision 1.5B 66.47"/><circle cx="370" cy="143.6" r="6" fill="#2a78d6" tabindex="0" data-tip="Full precision 3B: 75.62" aria-label="Full precision 3B 75.62"/><circle cx="510" cy="115.8" r="6" fill="#2a78d6" tabindex="0" data-tip="Full precision 7B: 83.73" aria-label="Full precision 7B 83.73"/><circle cx="650" cy="98.3" r="6" fill="#2a78d6" tabindex="0" data-tip="Full precision 14B: 88.84" aria-label="Full precision 14B 88.84"/><circle cx="790" cy="85.2" r="6" fill="#2a78d6" tabindex="0" data-tip="Full precision 32B: 92.64" aria-label="Full precision 32B 92.64"/><polyline points="90,264.5 230,174.1 370,143.2 510,115.0 650,97.6 790,85.2" fill="none" stroke="#eb6834" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/><circle cx="90" cy="264.5" r="6" fill="#eb6834" tabindex="0" data-tip="GPTQ 8-bit 0.5B: 40.36" aria-label="GPTQ 8-bit 0.5B 40.36"/><circle cx="230" cy="174.1" r="6" fill="#eb6834" tabindex="0" data-tip="GPTQ 8-bit 1.5B: 66.71" aria-label="GPTQ 8-bit 1.5B 66.71"/><circle cx="370" cy="143.2" r="6" fill="#eb6834" tabindex="0" data-tip="GPTQ 8-bit 3B: 75.72" aria-label="GPTQ 8-bit 3B 75.72"/><circle cx="510" cy="115.0" r="6" fill="#eb6834" tabindex="0" data-tip="GPTQ 8-bit 7B: 83.97" aria-label="GPTQ 8-bit 7B 83.97"/><circle cx="650" cy="97.6" r="6" fill="#eb6834" tabindex="0" data-tip="GPTQ 8-bit 14B: 89.02" aria-label="GPTQ 8-bit 14B 89.02"/><circle cx="790" cy="85.2" r="6" fill="#eb6834" tabindex="0" data-tip="GPTQ 8-bit 32B: 92.65" aria-label="GPTQ 8-bit 32B 92.65"/>
+  </svg>
+  <figcaption>Source: ThinkSLM Table 3 (p.5); single y-axis is Overall accuracy (%). Hover or keyboard-focus points for exact values.</figcaption>
+</figure>
+<section class="card" aria-label="Report section 10">
+<h2 id="鲁棒性逐层消融与相变">9. Robustness, layered ablations, and transitions</h2>
+<h3 id="训练来源">9.1 Training origins</h3>
+<p>Qwen2.5-3B Base→Instruct: GSM8K 77.91→84.74 (+6.83 pp), GSM-Plus 60.44→68.33 (+7.89 pp), MR-GSM8K 8.1→11.0 (+2.9), but MR-Ben average only 6.9→8.8 (+1.9). Instruction tuning helps solving and surface perturbations more than detecting others' reasoning errors (Table 4, p.8; differences recomputed).</p>
+<h3 id="量化与规模">9.2 Quantization and scale</h3>
+<p>Qwen2.5-32B and GPTQ-8 both score 55.6 on MR-GSM8K; GSM-Plus is 82.71 versus 82.78, MR-Ben average 21.4 versus 21.3 (Table 4, p.8). This is relatively clean evidence of preservation, but no equivalence test was performed; matching decimal values do not prove statistical equality.</p>
+<h3 id="剪枝">9.3 Pruning</h3>
+<p>Llama-3.1-8B MR-GSM8K is 24.2 unpruned, 23.3 with W8A16, and zero after 2:4 pruning; GSM-Plus is 67.10, 66.78, and 35.17 (Table 4, p.8). Appendix A.6 (p.17) admits skipping ARC-E/C and CSQ for some pruned models because outputs are nonsensical and accuracy near zero. This is a discrete transition into unscorable responses, not merely a few lost average points.</p>
+<h3 id="提示">9.4 Prompting</h3>
+<p>Figure 1c and §4.4 (pp.6–7) report only about 2% gains from CoT for post-2024 models, with complex prompts sometimes hurting. Yet Appendix Table 9 gives pruned models 10–20 pp gains from CoT over Direct I/O: Llama-3.1-8B 2:4 rises 51.86%→60.27%, then falls to 1.95% with five-shot CoT (p.33). Prompting matters less only for stronger aligned models; after structural damage, it becomes an unstable compensator.</p>
+<h3 id="超参敏感性">9.5 Hyperparameter sensitivity</h3>
+<p>The paper<strong>Not reported</strong>systematic sweeps of quantization calibration size, GPTQ block/group settings, temperature/sampling, or MR-Score weights, nor continuous pruning-rate curves. Observed transitions use discrete checkpoints: stable 8-bit, degraded small-model 4-bit, and collapsed 2:4 pruning. Missing intermediate points prevent identifying critical bitwidths or sparsity rates.</p>
+</section>
+<section class="card" aria-label="Report section 11">
+<h2 id="统计显著性报告得多但证据链仍未闭合">10. Statistical significance: extensive reporting, but an incomplete evidence chain</h2>
+<p>Positively, experiments reportedly repeat three times. Table 1 gives McNemar tests, MAE, and 1,000-bootstrap CIs for judges: GPT-4-turbo agreement 0.99, 95% CI [0.98,1.00], p=0.249; GPT-4o 0.98, [0.97,0.99], p=0.156 (p.4).</p>
+<p>Four boundaries remain. First, p&gt;0.05 means failure to reject zero difference, not passing an equivalence test. Second, main results lack paired between-model significance, CIs, and multiple-comparison correction. Third, §4 says three-run variance is always below 1.49%, yet Table 7 includes standard deviations ±3.25 and ±2.79, and Table 10 includes ±5.67, inconsistent with that statement (pp.5,32,34). Fourth, Sorting_Avg and Overall lack standard deviations, so the ordering of 32B scores 92.64, 92.65, and 92.67 may not reproduce.</p>
+<p>This report therefore treats large effects such as +35.78 pp or MR 24.2→0 as credible directions, while interpreting 0.01–0.24 pp quantization differences as preservation, not improvement.</p>
+</section>
+<section class="card" aria-label="Report section 12">
+<h2 id="真正贡献可复用设计与迁移潜力">11. Genuine contributions, reusable design, and transfer potential</h2>
+<p>There are three contributions. First, calibrate evaluators before scaling the model matrix, avoiding exact-match confusion between formatting and reasoning errors. Second, show capability–memory frontiers within families across sizes/bitwidths: 8-bit is a more conservative engineering starting point than structured pruning. Third, extend final-answer accuracy to perturbations, first-error localization, and explanations, exposing substantial metareasoning gaps despite saturation on older benchmarks.</p>
+<p>The reusable design is a three-stage evaluation, not another overall leaderboard:</p>
+<ol type="1">
+<li><strong>Output judgeability:</strong> anchor judges/parsers to humans and record unparseable rates;</li>
+<li><strong>Task capability:</strong> fix prompts/budgets and test mathematics, science, common sense, and algorithmic execution;</li>
+<li><strong>Stress testing:</strong> paired perturbations, process-error localization, and post-compression regression tests.</li>
+</ol>
+<p>For code models, replace Sorting with unit-test sequences and bug localization; for medical models, replace MR-Ben with first-error diagnosis-chain analysis. For edge models, add TTFT, TPOT, energy, and peak RAM to GPU memory, then analyze joint bitwidth–kernel Pareto frontiers.</p>
+</section>
+<section class="card" aria-label="Report section 13">
+<h2 id="相关工作问题来源与技术来源链">12. Related work: problem origins and technical lineage</h2>
+<h3 id="gsm-plusacl-2024-long">12.1 GSM-Plus（ACL 2024 Long）</h3>
+<p><strong>Problem addressed:</strong> Generates GSM8K perturbations involving value substitution, digit expansion, integer/decimal/fraction conversion, added/inverse operations, paraphrases, distractors, and critical thinking. The original evaluates 25 models and four prompts, showing that solving originals does not imply perturbation robustness (GSM-Plus abstract/text).<strong>Remaining gap:</strong> It targets larger LLMs, without systematically testing small or compressed models' robustness retention.<strong>ThinkSLM's response:</strong> place GSM-Plus alongside GSM8K and report drops: Qwen2.5-32B falls 95.40→82.71, still a 12.69 pp decline (Table 4, p.8).<strong>Transferred design:</strong> Paired changes to surface form or operational conditions become compression regression tests beyond static accuracy.</p>
+<h3 id="mr-gsm8karxiv-2312.17080v4">12.2 MR-GSM8K（arXiv 2312.17080v4）</h3>
+<p><strong>Problem addressed:</strong> Turns models from students into teachers: judge correctness, find the first wrong step, and explain it, combining MCC, step accuracy, and reason accuracy into MR-Score. Some models approach GPT-4 on GSM8K yet trail by over 20 absolute points on MR-GSM8K (original abstract).<strong>Remaining gap:</strong> The original does not cover a broad SLM compression lineage.<strong>ThinkSLM's response:</strong> Tests 3B/8B/32B/70B and quantized/pruned versions: Qwen32B reaches 55.6 versus the cited GPT-4-turbo 53.0; Llama8B scores 24.2 and zero after pruning (Table 8, p.33).<strong>Transferred design:</strong> Moving from correct results to process auditing magnifies the pruning fragility found by ThinkSLM.</p>
+<h3 id="deepseek-r1nature-2025-arxiv-2501.12948">12.3 DeepSeek-R1（Nature 2025 / arXiv 2501.12948）</h3>
+<p><strong>Problem addressed:</strong> RL incentivizes reflection, verification, and adaptive strategies; large-model reasoning traces are distilled into six dense checkpoints: 1.5B, 7B, 8B, 14B, 32B, 70B (official paper/model cards).<strong>Remaining gap:</strong> A single model report cannot broadly separate distillation gains from family, prompts, and compression.<strong>ThinkSLM's response:</strong> Treats teacher-driven distillation as a training-origin axis alongside Minitron, Qwen, Llama, and others in one task matrix.<strong>Transferred design:</strong> Small-model reasoning arising from transferable training signals, not only spontaneous scale emergence, becomes a central ThinkSLM hypothesis.</p>
+<h3 id="minitronarxiv-2408.11796v4">12.4 Minitron（arXiv 2408.11796v4）</h3>
+<p><strong>Problem addressed:</strong> Depth/width pruning of Llama-3.1-8B and Mistral-NeMo-12B, followed by distillation recovery to 4B/8B; the official repository releases implementation and weights.<strong>Remaining gap:</strong> The original mainly uses common LM Evaluation Harness benchmarks, with limited long algorithmic execution/metareasoning checks.<strong>ThinkSLM's response:</strong> Evaluates Minitron alongside direct SparseGPT/2:4 on Sorting, GSM-Plus, and MR tasks. Phi-3.5-mini 3.8B scores 85.47% on GSM8K versus Minitron-4B at 27.95 (Table 3, pp.6–7), showing similar parameter counts do not erase training-history differences.<strong>Transferred design:</strong> Whether pruning is followed by recovery training, and which distillation data are used, must be part of checkpoint identity.</p>
+<h3 id="非线性技术演进树">12.5 Nonlinear technical evolution tree</h3>
+<pre class="text"><code>GSM8K: final-answer correctness
+├─ GSM-Plus: robustness to paired perturbations ──────────┐
+├─ MR-GSM8K: auditing intermediate reasoning ───────┐     │
+└─ CoT / RL: explicit processes and self-verification │     │
+       └─ DeepSeek-R1: large-model RL → small-model distillation ─┐
+                                                                ├─ ThinkSLM: unified measurement matrix
+Parameter compression                                           │   ├─ 8-bit: mostly preserved performance
+├─ GPTQ / FP8: numerical approximation ─────────────────────────┤   ├─ 4-bit: scale-dependent risk
+└─ Minitron / SparseGPT / 2:4: remove structure → retrain ────────┘   └─ pruning: process-capability transition</code></pre>
+<p>Two shifts drive this evolution: from answer correctness to stable perturbation/process behavior, and from parameter count alone to training origins and compression paths. ThinkSLM is a convergence point, not a new training algorithm.</p>
+<h3 id="跨论文对标">12.6 Cross-paper comparison</h3>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Core object</th>
+<th scope="col">Smallest evaluation unit</th>
+<th scope="col">Compression coverage</th>
+<th scope="col">Process-error coverage</th>
+<th scope="col">Design adopted by ThinkSLM</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>GSM-Plus</td>
+<td>Meaning-preserving mathematical perturbations</td>
+<td>Paired-question accuracy</td>
+<td>No</td>
+<td>No</td>
+<td>Original-to-perturbed performance drop</td>
+</tr>
+<tr class="even">
+<td>MR-GSM8K</td>
+<td>Solution-chain auditing</td>
+<td>Correctness / first error / reason</td>
+<td>No</td>
+<td>Yes</td>
+<td>MR-Score stress test</td>
+</tr>
+<tr class="odd">
+<td>DeepSeek-R1</td>
+<td>RL and distilled model families</td>
+<td>benchmark accuracy/pass@k</td>
+<td>Distillation</td>
+<td>Partial</td>
+<td>Training origin takes priority over parameter labels</td>
+</tr>
+<tr class="even">
+<td>Minitron</td>
+<td>Pruning + distillation</td>
+<td>Compressed-model benchmarks</td>
+<td>Yes</td>
+<td>No</td>
+<td>Recovery training is part of the compression path</td>
+</tr>
+<tr class="odd">
+<td>ThinkSLM</td>
+<td>72-model multi-axis matrix</td>
+<td>Task/prompt/compression slices</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Integrates and audits interactions</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section class="card" aria-label="Report section 14">
+<h2 id="论文自述限制">13. Author-stated limitations</h2>
+<ol type="1">
+<li><strong>Judge bias.</strong> The authors acknowledge GPT-4 is not perfectly accurate; Appendix D.8 even shows nonsensical outputs marked correct. Full human supervision is impractical (Limitations p.14; Appendix D.8 pp.48–49).</li>
+<li><strong>Sorting parser errors.</strong> Despite 98.8% agreement on 400 checks, regex can reject correct answers in unusual formats (Limitations p.14; Table 2 p.4).</li>
+<li><strong>Narrow task coverage.</strong> Mostly standard academic benchmarks, lacking real-world and domain reasoning, so findings do not directly transfer to medicine, law, or software engineering (Limitations p.14).</li>
+</ol>
+</section>
+<section class="card" aria-label="Report section 15">
+<h2 id="独立批判">14. Independent critique</h2>
+<ol type="1">
+<li><strong>[Internal consistency]</strong> Because §3.3 describes three-annotator majority voting while Appendix G describes one graduate student repeating judgments three times, κ=0.87's participants and independence cannot be reconstructed, weakening judge calibration's foundation.</li>
+<li><strong>[Version governance]</strong> Because the final paper uses 17 benchmarks/1,000 examples while the project page says 14/800 and links to nonexistent code, users cannot identify the leaderboard's experimental version. The dynamic leaderboard is not an equivalent copy of final tables.</li>
+<li><strong>[Causal attribution]</strong> Because Qwen2.5-7B and Mistral-7B differ by 35.78 pp while also differing in pretraining tokens, quality, architecture, and alignment, training data is a plausible explanation, not a controlled causal conclusion.</li>
+<li><strong>[Statistical inference]</strong> Because GPT-4o's p=0.156 against humans merely fails to reject a difference, comparable/optimal claims require equivalence tests with prespecified tolerances. Nonsignificance does not establish equivalence.</li>
+<li><strong>[Multiple comparisons]</strong> Because 72 models across tasks/prompts generate many comparisons without correction, and Overall lacks variability, 32B scores 92.64/92.65/92.67 cannot establish real superiority.</li>
+<li><strong>[Selection bias]</strong> Because ARC-E/C and CSQ are skipped precisely when pruned models produce near-zero, nonsensical results, missingness is nonrandom. Showing only remaining tasks underestimates pruning's overall risk.</li>
+<li><strong>[Evaluation contamination]</strong> Because GSM8K and ARC have been public for years and training/distillation data may contain their patterns or answers, 95% static accuracy alone does not prove transferable reasoning. Sorting reduces contamination but also measures formatting execution.</li>
+<li><strong>[System extrapolation]</strong> Because about 24,000 GPU-hours are reported without per-model throughput, latency, energy, batch, or KV-cache definitions, deployability is only approximated by peak memory/disk. End-to-end cost advantages cannot be inferred.</li>
+</ol>
+</section>
+<section class="card" aria-label="Report section 16">
+<h2 id="开放挑战可直接执行的-head-to-head-空白">15. Open challenges: actionable head-to-head gaps</h2>
+<h3 id="理论">Theory</h3>
+<ul>
+<li><strong>Equivalence rather than difference testing:</strong> Fix Qwen2.5-7B/14B/32B and compare BF16, GPTQ-8, GPTQ-4. Apply paired per-question TOST with ±1 pp margins, stratifying GSM8K and Sorting. Does 8-bit meet a prespecified engineering tolerance?</li>
+<li><strong>Scale–bitwidth transitions:</strong> With one calibration set and GPTQ implementation, sweep 0.5/1.5/3/7/14/32B × 3/4/6/8 bits and fit distortion–reasoning-length interactions. Does 4-bit risk arise from capacity or accumulated execution error?</li>
+<li><strong>Process-score weights:</strong> Publish MR-GSM8K (w_1,w_2,w_3) and compare ranking stability under equal, expert, and IRT weights. Does Qwen32B's 2.6-point lead over GPT-4-turbo depend on weighting?</li>
+</ul>
+<h3 id="工程应用">Engineering applications</h3>
+<ul>
+<li><strong>Latency-matched comparison:</strong> On A100/H100/L40, run BF16, GPTQ-8, GPTQ-4, and 2:4 sparsity under equal TTFT/TPOT budgets. Report peak memory, tokens/s, energy, and accuracy to test whether memory gains become serving gains.</li>
+<li><strong>Unified checkpoint pipeline:</strong> Generate every quantized/pruned variant from one Qwen2.5 checkpoint with fixed calibration data/tokenizer, then compare community checkpoints. How much observed behavior comes from implementation differences?</li>
+<li><strong>Explicit failure rates:</strong> Do not skip nonsensical outputs. Add no-response, parse-fail, and semantic-invalid categories to Overall, distinguishing generation failure from reasoning failure.</li>
+</ul>
+<h3 id="新兴方向">Emerging directions</h3>
+<ul>
+<li><strong>Adaptive reasoning budgets:</strong> For the same 3B/7B models, compare Direct I/O, fixed CoT, AdaptThink, and TokenSkip at equal tokens/energy, grouped by difficulty. Is thinking less more economical than compressing weights?</li>
+<li><strong>Contamination resistance:</strong> Compare freshly generated, program-verified mathematics and hidden Sorting rules against GSM8K/ARC. Do family advantages survive decontamination?</li>
+<li><strong>Process faithfulness:</strong> For unchanged final answers with counterfactually replaced intermediate chains, compare MR-GSM8K judges, executable verifiers, and humans. Does high MR-Score reflect process tracking or judge-style matching?</li>
+</ul>
+</section>
+<section class="card" aria-label="Report section 17">
+<h2 id="近期工作雷达">16. Recent-work radar</h2>
+<ol type="1">
+<li><a href="https://aclanthology.org/2025.emnlp-main.73/">Thinking Out Loud: Do Reasoning Models Know When They’re Right?</a>(EMNLP 2025 Main): explicit confidence rationales support calibration, addressing ThinkSLM's correctness-only evaluation without self-knowledge measurement.</li>
+<li><a href="https://aclanthology.org/2025.emnlp-main.157/">Diagnosing Memorization in Chain-of-Thought Reasoning, One Token at a Time</a>(EMNLP 2025 Main): token-level reasoning-chain memorization diagnostics offer finer tools for contamination in old public benchmarks.</li>
+<li><a href="https://aclanthology.org/2025.emnlp-main.165/">TokenSkip: Controllable Chain-of-Thought Compression in LLMs</a>(EMNLP 2025 Main): compresses output tokens rather than weights. The official abstract reports Qwen2.5-14B GSM8K outputs reduced from 313 to 181 tokens with under 0.4% performance loss.</li>
+<li><a href="https://aclanthology.org/2025.emnlp-main.184/">AdaptThink: Reasoning Models Can Learn When to Think</a>(EMNLP 2025 Main): adaptively chooses Thinking/NoThinking, providing a serving-budget comparison beyond static CoT.</li>
+<li><a href="https://aclanthology.org/2025.emnlp-main.47/">Parallel Continuous Chain-of-Thought with Jacobi Iteration</a>(EMNLP 2025 Main): replaces serial continuous-thought-token dependencies with Jacobi parallel iterations, addressing ThinkSLM's missing latency dimension.</li>
+<li><a href="https://arxiv.org/abs/2501.12948">DeepSeek-R1</a>(Nature 2025, arXiv v2 2026-01-04): distills large-model RL reasoning into six dense sizes, remaining key upstream evidence for SLM training-origin effects.</li>
+<li><a href="https://arxiv.org/abs/2507.04023">LLMThinkBench: Towards Basic Math Reasoning and Overthinking</a>(2025 arXiv): studies overthinking on simple mathematics, a mechanistic comparison for ThinkSLM's finding that complex prompts sometimes hurt.</li>
+</ol>
+</section>
+<section class="card" aria-label="Report section 18">
+<h2 id="最终判断">17. Final assessment</h2>
+<p>ThinkSLM turns the slogan-like question of whether small models reason into a six-axis matrix with clear engineering signals: Qwen2.5-32B GPTQ-8 scores 92.65 Overall versus full precision 92.64 while reducing GPU memory 125→33.81 GB; Llama-3.1-8B 2:4 pruning drops MR-GSM8K 24.2→0. Eight-bit often preserves capability, while structural deletion can cross a reasoning-integrity threshold.</p>
+<p>It is a risk map rather than causal proof of training laws. Final paper, project page, and appendix conflict on benchmark/sample/annotator counts and code status; overall significance and budget-matched system metrics are missing. Deployment decisions should first reproduce common-source 8-bit/4-bit/2:4 comparisons and include no-response rate, TTFT, TPOT, and energy in one Pareto frontier.</p>
+<hr />
+<p><strong>Footnotes and index status:</strong> This report cites only the read final ThinkSLM PDF/appendices and public upstream-paper pages. Recomputations are explicitly marked.<code>ml-report-index.md</code> This entry was appended. HTML passed the Warm Editorial static validator (0 errors, 0 warnings), with responsive checks for light/dark/mobile structure. The environment lacks a <code>/usr/bin/chromium</code> or <code>/opt/pw-browsers</code> executable, and direct Playwright launch confirmed no browser, so<strong>actual screenshot checks were not completed</strong>, nor was the prohibited <code>playwright install</code>。</p>
+</section>
+</main>
+
+  <footer>Sources: ACL Anthology, arXiv, public project pages. Generated 2026-09-14.</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ Light' : '☾ Dark';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

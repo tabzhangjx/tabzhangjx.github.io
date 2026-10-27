@@ -1,0 +1,1103 @@
+---
+layout: null
+title: "PointMapPolicy"
+date: 2026-10-01
+topic: "rl-peft"
+tags: ["rl-peft", "robotics", "3d-representations"]
+excerpt: "PMP-xyz raises mean RoboCasa success from DP3’s27.04% to 49.12%, while multimodal PMP reaches 4.01 on CALVIN. The value of geometry versus color reverses with task semantics."
+permalink: "/blog/2026/10/01/pointmappolicy/en/"
+blog_post: false
+lang: "en"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_zh: "/blog/2026/10/01/pointmappolicy/"
+sitemap: true
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>PointMapPolicy: In-Depth Research Report · 2026-10-01</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  main { display: grid; gap: 22px; min-width: 0; }
+  .card.level2 { margin: 0; min-width: 0; }
+  .subsection { margin-top: 24px; }
+  .subsection h3 { margin-top: 0; }
+  blockquote { margin: 14px 0; padding: 10px 14px; border-left: 4px solid var(--chart-primary); background: var(--surface-2); color: var(--text-secondary); }
+  pre { overflow-x: auto; padding: 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); font-size: 12.5px; line-height: 1.55; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  p code, li code, td code { padding: .08em .3em; border-radius: 4px; background: var(--surface-2); }
+  ol, ul { padding-left: 1.35em; }
+  li + li { margin-top: .38em; }
+  .table-scroll { margin: 15px 0 22px; }
+  table { min-width: 720px; }
+  .figure { margin: 0; min-width: 0; max-width: 100%; }
+  p, li, td, th, a { overflow-wrap: anywhere; }
+  math[display="block"] { display: block; max-width: 100%; margin: 14px 0; padding: 10px 12px; overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+  .chart rect { outline: none; }
+  .chart rect:focus { stroke: var(--text-primary); stroke-width: 2; }
+  @media (max-width: 640px) {
+    .toolbar { position: static; justify-content: flex-end; margin-bottom: 10px; }
+    .hero { margin-top: 0; }
+    .chart { width: 760px; max-width: none; }
+    .figure { overflow-x: auto; }
+  }
+
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" aria-pressed="false">☾ Dark</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">NeurIPS 2025 · Embodied Intelligence · Imitation Learning</p>
+    <h1>PointMapPolicy</h1>
+    <p class="subtitle">Putting Dense3D Geometry Back into a Regular2D Grid</p>
+    <div class="meta" aria-label="Report metadata">
+      <span class="chip source">arXiv:2510.20406v3</span>
+      <span class="chip">2026-10-01</span>
+      <span class="chip">RGB-D · Point Map · Action Diffusion</span>
+    </div>
+    <p class="lede">PMP-xyz raises mean RoboCasa success from DP3’s27.04% to 49.12%, while multimodal PMP reaches 4.01 on CALVIN. The value of geometry versus color reverses with task semantics.</p>
+  </header>
+
+  <main>
+<figure class="figure" aria-labelledby="calvin-chart-title">
+      <p class="fig-title" id="calvin-chart-title">CALVIN ABC→D: mean consecutive tasks completed</p>
+      <p class="fig-sub">PMP reaches 4.01, up0.86 from same-backbone RGB’s3.15; Y-axis0–5.</p>
+      <div class="legend" aria-label="Legend">
+        <span><span class="swatch" style="background:var(--chart-primary)"></span>PointMapPolicy</span>
+        <span><span class="swatch" style="background:var(--chart-comparison)"></span>Comparison methods</span>
+      </div>
+      <svg class="chart" viewBox="0 0 900 350" role="img" xmlns="http://www.w3.org/2000/svg">
+        <title>Mean task-chain length for PointMapPolicy and four controls on CALVIN ABC→D</title>
+        <desc>3D Diffuser Actor 3.27，CLOVER 3.53，Seer-Large scratch 3.83，RGB 3.15，PMP 4.01。</desc>
+        <line x1="72" x2="850" y1="300.0" y2="300.0" stroke="var(--border)" stroke-width="1" /><text x="60" y="304.0" text-anchor="end" font-size="12">0</text><line x1="72" x2="850" y1="251.0" y2="251.0" stroke="var(--border)" stroke-width="1" /><text x="60" y="255.0" text-anchor="end" font-size="12">1</text><line x1="72" x2="850" y1="202.0" y2="202.0" stroke="var(--border)" stroke-width="1" /><text x="60" y="206.0" text-anchor="end" font-size="12">2</text><line x1="72" x2="850" y1="153.0" y2="153.0" stroke="var(--border)" stroke-width="1" /><text x="60" y="157.0" text-anchor="end" font-size="12">3</text><line x1="72" x2="850" y1="104.0" y2="104.0" stroke="var(--border)" stroke-width="1" /><text x="60" y="108.0" text-anchor="end" font-size="12">4</text><line x1="72" x2="850" y1="55.0" y2="55.0" stroke="var(--border)" stroke-width="1" /><text x="60" y="59.0" text-anchor="end" font-size="12">5</text><rect x="100" y="139.8" width="72" height="160.2" rx="6" fill="var(--chart-comparison)" opacity=".88" tabindex="0" data-tip="3DA Avg. len: 3.27" /><rect x="245" y="127.0" width="72" height="173.0" rx="6" fill="var(--chart-comparison)" opacity=".88" tabindex="0" data-tip="CLOVER Avg. len: 3.53" /><rect x="390" y="112.3" width="72" height="187.7" rx="6" fill="var(--chart-comparison)" opacity=".88" tabindex="0" data-tip="Seer-L scratch Avg. len: 3.83" /><rect x="535" y="145.7" width="72" height="154.3" rx="6" fill="var(--chart-comparison)" opacity=".88" tabindex="0" data-tip="RGB Avg. len: 3.15" /><rect x="680" y="103.5" width="72" height="196.5" rx="6" fill="var(--chart-primary)" opacity="1" tabindex="0" data-tip="PMP Avg. len: 4.01" /><text x="136" y="326" text-anchor="middle" font-size="12">3DA</text><text x="281" y="326" text-anchor="middle" font-size="12">CLOVER</text><text x="426" y="326" text-anchor="middle" font-size="12">Seer-L scratch</text><text x="571" y="326" text-anchor="middle" font-size="12">RGB</text><text x="716" y="326" text-anchor="middle" font-size="12">PMP</text>
+      </svg>
+      <figcaption>Source: core Table 2(official PDF p.7). Hover or keyboard-focus bars for exact values; also listed in the text table.</figcaption>
+    </figure>
+
+<p><strong>Date:</strong> 2026-10-01<br />
+<strong>Field:</strong> Reinforcement learning / agents / embodied intelligence<br />
+<strong>Core paper:</strong> <em>PointMapPolicy: Structured Point Cloud
+Processing for Multi-Modal Imitation Learning</em><br />
+<strong>Conference:</strong> NeurIPS 2025 Main Conference Track</p>
+<blockquote>
+<p><strong>Core positioning:</strong> PointMapPolicy(PMP) preserves RGB-D pixel topology instead of reducing point clouds to sparse sets. Each pixel is backprojected to aligned XYZ point maps, letting standard vision encoders process3D geometry and jointly condition four-step action diffusion with RGB tokens.</p>
+</blockquote>
+<section id="链接验证表" class="card level2">
+<h2>0. Link verification table</h2>
+<p>All URLs were visited on 2026-10-01; version dates follow arXiv submission history. Code status reflects repository contents that day; creating a repository does not equal releasing a reproducible implementation.</p>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0">
+<table style="width:100%;">
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Paper / resource</th>
+<th scope="col">Conference / official entry</th>
+<th scope="col">arXiv version and date</th>
+<th scope="col">Code</th>
+<th scope="col">Data / weights</th>
+<th scope="col">Project page / videos</th>
+<th scope="col">Verification conclusion</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>PointMapPolicy(core)</strong></td>
+<td><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/eacc8ae341d15d2c13c02fef88189db3-Abstract-Conference.html">NeurIPS
+2025 proceedings</a>；<a
+href="https://openreview.net/forum?id=ZR2mdBrhJX">OpenReview</a></td>
+<td><a
+href="https://arxiv.org/abs/2510.20406">2510.20406v3</a>,2026-01-24; v1 dated 2025-10-23</td>
+<td><a
+href="https://github.com/ALRhub/PointMapPolicy">ALRhub/PointMapPolicy</a>: only 1 commit, README/License/.gitignore,<strong>no training or evaluation code released</strong></td>
+<td><strong>Not public / not found</strong></td>
+<td><a
+href="https://point-map.github.io/Point-Map/">Project page and real-robot videos</a></td>
+<td>Official paper, version history, and project accessible; repository is not runnable</td>
+</tr>
+<tr class="even">
+<td>Diffusion Policy</td>
+<td>RSS 2023；<a
+href="https://diffusion-policy.cs.columbia.edu/">Paper project</a></td>
+<td><a
+href="https://arxiv.org/abs/2303.04137">2303.04137v5</a>，2024-03-14</td>
+<td><a
+href="https://github.com/real-stanford/diffusion_policy">real-stanford/diffusion_policy</a></td>
+<td>Code page provides data/training instructions</td>
+<td>Project page includes videos</td>
+<td>Direct technical origin of action diffusion</td>
+</tr>
+<tr class="odd">
+<td>3D Diffusion Policy（DP3）</td>
+<td>RSS 2024</td>
+<td><a
+href="https://arxiv.org/abs/2403.03954">2403.03954v7</a>，2024-09-27</td>
+<td><a
+href="https://github.com/YanjieZe/3D-Diffusion-Policy">YanjieZe/3D-Diffusion-Policy</a></td>
+<td>Project page states code/data released</td>
+<td><a href="https://3d-diffusion-policy.github.io/">Project page</a></td>
+<td>Sparse-point-cloud + lightweight point-encoder baseline</td>
+</tr>
+<tr class="even">
+<td>3D Diffuser Actor（3DA）</td>
+<td>CoRL / PMLR 2024</td>
+<td><a
+href="https://arxiv.org/abs/2402.10885">2402.10885v3</a>，2024-07-25</td>
+<td><a href="https://3d-diffuser-actor.github.io/">Project entry point</a></td>
+<td>Project provides model entry points; individual weight availability unverified</td>
+<td><a href="https://3d-diffuser-actor.github.io/">Project page and videos</a></td>
+<td>3D feature lifting + diffusion pose trajectories</td>
+</tr>
+<tr class="odd">
+<td>Point Cloud Matters / OBSBench</td>
+<td><a
+href="https://proceedings.neurips.cc/paper_files/paper/2024/hash/8e5dc5969a6174fcaaececd890c7f59b-Abstract-Datasets_and_Benchmarks_Track.html">NeurIPS
+2024 D&amp;B</a></td>
+<td><a href="https://arxiv.org/abs/2402.02500">2402.02500</a></td>
+<td><a
+href="https://github.com/HaoyiZhu/PointCloudMatters">HaoyiZhu/PointCloudMatters</a></td>
+<td>OBSBench code entry public</td>
+<td><a href="https://haoyizhu.github.io/pcm/">Project page</a></td>
+<td>Systematic observation-modality comparison across 125 tasks</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="候选池去重与随机选择" class="card level2">
+<h2>1. Candidate pool, deduplication, and random selection</h2>
+<p>First check <code>ml-report-index.md</code>. Recent14-day coverage includes Embodied-R1(point-based embodied reasoning), BridgeVLA(three-view VLA), VIKI-R(multi-robot collaboration), and DFM(progressive flow matching), so duplicates and closely overlapping themes are excluded. Candidates mainly come from NeurIPS 2025 Main, keeping the core within 24 months.</p>
+<ol type="1">
+<li>Hyper-GoalNet: Goal-Conditioned Manipulation Policy Learning with
+HyperNetworks</li>
+<li>Learning and Planning Multi-Agent Tasks via an MoE-based World
+Model（M3W）</li>
+<li>Group-in-Group Policy Optimization for LLM Agent
+Training（GiGPO）</li>
+<li>MonoLift: Learning 3D Manipulation Policies from Monocular RGB via
+Distillation</li>
+<li>Improving Generative Behavior Cloning via Self-Guidance and Adaptive
+Online Replanning</li>
+<li>Continual Knowledge Adaptation for Reinforcement Learning</li>
+<li>FreqPolicy: Frequency Autoregressive Visuomotor Policy</li>
+<li>DynaRend: Learning 3D Dynamics via Masked Future Rendering</li>
+<li>Agentic RL Scaling Law: Spontaneous Code Execution for Mathematical
+Problem Solving</li>
+<li>Planning without Search: Refining Frontier LLMs with Offline
+Goal-Conditioned RL</li>
+<li>HMARL-CBF: Hierarchical MARL with Control Barrier Functions</li>
+<li>Curriculum Design for Trajectory-Constrained Agent</li>
+<li>Dynamic Test-Time Compute Scaling in Control Policy（DA-SIP）</li>
+<li>WALL-E: World Alignment by NeuroSymbolic Learning</li>
+<li><strong>PointMapPolicy: Structured Point Cloud Processing for
+Multi-Modal Imitation Learning</strong></li>
+<li>Self-Challenging Language Model Agents</li>
+<li>DexFlyWheel: A Scalable and Self-improving Data Generation
+Framework</li>
+<li>Predictive Preference Learning from Human Interventions</li>
+<li>Collaborative Reasoner: Self-Improving Social Agents</li>
+<li>3D Equivariant Visuomotor Policy Learning via Spherical
+Projection</li>
+</ol>
+<p>Sources span NeurIPS proceedings, OpenReview, arXiv, Semantic Scholar, Hugging Face Papers, and Papers with Code/official projects. Executed
+<code>shuf -i 1-20 -n 1</code> returned <strong>15</strong>, selecting PointMapPolicy. Official paper, arXiv v3, videos, and tables suffice for in-depth reading;<strong>0 redraws</strong>。</p>
+</section>
+<section id="motivation痛点不是没有三维而是三维进入网络前已被损坏"
+class="card level2">
+<h2>2. Motivation:3D geometry is damaged before reaching the network</h2>
+<p>Robots obtain semantics from RGB and geometry from depth, with asymmetric limitations. RGB retains a regular grid suitable for CNNs/vision Transformers but encodes distance, scale, and camera geometry implicitly. Point clouds expose XYZ but form unordered sets, often requiring FPS/KNN, voxelization, or feature lifting. The paper asks:<strong>Why scatter and downsample depth cameras’ originally dense, pixel-aligned geometry, then laboriously rebuild neighborhoods?</strong>(Official PDF pp.1–3; Figure 1)</p>
+<p>Evidence is direct: RoboCasa3D baselines DP3 and 3DA average only
+<strong>27.04%</strong> with <strong>18.50%</strong>success, versus RGB-only
+<strong>40.16%</strong>and depth-only <strong>44.00%</strong>; regular XYZ point maps in PMP-xyz achieve <strong>49.12%</strong>. Relative to DP3, this is
+<strong>+22.08 pp / +81.66%</strong>, and relative to depth-only, <strong>+5.12
+pp / +11.64%</strong>(Table 1, PDF p.6). Using3D does not automatically preserve3D: representation losses may matter more than policy architecture.</p>
+<p>The same evidence rejects universal geometric superiority. CALVIN instructions frequently refer to color; PMP-xyz averages only <strong>2.03</strong>success, versus RGB-only
+<strong>3.15</strong>tasks, versus RGB+XYZ PMP’s <strong>4.01</strong>(Table 2, PDF p.7). The reusable insight is:<strong>Avoid sparsification when contact geometry dominates; preserve appearance when language–color semantics dominate. Cross-task systems must switch between these evidence sources.</strong></p>
+</section>
+<section id="故事线假设与权衡" class="card level2">
+<h2>3. Argument, assumptions, and trade-offs</h2>
+<p>The narrative has four steps.</p>
+<ol type="1">
+<li><strong>Representation diagnosis.</strong>
+Traditional point-cloud pipelines sparsify for manageable compute, discarding local structure needed for precise contact; RGB lacks explicit3D relationships.</li>
+<li><strong>Recovering structure.</strong> Depth already lies on a regular H×W grid. Backproject each pixel into XYZ using camera intrinsics while retaining pixel location, producing a point map. Extrinsics align multiple maps into one world frame.</li>
+<li><strong>Reusing networks.</strong> Regular grids work directly with ResNet, ConvNeXt, or ViT, without specialized point operators. Separate RGB/XYZ encoders feed Add, Cat, or cross-attention fusion.</li>
+<li><strong>Action generation.</strong> Multimodal tokens, language CLIP tokens, and noisy action chunks enter xLSTM X-Blocks trained as EDM denoisers. Four-step DDIM generates continuous action sequences at test time(PDF pp.4–5).</li>
+</ol>
+<p>Three assumptions are required: pixel-level RGB/depth calibration;2D neighborhoods usually corresponding to meaningful3D neighborhoods; and a few global tokens plus concatenation letting xLSTM select information. PMP avoids FPS/KNN and large point-token sets but depends on depth noise, occlusion boundaries, and calibration. Reusing2D encoders does not equate convolutional translation equivariance with 3D SE(3) equivariance.</p>
+</section>
+<section id="方程级形式化与流程" class="card level2">
+<h2>4. Formalization and procedure</h2>
+<p>Given expert trajectory set</p>
+<p>[ D_={<em>i}</em>{i=1}^{N}, _i=((s_1,a_1),,(s_K,a_K)), ]</p>
+<p>the policy learns conditional distribution(<em>(as)), where(a=(a_k,,a</em>{k+H})) is an action chunk. PMP uses EDM continuous-time action diffusion:</p>
+<p>[ da=(_t_t-_t)_t _ap_t(as)dt+_t d_t. ]</p>
+<p>The denoiser takes noisy actions(a+), observations(s), and noise scale(_t), optimizing</p>
+<p>[ L_{SM}=E_{,a,} . ]</p>
+<p>These are core Eqs.(1)–(2), official PDF p.4. Point maps come from depth backprojection:</p>
+<p>[ M_t=(D,K_{int}<sup>{-1})R</sup>{HW}, ]</p>
+<p>Then(K_ext) transforms camera XYZ coordinates into one world frame. The key is retaining one-to-one((u,v)(X,Y,Z)) indexing, not merely creating point clouds(Eq.(3), PDF p.4).</p>
+<pre class="text"><code>Inputs: multiview RGB-D, camera intrinsics/extrinsics, language instruction,1-frame history
+1  Per camera: depth --backprojection--&gt; H×W×3 XYZ point map
+2  Transform XYZ to world coordinates via extrinsics; remove invalid depth
+3  RGB --pretrained vision encoder--&gt; RGB tokens
+4  XYZ --vision encoder trained from scratch--&gt; geometry tokens
+5  Language --CLIP ViT-B/32--&gt; language tokens
+6  Concatenate RGB/XYZ tokens and add positional encoding
+7  Sample noisy action chunks; X-Blocks predict clean actions
+8  At test time run4-step DDIM and execute receding-horizon chunks
+Output: continuous action chunks of length10</code></pre>
+</section>
+<section id="关键机制与工程细节" class="card level2">
+<h2>5. Key mechanisms and engineering details</h2>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0">
+<table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Component</th>
+<th scope="col">Design</th>
+<th scope="col">Problem addressed</th>
+<th scope="col">Cost / risk</th>
+<th scope="col">Source</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Point map</td>
+<td>H×W×3 per-pixel XYZ; filter too-near/far depth</td>
+<td>Preserves dense structure without FPS/KNN</td>
+<td>Depends on depth quality/calibration</td>
+<td>Eq. (3), PDF p.4</td>
+</tr>
+<tr class="even">
+<td>Multicamera alignment</td>
+<td>Extrinsics unify world coordinates</td>
+<td>Coordinates comparable across views</td>
+<td>Extrinsic errors systematically shift all points</td>
+<td>§3.3, PDF p.4</td>
+</tr>
+<tr class="odd">
+<td>RGB encoding</td>
+<td>ImageNet-pretrained FiLM-ResNet50 / ConvNeXt-v2</td>
+<td>Color, texture, semantics</td>
+<td>Asymmetric with scratch-trained XYZ encoder</td>
+<td>§3.3, Appendix C</td>
+</tr>
+<tr class="even">
+<td>XYZ encoding</td>
+<td>Standard2D vision encoder</td>
+<td>Reuses mature image architectures</td>
+<td>Convolution neighborhoods cross occlusion boundaries</td>
+<td>§3.4</td>
+</tr>
+<tr class="odd">
+<td>Fusion</td>
+<td>Add / Cat /4-layer Attn; final choice Cat</td>
+<td>More flexible than 6-channel early fusion</td>
+<td>Simple concatenation lacks explicit correspondence constraints</td>
+<td>Figure 3, Figure 6</td>
+</tr>
+<tr class="even">
+<td>Action backbone</td>
+<td>Decoder-only X-Blocks built around mLSTM</td>
+<td>Linear sequence complexity, low latency</td>
+<td>No complete interaction ablation against equal-parameter Transformers</td>
+<td>§3.4</td>
+</tr>
+<tr class="odd">
+<td>Diffusion sampling</td>
+<td>EDM training,4-step DDIM</td>
+<td>Multimodal continuous action distributions</td>
+<td>Fixed4 steps, no step-count/quality curve</td>
+<td>§3.2</td>
+</tr>
+<tr class="even">
+<td>Training configuration</td>
+<td>AdamW，lr=1e-4，batch=128，chunk=10</td>
+<td>Shared main recipe across three settings</td>
+<td>Conflicting training-step counts</td>
+<td>Appendix C, PDF p.17</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>CALVIN uses 10 X-Blocks and 2048 embedding dimensions; RoboCasa8/768; real robots6/2048. Common settings:8 heads, attention dropout0.3, residual/MLP dropout0.1, AdamW betas[0.9,0.95], weight decay0.05,(<em>{max}=80)、(</em>{min}=0.001), EMA, and exponential timesteps(Table 6, PDF p.17).</p>
+</section>
+<section id="数据集基准与指标" class="card level2">
+<h2>6. Datasets, benchmarks, and metrics</h2>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0">
+<table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Benchmark</th>
+<th scope="col">Data/tasks</th>
+<th scope="col">Evaluation unit</th>
+<th scope="col">Main metrics</th>
+<th scope="col">Fairness concerns</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>RoboCasa</td>
+<td>16 kitchen tasks grouped into PnP, drawers, knobs, levers, buttons, insertion;50 demonstrations/task</td>
+<td>50 episodes/task;3 seeds</td>
+<td>Success Rate (%)</td>
+<td>GR00T-N1 uses 100 demos; some public baselines lack variance</td>
+</tr>
+<tr class="even">
+<td>CALVIN ABC→D</td>
+<td>34 language-conditioned tasks; D is unseen</td>
+<td>1,000 chains/seed, up to 5 instructions each</td>
+<td>Fractions completing1–5 tasks; mean chain length</td>
+<td>Pretrained and scratch-trained methods need separate comparisons</td>
+</tr>
+<tr class="odd">
+<td>Real Franka</td>
+<td>6 tasks;45–120 demonstrations/task</td>
+<td>20 rollouts/task; best of 70k/80k/90k checkpoints</td>
+<td>Completed stages / maximum stages</td>
+<td>Best-checkpoint selection, no CI</td>
+</tr>
+<tr class="even">
+<td>System efficiency</td>
+<td>Training4×RTX6000 Ada; single-example inference RTX5080</td>
+<td>1,000 prediction cycles</td>
+<td>latency、epoch time</td>
+<td>Excludes RGB-D capture, backprojection, and control-loop latency</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>RoboCasa selects the best 30/40/50-epoch checkpoint; CALVIN selects10/15/20/25(§4, PDF p.5). This is not an unbiased fixed-endpoint comparison, since each method gets multiple selection opportunities. Real robots also select among three checkpoints, so 20 rollouts do not independently test one preregistered model.</p>
+</section>
+<section id="主结果矩阵" class="card level2">
+<h2>7. Main-results matrices</h2>
+<section id="calvin五级任务链-六方法" class="subsection level3">
+<h3>7.1 CALVIN: five task-chain levels × six methods</h3>
+<p>Six scratch-trained/representative methods are transcribed from Table 2. Columns1–5 show fractions completing at least n consecutive tasks; higher is better. Avg is mean tasks completed.</p>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0">
+<table>
+<colgroup>
+<col style="width: 11%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">1-task</th>
+<th scope="col" style="text-align: right;">2-task</th>
+<th scope="col" style="text-align: right;">3-task</th>
+<th scope="col" style="text-align: right;">4-task</th>
+<th scope="col" style="text-align: right;">5-task</th>
+<th scope="col" style="text-align: right;">Avg. len</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>3D Diffuser Actor</td>
+<td style="text-align: right;">92.2</td>
+<td style="text-align: right;">78.7</td>
+<td style="text-align: right;">63.9</td>
+<td style="text-align: right;">51.2</td>
+<td style="text-align: right;">41.2</td>
+<td style="text-align: right;">3.27</td>
+</tr>
+<tr class="even">
+<td>MoDE (scratch)</td>
+<td style="text-align: right;">91.5</td>
+<td style="text-align: right;">79.2</td>
+<td style="text-align: right;">67.3</td>
+<td style="text-align: right;">55.8</td>
+<td style="text-align: right;">45.3</td>
+<td style="text-align: right;">3.39</td>
+</tr>
+<tr class="odd">
+<td>CLOVER</td>
+<td style="text-align: right;">96.0</td>
+<td style="text-align: right;">83.5</td>
+<td style="text-align: right;">70.8</td>
+<td style="text-align: right;">57.5</td>
+<td style="text-align: right;">45.4</td>
+<td style="text-align: right;">3.53</td>
+</tr>
+<tr class="even">
+<td>Seer-Large (scratch)</td>
+<td style="text-align: right;">92.7</td>
+<td style="text-align: right;">84.6</td>
+<td style="text-align: right;">76.1</td>
+<td style="text-align: right;">68.9</td>
+<td style="text-align: right;">60.3</td>
+<td style="text-align: right;">3.83</td>
+</tr>
+<tr class="odd">
+<td>RGB(same backbone)</td>
+<td style="text-align: right;">89.9</td>
+<td style="text-align: right;">75.4</td>
+<td style="text-align: right;">60.8</td>
+<td style="text-align: right;">49.8</td>
+<td style="text-align: right;">39.1</td>
+<td style="text-align: right;">3.15</td>
+</tr>
+<tr class="even">
+<td><strong>PMP</strong></td>
+<td style="text-align: right;"><strong>96.1</strong></td>
+<td style="text-align: right;"><strong>88.6</strong></td>
+<td style="text-align: right;"><strong>80.5</strong></td>
+<td style="text-align: right;"><strong>72.3</strong></td>
+<td style="text-align: right;"><strong>63.6</strong></td>
+<td style="text-align: right;"><strong>4.01</strong></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Source: core Table 2, PDF p.7. Against strongest scratch baseline Seer-Large, PMP improves mean chain length by <strong>0.18 / 4.70%</strong>; against same-backbone RGB by <strong>0.86 / 27.30%</strong>. Its advantage grows with chain length: differences over RGB for 1–5 tasks are <strong>+6.2、+13.2、+19.7、+22.5、+24.5
+pp</strong>. This supports geometry reducing accumulated errors, but does not prove improved long-horizon planning, since lower perception error could produce the same pattern.</p>
+</section>
+<section id="robocasa表示方式的平均结果" class="subsection level3">
+<h3>7.2 RoboCasa: mean results by representation</h3>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">Mean success rate</th>
+<th scope="col" style="text-align: right;">Absolute difference versus PMP-xyz</th>
+<th scope="col" style="text-align: right;">PMP-xyz relative improvement</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>3DA</td>
+<td style="text-align: right;">18.50</td>
+<td style="text-align: right;">+30.62 pp</td>
+<td style="text-align: right;">+165.51%</td>
+</tr>
+<tr class="even">
+<td>DP3</td>
+<td style="text-align: right;">27.04</td>
+<td style="text-align: right;">+22.08 pp</td>
+<td style="text-align: right;">+81.66%</td>
+</tr>
+<tr class="odd">
+<td>BC</td>
+<td style="text-align: right;">32.25</td>
+<td style="text-align: right;">+16.87 pp</td>
+<td style="text-align: right;">+52.31%</td>
+</tr>
+<tr class="even">
+<td>GR00T-N1（100 demos）</td>
+<td style="text-align: right;">36.28</td>
+<td style="text-align: right;">+12.84 pp</td>
+<td style="text-align: right;">+35.39%</td>
+</tr>
+<tr class="odd">
+<td>RGB(same backbone)</td>
+<td style="text-align: right;">40.16</td>
+<td style="text-align: right;">+8.96 pp</td>
+<td style="text-align: right;">+22.31%</td>
+</tr>
+<tr class="even">
+<td>Depth(same backbone)</td>
+<td style="text-align: right;">44.00</td>
+<td style="text-align: right;">+5.12 pp</td>
+<td style="text-align: right;">+11.64%</td>
+</tr>
+<tr class="odd">
+<td>PMP-6ch</td>
+<td style="text-align: right;">43.12</td>
+<td style="text-align: right;">+6.00 pp</td>
+<td style="text-align: right;">+13.91%</td>
+</tr>
+<tr class="even">
+<td><strong>PMP-xyz</strong></td>
+<td style="text-align: right;"><strong>49.12</strong></td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+</tr>
+<tr class="odd">
+<td>PMP（RGB+XYZ Cat）</td>
+<td style="text-align: right;">47.22</td>
+<td style="text-align: right;">+1.90 pp</td>
+<td style="text-align: right;">PMP-xyz is 4.02% higher instead</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Source: Table 1, PDF p.6. PMP is not globally best: geometry-only PMP-xyz has the highest mean. Multimodal PMP exceeds RGB by <strong>7.06 pp /
+17.58%</strong>but trails PMP-xyz by <strong>1.90
+pp</strong>. Taskwise wins also vary: TurnSinkSpout gives Depth/PMP-xyz76.0 versus PMP48.7; CoffeePressButton favors PMP92.0. Task semantics determine the best modality.</p>
+</section>
+<section id="真实机器人六任务矩阵" class="subsection level3">
+<h3>7.3 Real robot: six-task matrix</h3>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">Task</th>
+<th scope="col" style="text-align: right;">demos</th>
+<th scope="col" style="text-align: right;">RGB</th>
+<th scope="col" style="text-align: right;">PMP-xyz</th>
+<th scope="col" style="text-align: right;">PMP</th>
+<th scope="col" style="text-align: right;">Maximum stages</th>
+<th scope="col" style="text-align: right;">PMP versus RGB</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Arrange</td>
+<td style="text-align: right;">80</td>
+<td style="text-align: right;">2.05</td>
+<td style="text-align: right;">2.10</td>
+<td style="text-align: right;"><strong>2.25</strong></td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">+0.20 / +9.76%</td>
+</tr>
+<tr class="even">
+<td>Fold</td>
+<td style="text-align: right;">45</td>
+<td style="text-align: right;">2.10</td>
+<td style="text-align: right;">0.80</td>
+<td style="text-align: right;"><strong>2.50</strong></td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">+0.40 / +19.05%</td>
+</tr>
+<tr class="odd">
+<td>Cup-Stack</td>
+<td style="text-align: right;">75</td>
+<td style="text-align: right;">1.40</td>
+<td style="text-align: right;">0.45</td>
+<td style="text-align: right;"><strong>2.10</strong></td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">+0.70 / +50.00%</td>
+</tr>
+<tr class="even">
+<td>Drawer</td>
+<td style="text-align: right;">120</td>
+<td style="text-align: right;">2.00</td>
+<td style="text-align: right;">2.15</td>
+<td style="text-align: right;"><strong>2.40</strong></td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">+0.40 / +20.00%</td>
+</tr>
+<tr class="odd">
+<td>Pour</td>
+<td style="text-align: right;">80</td>
+<td style="text-align: right;">1.55</td>
+<td style="text-align: right;">1.60</td>
+<td style="text-align: right;"><strong>1.80</strong></td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">+0.25 / +16.13%</td>
+</tr>
+<tr class="even">
+<td>Sweep</td>
+<td style="text-align: right;">90</td>
+<td style="text-align: right;">1.80</td>
+<td style="text-align: right;">0.80</td>
+<td style="text-align: right;"><strong>2.15</strong></td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">+0.35 / +19.44%</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Source: Table 3, PDF p.10; cells average completed stages over 20 rollouts. Normalizing by each task’s maximum, RGB’s six-task mean completion rate is <strong>53.13%</strong>and PMP’s
+<strong>64.51%</strong>, namely <strong>+11.39 pp / +21.44%</strong>. Yet PMP-xyz scores only 0.80,0.45,0.80 on Fold, Cup-Stack, and Sweep, showing geometry alone does not solve deformable objects or color instructions.</p>
+</section>
+<section id="效率" class="subsection level3">
+<h3>7.4 Efficiency</h3>
+<p>The CALVIN model reports 147M trainable parameters. With4×RTX6000 Ada and total batch 512, epochs take about 13 minutes, with 25 epochs under6 hours. On one RTX5080, batch 1,1,000 prediction loops, PMP-xyz takes <strong>2.9 ms</strong>and PMP’s
+<strong>3.9 ms</strong>(§4.4, PDF p.9). PMP forward passes are slower than PMP-xyz by
+<strong>1.0 ms /
+34.48%</strong>but remain below common control periods. Missing sensor, map-construction, communication, and execution latency means3.9ms refers only to model inference.</p>
+</section>
+</section>
+<section id="逐层消融超参敏感性与相变" class="card level2">
+<h2>8. Layered ablations, hyperparameter sensitivity, and transitions</h2>
+<section id="表示层" class="subsection level3">
+<h3>8.1 Representation layer</h3>
+<p>Figure 5(PDF p.8) fixes the X-Block policy and compares PointNet-xyz, PointNet-color, PointPatch,3D-Lifting, and PMP-xyz. PMP-xyz averages <strong>49.12%</strong>and broadly leads across 16 plotted tasks. Fixing the downstream backbone partially separates representation gains from xLSTM: dense structured maps beat PointNet with FPS to 1,024 points,256×32 point patches, and CLIP lifting. Exact baseline means/error bars are absent, so no matrix or CIs can be fabricated.</p>
+</section>
+<section id="模态层" class="subsection level3">
+<h3>8.2 Modality layer</h3>
+<p>Table 1 provides the strongest ablation chain: RGB40.16→Depth44.00→PMP-6ch43.12→PMP47.22→PMP-xyz49.12. Early6-channel fusion even trails depth-only by
+<strong>0.88 pp</strong>, while late Cat beats6ch by <strong>4.10
+pp</strong>; adding RGB on RoboCasa then trails PMP-xyz by <strong>1.90
+pp</strong>. Fusion is not monotonically beneficial: geometry-dominated tasks may suffer capacity dilution from color tokens, whereas color-language-dominated CALVIN strongly requires RGB.</p>
+</section>
+<section id="融合层与编码器层" class="subsection level3">
+<h3>8.3 Fusion and encoder layers</h3>
+<p>Figure 6(PDF p.8) compares Add/Cat/Attn and ResNet50/ConvNeXt-v2/DaViT. Authors favor Cat slightly and ConvNeXt-v2 overall, but bars lack numerical labels/error bars. These are empirical optima for the current RoboCasa recipe, not significant superiority over cross-attention or evidence excluding parameter-count effects.</p>
+</section>
+<section id="超参敏感性与相变" class="subsection level3">
+<h3>8.4 Hyperparameter sensitivity and transitions</h3>
+<p>The paper<strong>Not reported</strong> systematic sweeps of denoising steps(fixed 4), action chunks(fixed 10), history(fixed 1), map resolution, depth clipping, calibration error, XYZ/RGB token ratios, fusion depth, or data size. No performance–latency frontier is given. Minimum sufficient steps, depth-noise failure thresholds, dynamic-object limitations, and camera-count dependence remain unknown. The clear transition is semantic: geometry-only 49.12 leads RoboCasa, while geometry-only 2.03 trails multimodal4.01 on CALVIN.</p>
+</section>
+</section>
+<section id="统计显著性与可信度" class="card level2">
+<h2>9. Statistical significance and credibility</h2>
+<p>RoboCasa reports three-seed means and some±values(Table 1, PDF p.6), without specifying SD/SE or significance tests. PMP47.22 versus PMP-xyz49.12 differs by only 1.90 pp; absent aggregate variance, significance cannot be claimed. Selecting the best 30/40/50-epoch checkpoint further inflates maxima.</p>
+<p>CALVIN uses 1,000 chains per seed but omits seed count, SD, and CIs in Table 2. More rollouts reduce environment-sampling error, not training-seed variance. Real tasks use 20 rollouts without success counts, variance, bootstrap CIs, or paired starts, selecting among three checkpoints. Table 3 supports a consistent observed direction, not high-confidence real-world effect sizes.</p>
+</section>
+<section id="真正贡献可复用设计与迁移潜力" class="card level2">
+<h2>10. Actual contributions, reusable designs, and transfer potential</h2>
+<p>The first genuine contribution is<strong>Simplifying representation</strong>: retain depth’s regular indexing instead of inventing a3D backbone, letting geometry enter mature2D encoders. Same-backbone modality controls show that point-cloud encoding determines its usefulness. Across RoboCasa, CALVIN, and real robots, geometry and appearance complement each other, with task-dependent optimal balance.</p>
+<p>Reusable designs include world-frame multicamera depth, separate RGB/XYZ encoders to avoid early mixing, Cat as a strong baseline before complex fusion, action chunks plus few-step diffusion for multimodal control, and geometry-only variants to measure semantic need. This may transfer to tactile height maps, event-camera spacetime surfaces, medical depth maps, and driving range images, provided regular indices correspond to physical coordinates.</p>
+<p>For VLA foundation models, point maps can form another visual tower rather than serialized coordinate text. JEPA/world models could predict future point-map geometry, reducing RGB-texture uncertainty. Active perception could choose views from RGB/XYZ uncertainty. All require calibration and occlusion-boundary tests beyond static benchmarks.</p>
+</section>
+<section id="论文自述限制" class="card level2">
+<h2>11. Limitations acknowledged by the paper</h2>
+<ol type="1">
+<li><strong>Insufficient fusion.</strong> The authors acknowledge concatenation may not fully exploit complementary RGB/map information(§6, PDF p.10), consistent with PMP trailing PMP-xyz by 1.90 pp on RoboCasa.</li>
+<li><strong>No XYZ-encoder pretraining.</strong> Point-map encoders train from scratch while RGB encoders benefit from ImageNet(§6, PDF p.10), making modality capabilities asymmetric.</li>
+<li><strong>Point-map pretraining is future work.</strong> The authors propose dedicated objectives for robust geometry before downstream fine-tuning(§6, PDF p.10).</li>
+</ol>
+</section>
+<section id="独立批判" class="card level2">
+<h2>12. Independent critique</h2>
+<ol type="1">
+<li><strong>[Causal attribution] Because</strong> PMP changes representation, fusion, and backbone together, while Figure 5 fixes X-Blocks but lacks exact means/error bars,<strong>therefore</strong>evidence supports the whole point-map pipeline, without precisely attributing gains to density,2D topology, or world-frame alignment.</li>
+<li><strong>[Selection bias] Because</strong> RoboCasa selects among3 epochs, CALVIN4, and real robots3 checkpoints,<strong>therefore</strong>results include selection benefits; real-robot20-rollout evaluation especially lacks independently locked checkpoints.</li>
+<li><strong>[Statistics] Because</strong> CALVIN lacks training-seed variance and real robots CIs, while PMP exceeds scratch Seer-Large by only 0.18 mean chain length,<strong>therefore</strong>so SOTA means point-estimate ranking, not statistical significance.</li>
+<li><strong>[Configuration consistency] Because</strong>main compute text specifies CALVIN8 X-Blocks/512 latents/147M, Appendix C10 blocks/2048 embeddings, and Appendix E10 blocks/512 latents/still147M(PDF pp.9,17,22),<strong>therefore</strong>the core configuration cannot be uniquely reconstructed.</li>
+<li><strong>[Training steps] Because</strong> Appendix C lists30k real-robot steps, while§5.2 compares 70k/80k/90k checkpoints,<strong>therefore</strong>budget and checkpoint selection directly conflict, obscuring the actual training range.</li>
+<li><strong>[System measurement] Because</strong> 2.9/3.9ms measures only RTX5080 model prediction, excluding depth capture, backprojection, coordinate transforms, and communication,<strong>therefore</strong>it establishes neither complete control frequency nor fair comparisons with point-cloud systems including preprocessing.</li>
+<li><strong>[Robustness] Because</strong>point maps directly depend on calibration and no calibration-noise, depth-hole, occlusion-boundary, or camera-failure sweeps appear,<strong>therefore</strong>greater cross-view robustness remains mechanistic intuition rather than a stress-tested result.</li>
+<li><strong>[Openness] Because</strong>the official repository had one commit containing only README, License, and.gitignore, without training/evaluation code, weights, or processing scripts,<strong>therefore</strong>end-to-end reproduction remains unavailable despite hyperparameter tables.</li>
+</ol>
+</section>
+<section id="相关工作问题来源与技术传递链" class="card level2">
+<h2>13. Related work: problem origins and technical lineage</h2>
+<section id="diffusion-policyrss-2023" class="subsection level3">
+<h3>13.1 Diffusion Policy（RSS 2023）</h3>
+<p><strong>Problem addressed:</strong>Models actions as conditional denoising with receding horizons, visual conditioning, and temporal diffusion for multimodal actions; reports mean improvement across 12 tasks/four benchmarks of <strong>46.9%</strong> (arXiv abstract, v5).<br />
+<strong>Remaining gap:</strong>Observations remain mostly RGB, leaving precise3D relations implicit.<br />
+<strong>How PMP responds:</strong>Retains action diffusion but shifts innovation from generating actions to conditioning them.<br />
+<strong>Transferred design:</strong>Action chunks, conditional score networks, iterative sampling, and receding horizons form PMP’s control framework.</p>
+</section>
+<section id="d-diffusion-policy-dp3rss-2024" class="subsection level3">
+<h3>13.2 3D Diffusion Policy / DP3（RSS 2024）</h3>
+<p><strong>Problem addressed:</strong>Compresses sparse clouds with lightweight PointNet to condition diffusion; relative gains across 72 simulated tasks are
+<strong>24.2%</strong>, with success on 4 real tasks at 40 demos each of
+<strong>85%</strong>(arXiv v7 abstract).<br />
+<strong>Remaining gap:</strong>FPS/global pooling improve efficiency but erase local detail and regular pixel correspondence.<br />
+<strong>How PMP responds:</strong>Removes FPS and retains per-pixel XYZ in its grid; RoboCasa PMP-xyz49.12 versus DP327.04.<br />
+<strong>Transferred design:</strong>Retains simple 3D representations plus action diffusion, redefining compactness as convolution-friendly dense maps instead of sparse points.</p>
+</section>
+<section id="d-diffuser-actor2024" class="subsection level3">
+<h3>13.3 3D Diffuser Actor（2024）</h3>
+<p><strong>Problem addressed:</strong>Lifts multiview2D features into 3D and uses a3D denoising Transformer to fuse scenes, language, and proprioception. Reported RLBench multiview performance is <strong>+18.1 pp</strong>, single-view <strong>+13.1
+pp</strong>, and CALVIN relative <strong>+9%</strong>(arXiv v3 abstract).<br />
+<strong>Remaining gap:</strong>Feature lifting, depth averaging, and FPS may lose structure; Transformer token counts grow with scenes.<br />
+<strong>How PMP responds:</strong>Instead of lifting semantics into unordered sets, separately encodes RGB/XYZ before late fusion.<br />
+<strong>Transferred design:</strong>Shared multiview coordinates, language conditioning, and diffusion pose trajectories define PMP’s comparison interface.</p>
+</section>
+<section id="point-cloud-matters-obsbenchneurips-2024-db"
+class="subsection level3">
+<h3>13.4 Point Cloud Matters / OBSBench（NeurIPS 2024 D&amp;B）</h3>
+<p><strong>Problem addressed:</strong>Systematically compares RGB, RGB-D, and point clouds across two simulators and<strong>125 tasks</strong>
+, finding simple point methods often superior and more robust to geometric/visual shifts(official proceedings abstract).<br />
+<strong>Remaining gap:</strong>Establishes point-cloud value without resolving sparsification and structural loss in encoding.<br />
+<strong>How PMP responds:</strong>Converts modality findings into a representation design, comparing PointNet, PointPatch, lifting, and maps under one backbone.<br />
+<strong>Transferred design:</strong>Same-backbone controls and complementary appearance/coordinate hypotheses become PMP’s RGB/Depth/XYZ/6ch/late-fusion ablations.</p>
+<pre class="text"><code>                                        ┌─ RGB policy: strong semantics, implicit geometry ─┐
+Diffusion Policy ───┤                                                   ├─ PointMapPolicy
+  Multimodal actions└─3D Diffuser Actor: feature lifting ─────────────────┤ Dense XYZ grids
+                    ┌─ DP3: FPS + PointNet + diffusion ──────────────────┤ Reused2D encoders
+OBSBench ───────────┤                                                   └─ Late RGB/XYZ fusion
+  Modalities shape generalization └─ Point clouds &gt; Systematic RGB/RGB-D evidence
+
+Shift1: action regression→action-distribution generation
+Shift2: RGB conditioning→explicit3D conditioning
+Shift3: unordered cloud processing→sensor-native regular topology</code></pre>
+</section>
+<section id="跨论文对标" class="subsection level3">
+<h3>Cross-paper comparison</h3>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0">
+<table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Action modeling</th>
+<th scope="col">3D representation</th>
+<th scope="col">Multiview fusion</th>
+<th scope="col">Main strengths</th>
+<th scope="col">Main gap</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Diffusion Policy</td>
+<td>action diffusion</td>
+<td>None / RGB</td>
+<td>Image-level</td>
+<td>Multimodal actions, stable training</td>
+<td>Implicit geometry</td>
+</tr>
+<tr class="even">
+<td>DP3</td>
+<td>action diffusion</td>
+<td>FPS sparse points + PointNet</td>
+<td>Merged point sets</td>
+<td>Lightweight, few-shot</td>
+<td>Local-detail loss</td>
+</tr>
+<tr class="odd">
+<td>3D Diffuser Actor</td>
+<td>3D pose diffusion</td>
+<td>lifted 2D features</td>
+<td>3D tokens</td>
+<td>Language +3D trajectories</td>
+<td>Lifting/FPS and attention costs</td>
+</tr>
+<tr class="even">
+<td>OBSBench</td>
+<td>Multiple policy types</td>
+<td>RGB/RGB-D/point-cloud benchmarks</td>
+<td>Standardized pipeline</td>
+<td>Systematic125-task evidence</td>
+<td>No new structural encoding</td>
+</tr>
+<tr class="odd">
+<td><strong>PMP</strong></td>
+<td>EDM + 4-step DDIM</td>
+<td>H×W×XYZ point map</td>
+<td>world frame + token Cat</td>
+<td>Dense structure, reused2D encoders</td>
+<td>Calibration dependence, limited fusion/pretraining</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</section>
+<section id="开放挑战可操作的-head-to-head-实验" class="card level2">
+<h2>14. Open challenges: actionable head-to-head experiments</h2>
+<section id="理论" class="subsection level3">
+<h3>Theory</h3>
+<ol type="1">
+<li><strong>Topology preservation versus 3D equivariance.</strong> At equal parameters/action backbone, compare PMP, SE(3)-equivariant point encoders, and PointPatch under joint object/camera rotation. Plot success versus angle; pixel-topology dependence predicts degradation at large rotations/occlusion.</li>
+<li><strong>Decomposing information loss.</strong>
+Build regular-grid, shuffled-grid, and FPS-sparse versions of the same dense cloud, matching point count, encoder FLOPs, and tokens to separate density, ordering, and network type.</li>
+<li><strong>Modality-selection theory.</strong>
+Continuously vary color/geometric mutual information in controlled tasks; compare RGB, XYZ, Cat, and gated fusion to locate the geometry-only→multimodal optimum transition.</li>
+</ol>
+</section>
+<section id="工程与应用" class="subsection level3">
+<h3>Engineering and applications</h3>
+<ol type="1">
+<li><strong>Calibration stress tests.</strong> Inject0–10% focal-length error,0–5cm extrinsic translation, and 0–10° rotation. Compare PMP, DP3,3DA, and RGB on performance, map-construction latency, and failure types.</li>
+<li><strong>Real latency.</strong> On one RTX5080 plus two Orbbec cameras, measure sensor-to-action P50/P95, separately timing capture, filtering, unprojection, fusion,4-step DDIM, and communication rather than network-only 3.9ms.</li>
+<li><strong>Fair checkpoints.</strong> Preregister training steps/seeds, use a small validation set for one checkpoint choice, then run≥100 paired rollouts on new initial states with bootstrap CIs.</li>
+<li><strong>Point-map pretraining.</strong> Compare scratch training, direct ImageNet initialization transfer, masked XYZ reconstruction, and RGB–XYZ contrastive pretraining at fixed demonstrations, plotting10/25/50/100-demo curves.</li>
+</ol>
+</section>
+<section id="新兴方向" class="subsection level3">
+<h3>Emerging directions</h3>
+<ol type="1">
+<li><strong>Point-map world model。</strong> Jointly predict future XYZ maps/actions against action-only diffusion and future-RGB prediction, testing contact-rich/deformable tasks.</li>
+<li><strong>Active modality routing.</strong> Use learned gates to select RGB, XYZ, or both each step, comparing FLOPs–success with fixed Cat and inspecting routing differences between CALVIN color and RoboCasa geometry tasks.</li>
+<li><strong>VLA integration.</strong> Within one VLA compare XYZ as a visual tower, discrete3D tokens, or verbalized coordinates. Freeze language backbones, train adapters, and test unseen instructions/cameras/objects.</li>
+</ol>
+</section>
+</section>
+<section id="近期工作雷达" class="card level2">
+<h2>15. Recent-work radar</h2>
+<ol type="1">
+<li><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/783c5986e1d6112cb4688d9b2105609a-Abstract-Conference.html">Hyper-GoalNet（NeurIPS
+2025）</a>: uses hypernetworks to generate goal-specific policy parameters, testing orthogonality with PMP representations.</li>
+<li><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/3a2d96d2eb2902043c2db705ca03e9a2-Abstract-Conference.html">M3W（NeurIPS
+2025）</a>: places MoE in world models for multitask/multi-agent planning, suggesting modality specialization within dynamics experts.</li>
+<li><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/420c9f777c0b4f78d515e53cf74d58b2-Abstract-Conference.html">GiGPO（NeurIPS
+2025）</a>: addresses multi-turn credit assignment with episode- and anchor-state step-level group advantages, shared by language agents and embodied policies.</li>
+<li><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/07bdb30a6aa9792c404d5d62b626f9d7-Abstract-Conference.html">MonoLift（NeurIPS
+2025）</a>: distills spatial, temporal, and action knowledge from depth teachers into monocular RGB students, pursuing depth-free deployment in contrast to PMP.</li>
+<li><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/49eadcc4a329fc6b74b9f8a82b78cbc3-Abstract-Conference.html">DA-SIP（NeurIPS
+2025）</a>: dynamically allocates diffusion/flow-policy test steps, reducing total computation2.6–4.4× while preserving success, addressing PMP’s fixed 4-step setting.</li>
+<li><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/5e772a13ccba5255331240dcd99aa38b-Abstract-Conference.html">WALL-E（NeurIPS
+2025）</a>: extracts executable symbolic rules from exploration for world alignment, then uses MPC for LLM-agent control—explicit knowledge rather than end-to-end representations.</li>
+<li><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/a5a305fac88fb4ae40969cfec5eef48d-Abstract-Conference.html">Self-Challenging
+Agents（NeurIPS 2025）</a>: agents interact with tools to generate challenging tasks and train solvers, potentially transferring to automatic robotic curricula/verifiable tasks.</li>
+<li><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/4f7b1f51ef415f09e171f632172284ff-Abstract-Conference.html">Predictive
+Preference Learning（NeurIPS
+2025）</a>: propagates human interventions to future safety-critical states, supplying direct safety signals beyond imitation from sparse corrections.</li>
+</ol>
+</section>
+<section id="结论" class="card level2">
+<h2>16. Conclusion</h2>
+<p>PointMapPolicy shows that preprocessing representations may determine success more than larger policies. Regular XYZ maps give PMP-xyz49.12% RoboCasa success,22.08 pp above DP3. Multimodal PMP raises CALVIN chain length from same-backbone RGB3.15 to 4.01 and improves mean normalized real-task stage completion by 11.39 pp across six tasks.</p>
+<p>Conclusions remain bounded: geometry-only wins RoboCasa; significance is incomplete; real results select checkpoints; CALVIN dimensions/block counts and real training steps conflict; public code is absent. Evidence supports preserving dense geometric topology as a strong, simple design, not solved multimodal perception or long-horizon planning.</p>
+<hr />
+<p><strong>Audit footnote:</strong> All quantitative values come from the official NeurIPS PDF/arXiv v3, tables, or related-paper abstracts actually read. Recalculations distinguish absolute pp and relative percentages. Missing SDs, CIs, sensitivity matrices, and end-to-end latency remain missing. Selection used one
+<code>shuf</code>with no redraw.<code>ml-report-index.md</code>
+This record has been appended.</p>
+</section>
+
+  </main>
+
+  <footer>Based on the official NeurIPS 2025 paper, arXiv v3, official project/public repository, and four full technical-lineage papers; generated 2026-10-01.</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ Light' : '☾ Dark';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

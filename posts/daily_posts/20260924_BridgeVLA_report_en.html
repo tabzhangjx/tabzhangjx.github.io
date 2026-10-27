@@ -1,0 +1,1283 @@
+---
+layout: null
+title: "BridgeVLA"
+date: 2026-09-24
+topic: "rl-peft"
+tags: ["rl-peft", "robotics", "vision-language-action"]
+excerpt: "BridgeVLA connects VLM visual priors and 3D action keypoints in one space through three-view 2D heatmaps, achieving strong results on RLBench, COLOSSEUM, and real robots. However, 960 H100-hours, an external motion planner, and zero success on long-horizon tasks limit extrapolation to an “efficient general-purpose policy.”"
+permalink: "/blog/2026/09/24/bridgevla/en/"
+blog_post: false
+lang: "en"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_zh: "/blog/2026/09/24/bridgevla/"
+sitemap: true
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>BridgeVLA: Bridging 3D Robot Inputs and Action Outputs in a Shared 2D Heatmap Space · 2026-09-24</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #246fca;
+    --chart-comparison: #c95224;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  :root {
+    --page: #f6f0e4;
+    --surface-1: #fffaf1;
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #e4eef9;
+  }
+  :root[data-theme="dark"] {
+    --page: #17130f;
+    --surface-1: #211c17;
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+  }
+  .card { overflow-wrap: anywhere; }
+  .card > h2 { scroll-margin-top: 70px; }
+  .card blockquote {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+  }
+  .card .math.display, .card pre { max-width: 100%; overflow-x: auto; }
+  .card code { overflow-wrap: anywhere; }
+  .table-scroll table { min-width: 100%; }
+  th[style*="right"], td[style*="right"] { text-align: right !important; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .report-chart { margin: 22px 0; }
+  .report-chart svg { min-width: 700px; }
+  .report-chart figcaption { margin-top: 8px; }
+  @media (max-width: 640px) {
+    .report-chart { overflow-x: auto; }
+    .card table { font-size: 13px; }
+    .hero { padding-top: 70px; }
+  }
+
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" aria-pressed="false">☾ Dark</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">Reinforcement Learning · Agents · Embodied Intelligence</p>
+    <h1>BridgeVLA: Bridging 3D Robot Inputs and Action Outputs in a Shared 2D Heatmap Space</h1>
+    <p class="subtitle">Equations, evidence, and engineering costs of input–output space alignment</p>
+    <div class="meta" aria-label="Report metadata">
+      <span class="chip source">arXiv:2506.07961v2</span>
+      <span class="chip">2026-09-24</span>
+      <span class="chip">VLA · 3D manipulation · Imitation learning</span>
+    </div>
+    <p class="lede">BridgeVLA connects VLM visual priors and 3D action keypoints in one space through three-view 2D heatmaps, achieving strong results on RLBench, COLOSSEUM, and real robots. However, 960 H100-hours, an external motion planner, and zero success on long-horizon tasks limit extrapolation to an “efficient general-purpose policy.”</p>
+  </header>
+
+  <main>
+<div class="report-body">
+<blockquote>
+<p><strong>Core positioning:</strong> Rather than directly regressing unstructured 6-DoF action tokens with a VLM, BridgeVLA projects 3D point clouds into multi-view 2D images and predicts translation keypoints using heatmaps at matching resolution. This “input–output space alignment” combines VLM semantic capabilities with the sample efficiency of 3D policies.</p>
+</blockquote>
+<ul>
+<li>Date: 2026-09-24</li>
+<li>Field: Reinforcement Learning / Agents / Embodied Intelligence (VLA, 3D manipulation, imitation learning)</li>
+<li>Core paper: Peiyan Li, Yixiang Chen, Hongtao Wu, et al., <em>BridgeVLA: Input-Output Alignment for Efficient 3D Manipulation Learning with Vision-Language Models</em></li>
+<li>Publication status: arXiv 2025; no formal ACL/top-conference proceedings entry found as of this verification</li>
+<li>Random selection: after excluding VIKI-R and Embodied-R1 from the past 14 days, the candidate pool contained 22 papers; executed <code>shuf -i 1-22 -n 1</code> returned <strong>17</strong>, selecting BridgeVLA; sufficient material,<strong>zero redraws</strong>。</li>
+</ul>
+<section id="链接验证表与版本口径" class="card level2">
+<h2>0. Link verification table and version scope</h2>
+<p>All URLs below were actually visited during this investigation and returned readable pages. Numerical results follow the downloaded paper PDF. The current code repository contains both BridgeVLA and BridgeVLA++, released in 2026, so “what the repository can run today” must be distinguished from “what the 2025 paper validated.”</p>
+<div class="table-scroll" role="region" aria-label="Data table 1" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Conference / official page</th>
+<th scope="col">arXiv version and date</th>
+<th scope="col">Code</th>
+<th scope="col">Data / weights</th>
+<th scope="col">Project page / videos</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>BridgeVLA</strong></td>
+<td>No official top-conference/ACL page found</td>
+<td><a href="https://arxiv.org/abs/2506.07961">2506.07961</a>：v1 2025-06-09；v2 2025-10-14</td>
+<td><a href="https://github.com/BridgeVLA/BridgeVLA">Official GitHub</a>, now containing BridgeVLA/BridgeVLA++</td>
+<td><a href="https://huggingface.co/datasets/LPY/BridgeVLA">HF checkpoints and pretraining corpus</a>; repository lists RLBench/COLOSSEUM/GemBench download scripts</td>
+<td><a href="https://bridgevla.github.io/">Project page</a>; no standalone video link found</td>
+</tr>
+<tr class="even">
+<td>PerAct</td>
+<td><a href="https://proceedings.mlr.press/v205/shridhar23a.html">CoRL 2022（PMLR 205, 2023）</a></td>
+<td><a href="https://arxiv.org/abs/2209.05451">2209.05451</a>，v1 2022-09-12</td>
+<td><a href="https://github.com/peract/peract">Official GitHub</a></td>
+<td>Repository provides model/data preparation entry points</td>
+<td><a href="https://peract.github.io/">Project page</a></td>
+</tr>
+<tr class="odd">
+<td>RVT</td>
+<td><a href="https://proceedings.mlr.press/v229/goyal23a.html">CoRL 2023（PMLR 229）</a></td>
+<td><a href="https://arxiv.org/abs/2306.14896">2306.14896</a>，v1 2023-06-26</td>
+<td><a href="https://github.com/NVlabs/RVT">Official GitHub</a></td>
+<td>The same repository provides trained models</td>
+<td><a href="https://robotic-view-transformer.github.io/">Project page</a></td>
+</tr>
+<tr class="even">
+<td>RVT-2</td>
+<td><a href="https://www.roboticsproceedings.org/rss20/p055.html">Official RSS 2024 page</a></td>
+<td><a href="https://arxiv.org/abs/2406.08545">2406.08545</a>，v1 2024-06-12</td>
+<td><a href="https://github.com/NVlabs/RVT">Official GitHub (shared with RVT)</a></td>
+<td>The same repository provides trained models</td>
+<td><a href="https://robotic-view-transformer-2.github.io/">Project page / videos</a></td>
+</tr>
+<tr class="odd">
+<td>SpatialVLA</td>
+<td><a href="https://www.roboticsproceedings.org/rss21/p011.pdf">Official RSS 2025 PDF</a></td>
+<td><a href="https://arxiv.org/abs/2501.15830">2501.15830</a>，v1 2025-01-27；v2 2025-05-19</td>
+<td><a href="https://github.com/SpatialVLA/SpatialVLA">Official GitHub</a></td>
+<td><a href="https://huggingface.co/IPEC-COMMUNITY/spatialvla-4b-mix-224-pt">Official HF weights</a></td>
+<td><a href="https://spatialvla.github.io/">Project page</a>; video not listed separately</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section id="候选池排重与随机选择" class="card level2">
+<h2>1. Candidate pool, deduplication, and random selection</h2>
+<p>First read <code>ml-report-index.md</code>. Coverage in the same field over the past 14 days already included VIKI-R (2026-09-10, multi-robot collaboration rewards) and Embodied-R1 (2026-09-17, verifiable reinforcement fine-tuning for points/trajectories), so these and directly overlapping topics were excluded. Candidates were cross-collected from arXiv, OpenReview, and NeurIPS/ICML proceedings, with Hugging Face Daily Papers, Papers with Code, Semantic Scholar, and ACL Anthology also checked. ACL sources have limited embodied-robotics coverage, so final entries follow the original paper pages. All 22 links were individually visited and returned 200.</p>
+<ol type="1">
+<li><a href="https://openreview.net/forum?id=hqFNqVQEUd">ERA: Transforming VLMs into Embodied Agents via Reinforcement Learning</a></li>
+<li><a href="https://proceedings.neurips.cc/paper_files/paper/2025/file/ec46d737282bb408e642ed883a145c40-Paper-Conference.pdf">Robot-R1</a></li>
+<li><a href="https://openreview.net/forum?id=qwA04SZeCa">Grounding Multimodal LLMs to Embodied Agents that Ask for Help</a></li>
+<li><a href="https://arxiv.org/abs/2504.16054">π0.5</a></li>
+<li><a href="https://arxiv.org/abs/2503.14734">GR00T N1</a></li>
+<li><a href="https://arxiv.org/abs/2502.19645">Fine-Tuning Vision-Language-Action Models</a></li>
+<li><a href="https://arxiv.org/abs/2506.01844">SmolVLA</a></li>
+<li><a href="https://arxiv.org/abs/2502.05855">DexVLA</a></li>
+<li><a href="https://arxiv.org/abs/2501.15830">SpatialVLA</a></li>
+<li><a href="https://arxiv.org/abs/2503.20384">MoLe-VLA</a></li>
+<li><a href="https://arxiv.org/abs/2506.21539">WorldVLA</a></li>
+<li><a href="https://arxiv.org/abs/2506.09985">V-JEPA 2</a></li>
+<li><a href="https://arxiv.org/abs/2508.05635">Genie Envisioner</a></li>
+<li><a href="https://arxiv.org/abs/2502.19417">Hi Robot</a></li>
+<li><a href="https://arxiv.org/abs/2505.10911">ReWiND</a></li>
+<li><a href="https://arxiv.org/abs/2505.13031">VidMan</a></li>
+<li><a href="https://arxiv.org/abs/2506.07961">BridgeVLA</a></li>
+<li><a href="https://arxiv.org/abs/2508.17424">RDT-2</a></li>
+<li><a href="https://arxiv.org/abs/2509.09674">SimpleVLA-RL</a></li>
+<li><a href="https://arxiv.org/abs/2506.18088">RoboTwin 2.0</a></li>
+<li><a href="https://proceedings.mlr.press/v267/huang25y.html">Empowering World Models with Reflection for Embodied Video Prediction</a></li>
+<li><a href="https://proceedings.mlr.press/v267/shen25d.html">BiAssemble</a></li>
+</ol>
+<p>Random draw: 17. BridgeVLA provides a 32-page paper, three simulation benchmarks, 13 real-robot tasks, three structural ablations, training costs, inference latency, and currently public code, so no redraw was triggered.</p>
+</section>
+<section id="motivation3d-vla-的瓶颈不是有没有-3d而是表示接口是否对齐" class="card level2">
+<h2>2. Motivation: the bottleneck in 3D VLA is representation-interface alignment, beyond simply having 3D information</h2>
+<section id="传统-vla-的语义强样本效率弱" class="level3">
+<h3>2.1 Conventional VLAs have strong semantics but weak sample efficiency</h3>
+<p>VLM-based VLAs inherit web-scale visual–language semantics but typically map images directly to continuous action sequences. Robot data is expensive, yet hundreds of trajectories per task remain common. In contrast, 3D policies such as PerAct, RVT, and RVT-2 use voxels, point clouds, or orthographic projections to frame action positioning as “finding a point in observation space.” Their strong structural priors make few-shot learning more stable, but they lack large VLMs’ open-vocabulary semantics.</p>
+<p>The core paper identifies two specific mismatches (Introduction, PDF pp.1–3):</p>
+<ol type="1">
+<li><strong>Input mismatch.</strong> VLM pretraining uses natural 2D images, whereas 3D VLA fine-tuning injects point clouds/per-pixel 3D coordinates, abruptly shifting the input distribution.</li>
+<li><strong>Output mismatch.</strong> VLM pretraining predicts token sequences, while robot fine-tuning directly regresses 3D vectors; actions lack a spatial structure shared with visual tokens.</li>
+</ol>
+<p>This is not an abstract concern. In Table 1 (PDF p.6), adding per-pixel 3D position features within the same BridgeVLA framework reduces mean RLBench success from <strong>88.2% to 56.2%</strong>, an absolute decline of <strong>32.0 pp</strong>and a relative decline of <strong>36.28%</strong>; replacing the heatmap head with a Transformer of similar parameter count for direct position regression (309M vs 303M) reduces success from <strong>88.2% to 31.4%</strong>, a drop of <strong>56.8 pp</strong>and a relative decline of <strong>64.40%</strong>. The paper’s central argument is therefore not that more 3D information is always better, but that<strong>additional information can hurt when it disrupts the pretrained interface</strong>。</p>
+</section>
+<section id="样本效率的表面胜利与计算成本的真实代价" class="level3">
+<h3>2.2 Apparent gains in sample efficiency and the real compute cost</h3>
+<p>In real-robot Table 12 (PDF p.24), with only 3 trajectories per task, BridgeVLA succeeds in 124/130 trials across 13 tasks, or <strong>95.38%≈95.4%</strong>; with 10 trajectories, it succeeds in 126/130, or <strong>96.92%≈96.9%</strong>. Yet Appendix A (PDF p.16) discloses that RLBench fine-tuning uses <strong>48×H100×20 hours≈960 H100-hours</strong>, with COLOSSEUM requiring roughly another 960 H100-hours. “Sample efficiency” thus describes robot-trajectory volume, not training compute efficiency. The abstract also gives a 3-trajectory success rate of <strong>96.8%</strong>, inconsistent with 95.4% in the main text and 95.38% in Table 12; this reporting discrepancy is a key audit point in this report.</p>
+</section>
+</section>
+<section id="论文故事线假设与权衡" class="card level2">
+<h2>3. Argument, assumptions, and trade-offs</h2>
+<ol type="1">
+<li><strong>Convert 3D observations back into a form familiar to the VLM.</strong> Reconstruct a point cloud from RGB-D, then render 2D images from top/front/right orthographic views, avoiding direct input of unfamiliar 3D tokens into the VLM.</li>
+<li><strong>Turn translational actions into visual localization.</strong> Each projected view predicts a 2D heatmap at the same resolution as the input; the three heatmaps jointly score a 3D workspace grid, and the highest-scoring point becomes the next keyframe translation.</li>
+<li><strong>First teach the VLM to produce heatmaps.</strong> Pretrain text-conditioned object grounding on the RoboPoint 120K object-detection split before robot action fine-tuning, reducing the output shift from token generation to heatmaps.</li>
+<li><strong>Retain classification heads for other action components.</strong> Each of the three Euler rotation axes is discretized into 72 bins; gripper state and collision flag are binary. Predictions jointly use each view’s global max-pooled token and local token at the heatmap peak.</li>
+<li><strong>Execute using an external motion planner.</strong> The network predicts only the next keyframe pose; an RRT/OMPL-style sampling planner handles actual movement. This improves success and interpretability, but the results do not represent end-to-end low-level control capability.</li>
+</ol>
+<p>The core assumption is that PaliGemma image tokens already carry sufficient semantics, while 3D geometry can be recovered through orthographic projections and heatmap backprojection. Three tradeoffs follow: projections avoid a 3D encoder but may introduce occlusion; discrete heatmaps provide dense supervision but limit precision; and an external planner reduces learning difficulty while moving collision and dynamics challenges outside the model.</p>
+</section>
+<section id="方程级形式化与流程" class="card level2">
+<h2>4. Formalization and procedure</h2>
+<section id="问题定义" class="level3">
+<h3>4.1 Problem definition</h3>
+<p>The (i)-th demonstration trajectory is</p>
+<p>[ _i={l_i,(o<sup>i_1,a</sup>i_1),,(o<sup>i_H,a</sup>i_H)}, ]</p>
+<p>where language instruction is (l), observation (o) consists of one or more RGB-D views, and action (a=(T,g,c)) contains a 6-DoF end-effector pose (TSE(3)), gripper (g{0,1}), and collision flag (c{0,1}) (Sec. 3.1, PDF p.4). The policy predicts the next keyframe, and a motion planner moves to the target pose until success or the maximum step count.</p>
+</section>
+<section id="对象-grounding-热图" class="level3">
+<h3>4.2 Object-grounding heatmaps</h3>
+<p>For the center (x_i^b) of the (i)-th target box, construct a truncated Gaussian (Eq. 2, PDF p.5):</p>
+[ H_i^{gt}(x)=
+<math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mrow><mo stretchy="true" form="prefix">{</mo><mtable><mtr><mtd columnalign="left" style="text-align: left"><msub><mi>p</mi><mi>i</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>,</mo></mtd><mtd columnalign="left" style="text-align: left"><msub><mi>p</mi><mi>i</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>≥</mo><msub><mi>p</mi><mrow><mi>m</mi><mi>i</mi><mi>n</mi></mrow></msub><mo>,</mo></mtd></mtr><mtr><mtd columnalign="left" style="text-align: left"><mn>0</mn><mo>,</mo></mtd><mtd columnalign="left" style="text-align: left"><mtext mathvariant="normal">otherwise</mtext><mo>,</mo></mtd></mtr></mtable></mrow><mspace width="1.0em"></mspace></mrow><annotation encoding="application/x-tex">\begin{cases}
+p_i(x), &amp; p_i(x)\ge p_{min},\\
+0, &amp; \text{otherwise},
+\end{cases}\quad</annotation></semantics></math>
+<p>p_i(x)=(-). ]</p>
+<p>Average across objects, then normalize (Eq. 3, PDF p.5):</p>
+<p>[ H^{gt}(x)=, H_{avg}(x)=_{i=1}^N H_i^{gt}(x). ]</p>
+<p>PaliGemma image tokens are rearranged into a 2D grid by patch position, restored to input-image resolution with convex upsampling, and supervised using cross-entropy. The output remains a probability distribution over the image rather than a coordinate vector without spatial structure.</p>
+</section>
+<section id="d-平移动作" class="level3">
+<h3>4.3 3D translational actions</h3>
+<p>Project the point cloud into top/front/right images (I_v); the VLM produces heatmaps (H_v). For a candidate 3D grid point (q) in the workspace, project it into each view (_v(q)); the combined score can be written as</p>
+<p>[ s(q)=_{v{top,front,right}} H_v(_v(q)), q=_q s(q). ]</p>
+<p>The paper describes backprojecting three views to estimate scores for all 3D grid points (Sec. 3.3, PDF p.5), but provides no separately numbered equation in the main text. The expression above faithfully formalizes its procedure rather than introducing a new algorithm.</p>
+</section>
+<section id="多头动作损失" class="level3">
+<h3>4.4 Multi-head action loss</h3>
+<p>Training objective (Eq. 4, PDF p.6):</p>
+<p>[ L=L_{trans}+L_{rot}+L_{gripper}+L_{collision}. ]</p>
+<p>Translation and three-axis rotation use cross-entropy; gripper/collision use binary cross-entropy. Position heatmaps provide dense supervision; the remaining discrete heads predict from global/local tokens.</p>
+</section>
+<section id="伪代码" class="level3">
+<h3>4.5 Pseudocode</h3>
+<pre class="text"><code>Pretraining:
+  for (image, text, boxes) in RoboPoint-120K:
+      H_gt = normalize(mean(truncated_gaussian(box centers)))
+      image_tokens = PaliGemma(image, text)       # SigLIP and token embeddings frozen
+      H_pred = ConvexUpsample(reshape(image_tokens))
+      optimize CE(H_pred, H_gt)
+
+Robot fine-tuning/inference:
+  point_cloud = fuse_calibrated_RGBD(observation)
+  views = orthographic_render(point_cloud, top/front/right)
+  heatmaps, image_tokens = BridgeVLA(views, instruction)
+  translation = argmax_3D(backproject_and_fuse(heatmaps))
+  local = tokens_at_heatmap_peaks(image_tokens)
+  global = max_pool_each_view(image_tokens)
+  rotation_3x72, gripper, collision = MLP(concat(local, global))
+  planner.move_to(translation, rotation, collision)
+  repeat until oracle success or H_max</code></pre>
+</section>
+</section>
+<section id="关键机制与工程细节" class="card level2">
+<h2>5. Key mechanisms and engineering details</h2>
+<div class="table-scroll" role="region" aria-label="Data table 2" tabindex="0"><table>
+<colgroup>
+<col style="width: 18%" />
+<col style="width: 18%" />
+<col style="width: 25%" />
+<col style="width: 18%" />
+<col style="width: 18%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Component</th>
+<th scope="col">Implementation</th>
+<th scope="col" style="text-align: right;">Numbers / configuration</th>
+<th scope="col">Evidence</th>
+<th scope="col">Tradeoffs</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>VLM backbone</td>
+<td>PaliGemma：SigLIP + Gemma</td>
+<td style="text-align: right;">Vision encoder and language token embeddings frozen throughout</td>
+<td>Sec.3.2 p.5；App.A p.16</td>
+<td>Preserves semantics and reduces trainable parameters; may limit adaptation to new viewpoints</td>
+</tr>
+<tr class="even">
+<td>Heatmap pretraining</td>
+<td>RoboPoint detection split</td>
+<td style="text-align: right;">120K images</td>
+<td>Sec.3.2 p.4</td>
+<td>Learns object centers, which are not necessarily action keypoints</td>
+</tr>
+<tr class="odd">
+<td>3D→2D input</td>
+<td>Top/front/right orthographic projections</td>
+<td style="text-align: right;">3 views</td>
+<td>Sec.3.3 p.5</td>
+<td>Low compute; sensitive to occlusion and view selection</td>
+</tr>
+<tr class="even">
+<td>Translation output</td>
+<td>Three-view heatmaps→3D grid argmax</td>
+<td style="text-align: right;">Convex upsampling: 309M parameters</td>
+<td>Sec.4.3 p.11</td>
+<td>Dense supervision; the module itself is large</td>
+</tr>
+<tr class="odd">
+<td>Direct-regression ablation</td>
+<td>Transformer decoder</td>
+<td style="text-align: right;">303M parameters</td>
+<td>Sec.4.3 p.11</td>
+<td>Similar parameter count, but 88.2→31.4</td>
+</tr>
+<tr class="even">
+<td>Rotation</td>
+<td>Euler classification</td>
+<td style="text-align: right;">72 bins per axis (5°)</td>
+<td>Sec.3.3 p.5</td>
+<td>Simple and stable; quantization error and Euler singularities</td>
+</tr>
+<tr class="odd">
+<td>Other heads</td>
+<td>Binary gripper/collision classification</td>
+<td style="text-align: right;">global+peak-local tokens</td>
+<td>Sec.3.3 p.5</td>
+<td>Clear task decomposition; depends on correct heatmap peaks</td>
+</tr>
+<tr class="even">
+<td>RLBench training</td>
+<td>AdamW, lr 8e-5, batch 192</td>
+<td style="text-align: right;">48 H100, 83K steps, ≈20h</td>
+<td>Table 5/App.A p.16</td>
+<td>≈960 H100·h: substantial compute</td>
+</tr>
+<tr class="odd">
+<td>COLOSSEUM</td>
+<td>AdamW, lr 8e-5, batch 192</td>
+<td style="text-align: right;">48 H100, ≈20h</td>
+<td>Table 5/App.A p.16</td>
+<td>Similarly high cost</td>
+</tr>
+<tr class="even">
+<td>GemBench</td>
+<td>AdamW, lr 8e-5, batch 160</td>
+<td style="text-align: right;">40 A100, 50 epochs, ≈2.1h</td>
+<td>Table 5/App.A p.16</td>
+<td>Budget differs across benchmarks</td>
+</tr>
+<tr class="odd">
+<td>Real robot</td>
+<td>AdamW, lr 2e-5, batch 192</td>
+<td style="text-align: right;">8 A100, 300 epochs, ≈1.5h</td>
+<td>Table 5/App.A p.16</td>
+<td>Many epochs over very little data; overfitting risk</td>
+</tr>
+<tr class="even">
+<td>Inference</td>
+<td>RTX 4090</td>
+<td style="text-align: right;">Mean over 100 runs: 0.21s/action≈4.76Hz</td>
+<td>App.A p.16</td>
+<td>Excludes total motion-planning/mechanical-execution latency</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section id="数据集基准与指标" class="card level2">
+<h2>6. Datasets, benchmarks, and metrics</h2>
+<section id="rlbench" class="level3">
+<h3>6.1 RLBench</h3>
+<p>18 tasks, each with 100 expert demonstrations; binary success per task, 25 trials/task, and at most 25 action steps. The authors train BridgeVLA five times (Sec. 4.1.1, PDF p.7). Main metrics are mean success rate and mean rank over 18 tasks. It tests complex manipulation, but training and testing use the same objects, so open-world category generalization is not its focus.</p>
+</section>
+<section id="colosseum" class="level3">
+<h3>6.2 COLOSSEUM</h3>
+<p>Extends RLBench to 20 base tasks and 12 types of unseen perturbations, totaling 20,371 task-perturbation instances; also includes original RLBench variations and an “All Perturbations” setting. Each perturbation is evaluated on 3 unseen instances, with 25 trials per task. BridgeVLA/RVT-2 are retrained three times; other baselines come from the benchmark paper (Sec.4.1.2 pp.7–8; App.B.3 p.16).</p>
+</section>
+<section id="gembench" class="level3">
+<h3>6.3 GemBench</h3>
+<p>Training uses 16 tasks/31 variations and seven basic action types; testing covers 44 tasks/92 variations, divided into L1 new positions, L2 new rigid objects, L3 new articulated objects, and L4 new long-horizon compositional tasks. BridgeVLA uses 5 seeds, each with 20 trials per variation (Sec.4.1.3 pp.8–9; App.B.4 p.16).</p>
+</section>
+<section id="真实机器人" class="level3">
+<h3>6.4 Real robot</h3>
+<p>Franka Research 3 + ZED 2i, 13 tasks, 10 expert trajectories per task; seven settings: Basic, Distractor, Lighting, Background, Height, Combination, Category. Table 4 Basic uses 10 trials per method per task; the remaining six settings compare only RVT-2, BridgeVLA without pretraining, and full BridgeVLA (Sec.4.2 pp.9–11).</p>
+</section>
+</section>
+<section id="主结果数据矩阵" class="card level2">
+<h2>7. Main-results matrices</h2>
+<section id="三个主-benchmark-的总体结果" class="level3">
+<h3>7.1 Overall results on the three main benchmarks</h3>
+<div class="table-scroll" role="region" aria-label="Data table 3" tabindex="0"><table>
+<colgroup>
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 12%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Benchmark</th>
+<th scope="col">Strongest previous baseline</th>
+<th scope="col" style="text-align: right;">Previous baseline</th>
+<th scope="col" style="text-align: right;">BridgeVLA</th>
+<th scope="col" style="text-align: right;">Absolute gain</th>
+<th scope="col" style="text-align: right;">Relative gain</th>
+<th scope="col">Source</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>RLBench 18-task Avg SR↑</td>
+<td>RVT-2</td>
+<td style="text-align: right;">81.4</td>
+<td style="text-align: right;"><strong>88.2</strong></td>
+<td style="text-align: right;">+6.8 pp</td>
+<td style="text-align: right;">+8.35%</td>
+<td>Table 1, PDF p.6</td>
+</tr>
+<tr class="even">
+<td>COLOSSEUM 14-setting Avg SR↑</td>
+<td>RVT-2</td>
+<td style="text-align: right;">56.7</td>
+<td style="text-align: right;"><strong>64.0</strong></td>
+<td style="text-align: right;">+7.3 pp</td>
+<td style="text-align: right;">+12.87%</td>
+<td>Table 2, PDF p.8</td>
+</tr>
+<tr class="odd">
+<td>GemBench 4-level Avg SR↑</td>
+<td>3D-LOTUS++</td>
+<td style="text-align: right;">48.0</td>
+<td style="text-align: right;"><strong>50.0</strong></td>
+<td style="text-align: right;">+2.0 pp</td>
+<td style="text-align: right;">+4.17%</td>
+<td>Table 3, PDF p.9</td>
+</tr>
+<tr class="even">
+<td>Real robot Basic Avg SR↑</td>
+<td>RVT-2</td>
+<td style="text-align: right;">90.0</td>
+<td style="text-align: right;"><strong>96.9</strong></td>
+<td style="text-align: right;">+6.9 pp</td>
+<td style="text-align: right;">+7.67%</td>
+<td>Table 4, PDF p.10</td>
+</tr>
+<tr class="odd">
+<td>Real robot 7 settings Avg↑</td>
+<td>RVT-2</td>
+<td style="text-align: right;">Exact mean not listed</td>
+<td style="text-align: right;">BridgeVLA is higher</td>
+<td style="text-align: right;">Authors report an average +32%</td>
+<td style="text-align: right;">Missing baseline value prevents recalculation</td>
+<td>Fig.3 caption, PDF p.11</td>
+</tr>
+</tbody>
+</table></div>
+<figure class="figure report-chart" aria-labelledby="benchmark-chart-caption">
+<svg class="chart" viewBox="0 0 760 300" role="img" aria-label="Mean success rates of BridgeVLA and the strongest previous baseline on each benchmark; vertical axis: success percentage, 0 to 100">
+<title>
+Mean success rates: BridgeVLA versus strongest previous baselines
+</title>
+<desc>Four paired-bar groups for RLBench, COLOSSEUM, GemBench, and the real-robot Basic setting; blue represents the strongest previous baseline and orange BridgeVLA. The vertical axis is success percentage.</desc> <line x1="58" y1="28" x2="58" y2="230" stroke="currentColor" stroke-width="1.2" opacity="0.65"/> <line x1="58" y1="230" x2="735" y2="230" stroke="currentColor" stroke-width="1.2" opacity="0.65"/> <g fill="currentColor" font-size="12" opacity="0.72" text-anchor="end"> <text x="50" y="234">0</text><text x="50" y="194">20</text><text x="50" y="154">40</text><text x="50" y="114">60</text><text x="50" y="74">80</text><text x="50" y="34">100</text> </g> <g stroke="currentColor" opacity="0.12"><line x1="58" y1="190" x2="735" y2="190"/><line x1="58" y1="150" x2="735" y2="150"/><line x1="58" y1="110" x2="735" y2="110"/><line x1="58" y1="70" x2="735" y2="70"/><line x1="58" y1="30" x2="735" y2="30"/></g> <g fill="#2a78d6"> <rect x="102" y="67.2" width="38" height="162.8" rx="4" tabindex="0" data-tip="RLBench · RVT-2：81.4%">
+<title>
+RLBench · RVT-2：81.4%
+</title>
+</rect> <rect x="262" y="116.6" width="38" height="113.4" rx="4" tabindex="0" data-tip="COLOSSEUM · RVT-2：56.7%">
+<title>
+COLOSSEUM · RVT-2：56.7%
+</title>
+</rect> <rect x="422" y="134" width="38" height="96" rx="4" tabindex="0" data-tip="GemBench · 3D-LOTUS++：48.0%">
+<title>
+GemBench · 3D-LOTUS++：48.0%
+</title>
+</rect> <rect x="582" y="50" width="38" height="180" rx="4" tabindex="0" data-tip="Real Basic · RVT-2：90.0%">
+<title>
+Real Basic · RVT-2：90.0%
+</title>
+</rect> </g> <g fill="#eb6834"> <rect x="144" y="53.6" width="38" height="176.4" rx="4" tabindex="0" data-tip="RLBench · BridgeVLA：88.2%">
+<title>
+RLBench · BridgeVLA：88.2%
+</title>
+</rect> <rect x="304" y="102" width="38" height="128" rx="4" tabindex="0" data-tip="COLOSSEUM · BridgeVLA：64.0%">
+<title>
+COLOSSEUM · BridgeVLA：64.0%
+</title>
+</rect> <rect x="464" y="130" width="38" height="100" rx="4" tabindex="0" data-tip="GemBench · BridgeVLA：50.0%">
+<title>
+GemBench · BridgeVLA：50.0%
+</title>
+</rect> <rect x="624" y="36.2" width="38" height="193.8" rx="4" tabindex="0" data-tip="Real Basic · BridgeVLA：96.9%">
+<title>
+Real Basic · BridgeVLA：96.9%
+</title>
+</rect> </g> <g fill="currentColor" font-size="12" text-anchor="middle"><text x="142" y="252">RLBench</text><text x="302" y="252">COLOSSEUM</text><text x="462" y="252">GemBench</text><text x="622" y="252">Real Basic</text></g> <g font-size="12"><rect x="250" y="270" width="14" height="14" rx="2" fill="#2a78d6"/><text x="270" y="282" fill="currentColor">Strongest previous baseline</text><rect x="402" y="270" width="14" height="14" rx="2" fill="#eb6834"/><text x="422" y="282" fill="currentColor">BridgeVLA</text></g>
+</svg>
+<figcaption id="benchmark-chart-caption">
+Figure 1 | Four recalculable aggregate metrics (success %, single Y-axis). Hover over bars for raw values; sources match the table above.
+</figcaption>
+</figure>
+</section>
+<section id="gembench五指标-七方法完整矩阵" class="level3">
+<h3>7.2 GemBench: complete matrix of five metrics × seven methods</h3>
+<p>All values are success percentages; ± values are copied from the original table, which does not specify whether they are standard deviations or standard errors. L4 contains the hardest long-horizon compositional tasks.</p>
+<div class="table-scroll" role="region" aria-label="Data table 4" tabindex="0"><table>
+<colgroup>
+<col style="width: 13%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">Average↑</th>
+<th scope="col" style="text-align: right;">L1↑</th>
+<th scope="col" style="text-align: right;">L2↑</th>
+<th scope="col" style="text-align: right;">L3↑</th>
+<th scope="col" style="text-align: right;">L4↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>HiveFormer</td>
+<td style="text-align: right;">30.4</td>
+<td style="text-align: right;">60.3±1.5</td>
+<td style="text-align: right;">26.1±1.4</td>
+<td style="text-align: right;">35.1±1.7</td>
+<td style="text-align: right;">0.0±0.0</td>
+</tr>
+<tr class="even">
+<td>PolarNet</td>
+<td style="text-align: right;">38.4</td>
+<td style="text-align: right;">77.7±0.9</td>
+<td style="text-align: right;">37.1±1.4</td>
+<td style="text-align: right;">38.5±1.7</td>
+<td style="text-align: right;">0.1±0.2</td>
+</tr>
+<tr class="odd">
+<td>3D Diffuser Actor</td>
+<td style="text-align: right;">44.0</td>
+<td style="text-align: right;"><strong>91.9±0.8</strong></td>
+<td style="text-align: right;">43.4±2.8</td>
+<td style="text-align: right;">37.0±2.2</td>
+<td style="text-align: right;">0.0±0.0</td>
+</tr>
+<tr class="even">
+<td>RVT-2</td>
+<td style="text-align: right;">44.0</td>
+<td style="text-align: right;">89.1±0.8</td>
+<td style="text-align: right;">51.0±2.3</td>
+<td style="text-align: right;">36.0±2.2</td>
+<td style="text-align: right;">0.0±0.0</td>
+</tr>
+<tr class="odd">
+<td>3D-LOTUS</td>
+<td style="text-align: right;">45.7</td>
+<td style="text-align: right;"><strong>94.3±1.4</strong></td>
+<td style="text-align: right;">49.9±2.2</td>
+<td style="text-align: right;">38.1±1.1</td>
+<td style="text-align: right;">0.3±0.3</td>
+</tr>
+<tr class="even">
+<td>3D-LOTUS++</td>
+<td style="text-align: right;">48.0</td>
+<td style="text-align: right;">68.7±0.6</td>
+<td style="text-align: right;">64.5±0.9</td>
+<td style="text-align: right;">41.5±1.8</td>
+<td style="text-align: right;"><strong>17.4±0.4</strong></td>
+</tr>
+<tr class="odd">
+<td><strong>BridgeVLA</strong></td>
+<td style="text-align: right;"><strong>50.0</strong></td>
+<td style="text-align: right;">91.1±1.1</td>
+<td style="text-align: right;"><strong>65.0±1.3</strong></td>
+<td style="text-align: right;"><strong>43.8±1.2</strong></td>
+<td style="text-align: right;">0.0±0.0</td>
+</tr>
+</tbody>
+</table></div>
+<p>Source: Table 3, PDF p.9. BridgeVLA’s highest overall mean is driven mainly by L2/L3; it is not best on L1, and L4 is <strong>0.0</strong>, behind 3D-LOTUS++ at <strong>17.4 pp</strong>. Thus, “overall SOTA” does not imply leading long-horizon planning capability.</p>
+</section>
+<section id="colosseum14-种扰动完整矩阵" class="level3">
+<h3>7.3 COLOSSEUM: complete matrix of 14 perturbation settings</h3>
+<div class="table-scroll" role="region" aria-label="Data table 5" tabindex="0"><table>
+<colgroup>
+<col style="width: 4%" />
+<col style="width: 6%" />
+<col style="width: 6%" />
+<col style="width: 6%" />
+<col style="width: 6%" />
+<col style="width: 6%" />
+<col style="width: 6%" />
+<col style="width: 6%" />
+<col style="width: 6%" />
+<col style="width: 6%" />
+<col style="width: 6%" />
+<col style="width: 6%" />
+<col style="width: 6%" />
+<col style="width: 6%" />
+<col style="width: 6%" />
+<col style="width: 6%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">Avg↑</th>
+<th scope="col" style="text-align: right;">All</th>
+<th scope="col" style="text-align: right;">MO-C</th>
+<th scope="col" style="text-align: right;">RO-C</th>
+<th scope="col" style="text-align: right;">MO-T</th>
+<th scope="col" style="text-align: right;">RO-T</th>
+<th scope="col" style="text-align: right;">MO-S</th>
+<th scope="col" style="text-align: right;">RO-S</th>
+<th scope="col" style="text-align: right;">Light</th>
+<th scope="col" style="text-align: right;">Table-C</th>
+<th scope="col" style="text-align: right;">Table-T</th>
+<th scope="col" style="text-align: right;">Distr.</th>
+<th scope="col" style="text-align: right;">Bg-T</th>
+<th scope="col" style="text-align: right;">RLBench</th>
+<th scope="col" style="text-align: right;">Cam</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>R3M-MLP</td>
+<td style="text-align: right;">0.8</td>
+<td style="text-align: right;">0.6</td>
+<td style="text-align: right;">0.4</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">1.8</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">1.0</td>
+<td style="text-align: right;">1.4</td>
+<td style="text-align: right;">0.2</td>
+<td style="text-align: right;">1.6</td>
+<td style="text-align: right;">1.2</td>
+<td style="text-align: right;">2.0</td>
+<td style="text-align: right;">0.8</td>
+</tr>
+<tr class="even">
+<td>MVP-MLP</td>
+<td style="text-align: right;">1.6</td>
+<td style="text-align: right;">0.8</td>
+<td style="text-align: right;">1.2</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">0.4</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">4.4</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">1.6</td>
+<td style="text-align: right;">1.6</td>
+<td style="text-align: right;">2.2</td>
+<td style="text-align: right;">2.0</td>
+<td style="text-align: right;">2.0</td>
+<td style="text-align: right;">4.0</td>
+<td style="text-align: right;">2.6</td>
+</tr>
+<tr class="odd">
+<td>PerAct</td>
+<td style="text-align: right;">27.9</td>
+<td style="text-align: right;">7.2</td>
+<td style="text-align: right;">24.0</td>
+<td style="text-align: right;">29.2</td>
+<td style="text-align: right;">28.8</td>
+<td style="text-align: right;">17.7</td>
+<td style="text-align: right;">35.6</td>
+<td style="text-align: right;">29.3</td>
+<td style="text-align: right;">29.1</td>
+<td style="text-align: right;">30.4</td>
+<td style="text-align: right;">23.2</td>
+<td style="text-align: right;">27.1</td>
+<td style="text-align: right;">33.5</td>
+<td style="text-align: right;">39.4</td>
+<td style="text-align: right;">36.3</td>
+</tr>
+<tr class="even">
+<td>RVT</td>
+<td style="text-align: right;">35.4</td>
+<td style="text-align: right;">6.4</td>
+<td style="text-align: right;">26.0</td>
+<td style="text-align: right;">31.3</td>
+<td style="text-align: right;">44.8</td>
+<td style="text-align: right;">41.1</td>
+<td style="text-align: right;">35.3</td>
+<td style="text-align: right;">40.5</td>
+<td style="text-align: right;">34.0</td>
+<td style="text-align: right;">30.0</td>
+<td style="text-align: right;">45.2</td>
+<td style="text-align: right;">18.8</td>
+<td style="text-align: right;">46.4</td>
+<td style="text-align: right;">53.4</td>
+<td style="text-align: right;">42.2</td>
+</tr>
+<tr class="odd">
+<td>RVT-2</td>
+<td style="text-align: right;">56.7</td>
+<td style="text-align: right;">15.6</td>
+<td style="text-align: right;">53.0</td>
+<td style="text-align: right;">54.6</td>
+<td style="text-align: right;">59.7</td>
+<td style="text-align: right;">56.7</td>
+<td style="text-align: right;">60.9</td>
+<td style="text-align: right;">54.4</td>
+<td style="text-align: right;">58.0</td>
+<td style="text-align: right;">62.6</td>
+<td style="text-align: right;">56.6</td>
+<td style="text-align: right;"><strong>60.8</strong></td>
+<td style="text-align: right;">69.7</td>
+<td style="text-align: right;">68.8</td>
+<td style="text-align: right;">64.4</td>
+</tr>
+<tr class="even">
+<td><strong>BridgeVLA</strong></td>
+<td style="text-align: right;"><strong>64.0</strong></td>
+<td style="text-align: right;"><strong>18.7</strong></td>
+<td style="text-align: right;"><strong>60.5</strong></td>
+<td style="text-align: right;"><strong>63.8</strong></td>
+<td style="text-align: right;"><strong>63.5</strong></td>
+<td style="text-align: right;"><strong>68.4</strong></td>
+<td style="text-align: right;"><strong>69.3</strong></td>
+<td style="text-align: right;"><strong>61.7</strong></td>
+<td style="text-align: right;"><strong>69.7</strong></td>
+<td style="text-align: right;"><strong>75.7</strong></td>
+<td style="text-align: right;"><strong>71.3</strong></td>
+<td style="text-align: right;">51.8</td>
+<td style="text-align: right;"><strong>74.8</strong></td>
+<td style="text-align: right;"><strong>73.1</strong></td>
+<td style="text-align: right;"><strong>73.8</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>Source: Table 2, PDF p.8. BridgeVLA ranks first in 13 of 14 settings; its only clear miss is Distractor:<strong>51.8 vs RVT-2’s 60.8, lower by 9.0 pp (−14.80%)</strong>. The authors emphasize 13/14, but this failure suggests that heatmaps can still ground incorrectly in the presence of similar distractors.</p>
+</section>
+<section id="rlbench-方法谱系与消融" class="level3">
+<h3>7.4 RLBench method lineage and ablations</h3>
+<div class="table-scroll" role="region" aria-label="Data table 6" tabindex="0"><table>
+<colgroup>
+<col style="width: 15%" />
+<col style="width: 21%" />
+<col style="width: 21%" />
+<col style="width: 21%" />
+<col style="width: 21%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">Avg SR↑</th>
+<th scope="col" style="text-align: right;">Avg Rank↓</th>
+<th scope="col" style="text-align: right;">Train days↓</th>
+<th scope="col" style="text-align: right;">Inference fps↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>PerAct</td>
+<td style="text-align: right;">49.4</td>
+<td style="text-align: right;">7.0</td>
+<td style="text-align: right;">16.0</td>
+<td style="text-align: right;">4.9</td>
+</tr>
+<tr class="even">
+<td>RVT</td>
+<td style="text-align: right;">62.9</td>
+<td style="text-align: right;">4.92</td>
+<td style="text-align: right;">1.0</td>
+<td style="text-align: right;">11.6</td>
+</tr>
+<tr class="odd">
+<td>Act3D</td>
+<td style="text-align: right;">65.0</td>
+<td style="text-align: right;">4.89</td>
+<td style="text-align: right;">5.0</td>
+<td style="text-align: right;">Not reported</td>
+</tr>
+<tr class="even">
+<td>RVT-2</td>
+<td style="text-align: right;">81.4</td>
+<td style="text-align: right;">2.03</td>
+<td style="text-align: right;">0.83</td>
+<td style="text-align: right;">20.6</td>
+</tr>
+<tr class="odd">
+<td>BridgeVLA w/o heat</td>
+<td style="text-align: right;">31.4</td>
+<td style="text-align: right;">10.06</td>
+<td style="text-align: right;">Not reported</td>
+<td style="text-align: right;">Not reported</td>
+</tr>
+<tr class="even">
+<td>BridgeVLA w/ pos</td>
+<td style="text-align: right;">56.2</td>
+<td style="text-align: right;">5.97</td>
+<td style="text-align: right;">Not reported</td>
+<td style="text-align: right;">Not reported</td>
+</tr>
+<tr class="odd">
+<td><strong>BridgeVLA</strong></td>
+<td style="text-align: right;"><strong>88.2</strong></td>
+<td style="text-align: right;"><strong>2.03</strong></td>
+<td style="text-align: right;">About 0.83 (20h)</td>
+<td style="text-align: right;">About 4.76 (0.21s)</td>
+</tr>
+</tbody>
+</table></div>
+<p>Source: BridgeVLA Table 1 p.6 and Appendix A p.16; earlier speeds were also read from RVT/RVT-2 Table 1/I. BridgeVLA has the highest success rate, but its inference frequency is below RVT-2’s 20.6fps by approximately <strong>76.9%</strong>; moreover, its 20h requires 48 H100s, so “0.83 days” must not obscure the hardware scale.</p>
+</section>
+<section id="真实机器人基础设置" class="level3">
+<h3>7.5 Real-robot Basic setting</h3>
+<p>13 tasks × 10 trials：SpatialVLA(50 demos) 28.5%，SpatialVLA(10) 3.1%，π0 3.8%，ACT 22.3%，RVT-2 90.0%，BridgeVLA <strong>96.9%</strong>(Table 4, PDF p.10). BridgeVLA exceeds RVT-2 by +6.9 pp and SpatialVLA, also using 10 demos, by +93.8 pp. However, the original SpatialVLA paper pretrains on 1.1M episodes and evaluates different action representations/platforms. Whether its fine-tuning configuration is optimal when transferred here is insufficiently documented, so the gap measures both the method and reproduction recipe.</p>
+</section>
+</section>
+<section id="消融超参敏感性与相变" class="card level2">
+<h2>8. Ablations, hyperparameter sensitivity, and transitions</h2>
+<section id="输出空间热图是最强因果消融" class="level3">
+<h3>8.1 Output space: heatmaps provide the strongest causal ablation</h3>
+<p>A direct coordinate-regression head with similar parameter count reduces RLBench success from 88.2% to 31.4%, namely <strong>−56.8 pp</strong>; the authors also report that direct regression requires increasing batch size to 192 and carefully searching learning rates, whereas the heatmap version trains stably at batch 64 (Sec.4.3, PDF p.11). This supports three mechanisms: denser heatmap supervision, spatial priors from 3D→2D projection, and a shared 2D topology between inputs and outputs.</p>
+</section>
+<section id="输入空间更多-3d-信息反而破坏-vlm" class="level3">
+<h3>8.2 Input space: more 3D information can disrupt the VLM</h3>
+<p>Adding a 3D convolution to encode per-pixel positions reduces success from 88.2 to 56.2 (−32.0 pp). The paper attributes this to changes in the pretrained image-feature distribution. This ablation matters, but intermediate settings such as normalization, adapter-only fusion, and frozen/unfrozen ratios are missing. It therefore shows that this fusion scheme is harmful, not that every explicit 3D feature is harmful.</p>
+</section>
+<section id="预训练语义泛化收益只有图没有数表" class="level3">
+<h3>8.3 Pretraining: semantic-generalization gains shown only in a chart</h3>
+<p>Fig.3 (PDF p.11) shows that removing 2D heatmap pretraining substantially lowers Combination and Category performance, even below RVT-2. Visually, the full-model Combination bar is around 0.64, while the no-pretraining bar is near 0.04. Because exact value labels are absent, this report does not treat pixel estimates as paper-reported numbers. The figure supports the importance of pretraining for semantic OOD, but not a reliable pp gain or error-bar calculation.</p>
+</section>
+<section id="数据量相变与内部口径冲突" class="level3">
+<h3>8.4 Data-volume phase transition and inconsistent internal reporting</h3>
+<p>In Table 12 (p.24), 3 demos yield 124/130=95.38%, and 10 demos yield 126/130=96.92%, only 1.54 pp apart; the main difference is wolf-upper-drawer (7/10→9/10). Yet the abstract gives 96.8% for 3 demos, the main text 95.4%, and the table recalculates to 95.38%. Therefore, “3 demos reach 96.8%” should not be copied; the defensible conclusion is approximately 95.4% from appendix data.</p>
+</section>
+<section id="超参数敏感性论文未形成曲线" class="level3">
+<h3>8.5 Hyperparameter sensitivity: no systematic curves</h3>
+<p>Table 5 gives only final settings: pretraining lr 5e-5/batch 384; RLBench/COLOSSEUM/GemBench lr 8e-5 with batch 192/192/160; real robot lr2e-5/batch 192. No systematic sweep is reported for (,p_{min}), grid resolution, orthographic view count, 36/144 alternatives to 72 bins, convex-upsampling depth, frozen-layer ratio, or data scale. The direct-regression variant reportedly underwent grid search, but neither the grid nor failed points is published, preventing assessment of whether 31.4% is a fair optimum.</p>
+</section>
+</section>
+<section id="统计显著性" class="card level2">
+<h2>9. Statistical significance</h2>
+<ul>
+<li>RLBench: five training/evaluation runs, 25 trials/task; many task results include “±,” but the caption does not specify standard deviation versus standard error, and no significance test compares 88.2 with 81.4.</li>
+<li>COLOSSEUM: three repeats for BridgeVLA/RVT-2; the paper says it reports averages and variances. The other four baselines come from the original benchmark, with inconsistent variance conventions across papers.</li>
+<li>GemBench: 5 seeds × 20 trials/variation, with error terms but no paired test. The 2 pp advantage of BridgeVLA’s 50.0 over 3D-LOTUS++’s 48.0 likely requires paired testing to support a stable first-place claim.</li>
+<li>Real robot: 10 trials/task; 96.9%=126/130. Under a rough independent Bernoulli assumption, the Wilson 95% CI is about 92.4%–98.7%; RVT-2’s 117/130=90.0% has a CI around 83.6%–94.1%. The intervals overlap, and shared scenes and policies mean independence is not guaranteed.</li>
+</ul>
+<p>The paper provides no preregistration, multiple-comparison correction, or confidence intervals. It is qualitatively convincing for large differences such as 88.2 vs 31.4, but insufficient for small ones such as 50.0 vs 48.0.</p>
+</section>
+<section id="相关工作问题来源与技术传递链" class="card level2">
+<h2>10. Related work: problem origins and technical lineage</h2>
+<section id="peract把动作变成-3d-voxel-检测" class="level3">
+<h3>10.1 PerAct: treating actions as 3D voxel detection</h3>
+<p><strong>Problem solved.</strong> PerAct uses voxelized RGB-D and a Perceiver Transformer to classify the next action within a 3D grid; 18 RLBench tasks ×249 variations, 25 episodes/task. Original Table 1 (PDF p.7) reports mean gains over C2FARM-BC of 1.33× with 10 demos and 2.83× with 100 demos.</p>
+<p><strong>Remaining gap.</strong> Voxel computation is expensive; a later standardized reevaluation reports mean success of 49.4%, 16 days of training, and 4.9fps (RVT Table 1, PDF p.5). Precision tasks insert peg/stack cups/place cups are near zero.</p>
+<p><strong>How BridgeVLA responds.</strong> Retains the principle of inputs and actions sharing one space, but replaces 3D voxels with three 2D heatmaps and adds VLM semantics.</p>
+<p><strong>Inherited design.</strong> Keyframe extraction rules, 72-bin rotation classification, and gripper/collision heads are directly inherited from PerAct. BridgeVLA’s novelty is interface alignment rather than redefining the control problem.</p>
+</section>
+<section id="rvt用正交视图代替重-voxel" class="level3">
+<h3>10.2 RVT: orthographic views replace heavy voxels</h3>
+<p><strong>Problem solved.</strong> RVT renders virtual views from point clouds and predicts 3D translation with a multi-view Transformer and heatmap backprojection. RLBench success is 62.9%, a 27.33% relative gain over PerAct’s 49.4%; training takes 1 day versus 16 days, with inference at 11.6 versus 4.9fps (RVT Table 1, PDF p.5).</p>
+<p><strong>Remaining gap.</strong> Fine insertion remains weak: insert peg 11.2±3.0, place cups 4.0±2.5; views are manually chosen and open-ended semantics are absent.</p>
+<p><strong>How BridgeVLA responds.</strong> Almost directly adopts top/front/right projection and heatmap backprojection, then upgrades the visual processor to PaliGemma and adds text-conditioned heatmap pretraining.</p>
+<p><strong>Inherited design.</strong> BridgeVLA’s “2D bridge” does not emerge from nowhere: its geometric framework comes from RVT. The actual addition turns that framework into a pretraining/fine-tuning interface compatible with a VLM.</p>
+</section>
+<section id="rvt-2精度与系统协同" class="level3">
+<h3>10.3 RVT-2: jointly improving precision and systems</h3>
+<p><strong>Problem solved.</strong> RVT-2 adds location-conditioned rotation, convex upsampling, mixed precision, and other improvements, raising RLBench success from RVT’s 62.9% to 81.4%, with 0.83-day training and 20.6fps (RVT-2 Table I, PDF p.6). Insert peg rises from 11.2 to 40.0, and place cups from 4.0 to 38.0.</p>
+<p><strong>Remaining gap.</strong> It remains a non-VLA specialist with limited semantics and OOD instruction capability; the paper itself notes that it observes only the current moment, lacks history, and struggles with long tasks (RVT-2 limitations, PDF p.8).</p>
+<p><strong>How BridgeVLA responds.</strong> Reuses convex upsampling and multi-view heatmaps, placing PaliGemma’s language-conditioned image tokens into the same structure.</p>
+<p><strong>Inherited design.</strong> BridgeVLA’s 81.4 RLBench baseline is RVT-2. Its central 6.8 pp gain resembles adding a semantic backbone to an efficient 3D policy more than replacing all control modules.</p>
+</section>
+<section id="spatialvla显式-3d-位置注入的-vla-路线" class="level3">
+<h3>10.4 SpatialVLA: a VLA route with explicit 3D position injection</h3>
+<p><strong>Problem solved.</strong> SpatialVLA uses Ego3D Position Encoding and Adaptive Action Grids, pretraining on 1.1M real-world episodes. LIBERO Table III (PDF p.7) reports a mean of 78.1±0.7%, above fine-tuned OpenVLA’s 76.5±0.6; L1 Spatial is 88.2±0.5.</p>
+<p><strong>Remaining gap.</strong> Explicit 3D position tokens alter VLM image representations, while actions still use tokens/grids. Transferred to BridgeVLA’s real tasks with 10 demos, Basic success is only 3.1%, and even 50 demos reach only 28.5% (BridgeVLA Table 4, p.10).</p>
+<p><strong>How BridgeVLA responds.</strong> Takes the opposite choice of avoiding 3D coordinate injection into the backbone and using image-like orthographic projections instead; Table 1’s w/pos ablation directly shows 88.2→56.2.</p>
+<p><strong>Inherited design.</strong> Both view spatial representation as central to VLA, but differ at the interface: SpatialVLA makes the VLM accept 3D; BridgeVLA re-encodes 3D into the VLM’s native 2D form.</p>
+</section>
+<section id="非线性技术演进树" class="level3">
+<h3>10.5 Nonlinear technical evolution</h3>
+<pre class="text"><code>                     ┌─ VLM / web-scale semantics ── OpenVLA, π0, SpatialVLA
+                     │                                  │
+PerAct: voxel Q-map ─┼─► Action detection in a shared space ├─ Ego3D + action tokens
+    │                │                                  │       ↓ Input distribution shift
+    │                └─► RVT: 3D→multi-view 2D heatmap ─┼─► BridgeVLA
+    │                           │                        │   PaliGemma image tokens
+    │                           ▼                        │   + object heatmap pretrain
+    └──────────────► RVT-2: convex upsampling/precision/systems ┘   + 3-view backprojection
+                                 │
+                                 └─ External motion planner / keyframe execution</code></pre>
+<p>The driving concern shifts from improving sample efficiency with 3D grids, to reducing 3D computation, to incorporating pretrained VLM semantics. The real turning point is not a larger model, but recognizing that<strong>the representation interface itself is an inductive bias</strong>: directly injecting the same 3D information can disrupt pretraining, whereas projection–heatmap bridging can reuse existing representations.</p>
+</section>
+<section id="跨论文对标" class="level3">
+<h3>10.6 Cross-paper comparison</h3>
+<div class="table-scroll" role="region" aria-label="Data table 7" tabindex="0"><table>
+<colgroup>
+<col style="width: 15%" />
+<col style="width: 15%" />
+<col style="width: 15%" />
+<col style="width: 15%" />
+<col style="width: 21%" />
+<col style="width: 15%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Input</th>
+<th scope="col">Translation output</th>
+<th scope="col">Source of semantics</th>
+<th scope="col" style="text-align: right;">RLBench Avg</th>
+<th scope="col">Main bottleneck</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>PerAct</td>
+<td>3D voxel</td>
+<td>voxel classification</td>
+<td>CLIP language</td>
+<td style="text-align: right;">49.4</td>
+<td>16-day training; weak precision tasks</td>
+</tr>
+<tr class="even">
+<td>RVT</td>
+<td>Multi-view projections</td>
+<td>2D heatmap→3D</td>
+<td>task language</td>
+<td style="text-align: right;">62.9</td>
+<td>High precision and semantic generalization</td>
+</tr>
+<tr class="odd">
+<td>RVT-2</td>
+<td>Multi-view projections</td>
+<td>convex heatmap→3D</td>
+<td>task language</td>
+<td style="text-align: right;">81.4</td>
+<td>History/long horizons, open-ended semantics</td>
+</tr>
+<tr class="even">
+<td>SpatialVLA</td>
+<td>2D+Ego3D position</td>
+<td>adaptive action grids</td>
+<td>1.1M episodes VLA</td>
+<td style="text-align: right;">Different protocol</td>
+<td>Mismatch between 3D tokens and VLM inputs</td>
+</tr>
+<tr class="odd">
+<td><strong>BridgeVLA</strong></td>
+<td>Three orthographic 2D views</td>
+<td>text-conditioned heatmap→3D</td>
+<td>PaliGemma+120K grounding</td>
+<td style="text-align: right;"><strong>88.2</strong></td>
+<td>High compute, occlusion, long-horizon L4=0</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+</section>
+<section id="真正贡献可复用设计与迁移潜力" class="card level2">
+<h2>11. Genuine contributions, reusable design, and transfer potential</h2>
+<section id="真正贡献" class="level3">
+<h3>11.1 Actual contributions</h3>
+<ol type="1">
+<li><strong>Interface alignment rather than module accumulation.</strong> BridgeVLA’s key is simultaneously aligning inputs (3D→2D) and outputs (actions→2D heatmaps), rather than adding another 3D encoder.</li>
+<li><strong>Pretraining objective and downstream head share a structure.</strong> Language-conditioned object grounding first trains heatmap prediction, avoiding a sudden downstream requirement for the VLM to emit an unfamiliar structure.</li>
+<li><strong>Systematic evidence.</strong> Three simulation benchmarks +13 real tasks show gains beyond RLBench alone; structural ablations span 32–56.8 pp, far exceeding the main-leaderboard gains of 2–7.3 pp.</li>
+<li><strong>Counterintuitive finding.</strong> Explicit 3D position features hurt performance, showing that incorporating new modalities into large models depends on distributional compatibility, not monotonically increasing information.</li>
+</ol>
+</section>
+<section id="可复用设计" class="level3">
+<h3>11.2 Reusable designs</h3>
+<ul>
+<li>For any pretrained backbone, first translate a new modality into a familiar token topology, then solve the downstream task; this is more stable than directly concatenating coordinates.</li>
+<li>Output heads should ideally share spatial structure with inputs: video actions can use spatiotemporal tube heatmaps, navigation bird’s-eye occupancy/action maps, and web agents screenshot-element heatmaps.</li>
+<li>Pretraining proxy tasks should match downstream decoder structure. If the downstream task needs keypoints, first train open-vocabulary keypoint/grounding tasks rather than only next-token prediction.</li>
+<li>When diagnosing harmful new features, compare equal-parameter adapters, frozen-layer ratios, and feature-distribution shifts rather than only presence versus absence.</li>
+</ul>
+</section>
+<section id="迁移潜力" class="level3">
+<h3>11.3 Transfer potential</h3>
+<p>For causal prediction in long videos, future actionable locations could be predicted as spatiotemporal heatmaps, followed by structured event heads. For multimodal moderation representations, high-level risk semantics in UE/AE could be aligned with frame/token saliency maps rather than simply concatenating every vector. For agent GUI interaction, text-conditioned heatmaps naturally match click coordinates. However, 2D bridging has limits for true 3D topology, occlusion, and contact dynamics. Ultimately, a VLM-compatible 2D backbone may need a small 3D residual module that preserves its distribution.</p>
+</section>
+</section>
+<section id="论文自述限制" class="card level2">
+<h2>12. Limitations acknowledged by the paper</h2>
+<ol type="1">
+<li><strong>View occlusion.</strong> Place Cups is BridgeVLA’s relatively weakest RLBench task. The authors suggest that target keypoints are often occluded in all orthographic views, motivating dynamic view selection (Sec.4.1.1, PDF p.7).</li>
+<li><strong>Long-horizon task failure.</strong> GemBench L4 is <strong>0.0±0.0</strong>; the authors acknowledge matching most baselines and plan to introduce LLM-based task decomposition (Sec.4.1.3, PDF p.9).</li>
+<li><strong>Unseen categories remain difficult.</strong> Absolute Category success is low; a common failure is moving directly to the destination while ignoring the target object. The authors attribute this to the domain gap between third-person pretraining images and robot orthographic images, and to the mismatch between object localization and action-keypoint objectives (Sec.4.2, PDF pp.10–11).</li>
+</ol>
+</section>
+<section id="独立批判证据推论" class="card level2">
+<h2>13. Independent critique (evidence→inference)</h2>
+<ol type="1">
+<li><strong>[Definition of efficiency]</strong> Because RLBench/COLOSSEUM each require 48 H100×20h≈960 H100-hours, “only 3 demos” establishes data efficiency, not training efficiency. Production choices should report both success per trajectory and success per GPU-hour.</li>
+<li><strong>[Reporting consistency]</strong> Because the abstract reports 96.8% with 3 trajectories, the main text95.4%, and Table 12 recalculates to 124/130=95.38%, the headline sample-efficiency number has three versions. Conclusions should use the recalculable table rather than the abstract.</li>
+<li><strong>[Fair comparison]</strong> Because SpatialVLA(50) in the real-robot table uses a different trajectory count, and VLA methods differ in pretraining data, action chunks, and optimization recipes, 96.9 vs 3.1 cannot be attributed solely to the “2D bridge.” Controls need the same backbone, pretraining, and budget.</li>
+<li><strong>[System boundary]</strong> Because the policy predicts only keyframes and delegates collisions and continuous trajectories to an external planner, success measures the network plus planner. It cannot establish that BridgeVLA has learned contact dynamics or high-frequency closed-loop control.</li>
+<li><strong>[Ablation completeness]</strong> Because the pretraining ablation supplies only bars without an exact table, error bars, or per-task values, it supports a direction but not an audit of significance, and should not be treated as equivalent to the 88.2→31.4 structural ablation.</li>
+<li><strong>[Statistics]</strong> Because each real-robot cell has only 10 trials and the GemBench overall advantage is only 2pp, with no paired tests or confidence intervals, small SOTA gains may reflect scene/seed variation; large structural ablations are more credible.</li>
+<li><strong>[Overbroad representation claim]</strong> Because “w/pos” tests only one 3D-convolution fusion scheme, 56.2% does not show that explicit 3D is always harmful. Low-rank adapters, FiLM, residual gating, or alignment distillation might preserve its benefits.</li>
+<li><strong>[Version drift]</strong> Because the official repository now focuses on BridgeVLA++ and includes 2026 updates, and its README highlights newer results such as 90.5/93.7, running the main branch may not reproduce the 2025 paper’s88.2. Commit/tag and checkpoint lists must be pinned.</li>
+</ol>
+</section>
+<section id="开放挑战可执行的-head-to-head-实验空白" class="card level2">
+<h2>14. Open challenges: actionable head-to-head experiment gaps</h2>
+<section id="理论" class="level3">
+<h3>14.1 Theory</h3>
+<ul>
+<li><strong>Measuring alignment.</strong> Fix PaliGemma and training data; compare raw point tokens, Ego3D, three-view RGB, and three-view RGB plus low-rank 3D residuals. Measure layerwise CKA/MMD relative to the original pretrained image distribution and regress RLBench success to test whether closer distributional matching improves performance.</li>
+<li><strong>Mechanism of dense heatmap supervision.</strong> Compare equal-parameter networks using coordinate MSE, discrete 3D-grid CE, 2D Gaussian-heatmap CE, and optimal-transport heatmaps. Report gradient SNR, sample-complexity curves, and final SR to separate topological alignment from loss density.</li>
+<li><strong>Sufficiency of projected views.</strong> Control view count at 1/3/6/adaptive; measure occlusion and conditional mutual information, particularly on Place Cups/Insert Peg, to test whether a visibility ceiling determines failures.</li>
+</ul>
+</section>
+<section id="工程应用" class="level3">
+<h3>14.2 Engineering applications</h3>
+<ul>
+<li><strong>Data efficiency at equal GPU-hours.</strong> Give BridgeVLA, RVT-2, and SpatialVLA the same 8×H100 hardware and wall-clock budget, with 1/3/10/50 trajectories. Report SR, GPU-hours, peak memory, and end-to-end latency including the planner to obtain a Pareto frontier.</li>
+<li><strong>Interface ablation with a shared backbone.</strong> Attach Ego3D, a point adapter, and orthographic heatmaps to PaliGemma with identical frozen/unfrozen ratios. This fairly tests whether BridgeVLA benefits from its backbone or interface.</li>
+<li><strong>Closed-loop perturbations.</strong> Move targets during motion and introduce collisions and depth noise; compare keyframe+planner with diffusion action chunks. Report recovery time and failure modes to test whether 0.21s network inference suffices for closed-loop control.</li>
+</ul>
+</section>
+<section id="新兴方向" class="level3">
+<h3>14.3 Emerging directions</h3>
+<ul>
+<li><strong>History and long horizons.</strong> On GemBench L4, compare memoryless BridgeVLA, a token cache, JEPA-style state prediction, and an LLM task planner while fixing the low-level policy. Add subgoal completion and error recovery to success metrics.</li>
+<li><strong>Open-category action-keypoint pretraining.</strong> Compare box-center grounding, affordance keypoints, human hand–object contact, and synthetic robot keypoints, focusing on Category OOD to test the authors’ observation that object centers differ from manipulation keypoints.</li>
+<li><strong>Uncertainty-based routing.</strong> Use heatmap entropy, cross-view consistency, and ensemble variance to trigger help requests, view changes, or replanning. Compare head-to-head with always executing the policy, reporting safety failures and added latency.</li>
+</ul>
+</section>
+</section>
+<section id="近期工作雷达" class="card level2">
+<h2>15. Recent-work radar</h2>
+<ol type="1">
+<li><a href="https://arxiv.org/abs/2504.16054">π0.5</a>: introduces open-world generalization into general-purpose VLA; its scaling route complements BridgeVLA’s few-shot geometric route. A semantic–geometric decomposition under identical hardware and trajectories would be valuable.</li>
+<li><a href="https://arxiv.org/abs/2503.14734">GR00T N1</a>: an open foundation model for humanoid robots; its cross-embodiment capability can test whether the 2D heatmap bridge transfers to more complex kinematics.</li>
+<li><a href="https://arxiv.org/abs/2506.01844">SmolVLA</a>: focuses on low-cost VLA, providing a direct efficiency comparison with BridgeVLA’s48-H100 fine-tuning.</li>
+<li><a href="https://arxiv.org/abs/2502.05855">DexVLA</a>: uses a plug-in diffusion expert for continuous actions, potentially addressing the limitations of BridgeVLA’s discrete keyframes in dexterous control.</li>
+<li><a href="https://arxiv.org/abs/2506.09985">V-JEPA 2</a>: learns understanding, prediction, and planning through video self-supervision; better suited to adding temporal state to BridgeVLA than merely expanding current-frame processing.</li>
+<li><a href="https://arxiv.org/abs/2505.10911">ReWiND</a>: language-guided rewards without new demonstrations represent a route from behavior cloning toward online/offline reward adaptation.</li>
+<li><a href="https://arxiv.org/abs/2509.09674">SimpleVLA-RL</a>: scales VLA training with RL; BridgeVLA heatmap entropy or cross-view consistency could become verifiable rewards.</li>
+</ol>
+</section>
+<section id="结论" class="card level2">
+<h2>16. Conclusion</h2>
+<p>BridgeVLA’s most valuable aspect is not the 88.2% leaderboard number, but a transferable design judgment: for a pretrained VLM, new modalities and outputs should first be translated into spatial structures familiar to its backbone. Heatmaps’+56.8pp over direct regression and+32.0pp from removing explicit 3D positions make this mechanism more convincing than 2–7pp SOTA gains.</p>
+<p>It is still not a low-cost general-purpose robot model: fewer trajectories do not mean fewer GPUs, and keyframe+planner does not equal end-to-end control. GemBench L4=0, Distractor performance9pp below RVT-2, and low absolute Category success show that occlusion, long-horizon memory, and action-keypoint pretraining remain unresolved. The most rigorous next step is an interface-level head-to-head comparison with equal backbones, GPU-hours, and trajectory counts, rather than simply enlarging the backbone.</p>
+<hr />
+<p><strong>Sources and audit notes.</strong> All numbers come from the BridgeVLA, PerAct, RVT, RVT-2, and SpatialVLA PDFs actually read in this round, with table/section/PDF-page references. Unreported values were not invented. All URLs were visited and verified.<code>ml-report-index.md</code> This entry has been appended. The HTML follows the Warm Editorial template and passes the official validator with 0 errors /0 warnings. Self-containment, theme scripts, table scrolling, and mobile CSS were statically checked. The runtime provides neither <code>/usr/bin/chromium</code>、<code>/opt/pw-browsers</code> nor a cached Playwright executable; actual Playwright launch returned executable missing. Thus, this round cannot honestly claim browser screenshot-level checks of light, dark, and mobile layouts, and the prohibited <code>playwright install</code>。</p>
+</section>
+</div>
+
+  </main>
+
+  <footer>Sources: BridgeVLA, PerAct, RVT, RVT-2, and SpatialVLA PDFs, and verified proceedings, project pages, code, and weight links; generated: 2026-09-24.</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ Light' : '☾ Dark';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

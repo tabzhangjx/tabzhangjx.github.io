@@ -1,0 +1,1422 @@
+---
+layout: null
+title: "Spatial IDs"
+date: 2026-09-29
+topic: "vlm-vision"
+tags: ["vlm-vision", "spatial-reasoning", "interpretability"]
+excerpt: "从线性空间 ID 到因果 steering：VLM 如何绑定对象、位置与时间 多个 VLM 在中间层形成近似低秩、可操纵的对象—位置绑定，但最强证据仍局限于简单二维关系。"
+permalink: "/blog/2026/09/29/spatialids/"
+blog_post: true
+lang: "zh-CN"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_en: "/blog/2026/09/29/spatialids/en/"
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Linear Mechanisms for Spatiotemporal Reasoning in Vision Language Models · 2026-09-29</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  .report-body h2 { margin-top: 42px; padding-top: 30px; border-top: 1px solid var(--grid); }
+  .report-body h2:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+  .report-body h4 { margin: 22px 0 8px; font-size: 16px; }
+  .report-body blockquote { margin: 18px 0; padding: 14px 18px; border-left: 3px solid var(--chart-primary); background: var(--page); color: var(--text-secondary); }
+  .report-body blockquote p:last-child { margin-bottom: 0; }
+  .report-body strong { color: var(--text-primary); }
+  .report-body table { min-width: 680px; }
+  .report-body math { overflow-x: auto; max-width: 100%; }
+  .report-body > p:last-child { margin-bottom: 0; }
+  .kpi-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+  .kpi { padding: 14px 16px; border: 1px solid var(--border); border-radius: 9px; background: var(--page); }
+  .kpi b { display: block; color: var(--chart-primary); font-size: 21px; line-height: 1.2; }
+  .kpi span { color: var(--muted); font-size: 12.5px; }
+  @media (max-width: 640px) { .kpi-grid { grid-template-columns: 1fr; } .report-body table { min-width: 640px; } }
+
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+
+  <header class="hero">
+    <p class="eyebrow">ICLR 2026 POSTER · 视觉与多模态</p>
+    <h1>Linear Mechanisms for Spatiotemporal Reasoning in Vision Language Models</h1>
+    <p class="subtitle">从线性空间 ID 到因果 steering：VLM 如何绑定对象、位置与时间</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">arXiv:2601.12626v1</span>
+      <span class="chip">2026-09-29</span>
+      <span class="chip">机制解释 · 空间推理 · 因果干预</span>
+    </div>
+    <p class="lede">多个 VLM 在中间层形成近似低秩、可操纵的对象—位置绑定，但最强证据仍局限于简单二维关系。</p>
+    <div class="kpi-grid" aria-label="核心数字">
+      <div class="kpi"><b>64.6%</b><span>Spatial-ID steering 中位 belief swap</span></div>
+      <div class="kpi"><b>29.5%</b><span>等条件随机噪声对照</span></div>
+      <div class="kpi"><b>0.854–0.903</b><span>rank-3 位置映射 R²</span></div>
+    </div>
+  </header>
+
+  <main>
+
+    <figure class="figure" aria-labelledby="figure-1-title">
+      <p class="fig-title" id="figure-1-title">核心因果结果：空间 ID 比随机噪声更易翻转二元信念</p>
+      <p class="fig-sub">中位 belief swap（%）；单 Y 轴，数值来自主论文第 5 页。</p>
+      <div class="legend" aria-label="图例">
+        <span><span class="swatch" style="background:#2a78d6"></span>Spatial-ID steering</span>
+        <span><span class="swatch" style="background:#eb6834"></span>随机噪声</span>
+      </div>
+      <svg class="chart" viewBox="0 0 900 390" role="img" xmlns="http://www.w3.org/2000/svg">
+        <title>Spatial-ID steering 与随机噪声的中位 belief swap</title>
+        <desc>Spatial-ID steering 为 64.6%，随机噪声为 29.5%。</desc>
+        <g stroke="var(--grid)" stroke-width="1">
+          <line x1="90" y1="310" x2="850" y2="310"/><line x1="90" y1="239" x2="850" y2="239"/>
+          <line x1="90" y1="167" x2="850" y2="167"/><line x1="90" y1="96" x2="850" y2="96"/><line x1="90" y1="60" x2="850" y2="60"/>
+        </g>
+        <g font-size="13" text-anchor="end">
+          <text x="78" y="315">0</text><text x="78" y="244">20</text><text x="78" y="172">40</text><text x="78" y="101">60</text><text x="78" y="65">70%</text>
+        </g>
+        <rect x="220" y="79" width="190" height="231" rx="7" fill="#2a78d6" tabindex="0" data-tip="Spatial-ID steering：64.6%"/>
+        <rect x="540" y="205" width="190" height="105" rx="7" fill="#eb6834" tabindex="0" data-tip="随机噪声：29.5%"/>
+        <g font-size="18" font-weight="700" text-anchor="middle">
+          <text x="315" y="68">64.6%</text><text x="635" y="194">29.5%</text>
+        </g>
+        <g font-size="14" text-anchor="middle">
+          <text x="315" y="338">Spatial-ID steering</text><text x="635" y="338">随机噪声</text>
+        </g>
+      </svg>
+      <figcaption>绝对差 35.1 pp，相对噪声 +118.98%；图注/摘要另写 64.4%，报告保留该 0.2 pp 内部冲突。</figcaption>
+    </figure>
+
+    <article class="card report-body" aria-label="完整研究报告">
+
+<h2 id="0-链接验证与材料完备性">0. 链接验证与材料完备性</h2>
+<p>下表中的 URL
+均已实际访问。若站点只提供入口而没有独立资源，明确记为“未公开/未找到”，不把搜索摘要当作论文证据。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">材料</th>
+<th scope="col">会议 / 正式页</th>
+<th scope="col">arXiv（版本与日期）</th>
+<th scope="col">代码</th>
+<th scope="col">数据 / 权重</th>
+<th scope="col">项目页 / 视频</th>
+<th scope="col">核验结论</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>核心：Linear Mechanisms</strong></td>
+<td><a href="https://iclr.cc/virtual/2026/poster/10011690">ICLR 2026
+Poster</a>；<a
+href="https://openreview.net/forum?id=2zXRGiorSu">OpenReview</a></td>
+<td><a
+href="https://arxiv.org/abs/2601.12626">2601.12626v1</a>，2026-01-18；<a
+href="https://arxiv.org/html/2601.12626v1">HTML</a></td>
+<td><a
+href="https://github.com/Raphoo/linear-mech-vlms">Raphoo/linear-mech-vlms</a></td>
+<td>独立数据包与训练权重<strong>未公开/未找到</strong>；代码按
+Objaverse、COCO-Spatial、MVBench 生成/读取实验数据</td>
+<td><a
+href="https://www.raphikang.com/research">作者研究页/PDF</a>；会议海报页可核验展示信息；独立讲解视频**未找到**</td>
+<td>论文、附录、代码目录与会议接收状态均已核验</td>
+</tr>
+<tr class="even">
+<td>Kamath et al., <em>What’s “up” with VLMs?</em></td>
+<td><a href="https://aclanthology.org/2023.emnlp-main.568/">EMNLP
+2023</a></td>
+<td><a href="https://arxiv.org/abs/2310.19785">2310.19785</a></td>
+<td><a
+href="https://github.com/amitakamath/whatsup_vlms">whatsup_vlms</a></td>
+<td>COCO-prep、GQA-prep、RealCLEVR 入口见代码/论文</td>
+<td>项目视频<strong>未找到</strong></td>
+<td>问题来源：受控空间基准</td>
+</tr>
+<tr class="odd">
+<td>Feng &amp; Steinhardt, <em>How do Language Models Bind Entities in
+Context?</em></td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2024/hash/9d1b7fc578c0d2d6431fc26d736ecaf3-Abstract-Conference.html">ICLR
+2024 Proceedings</a></td>
+<td><a href="https://arxiv.org/abs/2310.17191">2310.17191</a></td>
+<td><a
+href="https://github.com/jiahai-feng/binding-iclr">binding-iclr</a></td>
+<td>合成任务脚本见代码；独立权重<strong>未找到</strong></td>
+<td>项目视频<strong>未找到</strong></td>
+<td>技术来源：绑定 ID 与因果替换</td>
+</tr>
+<tr class="even">
+<td>Hernandez et al., <em>Linearity of Relation Decoding</em></td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2024/hash/2b6d7285306fe896fca9b2e9a02ff6ec-Abstract-Conference.html">ICLR
+2024 Proceedings</a></td>
+<td><a href="https://arxiv.org/abs/2308.09124">2308.09124</a></td>
+<td><a
+href="https://github.com/evandez/relations">evandez/relations</a></td>
+<td>复现实验入口见代码；独立权重<strong>未找到</strong></td>
+<td><a href="https://lre.baulab.info/">LRE 项目页</a></td>
+<td>技术来源：关系的线性读出</td>
+</tr>
+<tr class="odd">
+<td>Zhang et al., <em>From Redundancy to Relevance</em></td>
+<td><a href="https://aclanthology.org/2025.naacl-long.115/">NAACL 2025
+Long</a></td>
+<td>arXiv 直达页<strong>未单列核验</strong>；以 ACL 正式版为准</td>
+<td>官方代码<strong>未找到</strong></td>
+<td>数据沿用公开基准</td>
+<td><a
+href="https://paperswithcode.com/paper/from-redundancy-to-relevance-enhancing">Papers
+with Code</a></td>
+<td>问题来源：跨层视觉信息流</td>
+</tr>
+<tr class="even">
+<td>Chen et al., <em>Why Is Spatial Reasoning Hard for VLMs?</em></td>
+<td><a href="https://proceedings.mlr.press/v267/chen25cr.html">ICML 2025
+/ PMLR 267</a></td>
+<td><a href="https://arxiv.org/abs/2503.01773">2503.01773</a></td>
+<td><a href="https://github.com/shiqichen17/AdaptVis">AdaptVis</a></td>
+<td>使用 WhatsUp/VSR 等公开基准；独立权重<strong>未找到</strong></td>
+<td>项目视频<strong>未找到</strong></td>
+<td>近邻方法：注意力焦点与训练零样本修复</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>索引站核验说明。</strong> 候选检索覆盖 OpenReview/ICLR
+正式页面、arXiv、ACL Anthology、PMLR、Papers with Code 与 Hugging Face
+Daily Papers 的可访问入口；Semantic Scholar
+未找到核心论文稳定直达页，故未把第三方转述作为数值来源。所有定量数字均回到论文
+PDF/HTML 的表、图或正文核验。</p>
+<hr />
+<h2 id="1-候选池排重与随机抽签审计">1. 候选池、排重与随机抽签审计</h2>
+<h3 id="11-近-14-天排重">1.1 近 14 天排重</h3>
+<p>先读取
+<code>ml-report-index.md</code>。近两周已经深度覆盖的多模态相关主题包括：MM-RLHF（多模态偏好对齐与安全）、Catch
+Your Emotion（情绪感知
+MLLM）、BridgeVLA（机器人视觉—语言—动作）。因此本次排除“多模态对齐奖励”“情绪识别”“机器人
+VLA”作为核心主题；虽然候选池允许相邻研究出现，但抽签后的核心必须与上述主题保持清晰区隔。最终核心是
+VLM 内部空间—时间绑定机制，未重复近 14 天的论文或主问题。</p>
+<h3 id="12-候选池26-篇">1.2 候选池（26 篇）</h3>
+<p>候选优先采用最近 12 个月、已确认 ICLR 2026 接收或 2025
+顶会正式发表的视觉/多模态论文。以下顺序在抽签前固定；“官方列表入口”表示标题与接收状态已在
+ICLR 2026 官方 OpenReview 列表核验，但未找到稳定的单篇直达 ID。</p>
+<ol type="1">
+<li><a href="https://openreview.net/forum?id=xk8EqWDPQw">MMR-V: What’s
+Left Unsaid?</a></li>
+<li><a href="https://openreview.net/forum?id=DG4S2OlGQA">Vision Language
+Models are Biased</a></li>
+<li><a href="https://openreview.net/forum?id=zJnPyb2xrp">PostAlign:
+Multimodal Grounding as a Corrective Lens for MLLMs</a></li>
+<li><a href="https://openreview.net/forum?id=riOevy2RwZ">Towards
+Text-Mask Consistency in Medical Image Segmentation</a></li>
+<li><a href="https://openreview.net/forum?id=EdQzLC0Zra">MetaSpatial:
+Reinforcing 3D Spatial Reasoning in VLMs</a></li>
+<li><a href="https://openreview.net/forum?id=cPCGB402ff">SportR: A
+Benchmark for MLLMs on Sports Understanding</a></li>
+<li><a href="https://openreview.net/forum?id=fWWUPOb0CT">SpatiaLab: Can
+Vision-Language Models Perform Spatial Reasoning?</a></li>
+<li><a href="https://openreview.net/forum?id=2zXRGiorSu">Linear
+Mechanisms for Spatiotemporal Reasoning in VLMs</a></li>
+<li><a href="https://openreview.net/forum?id=FtdbdoGbk3">Memento: An
+All-Day Proactive Assistant for Ultra-long Video</a></li>
+<li><a href="https://openreview.net/forum?id=DF6udvxuvY">Towards Native
+Vision-Language Primitives at Scale</a></li>
+<li><a href="https://openreview.net/forum?id=FIXPFUeO9Z">MANZANO: A
+Simple and Scalable Unified Multimodal Model</a></li>
+<li><a href="https://openreview.net/forum?id=5OIgg5YkC3">Better
+Together: Leveraging Unpaired Multimodal Data</a></li>
+<li><a href="https://openreview.net/forum?id=XpL5eqjCjF">Thought, Less
+Accuracy? The Dual Nature of Reasoning in VLMs</a></li>
+<li><a href="https://openreview.net/forum?id=bZqCBgm2N0">A Latent
+Partial Causal Model for Multimodal Learning</a></li>
+<li><a href="https://openreview.net/forum?id=jLO4pSi5Pt">Long-tailed
+Test-Time Adaptation for Vision-Language Models</a></li>
+<li><a href="https://openreview.net/forum?id=XZNXSM4rHG">MRMR:
+Multidisciplinary Multimodal Retrieval Benchmark</a></li>
+<li><a href="https://openreview.net/forum?id=HcubxPWpw7">Rethinking
+Bottlenecks in Safety Fine-Tuning of VLMs</a></li>
+<li><a href="https://openreview.net/pdf?id=QLiXtWEAkq">SPIKE-RL:
+Video-LLMs Meet Bayesian Surprise</a></li>
+<li><a href="https://openreview.net/pdf?id=sQGlhjKUC0">To Sink or Not to
+Sink: Visual Information Pathways in Large VLMs</a></li>
+<li>Fine-R1: Make MLLMs Excel in Fine-Grained Visual Recognition by CoT
+Reasoning（<a
+href="https://openreview.net/group?id=ICLR.cc/2026/Conference">ICLR 2026
+官方列表入口</a>）</li>
+<li>V2P-Bench: Evaluating Video-Language Understanding with Visual
+Prompts（<a
+href="https://openreview.net/group?id=ICLR.cc/2026/Conference">官方列表入口</a>）</li>
+<li><a href="https://openreview.net/pdf?id=3kouij8BWi">AGILE: Agentic
+Jigsaw Interaction Learning</a></li>
+<li>Towards Faithful Reasoning in Remote Sensing（<a
+href="https://openreview.net/group?id=ICLR.cc/2026/Conference">官方列表入口</a>）</li>
+<li>Efficient Discriminative Joint Encoders for Large-Scale
+Vision-Language Reranking（<a
+href="https://openreview.net/group?id=ICLR.cc/2026/Conference">官方列表入口</a>）</li>
+<li>Thyme: Think Beyond Images（<a
+href="https://openreview.net/group?id=ICLR.cc/2026/Conference">官方列表入口</a>）</li>
+<li><a href="https://openreview.net/forum?id=mEw4lhAn0F">OmniMouse:
+Scaling Properties of Multimodal, Multitask Brain Models</a></li>
+</ol>
+<h3 id="13-随机过程">1.3 随机过程</h3>
+<p>在固定候选池后实际执行：</p>
+<pre class="text"><code>$ shuf -i 1-26 -n 1
+8</code></pre>
+<p>抽中第 8 篇。该论文有完整 26
+页版本、正式接收页、开源代码、核心表格与多项附录消融，足以支撑深读，因此<strong>重抽次数为
+0</strong>。本报告没有按热度、引用量或主观偏好替换抽签结果。</p>
+<hr />
+<h2 id="2-motivation准确率之外vlm-到底在哪里丢掉了空间关系">2.
+Motivation：准确率之外，VLM 到底“在哪里”丢掉了空间关系？</h2>
+<p>经典空间评测已经说明症状，却不能定位病灶。Kamath et al. 在 18
+个视觉语言模型上做受控位置测试；经 VQAv2 微调的 BLIP 在受控集合上只有
+<strong>56%</strong>，而人类是 <strong>99%</strong>（EMNLP 2023
+论文摘要/正文第 1–2 页）。这个 43 pp
+差距并不自动意味着模型“看不见”：它可能看到了两个对象，却没有把对象与方位绑定；也可能视觉编码器已编码方位，但跨模态投影丢失；还可能中间层有正确表征，语言输出阶段却读错。</p>
+<p>主论文把问题拆成三个可证伪层次：</p>
+<ol type="1">
+<li><strong>表征存在性。</strong>
+给定同一对象在不同格子中的图像，能否从对象 token
+的隐藏状态线性解码位置？</li>
+<li><strong>因果性。</strong>
+如果把“左边对象”的空间表征替换成“右边对象”的表征，答案是否按预测翻转，而不是只发生无意义扰动？</li>
+<li><strong>错误定位。</strong>
+模型答错时，错误已存在于视觉编码器，还是后来才发生于图像—文本绑定？</li>
+</ol>
+<p>这三个层次的关键区别是：线性可分不等于模型使用该方向，相关不等于因果。论文因此组合了
+probe、mirror patching、arbitrary
+steering、视觉/文本对称诊断与训练时辅助损失。最重要的量化动机来自因果实验：对“左/右”空间
+ID 做 steering 后，二元信念翻转中位数为
+<strong>64.6%</strong>，随机噪声对照为 <strong>29.5%</strong>（主论文第
+5 页，正文约第 295–307 行）；论文报告相对机会水平的平均增量为
+<strong>43.6%</strong>。这说明读出的方向不仅能分类，还参与了模型最终判断。</p>
+<p>但需要先埋下一条谨慎线：论文图注/摘要附近写
+<strong>64.4%</strong>，主结果正文写 <strong>64.6%</strong>，存在
+<strong>0.2 pp</strong> 内部不一致；本报告以主结果正文 64.6%
+为主，同时保留冲突。它不改变定性结论，却说明精确复现实验时不能只抄摘要。</p>
+<hr />
+<h2 id="3-论文故事线核心假设与权衡">3. 论文故事线、核心假设与权衡</h2>
+<h3 id="31-故事线">3.1 故事线</h3>
+<p>论文的故事不是“又发现一条神经元”，而是从语言模型实体绑定机制迁移到多模态：Feng
+&amp; Steinhardt 发现语言模型可用可加、可交换的 binding ID
+把实体和属性绑定；主论文猜测 VLM 也可能给每个空间槽位一个
+ID，把对象内容与其位置结合。于是作者先在 4×4
+网格合成图中控制对象与位置，再训练线性方向，最后跨层和跨模态做补丁。</p>
+<p>若假设成立，应同时观察到：</p>
+<ul>
+<li>对象 token 中的位置可以被低秩线性子空间读出；</li>
+<li>左右/上下方向具有近似一致的几何结构；</li>
+<li>把 ID 从一个对象转移到另一个对象，会改变与该对象相关的答案；</li>
+<li>正确图像状态与错误文本状态的镜像补丁能把错误归因到编码或绑定阶段；</li>
+<li>把 ID
+结构作为训练损失，应该比同数据的纯语言建模更快获得空间准确率。</li>
+</ul>
+<p>实验大体支持这条链，但支持强度逐级下降：表征存在与简单二元干预证据最强；训练收益只有一个小规模
+LLaVA
+设定；时间机制主要是定性曲线；复杂深度关系会混淆。因此最恰当的结论是“简单空间—时间关系中存在可操纵的线性绑定机制”，而不是“VLM
+的空间推理已被统一解释”。</p>
+<h3 id="32-假设与代价">3.2 假设与代价</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">假设</th>
+<th scope="col">获得的可检验性</th>
+<th scope="col">付出的代价</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>位置 ID 在对象 token 中以线性可读形式存在</td>
+<td>可用岭回归/SVM、低秩回归、方向差做精确干预</td>
+<td>非线性编码会被遗漏；线性可读也可能只是旁观表征</td>
+</tr>
+<tr class="even">
+<td>合成网格隔离位置变量</td>
+<td>对象、大小、位置能正交控制</td>
+<td>与自然图像遮挡、透视、语义先验有域差距</td>
+</tr>
+<tr class="odd">
+<td>简单关系可代表空间机制</td>
+<td>左右/上下测试清晰、答案可二元化</td>
+<td>前后/深度已经暴露混淆，更复杂三维关系不能外推</td>
+</tr>
+<tr class="even">
+<td>中间层局部干预可近似因果变量替换</td>
+<td>比 probe 更接近“模型是否使用”</td>
+<td>干预尺度、层选择与分布外激活可能制造假因果</td>
+</tr>
+<tr class="odd">
+<td>视觉与文本镜像补丁能定位错误</td>
+<td>可区分 encoder 与 cross-modal binding</td>
+<td>仍不能区分多个后续子模块，且对离散答案依赖强</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="4-方程级形式化">4. 方程级形式化</h2>
+<h3 id="41-隐状态与信念变化">4.1 隐状态与信念变化</h3>
+<p>设图像含对象 (o_a,o_b)，模型在层 (ell) 的对象相关隐藏状态为
+(h_{o}^{(\ell)})。对二元答案 (y^+,y^-)，定义 logit 信念差：</p>
+<p>[ B(x)=z(y^+\mid x)-z(y^-\mid x). ]</p>
+<p>对隐藏状态施加干预 (I) 后，论文用</p>
+<p>[ \Delta B = B(I(x))-B(x) ]</p>
+<p>测量 steering，而不是只看最终 0/1
+是否翻转。这样能保留“朝正确方向移动但未过决策边界”的信息（主论文 Eq.
+1，第 3 页）。</p>
+<h3 id="42-空间-id-的构造">4.2 空间 ID 的构造</h3>
+<p>对位置 (p=(i,j)) 与对象 (o)，收集对象 token 表征
+(h_{o,p}^{(\ell)})。通过跨对象平均消去对象语义：</p>
+<p>[ s_{p}^{(\ell)} = \mathbb{E}<em>{o}[h</em>{o,p}^{(\ell)}] -
+\mathbb{E}<em>{o,p'}[h</em>{o,p'}^{(\ell)}]. ]</p>
+<p>左右方向可由两组位置均值之差得到：</p>
+<p>[ d_{LR}^{(\ell)} = \mathbb{E}<em>{p\in
+L}[s_p^{(\ell)}]-\mathbb{E}</em>{p\in R}[s_p^{(\ell)}], ]</p>
+<p>上下方向 (d_{UD}^{(\ell)}) 同理。论文还用岭回归把位置编码 (psi(i,j))
+映射到空间 ID：</p>
+<p>[ \hat{s}_{i,j}^{(\ell)} = W^{(\ell)}\psi(i,j)+b, ]</p>
+<p>并考察低秩约束 (\operatorname{rank}(W)\le r)。当 (r=3) 时，三种模型的
+(R^2) 均不低于 <strong>0.854</strong>（附录 Table 2，第 20 页附近；见第
+7
+节数据矩阵），支持“二维位置主要落在很低维子空间”这一具体而非泛化过度的主张。</p>
+<h3 id="43-机制近似">4.3 机制近似</h3>
+<p>论文的理论草图把对象位置表征近似为注意力值投影：</p>
+<p>[ s_{i,j}\approx W_O W_V P\left(\psi(i,j)-\bar{\psi}\right), ]</p>
+<p>其中 (P) 表示跨模态投影，(W_V,W_O) 是注意力值与输出投影。最终关系
+logit 又近似为线性读出：</p>
+<p>[ z_r \approx w_r^\top (s_{i,j}-s_{i',j'})+c_r. ]</p>
+<p>这两式解释为何“位置编码 → 低秩空间 ID → 关系
+logit”可能串成线性链。但它是机制草图，不是对完整 softmax 注意力、MLP
+与残差网络的等式证明；不能据此声称模型全程线性。</p>
+<h3 id="44-mirror-patching-与-arbitrary-steering">4.4 Mirror patching 与
+arbitrary steering</h3>
+<p>镜像补丁构造一对只在关系上相反的样本，例如 A 在 B 左边与 A 在 B
+右边。将源样本的对象空间分量注入目标样本：</p>
+<p>[ \tilde h_o^{(\ell)} = h_o^{(\ell)} +
+\alpha\big(s_{p_{src}}^{(\ell)}-s_{p_{tgt}}^{(\ell)}\big), ]</p>
+<p>其中论文默认 steering scale (\alpha=5)（附录第 16 页）。arbitrary
+steering 则无需成对镜像图，直接按目标位置 ID
+改写；若输出按目标位置变化，就比“该方向可线性分类”更强。</p>
+<h3 id="45-训练时空间损失">4.5 训练时空间损失</h3>
+<p>作者把对象 token 的空间 ID 与目标 ID 对齐，联合语言损失：</p>
+<p>[
+\mathcal{L}=\mathcal{L}<em>{LM}+\lambda\mathcal{L}</em>{spatial},\qquad
+\mathcal{L}<em>{spatial}=\sum_o|g(h_o^{(\ell)})-s</em>{p(o)}|_2^2. ]</p>
+<p>论文没有报告完整 (\lambda) 敏感性曲线，所以只能说该损失在所选配置中使
+3,200 步准确率从 85% 提到 91%，不能推出任意权重均稳定有效。</p>
+<h3 id="46-可复现流程伪代码">4.6 可复现流程伪代码</h3>
+<pre class="text"><code>输入：对象集合 O、4×4 位置 P、关系提示模板 Q、VLM M
+1  生成受控图像：对对象对、大小、位置逐一组合
+2  对每层 ℓ，抽取对象 token 隐状态 h[o,p,ℓ]
+3  跨对象中心化，得到每个位置的空间 ID s[p,ℓ]
+4  训练线性/低秩映射 ψ(i,j) -&gt; s[p,ℓ]，记录 R²
+5  构造镜像关系对；在对象 token、文本 token、图像 token分别 patch
+6  计算 ΔB，并与等范数随机噪声比较
+7  在正确/错误样本间做对称 patch，定位 encoder 或 binding 错误
+8  加入 L_spatial 微调，与同数据、同训练步数的 LM-only 控制比较
+9  对视频重复：正序/倒序、8 帧合成轨迹、MVBench Scene_QA
+输出：线性可读性、因果效应、错误层级、训练收益</code></pre>
+<hr />
+<h2 id="5-关键机制与工程细节">5. 关键机制与工程细节</h2>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">组件</th>
+<th scope="col">论文配置</th>
+<th scope="col">为什么必要</th>
+<th scope="col">可复现风险 / 未报告项</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>合成空间图像</td>
+<td>4×4 网格；画布 896×896；对象尺寸 224/174/124/74；55 个 Objaverse
+渲染对象可用</td>
+<td>正交控制对象、位置、大小</td>
+<td>论文主设置用 90 个对象对、合计 86,400 图像；对象“55 个渲染”与“90
+对”是不同口径，不能互换</td>
+</tr>
+<tr class="even">
+<td>模型覆盖</td>
+<td>11 个 SOTA VLM；附录重点列 LLaVA、LLaMA3.2-VL、Qwen2.5-VL</td>
+<td>检查机制是否跨架构</td>
+<td>全部 11 模型逐项数值未完整表格化</td>
+</tr>
+<tr class="odd">
+<td>token 选择</td>
+<td>对象词 token、图像 patch/token；视觉与语言侧镜像干预</td>
+<td>区分“看错”与“绑错”</td>
+<td>对象词定位依赖提示模板；自然语言指代更复杂</td>
+</tr>
+<tr class="even">
+<td>steering 层</td>
+<td>从第 9 层到约模型深度的 2/3；汇报最有效中间层</td>
+<td>避开太浅未融合、太深已决策</td>
+<td>附录置信区间取“最佳 3 层”，有选择后汇报偏差</td>
+</tr>
+<tr class="odd">
+<td>steering scale</td>
+<td>默认 α=5</td>
+<td>让方向产生可观测 logit 变化</td>
+<td>没有完整 scale sweep；无法知道最小有效剂量与过驱动阈值</td>
+</tr>
+<tr class="even">
+<td>空间样本数消融</td>
+<td>图注列 6/20/56 对象对图像；正文又称低至 9 对象对可解释 ≥50%
+方差</td>
+<td>测量方向发现的数据效率</td>
+<td>“6”与“9”口径内部不一致；需按代码复跑</td>
+</tr>
+<tr class="odd">
+<td>尺寸稳健性</td>
+<td>80/128/176 像素变化使解释方差降 10–20%，仍 ≥50%</td>
+<td>排除纯尺寸捷径</td>
+<td>自然透视与遮挡未覆盖</td>
+</tr>
+<tr class="even">
+<td>视频</td>
+<td>8 帧合成视频；5 个对象对、61 种时间排列；MVBench Scene_QA
+正/倒序</td>
+<td>检验先后/运动的时间 ID</td>
+<td>主要是曲线与定性结果；没有完整逐模型准确率表</td>
+</tr>
+<tr class="odd">
+<td>微调</td>
+<td>LLaVA 空间辅助损失，对照 LM-only；到 3,200 步</td>
+<td>测试机制能否转为训练收益</td>
+<td>单任务、单小模型设置；随机种子、方差、λ 曲线未报告</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="6-数据集基准与指标">6. 数据集、基准与指标</h2>
+<h3 id="61-合成-44-网格">6.1 合成 4×4 网格</h3>
+<p>主诊断集把对象放在离散格子，改变左右、上下、前后/大小等关系。优点是反事实对可以只改位置，适合因果补丁；缺点是分布过于干净。论文
+Appendix A.2（约第 12–13 页）给出：基线配置覆盖 <strong>90 个对象对 × 4
+个尺寸</strong>，总计 <strong>86,400</strong> 张图，画布
+<strong>896×896</strong>；资源中有 <strong>55</strong> 个 Objaverse
+对象渲染。该集合用于线性可读性、ID 数据效率、提示稳健性、尺寸消融与
+arbitrary steering。</p>
+<h3 id="62-coco-spatial--whatsup-家族">6.2 COCO-Spatial / WhatsUp
+家族</h3>
+<p>真实图像空间问答用于检查合成方向能否落到自然图像。核心指标是
+accuracy；训练实验记录步数、LM loss、spatial ID loss 与 COCO validation
+accuracy。WhatsUp 原论文的受控基准给出人类 99% 与 BLIP 56%
+的历史差距，但两篇论文并非完全相同训练设定，不能把差值当作主论文直接提升。</p>
+<h3 id="63-mvbench-scene_qa-与倒序视频">6.3 MVBench Scene_QA
+与倒序视频</h3>
+<p>作者把视频帧反转，观察模型对事件先后或时序内容的内部表征和答案变化；合成视频固定
+<strong>8 帧</strong>，5 个对象对覆盖 <strong>61</strong>
+种时间排列。MVBench Scene_QA
+提供自然视频问答。指标仍是准确率/信念差，但论文没有发布可重建的“5 基准×6
+方法”视频矩阵，因此本报告保留空缺，不用图上估读伪造小数。</p>
+<h3 id="64-指标解释">6.4 指标解释</h3>
+<ul>
+<li><strong>Accuracy：</strong>
+最终答案正确率，易读但看不到接近决策边界的变化。</li>
+<li><strong>Belief shift (\Delta B)：</strong> 正确与错误答案 logit
+差的干预变化，能测方向性因果效应。</li>
+<li><strong>Variance explained / (R^2)：</strong> 低秩位置映射解释空间
+ID 方差的比例；高 (R^2)
+支持低维结构，不等于对任务准确率的直接保证。</li>
+<li><strong>Mann–Whitney U：</strong>
+比较正确/错误样本的干预效应分布。论文报告显著性趋势，但正文没有给出完整精确
+p 值、效应量与多重比较校正。</li>
+</ul>
+<hr />
+<h2 id="7-主结果数据矩阵">7. 主结果数据矩阵</h2>
+<h3 id="71-证据覆盖矩阵">7.1 证据覆盖矩阵</h3>
+<p>论文没有同一协议下“五基准×六方法”的完整表。为了避免把不同任务、模型与指标硬拼成伪矩阵，下表按可核验实验单元列出；“未报告”保留为空缺信息，而不是用图像估读补齐。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">实验/基准</th>
+<th scope="col">方法或对照</th>
+<th scope="col" style="text-align: right;">指标</th>
+<th scope="col" style="text-align: right;">数值</th>
+<th scope="col" style="text-align: right;">绝对差</th>
+<th scope="col" style="text-align: right;">相对变化</th>
+<th scope="col">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>二元空间 belief swap</td>
+<td>Spatial-ID steering</td>
+<td style="text-align: right;">中位翻转率</td>
+<td style="text-align: right;"><strong>64.6%</strong></td>
+<td style="text-align: right;">相对噪声 +35.1 pp</td>
+<td style="text-align: right;">+118.98%</td>
+<td>主文第 5 页；图注另写 64.4%</td>
+</tr>
+<tr class="even">
+<td>二元空间 belief swap</td>
+<td>随机噪声</td>
+<td style="text-align: right;">中位翻转率</td>
+<td style="text-align: right;">29.5%</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td>主文第 5 页</td>
+</tr>
+<tr class="odd">
+<td>空间 steering 总结</td>
+<td>ID steering</td>
+<td style="text-align: right;">高于机会水平的平均增量</td>
+<td style="text-align: right;"><strong>43.6%</strong></td>
+<td style="text-align: right;">+43.6 pp</td>
+<td style="text-align: right;">机会基线分母不明，不算相对值</td>
+<td>主文第 5 页</td>
+</tr>
+<tr class="even">
+<td>COCO Val，3,200 步</td>
+<td>LM + spatial loss</td>
+<td style="text-align: right;">accuracy</td>
+<td style="text-align: right;"><strong>91%</strong></td>
+<td style="text-align: right;">相对 LM-only +6 pp</td>
+<td style="text-align: right;">+7.06%</td>
+<td>主文训练表，第 7 页</td>
+</tr>
+<tr class="odd">
+<td>COCO Val，3,200 步</td>
+<td>LM-only</td>
+<td style="text-align: right;">accuracy</td>
+<td style="text-align: right;">85%</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td>同上</td>
+</tr>
+<tr class="even">
+<td>低秩映射，Qwen2.5VL-7B</td>
+<td>rank-3</td>
+<td style="text-align: right;">(R^2)</td>
+<td style="text-align: right;"><strong>0.903</strong></td>
+<td style="text-align: right;">相对 rank-2 +0.298</td>
+<td style="text-align: right;">+49.26%</td>
+<td>Appendix Table 2</td>
+</tr>
+<tr class="odd">
+<td>低秩映射，LLaMA3.2VL-11B</td>
+<td>rank-3</td>
+<td style="text-align: right;">(R^2)</td>
+<td style="text-align: right;">0.869</td>
+<td style="text-align: right;">+0.259</td>
+<td style="text-align: right;">+42.46%</td>
+<td>Appendix Table 2</td>
+</tr>
+<tr class="even">
+<td>低秩映射，LLaVA1.5-7B</td>
+<td>rank-3</td>
+<td style="text-align: right;">(R^2)</td>
+<td style="text-align: right;">0.854</td>
+<td style="text-align: right;">+0.396</td>
+<td style="text-align: right;">+86.46%</td>
+<td>Appendix Table 2</td>
+</tr>
+<tr class="odd">
+<td>文本实体绑定历史任务</td>
+<td>双向 binding-ID intervention</td>
+<td style="text-align: right;">control accuracy</td>
+<td style="text-align: right;">&gt;97%</td>
+<td style="text-align: right;">单侧 intervention &lt;3%</td>
+<td style="text-align: right;">不同实验不算相对值</td>
+<td>Feng &amp; Steinhardt，第 4–5 页</td>
+</tr>
+<tr class="even">
+<td>受控空间历史基准</td>
+<td>BLIP-VQAv2</td>
+<td style="text-align: right;">accuracy</td>
+<td style="text-align: right;">56%</td>
+<td style="text-align: right;">相对人类 -43 pp</td>
+<td style="text-align: right;">-43.43%</td>
+<td>Kamath et al. 摘要/第 1–2 页</td>
+</tr>
+<tr class="odd">
+<td>受控空间历史基准</td>
+<td>Human</td>
+<td style="text-align: right;">accuracy</td>
+<td style="text-align: right;"><strong>99%</strong></td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td>同上</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="72-对象-token-与关系方向的反事实交叉表">7.2 对象 token
+与关系方向的反事实交叉表</h3>
+<p>下表来自核心论文 Appendix Table 1。列名“ID-LR /
+apply-obj”表示用左右关系方向识别 ID，却把干预施加到对象
+token；它检验“在哪里发现方向”与“在哪里施加方向”是否必须一致。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">模型</th>
+<th scope="col" style="text-align: right;">ID-LR → apply-LR</th>
+<th scope="col" style="text-align: right;">ID-LR → apply-object</th>
+<th scope="col" style="text-align: right;">ID-object → apply-object</th>
+<th scope="col" style="text-align: right;">ID-object → apply-LR</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Qwen2.5-VL-3B</td>
+<td style="text-align: right;">18.77</td>
+<td style="text-align: right;">51.19</td>
+<td style="text-align: right;"><strong>81.23</strong></td>
+<td style="text-align: right;">48.46</td>
+</tr>
+<tr class="even">
+<td>Qwen2.5-VL-7B</td>
+<td style="text-align: right;">6.12</td>
+<td style="text-align: right;">38.78</td>
+<td style="text-align: right;"><strong>72.35</strong></td>
+<td style="text-align: right;">47.96</td>
+</tr>
+<tr class="odd">
+<td>LLaVA-1.5-7B</td>
+<td style="text-align: right;">29.83</td>
+<td style="text-align: right;">30.51</td>
+<td style="text-align: right;"><strong>46.26</strong></td>
+<td style="text-align: right;">26.19</td>
+</tr>
+<tr class="even">
+<td>LLaVA-1.5-13B</td>
+<td style="text-align: right;">8.16</td>
+<td style="text-align: right;">19.39</td>
+<td style="text-align: right;"><strong>48.30</strong></td>
+<td style="text-align: right;">15.25</td>
+</tr>
+</tbody>
+</table></div>
+<p>四个模型中，“从对象位置提取 ID，再作用于对象 token”均为行内最优。以
+Qwen-3B 为例，81.23 相对同一 ID 施加在 LR token 的 48.46 高
+<strong>32.77 pp / 67.62%</strong>；Qwen-7B 高 <strong>24.39 pp /
+50.85%</strong>。这支持空间信息与对象绑定，而非只以抽象“关系词方向”存在。不过表中数值的具体单位依论文表定义理解为
+intervention effect/成功度，不应擅自改写为 accuracy。</p>
+<h3 id="73-位置编码到空间-id-的低秩映射">7.3 位置编码到空间 ID
+的低秩映射</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">模型</th>
+<th scope="col" style="text-align: right;">rank-2 (R^2)</th>
+<th scope="col" style="text-align: right;">rank-3 (R^2)</th>
+<th scope="col" style="text-align: right;">绝对提升</th>
+<th scope="col" style="text-align: right;">相对提升</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>LLaVA-1.5-7B</td>
+<td style="text-align: right;">0.458</td>
+<td style="text-align: right;"><strong>0.854</strong></td>
+<td style="text-align: right;">+0.396</td>
+<td style="text-align: right;">+86.46%</td>
+</tr>
+<tr class="even">
+<td>LLaMA3.2-VL-11B</td>
+<td style="text-align: right;">0.610</td>
+<td style="text-align: right;"><strong>0.869</strong></td>
+<td style="text-align: right;">+0.259</td>
+<td style="text-align: right;">+42.46%</td>
+</tr>
+<tr class="odd">
+<td>Qwen2.5-VL-7B</td>
+<td style="text-align: right;">0.605</td>
+<td style="text-align: right;"><strong>0.903</strong></td>
+<td style="text-align: right;">+0.298</td>
+<td style="text-align: right;">+49.26%</td>
+</tr>
+</tbody>
+</table></div>
+<p>从 rank 2 到 rank 3 的跃升非常大，尤其 LLaVA 提高
+0.396；但这不意味着“空间本质是三维”。更保守的解释是：在论文选定的位置编码与中心化方式下，第三个线性自由度吸收了离散网格/全局偏置或另一种位置变化。需要
+rank 1–8 的完整谱、奇异值与跨数据集重复，才能称为相变。</p>
+<h3 id="74-空间辅助损失训练曲线">7.4 空间辅助损失训练曲线</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">步数</th>
+<th scope="col" style="text-align: right;">Control accuracy</th>
+<th scope="col" style="text-align: right;">Spatial-loss accuracy</th>
+<th scope="col" style="text-align: right;">绝对差</th>
+<th scope="col" style="text-align: right;">Control LM loss</th>
+<th scope="col" style="text-align: right;">Spatial LM loss</th>
+<th scope="col" style="text-align: right;">Spatial ID loss</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0.77</td>
+<td style="text-align: right;">0.77</td>
+<td style="text-align: right;">0.00</td>
+<td style="text-align: right;">3.30</td>
+<td style="text-align: right;">2.71</td>
+<td style="text-align: right;">0.75</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">800</td>
+<td style="text-align: right;">0.83</td>
+<td style="text-align: right;">0.83</td>
+<td style="text-align: right;">0.00</td>
+<td style="text-align: right;">0.05</td>
+<td style="text-align: right;">0.04</td>
+<td style="text-align: right;">0.58</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">1,600</td>
+<td style="text-align: right;">0.84</td>
+<td style="text-align: right;">0.84</td>
+<td style="text-align: right;">0.00</td>
+<td style="text-align: right;">&lt;0.01</td>
+<td style="text-align: right;">&lt;0.01</td>
+<td style="text-align: right;">0.41</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2,400</td>
+<td style="text-align: right;">0.85</td>
+<td style="text-align: right;"><strong>0.88</strong></td>
+<td style="text-align: right;">+0.03</td>
+<td style="text-align: right;">&lt;0.01</td>
+<td style="text-align: right;">&lt;0.01</td>
+<td style="text-align: right;">0.36</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3,200</td>
+<td style="text-align: right;">0.85</td>
+<td style="text-align: right;"><strong>0.91</strong></td>
+<td style="text-align: right;">+0.06</td>
+<td style="text-align: right;">&lt;0.01</td>
+<td style="text-align: right;">&lt;0.01</td>
+<td style="text-align: right;">0.33</td>
+</tr>
+</tbody>
+</table></div>
+<p>真正值得注意的不是早期：前 1,600 步两组 accuracy 完全相同。差异到
+2,400 步才出现，3,200 步扩大到 6 pp；与此同时两组 LM loss 早已低于
+0.01，而 spatial ID loss 仍由 0.41 降到
+0.33。这支持“语言目标先饱和，显式空间约束继续塑形”的故事。但作者也说明两组最终会在约
+90%
+附近饱和/过拟合，因此这更像<strong>样本/优化效率</strong>改善，而不是更高的无限训练上限。</p>
+<hr />
+<h2 id="8-逐层消融敏感性与可能的相变">8.
+逐层消融、敏感性与可能的相变</h2>
+<h3 id="81-层深">8.1 层深</h3>
+<p>有效 steering 集中在中间层：作者从第 9 层扫到约模型深度的
+(2/3)。过浅时视觉与语言尚未形成稳定对象绑定，过深时答案方向已被输出头固化。这个“中间层窗口”与
+NAACL 2025
+信息流研究的“浅层视觉贡献收敛、深层任务化分化”相呼应，但核心论文没有给出所有模型统一归一化层坐标的数表，因此不能证明跨架构存在精确共同临界点。</p>
+<p>更关键的是，附录置信区间由<strong>最佳 steering
+的三层</strong>计算，而不是预注册层或所有层平均。因为先择优再汇报会抬高效应，所以
+64.6% 应视为“可达到的中层效应”，不是随机层的期望效果。</p>
+<h3 id="82-样本量">8.2 样本量</h3>
+<p>正文称少至 <strong>9 个对象对</strong>已能解释至少
+<strong>50%</strong> 空间 ID 方差；图注又列 <strong>6/20/56</strong>
+对象对图像的消融。两种表述可能指训练样本口径不同，也可能是版本编辑不一致。可以肯定的是方向发现样本效率较高，不能肯定的是精确拐点究竟在
+6 还是
+9。论文未给出每个点的均值±标准差，也未给出不同随机对象子集的稳定性，因此“9
+对即可”的置信度有限。</p>
+<h3 id="83-对象尺寸与提示">8.3 对象尺寸与提示</h3>
+<p>用 80/128/176 像素对象替换基础尺寸后，解释方差下降约
+<strong>10–20%</strong>，但仍不低于
+<strong>50%</strong>；不同提示措辞表现相近（附录消融，第 18–19
+页）。这排除了“只记住一个像素大小/一个问句模板”的最简单反驳。仍未排除自然图像的遮挡、透视与长尾类别，因为尺寸变化仍是在规则画布中进行。</p>
+<h3 id="84-方向与深度">8.4 方向与深度</h3>
+<p>左右、上下相对清晰；“above/front”与“behind/below”出现混淆（主文第 6
+页）。这是一条重要反证：模型可能把三维深度词映射到二维投影或语料共现方向。若线性
+ID
+真能统一空间，深度方向应在受控相机变化下保持独立；现在的结果只支持二维布局强、深度弱。</p>
+<h3 id="85-steering-scale">8.5 steering scale</h3>
+<p>默认 (\alpha=5)，但论文未报告从 0
+到更大值的剂量—反应曲线，也未给出隐藏状态范数归一化后尺度。于是不能区分三种可能：小尺度已沿自然因果方向工作；只有大尺度分布外冲击才翻转；或不同模型需要不同尺度。这里不存在可核验的“相变点”，任何阈值说法都应等待复现。</p>
+<h3 id="86-时间维度">8.6 时间维度</h3>
+<p>8 帧合成视频、61 种排列和 MVBench 倒序实验显示 temporal ID
+的迹象，但论文没有完整帧数
+sweep（2/4/8/16/32）、速度变化或长视频延迟测试。故不能推出对长时序记忆有效，更不能把空间低秩结论直接套到时间。</p>
+<hr />
+<h2 id="9-统计显著性与证据强度">9. 统计显著性与证据强度</h2>
+<p>论文使用 Mann–Whitney U
+检验比较正确/错误或干预/对照分布，并在图中给置信区间；但主文没有系统报告每项的精确
+p 值、U
+统计量、效应量、样本数、随机种子数量或多重比较校正。训练表也没有均值±标准差。因此：</p>
+<ul>
+<li>可以推出干预在作者样本上的方向性差异明显，尤其 64.6% vs 29.5%
+的绝对差达 35.1 pp；</li>
+<li>不能推出跨随机种子、跨提示、跨对象采样的置信区间稳定；</li>
+<li>不能严谨比较 0.2–2 pp 的小差异；</li>
+<li>“最佳三层”选择使常规置信区间不能自动覆盖模型选择不确定性；</li>
+<li>训练 +6 pp 若无多种子，仍可能混入初始化与 batch 顺序效应。</li>
+</ul>
+<p>理想复现应以模型×对象子集×提示模板为分层单位，预注册层区间，报告
+bootstrap 95% CI、Cliff’s delta 或 rank-biserial
+effect、Benjamini–Hochberg 校正，并把层选择放入 nested validation。</p>
+<hr />
+<h2 id="10-相关工作问题来源与技术来源链">10.
+相关工作：问题来源与技术来源链</h2>
+<h3 id="101-kamath-et-al-2023从会看图到不会稳定判断上下左右">10.1 Kamath
+et al. 2023：从“会看图”到“不会稳定判断上下左右”</h3>
+<p><strong>解决什么。</strong> 构造 COCO-prep、GQA-prep、RealCLEVR
+等受控集合，证明 18 个 VL 模型在简单空间关系上远落后人类；BLIP-VQAv2 仅
+56% vs 人类 99%。<br />
+<strong>遗留缺口。</strong>
+评测告诉我们哪里失败，却无法判断失败发生在视觉识别、跨模态绑定还是语言输出。<br />
+<strong>核心论文如何回应。</strong> 用同一对象的反事实位置、对象 token
+空间 ID 与镜像补丁把失败拆到模块和层。<br />
+<strong>关键设计如何传递。</strong> “受控最小对”从 benchmark
+设计传递为因果干预样本；COCO-Spatial 也成为训练与自然图像验证桥梁。</p>
+<h3 id="102-feng--steinhardt-2024绑定-id-从文本走向视觉对象">10.2 Feng
+&amp; Steinhardt 2024：绑定 ID 从文本走向视觉对象</h3>
+<p><strong>解决什么。</strong> 语言模型能以可加 binding ID
+把实体与属性绑定；对照准确率 &gt;99%，只干预属性或实体一侧时
+&lt;3%，同时干预两侧时恢复到 &gt;97%（论文第 4–5
+页）。跨任务方向也有可迁移性，Table 2 中 capitals 0.88、parallel
+0.87、shapes 0.71、fruits 0.80、bios 0.47，对照 zeros/random 约
+0.30/0.31。<br />
+<strong>遗留缺口。</strong>
+纯文本实体—属性是否等同于视觉对象—位置并不清楚，视觉编码器和投影器引入了新瓶颈。<br />
+<strong>核心论文如何回应。</strong> 先跨对象平均抽取空间 ID，再在图像
+token 与对象词 token 两侧 patch，并通过视觉/文本对称干预定位错误。<br />
+<strong>关键设计如何传递。</strong> “ID 可交换 +
+双侧一致替换”直接成为空间机制的因果检验骨架。</p>
+<h3 id="103-hernandez-et-al-2024关系可线性读出但线性不是普遍真理">10.3
+Hernandez et al. 2024：关系可线性读出，但线性不是普遍真理</h3>
+<p><strong>解决什么。</strong>
+证明部分关系可用单一线性变换近似，从主体表征预测客体；项目同时强调有些模型行为准确但内部关系编码并非线性。<br />
+<strong>遗留缺口。</strong>
+工作集中于文本事实关系，没有对象位置与视频顺序，也没有回答“关系方向是否与具体视觉对象绑定”。<br />
+<strong>核心论文如何回应。</strong>
+把线性关系读出移到多模态中间层，并用对象级 steering
+验证读出方向是否被输出使用。<br />
+<strong>关键设计如何传递。</strong>
+线性映射、低秩分析和因果替换被保留；“非线性也可能正确”的警告要求我们不要把
+probe 失败等同于表征不存在。</p>
+<h3
+id="104-zhang-et-al-2025信息流告诉我们看哪一层未告诉我们哪条变量">10.4
+Zhang et al. 2025：信息流告诉我们看哪一层，未告诉我们哪条变量</h3>
+<p><strong>解决什么。</strong> 追踪 LVLM
+不同推理任务中的视觉信息贡献，发现浅层较快收敛、深层随任务分化，并存在任务相关的“cliff
+layer”（NAACL 2025 Long，第 2289–2299 页）。<br />
+<strong>遗留缺口。</strong>
+信息贡献是宏观量，无法说明中间层具体携带对象、位置还是答案先验；相关曲线也不能证明因果。<br />
+<strong>核心论文如何回应。</strong> 以空间 ID
+作为具名变量，做对象/文本/图像位置精确 patch。<br />
+<strong>关键设计如何传递。</strong>
+跨层扫描被保留，但从“信息多少”升级为“哪种绑定、干预后答案怎么变”。</p>
+<h3
+id="105-chen-et-al-2025--adaptvis注意力焦点修复与-id-修复的互补">10.5
+Chen et al. 2025 / AdaptVis：注意力焦点修复与 ID 修复的互补</h3>
+<p><strong>解决什么。</strong>
+从注意力机制分析空间失败，发现模型对目标对象区域的注意力与成功相关；AdaptVis
+在 WhatsUp/VSR 上可带来最高约 <strong>50
+个绝对百分点</strong>的训练零样本提升（ICML 2025 摘要/主结果）。<br />
+<strong>遗留缺口。</strong>
+聚焦正确区域仍可能把对象绑定到错误关系；显著注意力也未必是因果载体。<br />
+<strong>核心论文如何回应。</strong> 直接对对象位置 ID
+操作，区分视觉编码错误与后续绑定错误。<br />
+<strong>关键设计如何传递。</strong> 两者可以组合：先用 AdaptVis
+修“看哪里”，再用 spatial-ID loss
+修“对象与位置如何绑定”，形成可测试的串联干预。</p>
+<h3 id="106-非线性技术演进树">10.6 非线性技术演进树</h3>
+<pre class="text"><code>受控空间评测（WhatsUp, 2023）
+├── 症状线：准确率崩溃 ──&gt; 注意力焦点诊断/AdaptVis（2025）
+│                         └── 修“看哪里”，未必修“绑给谁”
+├── 机制线：文本 binding ID（ICLR 2024）
+│       ├── 可加、可交换的实体绑定
+│       └──&gt; 视觉对象—空间 ID（核心论文，2026）
+│              ├── 低秩位置映射
+│              ├── 对象/文本/图像镜像补丁
+│              └── 空间辅助损失
+├── 表征线：线性关系解码（ICLR 2024）
+│       └──&gt; 低秩读出 + causal steering
+└── 层级线：跨层视觉信息流（NAACL 2025）
+        └──&gt; 中间层窗口 + 错误定位
+
+未闭合分支：二维左右/上下 ──X──&gt; 三维深度、遮挡、长时序、开放词汇指代</code></pre>
+<h3 id="107-跨论文对标">10.7 跨论文对标</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">核心对象</th>
+<th scope="col">证据类型</th>
+<th scope="col">因果干预</th>
+<th scope="col">训练修复</th>
+<th scope="col">主要短板</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>WhatsUp 2023</td>
+<td>空间问答行为</td>
+<td>受控准确率</td>
+<td>否</td>
+<td>否</td>
+<td>不能定位内部病灶</td>
+</tr>
+<tr class="even">
+<td>Binding IDs 2024</td>
+<td>文本实体—属性</td>
+<td>表征+双侧 patch</td>
+<td>强</td>
+<td>否</td>
+<td>无视觉编码器</td>
+</tr>
+<tr class="odd">
+<td>Linear Relations 2024</td>
+<td>文本事实关系</td>
+<td>线性映射+编辑</td>
+<td>中—强</td>
+<td>否</td>
+<td>关系并非普遍线性</td>
+</tr>
+<tr class="even">
+<td>Redundancy→Relevance 2025</td>
+<td>跨层视觉信息</td>
+<td>信息流/相关性</td>
+<td>弱</td>
+<td>否</td>
+<td>变量粒度粗</td>
+</tr>
+<tr class="odd">
+<td>AdaptVis 2025</td>
+<td>目标区域注意力</td>
+<td>相关+推理期干预</td>
+<td>中</td>
+<td>训练零样本</td>
+<td>注意力不等于绑定</td>
+</tr>
+<tr class="even">
+<td><strong>核心论文 2026</strong></td>
+<td>对象—空间/时间 ID</td>
+<td>低秩+patch+训练</td>
+<td><strong>强（简单关系）</strong></td>
+<td><strong>有</strong></td>
+<td>三维/长时序与统计证据不足</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="11-真正贡献可复用设计与迁移潜力">11.
+真正贡献、可复用设计与迁移潜力</h2>
+<h3 id="111-真正贡献">11.1 真正贡献</h3>
+<ol type="1">
+<li><strong>把空间失败变成可操纵变量。</strong>
+相较单纯准确率或注意力热图，空间 ID
+有明确的对象归属、方向和可替换操作。</li>
+<li><strong>把表征、因果、诊断、训练串成闭环。</strong>
+线性读出说明“存在”，steering 说明“被使用”，镜像 patch
+说明“在哪里坏”，辅助损失说明“能否修”。很少有机制论文同时走完四步。</li>
+<li><strong>跨架构低秩证据。</strong> rank-3 在
+LLaVA、LLaMA3.2-VL、Qwen2.5-VL 上
+(R^2=0.854–0.903)，说明至少在受控二维位置上结构不是单模型偶然。</li>
+<li><strong>错误类型可分。</strong> LLaVA
+的错误更多与视觉编码/目标检测相关，LLaMA
+的错误更像跨模态绑定后出现（主文第 6–7
+页）；这直接影响修复策略，而不是一律扩大数据。</li>
+</ol>
+<h3 id="112-可复用设计">11.2 可复用设计</h3>
+<ul>
+<li><strong>因果最小对生成器：</strong>
+任何需要比较“同对象、只改关系”的任务都可复用。</li>
+<li><strong>对象中心化 ID：</strong>
+跨对象平均消掉内容语义，适合颜色、计数、时间顺序乃至角色身份。</li>
+<li><strong>双侧 mirror patching：</strong> 对多模态失败做 encoder vs
+projector/LLM 分流诊断。</li>
+<li><strong>低秩谱作为机制压缩：</strong>
+在不训练大模型的情况下，先判断一个属性是否有紧凑中间表征。</li>
+<li><strong>机制导向辅助损失：</strong> 当 LM loss
+已饱和而结构损失仍下降时，可用作训练早停或课程信号。</li>
+</ul>
+<h3 id="113-迁移潜力">11.3 迁移潜力</h3>
+<p>最直接迁移是三类：第一，文档理解中把字段与二维版面位置绑定；第二，医学影像中把病灶与象限/器官位置绑定；第三，视频中把实体与事件顺序绑定。更冒险但有价值的是机器人：把视觉对象
+ID 与动作坐标系绑定。不过 BridgeVLA
+等机器人工作已经表明真实操作含视角变化、控制延迟与长程规划；简单 4×4 ID
+只能是局部状态表征，不能替代世界模型。</p>
+<hr />
+<h2 id="12-论文自述限制">12. 论文自述限制</h2>
+<ol type="1">
+<li><strong>任务简单。</strong>
+作者明确承认空间问题以简单关系为主，时间问题也偏外观/顺序，不能覆盖组合推理（Limitations，第
+8–9 页）。</li>
+<li><strong>模型规模有限。</strong> 受算力限制，实验模型不超过约
+14B；闭源前沿模型和更大开源模型是否同构未知（Limitations，第 8–9
+页）。</li>
+<li><strong>用途尚窄。</strong>
+论文把更广泛的诊断和训练用途留作未来工作；当前没有生产场景或安全关键验证（Limitations，第
+8–9 页）。</li>
+</ol>
+<hr />
+<h2 id="13-独立批判每点均为证据--推论">13. 独立批判（每点均为“证据 →
+推论”）</h2>
+<ol type="1">
+<li><strong>[统计/选择偏差]</strong> 因为置信区间使用“最佳 steering
+的三层”而不是预注册层，且论文未报告 nested selection 修正，所以 64.6%
+更接近可达峰值而非无偏总体效应，跨模型平均可能被高估。</li>
+<li><strong>[内部一致性]</strong> 因为图注/摘要附近写
+64.4%、主结果正文写 64.6%，对象对样本量又出现“6”与“至少
+9”两套口径，所以代码复现应优先于二手数字抄录，精确到 0.1 pp
+的比较不可靠。</li>
+<li><strong>[因果干预有效性]</strong> 因为默认 scale=5
+却没有剂量—反应曲线或隐藏范数归一化，所以答案翻转可能部分来自分布外激活；只有展示小尺度单调效应、随机等范数方向和
+activation norm 匹配，才能把它稳健解释为空间因果变量。</li>
+<li><strong>[外部效度]</strong> 因为主要图像是 896×896
+规则网格、固定对象尺寸与清晰分离，而真实图像含遮挡、透视和语义共现，所以
+(R^2\ge0.854) 不能直接外推到自然场景；尺寸变化后方差解释已下降
+10–20%，正是域差敏感性的信号。</li>
+<li><strong>[三维语义]</strong> 因为 above/front 与 behind/below
+已出现混淆，所以所谓“空间
+ID”更可能首先编码二维投影和语料关系，而非坐标系无关的三维几何；需要相机姿态反事实才能区分。</li>
+<li><strong>[训练归因]</strong> 因为 spatial-loss 组与控制组在 1,600
+步前完全同分，而到 3,200 步才差 6
+pp，且没有多随机种子，所以不能排除优化时序或正则化效应；它尚未证明收益来自作者声称的
+ID 几何本身。</li>
+<li><strong>[时间证据不足]</strong> 因为视频只系统描述 8 帧、5 对象对与
+61
+排列，且没有完整逐模型数表，所以“时空统一机制”的时间部分弱于空间部分；目前更像概念验证，不足以覆盖长视频记忆。</li>
+<li><strong>[规模与封闭模型]</strong> 因为实验上限约 14B
+且不含前沿闭源模型，所以无法判断低秩 ID
+是规模扩大后保留、分裂还是被更复杂非线性表征取代；跨规模结论仍开放。</li>
+</ol>
+<hr />
+<h2 id="14-开放挑战可操作的-head-to-head-实验空白">14.
+开放挑战：可操作的 head-to-head 实验空白</h2>
+<h3 id="141-理论">14.1 理论</h3>
+<p><strong>T1：线性 ID 还是局部切线近似？</strong>
+同一模型、同一数据上比较 rank-3 线性映射、两层 MLP、kernel ridge
+与局部线性模型；保持参数量/验证集一致，在自然图像反事实上同时报告
+(R^2)、steering AUC 与分布外位置泛化。若 MLP 只提高 probe 而不提高
+steering，线性机制解释更可信；反之应修正“线性”主张。</p>
+<p><strong>T2：第三维的含义。</strong> 对 rank-1…8
+做奇异值谱与跨种子置信区间，并分别用二维坐标、齐次坐标 ((x,y,1))、深度
+(z) 预测空间 ID。head-to-head 比较解释方差和可迁移 steering，判断 rank-3
+是齐次偏置还是几何深度。</p>
+<p><strong>T3：注意力路径 vs 残差路径。</strong> 在同一层对
+(W_V/W_O)、MLP 和 residual stream 分别做 path patching，与整 token
+patching 比较 belief shift；若只有整 token
+有效，理论草图中的注意力线性链还不充分。</p>
+<h3 id="142-工程与应用">14.2 工程与应用</h3>
+<p><strong>E1：AdaptVis × Spatial Loss 2×2 因子实验。</strong> 在
+WhatsUp、VSR、COCO-Spatial 上比较 baseline、AdaptVis、spatial
+loss、两者组合；同模型同训练预算，报告 accuracy、目标框注意力 IoU、ID
+(R^2) 与推理延迟。该实验能分离“看哪里”和“绑给谁”的互补性。</p>
+<p><strong>E2：自然域鲁棒性。</strong>
+用固定对象关系创建四组：无遮挡、局部遮挡、相机旋转、背景语义冲突；比较原模型、ID
+steering、LoRA 微调和全量微调。要求至少 5 seeds 与 bootstrap
+CI，测相对位置准确率和不相关任务退化。</p>
+<p><strong>E3：服务级可用性。</strong> 将错误定位器作为运行时守门器：若
+encoder error 则重裁剪/重检测，若 binding error 则改写提示或激活修正。与
+self-consistency、tool-use detector head-to-head，报告准确率、平均额外
+FLOPs、P95 延迟和错误拒绝率。</p>
+<h3 id="143-新兴方向">14.3 新兴方向</h3>
+<p><strong>N1：长视频 temporal ID。</strong> 在 8/32/128/512
+帧下比较固定位置 ID、RoPE 时间读出、外部记忆与 streaming
+VLM；用同一事件反转最小对报告 temporal steering、末段衰减和内存。只有跨
+512 帧仍稳定，才能支持长期时间绑定。</p>
+<p><strong>N2：三维/具身坐标系。</strong>
+在同一机器人场景中改变相机但保持世界坐标关系，比较 image-centric
+ID、camera-centric 3D token 与 world-centric scene
+graph；指标是关系不变性、抓取成功率和跨相机迁移。此实验直接检验 2D ID
+能否升格为动作空间变量。</p>
+<p><strong>N3：多对象组合与指代。</strong> 从 2 对象扩展到 4/8/16
+对象，加入“左边第二个红杯后面的书”之类组合指代；比较单一低秩
+ID、slot-based binding 与显式 scene
+graph。报告随对象数的错误增长率，而不只报告平均准确率。</p>
+<hr />
+<h2 id="15-值得继续跟进的近期工作">15. 值得继续跟进的近期工作</h2>
+<ol type="1">
+<li><strong><a
+href="https://openreview.net/forum?id=zJnPyb2xrp">PostAlign, ICLR
+2026</a>：</strong> 把多模态 grounding 当作纠偏透镜，适合与 spatial ID
+的“中间表征纠偏”对照；一个改输出对齐，一个改对象—位置绑定。</li>
+<li><strong><a
+href="https://openreview.net/forum?id=EdQzLC0Zra">MetaSpatial, ICLR
+2026</a>：</strong>
+直接面向元宇宙/三维空间推理，是检验本论文二维低秩机制能否外推到相机与世界坐标的自然对手。</li>
+<li><strong><a
+href="https://openreview.net/forum?id=fWWUPOb0CT">SpatiaLab, ICLR
+2026</a>：</strong> 提供更广泛空间推理评测；可作为避免只在自建 4×4
+网格闭环验证的外部基准。</li>
+<li><strong><a href="https://openreview.net/pdf?id=sQGlhjKUC0">To Sink
+or Not to Sink, ICLR 2026</a>：</strong> 追踪大 VLM 的视觉信息通道，和
+spatial ID
+的具名变量分析互补；前者回答信息去哪，后者回答哪种变量被绑定。</li>
+<li><strong><a href="https://openreview.net/pdf?id=QLiXtWEAkq">SPIKE-RL,
+ICLR 2026</a>：</strong> 用 Bayesian surprise 强化 Video-LLM，适合与
+temporal ID 比较“主动挑关键帧”与“连续时间绑定”两条路线。</li>
+<li><strong><a href="https://openreview.net/forum?id=xk8EqWDPQw">MMR-V,
+ICLR 2026</a>：</strong> 多帧证据推理强调未明说的信息组合，可暴露 8
+帧合成顺序任务无法覆盖的跨帧隐含关系。</li>
+<li><strong><a
+href="https://openaccess.thecvf.com/content/CVPR2024/html/Chen_SpatialVLM_Endowing_Vision-Language_Models_with_Spatial_Reasoning_Capabilities_CVPR_2024_paper.html">SpatialVLM,
+CVPR 2024</a>：</strong> 以约 10M 图像、2B VQA
+数据训练空间能力；它代表“数据规模”路线，恰好与本论文“机制辅助损失”路线做同预算比较。</li>
+<li><strong><a
+href="https://proceedings.mlr.press/v267/chen25cr.html">AdaptVis, ICML
+2025</a>：</strong> 最高约 50 pp
+的空间基准增益非常醒目，但需要与对象绑定诊断同台，确认提升来自正确注视还是更强提示先验。</li>
+</ol>
+<hr />
+<h2 id="16-最终判断">16. 最终判断</h2>
+<p>这篇论文值得看，不是因为它把某个榜单再推高一点，而是因为它提出了一种可复用的机制研究模板：<strong>控制变量生成
+→ 低秩读出 → 因果替换 → 错误定位 → 机制导向训练</strong>。最硬的发现是
+spatial-ID steering 的 64.6% 中位 belief swap 显著高于随机噪声 29.5%，且
+rank-3 位置映射在三种架构上解释 85.4%–90.3% 方差；这让“VLM
+以紧凑位置标签绑定对象”从比喻变成可检验假设。</p>
+<p>但报告的真正结论应停在“简单二维关系的中间层线性机制”而非“统一时空推理理论”。内部数字有两处小冲突，层选择有择优偏差，scale=5
+无敏感性，训练 +6 pp
+无多种子，时间实验无完整矩阵，深度关系还出现语义混淆。下一步最有价值的不是继续堆
+probe，而是做自然图像、相机变换、长视频与多对象组合上的预注册
+head-to-head 因果实验。</p>
+<hr />
+<h2 id="17-资料与可核验出处索引">17. 资料与可核验出处索引</h2>
+<ul>
+<li>核心论文 HTML：<a
+href="https://arxiv.org/html/2601.12626v1；PDF：https://arxiv.org/pdf/2601.12626；主结果见第">https://arxiv.org/html/2601.12626v1；PDF：https://arxiv.org/pdf/2601.12626；主结果见第</a>
+5–7 页，限制见第 8–9 页，数据与消融见 Appendix A/B、Table 1–2。</li>
+<li>ICLR 接收与展示：<a
+href="https://iclr.cc/virtual/2026/poster/10011690；OpenReview：https://openreview.net/forum?id=2zXRGiorSu">https://iclr.cc/virtual/2026/poster/10011690；OpenReview：https://openreview.net/forum?id=2zXRGiorSu。</a></li>
+<li>官方代码：<a
+href="https://github.com/Raphoo/linear-mech-vlms">https://github.com/Raphoo/linear-mech-vlms。</a></li>
+<li>Kamath et al.：<a
+href="https://aclanthology.org/2023.emnlp-main.568/">https://aclanthology.org/2023.emnlp-main.568/。</a></li>
+<li>Feng &amp; Steinhardt：<a
+href="https://proceedings.iclr.cc/paper_files/paper/2024/hash/9d1b7fc578c0d2d6431fc26d736ecaf3-Abstract-Conference.html">https://proceedings.iclr.cc/paper_files/paper/2024/hash/9d1b7fc578c0d2d6431fc26d736ecaf3-Abstract-Conference.html。</a></li>
+<li>Hernandez et al.：<a
+href="https://proceedings.iclr.cc/paper_files/paper/2024/hash/2b6d7285306fe896fca9b2e9a02ff6ec-Abstract-Conference.html">https://proceedings.iclr.cc/paper_files/paper/2024/hash/2b6d7285306fe896fca9b2e9a02ff6ec-Abstract-Conference.html。</a></li>
+<li>Zhang et al.：<a
+href="https://aclanthology.org/2025.naacl-long.115/">https://aclanthology.org/2025.naacl-long.115/。</a></li>
+<li>Chen et al. / AdaptVis：<a
+href="https://proceedings.mlr.press/v267/chen25cr.html">https://proceedings.mlr.press/v267/chen25cr.html。</a></li>
+</ul>
+<p><strong>脚注：</strong>
+所有数字只取自实际读取的论文正文、表格或附录；未报告的逐模型视频准确率、精确
+p 值、随机种子方差、scale sweep 与完整 5×6
+同协议矩阵均明确保留为缺失，不用图像估读或跨论文拼接补造。<code>ml-report-index.md</code>
+已更新本次条目。HTML 已通过 <code>warm-editorial-report</code> 静态验证器（0 errors / 0 warnings）；本运行环境未提供
+<code>/usr/bin/chromium</code> 或 <code>/opt/pw-browsers</code>，且现有浏览器安全策略禁止打开本地报告，因此无法完成要求中的本机 Playwright
+浅色/深色/移动端截图核验。为降低未核验风险，所有宽表均置于横向滚动容器，SVG 使用响应式 <code>viewBox</code>，移动端使用单列 KPI
+与收窄内边距；这些属于静态防溢出检查，不等同于实际浏览器验收。</p>
+
+    </article>
+  </main>
+
+  <footer>核心论文：<a href="https://arxiv.org/abs/2601.12626">arXiv:2601.12626v1</a> · <a href="https://openreview.net/forum?id=2zXRGiorSu">OpenReview</a> · <a href="https://github.com/Raphoo/linear-mech-vlms">代码</a> · 生成日期 2026-09-29</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

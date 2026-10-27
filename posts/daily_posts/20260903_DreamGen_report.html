@@ -1,0 +1,1121 @@
+---
+layout: null
+title: "DreamGen"
+date: 2026-09-03
+topic: "rl-peft"
+tags: ["rl-peft", "robotics", "world-models"]
+excerpt: "从具身微调、伪动作恢复到低数据真机泛化 DreamGen 证明视频生成可产生可执行训练信号，但 81,000 GPU-hour、learner-dependent 负迁移与统计不足仍阻止“低成本通用数据引擎”的强结论。"
+permalink: "/blog/2026/09/03/dreamgen/"
+blog_post: true
+lang: "zh-CN"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_en: "/blog/2026/09/03/dreamgen/en/"
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>DreamGen 深度研究报告 · 2026-09-03</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+.chart rect{transition:opacity .15s}.chart rect:hover,.chart rect:focus{opacity:.72;outline:none}.chart text{fill:var(--ink)} @media(max-width:640px){.figure{padding:16px 10px}.chart{min-width:650px}.figure{overflow-x:auto}}
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">CoRL 2025 · EMBODIED AI</p>
+    <h1>DreamGen：把视频世界模型变成机器人数据工厂</h1>
+    <p class="subtitle">从具身微调、伪动作恢复到低数据真机泛化</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">CoRL 2025 / PMLR 305</span>
+      <span class="chip">2026-09-03</span>
+      <span class="chip">世界模型驱动的机器人数据扩展</span>
+    </div>
+    <p class="lede">DreamGen 证明视频生成可产生可执行训练信号，但 81,000 GPU-hour、learner-dependent 负迁移与统计不足仍阻止“低成本通用数据引擎”的强结论。</p>
+  </header>
+
+  <main><div class="report-body">
+<section class="card" aria-labelledby="一链接验证与证据边界-title"><h2 id="一链接验证与证据边界-title">一、链接验证与证据边界</h2>
+<p>下表链接均于 2026-09-03 实际访问。核心论文数字优先采用 CoRL 2025 的
+PMLR 定稿；页码均指下载 PDF 的物理页码。arXiv
+版本日期来自提交历史，不用搜索摘要替代正文。</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="数据表，可横向滚动"><table>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">会议 / 正式入口</th>
+<th scope="col">arXiv 版本与日期</th>
+<th scope="col">代码</th>
+<th scope="col">数据 / 权重</th>
+<th scope="col">项目页 / 视频</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>DreamGen</strong></td>
+<td><a href="https://proceedings.mlr.press/v305/jang25a.html">CoRL 2025,
+PMLR 305:5170–5194</a></td>
+<td><a
+href="https://arxiv.org/abs/2505.12705">2505.12705v2，2025-06-17</a></td>
+<td><a
+href="https://github.com/nvidia/gr00t-dreams">NVIDIA/GR00T-Dreams</a></td>
+<td>代码仓提供 Cosmos-Predict2 流程；论文实验的 240k RoboCasa 神经轨迹与
+WAN2.1 微调权重<strong>未找到完整公开下载</strong></td>
+<td><a
+href="https://research.nvidia.com/labs/gear/dreamgen/">项目页与真机视频</a></td>
+</tr>
+<tr class="even">
+<td>GR00T N1</td>
+<td>正式会议入口未找到；技术报告</td>
+<td><a
+href="https://arxiv.org/abs/2503.14734">2503.14734v2，2025-03-27</a></td>
+<td><a href="https://github.com/NVIDIA/Isaac-GR00T">Isaac-GR00T</a></td>
+<td><a
+href="https://huggingface.co/nvidia/GR00T-N1-2B">GR00T-N1-2B</a></td>
+<td><a
+href="https://research.nvidia.com/publication/2025-03_nvidia-isaac-gr00t-n1-open-foundation-model-humanoid-robots">NVIDIA
+Research</a></td>
+</tr>
+<tr class="odd">
+<td>OpenVLA-OFT</td>
+<td>RSS 2025（见 arXiv 备注）</td>
+<td><a
+href="https://arxiv.org/abs/2502.19645">2502.19645v2，2025-04-28</a></td>
+<td><a
+href="https://github.com/moojink/openvla-oft">moojink/openvla-oft</a></td>
+<td>代码仓含检查点入口</td>
+<td><a href="https://openvla-oft.github.io/">项目页 / 视频</a></td>
+</tr>
+<tr class="even">
+<td>LAPA</td>
+<td>ICLR 2025</td>
+<td><a
+href="https://arxiv.org/abs/2410.11758">2410.11758v2，2025-05-15</a></td>
+<td><a
+href="https://github.com/LatentActionPretraining/LAPA">LatentActionPretraining/LAPA</a></td>
+<td>代码公开；完整预训练数据混合依赖多个既有数据集</td>
+<td><a href="https://latentactionpretraining.github.io/">项目页</a></td>
+</tr>
+<tr class="odd">
+<td>RoboDreamer</td>
+<td>正式会议入口未找到</td>
+<td><a
+href="https://arxiv.org/abs/2404.12377">2404.12377v1，2024-04-18</a></td>
+<td><a
+href="https://github.com/UMass-Embodied-AGI/robodreamer">官方代码</a></td>
+<td>权重 / 完整生成数据未找到</td>
+<td><a href="https://robovideo.github.io/">项目页</a></td>
+</tr>
+<tr class="even">
+<td>DreMa</td>
+<td>ICLR 2025</td>
+<td><a
+href="https://arxiv.org/abs/2412.14957">2412.14957v2，2025-03-10</a></td>
+<td><a
+href="https://github.com/leobarcellona/drema_code">drema_code</a></td>
+<td>代码公开；真机原始轨迹与全部重建场景未找到统一下载</td>
+<td><a href="https://dreamtomanipulate.github.io/">项目页</a></td>
+</tr>
+</tbody>
+</table></div>
+<p>**检索说明。**先检查 <code>ml-report-index.md</code>，排除最近 14
+天已深读的 SimbaV2（深度 RL 扩展稳定性）与 TARL（离线 RL
+测试时适配），并避免重复 EARL-BO。候选从 CoRL/PMLR、NeurIPS
+proceedings、ICLR/OpenReview 与 arXiv 汇总；Hugging Face Daily
+Papers、Semantic Scholar 用于反查 DreamGen 条目与关联工作。ACL Anthology
+在本轮具身方向未给出更合适的主会核心论文；Papers with Code
+未找到稳定、信息更全的 DreamGen
+独立任务页，因此不把聚合站信息当作证据。</p>
+</section>
+<section class="card" aria-labelledby="二候选池与随机选择-title"><h2 id="二候选池与随机选择-title">二、候选池与随机选择</h2>
+<p>候选池共 24 篇，全部入口返回可访问页面或 PDF；时效均在 24
+个月内。优先级中，正式主会论文列在前，随后是高质量近期技术报告。候选包括：①
+ERA；② Robot-R1；③ Asking-for-Help RL；④ VIKI-R；⑤ π0.5；⑥ GR00T N1；⑦
+OpenVLA-OFT；⑧ SmolVLA；⑨ DexVLA；⑩ SpatialVLA；⑪ MoLe-VLA；⑫
+WorldVLA；⑬ V-JEPA 2；⑭ DreamGen；⑮ Genie Envisioner；⑯ Hi Robot；⑰
+ReWiND；⑱ VidMan；⑲ BridgeVLA；⑳ RDT-2；㉑ SimpleVLA-RL；㉒ RoboTwin
+2.0；㉓ Reflective World Models；㉔ BiAssemble。完整标题、venue 与已验证
+URL 见随报告保存的候选清单。</p>
+<p>执行 <code>shuf -i 1-24 -n 1</code> 得到 <strong>14</strong>，即
+DreamGen。正文、附录、PMLR 定稿、代码与视频均可用，故<strong>重抽次数为
+0</strong>。需要说明：DreamGen
+自身不是强化学习算法，归入本日领域是因为它研究具身策略的数据与世界模型接口；其下游策略训练主要是行为克隆
+/ 流匹配，而非在线 RL。</p>
+</section>
+<section class="card" aria-labelledby="三一句话核心定位-title"><h2 id="三一句话核心定位-title">三、一句话核心定位</h2>
+<p><strong>DreamGen 将大型图生视频模型的互联网先验，经“机器人具身微调 →
+条件视频生成 → 伪动作恢复 →
+视觉运动策略训练”四步转换为可扩展机器人训练数据，从而把昂贵的新增任务示教改写为
+GPU 生成预算。</strong></p>
+<p>这一定义也给出正确的阅读方式：它不是一个更强的控制器，也不是能执行反事实交互的闭环模拟器，而是一条离线数据生产线。世界模型负责提出视觉上可能的轨迹，IDM
+或 LAPA 负责把像素变化翻译成动作，GR00T N1、π0 或 Diffusion Policy
+才是最终执行者。</p>
+</section>
+<section class="card" aria-labelledby="四motivation具体痛点与量化证据-title"><h2 id="四motivation具体痛点与量化证据-title">四、Motivation：具体痛点与量化证据</h2>
+<p>机器人学习的数据瓶颈有三层。第一，示教需要人与硬件同时在线；第二，任务、物体和场景组合呈乘法增长；第三，接触丰富的任务难以靠传统仿真准确覆盖。DreamGen
+的实验把这些痛点量化得很直接。</p>
+<p>其一，在 GR1 行为泛化实验中，基础数据只有单一实验室内 <strong>2,885
+条 pick-and-place 轨迹</strong>；仅靠这批数据微调的 GR00T N1，在 14
+个新行为上的平均成功率为 <strong>11.2%</strong>。每个新行为只生成
+<strong>50 条</strong>神经轨迹后，平均升到 <strong>43.2%</strong>，绝对
++32.0 pp、相对 +285.71%。（DreamGen 表 1，PDF p.8）</p>
+<p>其二，在 13 个新环境任务中，基础策略平均为
+<strong>0.0%</strong>，DreamGen 为
+<strong>28.5%</strong>。由于分母为零，相对提升没有定义，不能写成“无限百分比”；能说的是方法从完全失败推到非零可用区间。（表
+1，PDF p.8）</p>
+<p>其三，真实机器人低数据增强跨三种 embodiment：GR1 四任务由论文概述中的
+<strong>37% → 46.4%</strong>，Franka 三任务 <strong>23% →
+37%</strong>，SO-100 两任务 <strong>21% → 45.5%</strong>。（正文
+p.3；细项见表 5，PDF p.20）其中 SO-100 绝对 +24.5 pp、相对
++116.67%，显示便宜机械臂并非必须靠大型真实数据集才能受益；但任务只有两个，证据面仍窄。</p>
+<p>其四，规模不是免费的：生成 RoboCasa 的 <strong>240k</strong>
+条神经轨迹耗时 <strong>54 小时 × 1,500 张 NVIDIA L40 = 81,000
+GPU-hour</strong>。（限制章节，PDF
+p.9）若只看成功率而不计这个分母，就会误把“少采真机数据”写成“低成本”。论文证明的是人机示教成本可被算力替代，不是总成本已经下降。</p>
+</section>
+<section class="card" aria-labelledby="五论文故事线假设接口与权衡-title"><h2 id="五论文故事线假设接口与权衡-title">五、论文故事线：假设、接口与权衡</h2>
+<p>故事线从一个关键观察开始：通用视频生成模型已经从互联网视频学到物体外观、语言语义和部分运动先验，但并不知道特定机器人关节、相机与动力学。作者没有把它直接部署成控制器，而是用少量目标机器人视频做
+LoRA 微调，尽量保留互联网知识，同时注入 embodiment 约束。</p>
+<p>核心假设有四个。</p>
+<ol type="1">
+<li><strong>视觉可迁移性假设</strong>：世界模型在具身微调后仍保留未见物体、动词和场景的先验。</li>
+<li><strong>可逆性假设</strong>：由连续视频帧可以恢复足够接近执行动作的伪标签。</li>
+<li><strong>噪声可吸收假设</strong>：策略在真实与合成 1:1
+混采或大量合成训练时，能容忍世界模型与伪动作误差。</li>
+<li><strong>代理指标假设</strong>：视频的 instruction following 与
+physics alignment 能预测下游策略效果。</li>
+</ol>
+<p>每个假设都有对应权衡。LoRA
+越强，越贴合机器人但越可能忘记开放世界先验；IDM
+动作有物理单位却依赖真实动作数据，LAPA
+不需要目标动作标签却只给潜在动作；生成更多视频提高覆盖但扩大 GPU
+成本和分布偏差；自动 VLM
+评审便宜，却可能把视觉可信错当动力学可执行。</p>
+</section>
+<section class="card" aria-labelledby="六方程级形式化与流程-title"><h2 id="六方程级形式化与流程-title">六、方程级形式化与流程</h2>
+<p>以下是对论文流程的统一形式化，符号由本报告整理，<strong>不是论文原封不动给出的定理</strong>。</p>
+<p>设真实示教数据为</p>
+<p>[ \mathcal D_r={(o_{0:T},a_{0:T-1},c)}, ]</p>
+<p>其中观察为图像 <code>o</code>、动作是 <code>a</code>、语言指令是
+<code>c</code>。第一阶段将预训练图生视频模型 <code>p_{\theta_0}</code>
+以 LoRA 参数 <code>Δθ=BA</code> 适配目标 embodiment：</p>
+<p>[ \theta^*=\arg\min_{\Delta\theta};\mathbb E_{\mathcal
+D_r,t,\epsilon}
+|\epsilon-\epsilon_{\theta_0+\Delta\theta}(z_t,o_0,c,t)|_2^2, \quad
+\mathrm{rank}(BA)=4. ]</p>
+<p>第二阶段给初始帧与新指令采样视频：</p>
+<p>[ \tilde o_{1:T}\sim p_{\theta^*}(\cdot\mid o_0,c), ]</p>
+<p>新颖性来自改变
+<code>c</code>、物体或初始帧，而非在物理模拟器内显式改变状态。第三阶段有两条动作恢复支路。IDM
+学习</p>
+<p>[ f_\phi(o_t,o_{t+1:t+H},c)\rightarrow \hat a_{t:t+H-1}, ]</p>
+<p>并用滑窗逐帧产生重叠 action chunk；LAPA 则以相隔约一秒的帧对输入
+VQ-VAE 编码器，输出预量化连续 embedding <code>\hat z_t</code>。论文为
+LAPA 使用 codebook size 8、sequence length 16，其预训练混合共
+<strong>438.1M 帧 / 5,721.3 小时</strong>。（表 3，PDF p.17）</p>
+<p>第四阶段将神经轨迹 <code>\mathcal D_n={(\tilde o,\hat a,c)}</code>
+喂给策略：</p>
+<p>[ \psi^*=\arg\min_\psi \mathbb E_{(o,a,c)\sim \lambda\mathcal
+D_r+(1-\lambda)\mathcal D_n} \mathcal L_{policy}(\pi_\psi(o,c),a). ]</p>
+<p>真实增强实验取 <code>λ=0.5</code>，即真实 / 合成 1:1 采样；GR00T N1
+为两类轨迹使用分离的 action encoder/decoder。新行为与新环境实验则
+<code>λ=0</code>，完全依赖神经轨迹。（方法 §2.4，PDF p.5）</p>
+<pre class="text"><code>互联网视频先验 ──┐
+                  ├─[LoRA 具身微调]─&gt; 条件视频世界模型
+少量机器人示教 ──┘                         │
+       │                                   ├─ 新动词 prompt
+       └─&gt; IDM / LAPA &lt;── 生成视频帧序列 ──┤─ 新物体 / 初始帧
+                    │                      └─ 新环境首帧
+                    v
+          (视频, 伪动作, 指令) 神经轨迹
+                    │
+          ┌─────────┴─────────┐
+          v                   v
+      与真实数据 1:1       仅合成轨迹
+      数据增强任务         零新增示教泛化
+          └─────────┬─────────┘
+                    v
+          DP / π0 / GR00T N1 策略</code></pre>
+</section>
+<section class="card" aria-labelledby="七关键机制与工程细节-title"><h2 id="七关键机制与工程细节-title">七、关键机制与工程细节</h2>
+<div class="table-scroll" role="region" tabindex="0" aria-label="数据表，可横向滚动"><table>
+<thead>
+<tr class="header">
+<th scope="col">模块</th>
+<th scope="col">论文设置</th>
+<th scope="col">为什么重要</th>
+<th scope="col">潜在失败模式</th>
+<th scope="col">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>世界模型适配</td>
+<td>多数实验用 WAN2.1；LoRA rank=4、alpha=4、lr=1e-4</td>
+<td>低秩更新保留通用视频先验</td>
+<td>微调不足不懂机器人，过度微调遗忘新场景</td>
+<td>附录 F，PDF p.18</td>
+</tr>
+<tr class="even">
+<td>RoboCasa 视频训练</td>
+<td>100 epochs，batch 32</td>
+<td>多视角仿真域需要强适配</td>
+<td>2×2 网格含一块黑图，浪费视觉容量</td>
+<td>附录 E/F，pp.17–18</td>
+</tr>
+<tr class="odd">
+<td>GR1 / DROID 微调</td>
+<td>GR1 75 epochs、batch 64；DROID 5 epochs、batch 64</td>
+<td>数据域不同，最优训练量不同</td>
+<td>没有统一停止准则的定量消融</td>
+<td>附录 F，p.18</td>
+</tr>
+<tr class="even">
+<td>SO-100 微调</td>
+<td>两任务各 200 epochs、batch 8</td>
+<td>小数据反复训练</td>
+<td>过拟合风险未用验证曲线量化</td>
+<td>附录 F，p.18</td>
+</tr>
+<tr class="odd">
+<td>多视角</td>
+<td>拼成 2×2 网格，第四格置黑</td>
+<td>无需重写视频骨干</td>
+<td>视角间几何不显式、分辨率下降</td>
+<td>方法 §2.1 / 附录 E</td>
+</tr>
+<tr class="even">
+<td>IDM</td>
+<td>预测 H 步并滑窗</td>
+<td>输出真实动作坐标</td>
+<td>重叠 chunk 一致性与误差累积未报告</td>
+<td>方法 §2.3，p.5</td>
+</tr>
+<tr class="odd">
+<td>LAPA</td>
+<td>一秒帧差；预量化连续 latent</td>
+<td>无需目标机器人动作标签</td>
+<td>latent 是否能被特定执行器准确解码不保证</td>
+<td>§2.3、表 3</td>
+</tr>
+<tr class="even">
+<td>策略训练</td>
+<td>真实 / 合成 1:1；神经轨迹 state 置零</td>
+<td>可插入多种策略</td>
+<td>train-test state 缺失与视觉伪影成为捷径</td>
+<td>§2.4，p.5</td>
+</tr>
+</tbody>
+</table></div>
+<p>一个常被忽略的工程事实是：论文展示了三种下游策略兼容性，但最大规模
+RoboCasa 表 4 的完整矩阵只给 GR00T
+N1；因此“policy-agnostic”主要是接口层主张，不代表相同规模上所有策略都达到等价收益。</p>
+</section>
+<section class="card" aria-labelledby="八数据集基准与指标-title"><h2 id="八数据集基准与指标-title">八、数据集、基准与指标</h2>
+<p><strong>RoboCasa</strong>覆盖 24
+个厨房操控任务，按搬运、开关门抽屉、旋钮、杠杆、按钮与插入类分组。报告平均
+success rate；每任务的具体评估轮数在 DreamGen 定稿表 4
+附近没有重新声明，沿用 RoboCasa 协议。表 4
+提供三种真实数据量：30、100、300 条/任务，外加 240k 总神经轨迹。</p>
+<p><strong>GR1 泛化集</strong>分为 14 个“已见环境 / 新行为”和 13
+个“新环境”任务。部分任务允许抓起物体得到 0.5 分，因此 success
+并非所有格都严格二值；这解释了基础模型在某些未见行为上的非零得分。（正文
+p.8）</p>
+<p><strong>真实增强集</strong>含 GR1
+四任务（锤击、擦拭、折叠、堆叠）、Franka 三任务与 SO-100
+两任务。测试任务数只有 9，但 embodiment、控制器与接触类型相对多样。</p>
+<p><strong>DreamGenBench</strong>在 RoboCasa 与 GR1-Object / Behavior /
+Environment 四个设置比较 Hunyuan、CogVideoX、WAN2.1、Cosmos 的 zero-shot
+与 SFT 版本。Instruction Following 由 GPT-4o、Qwen2.5-VL
+和部分人工评估；Physics Alignment 结合 VideoCon-Physics 与
+Qwen2.5-VL。两个维度不可混成无权重说明的单一“总能力”。</p>
+</section>
+<section class="card" aria-labelledby="九完整主结果矩阵-title"><h2 id="九完整主结果矩阵-title">九、完整主结果矩阵</h2>
+<section class="subsection" aria-labelledby="91-robocasa三种真实数据量--七种训练条件-title"><h3 id="91-robocasa三种真实数据量--七种训练条件-title">9.1 RoboCasa：三种真实数据量 × 七种训练条件</h3>
+<div class="table-scroll" role="region" tabindex="0" aria-label="数据表，可横向滚动"><table>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">真实示教 / 任务</th>
+<th scope="col" style="text-align: right;">仅真实 GR00T N1</th>
+<th scope="col" style="text-align: right;">+240k 神经轨迹</th>
+<th scope="col" style="text-align: right;">绝对提升</th>
+<th scope="col" style="text-align: right;">相对提升</th>
+<th scope="col" style="text-align: right;">仅神经轨迹</th>
+<th scope="col">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">30</td>
+<td style="text-align: right;">17.44</td>
+<td style="text-align: right;"><strong>23.32</strong></td>
+<td style="text-align: right;">+5.88 pp</td>
+<td style="text-align: right;">+33.72%</td>
+<td style="text-align: right;">20.55（统一值）</td>
+<td>表 4，PDF p.19</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">100</td>
+<td style="text-align: right;">32.07</td>
+<td style="text-align: right;"><strong>39.94</strong></td>
+<td style="text-align: right;">+7.87 pp</td>
+<td style="text-align: right;">+24.54%</td>
+<td style="text-align: right;">20.55</td>
+<td>同上</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">300</td>
+<td style="text-align: right;">49.59</td>
+<td style="text-align: right;"><strong>57.61</strong></td>
+<td style="text-align: right;">+8.02 pp</td>
+<td style="text-align: right;">+16.17%</td>
+<td style="text-align: right;">20.55</td>
+<td>同上</td>
+</tr>
+</tbody>
+</table></div>
+<p>这里的“仅神经轨迹
+20.55”不随真实示教量变化，因为它本来不含真实轨迹；表中重复只是为了对齐三种条件，不能把它当作三次独立测量。最有解释力的比较是低数据时：only-NT
+的 20.55 比仅 30 条真实数据的 17.44 高 3.11 pp，但远低于 100
+条真实数据的
+32.07，说明合成数据具有可执行信息，却仍未达到等量高质量真实数据的效率。</p>
+</section>
+<section class="subsection" aria-labelledby="92-真实机器人九任务--方法-title"><h3 id="92-真实机器人九任务--方法-title">9.2 真实机器人：九任务 × 方法</h3>
+<div class="table-scroll" role="region" tabindex="0" aria-label="数据表，可横向滚动"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">GR1 Hammer</th>
+<th scope="col" style="text-align: right;">Wipe</th>
+<th scope="col" style="text-align: right;">Fold</th>
+<th scope="col" style="text-align: right;">Stack</th>
+<th scope="col" style="text-align: right;">Franka P&amp;P</th>
+<th scope="col" style="text-align: right;">Cube</th>
+<th scope="col" style="text-align: right;">Tool</th>
+<th scope="col" style="text-align: right;">SO-100 P&amp;P</th>
+<th scope="col" style="text-align: right;">Tic-Tac-Toe</th>
+<th scope="col">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DP</td>
+<td style="text-align: right;">35.0</td>
+<td style="text-align: right;">23.3</td>
+<td style="text-align: right;">6.6</td>
+<td style="text-align: right;">25.0</td>
+<td style="text-align: right;">20.0</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">10.0</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td>表 5，PDF p.20</td>
+</tr>
+<tr class="even">
+<td>π0</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">30.0</td>
+<td style="text-align: right;">10.0</td>
+<td style="text-align: right;">20.0</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td>同上</td>
+</tr>
+<tr class="odd">
+<td>GR00T N1</td>
+<td style="text-align: right;">60.0</td>
+<td style="text-align: right;">36.6</td>
+<td style="text-align: right;">27.0</td>
+<td style="text-align: right;">25.0</td>
+<td style="text-align: right;">40.0</td>
+<td style="text-align: right;">10.0</td>
+<td style="text-align: right;">20.0</td>
+<td style="text-align: right;">17.0</td>
+<td style="text-align: right;">25.0</td>
+<td>同上</td>
+</tr>
+<tr class="even">
+<td>DP + NT</td>
+<td style="text-align: right;">15.0</td>
+<td style="text-align: right;">33.3</td>
+<td style="text-align: right;">26.4</td>
+<td style="text-align: right;">35.0</td>
+<td style="text-align: right;">30.0</td>
+<td style="text-align: right;">20.0</td>
+<td style="text-align: right;">10.0</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td>同上</td>
+</tr>
+<tr class="odd">
+<td>π0 + NT</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">40.0</td>
+<td style="text-align: right;">20.0</td>
+<td style="text-align: right;">20.0</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td>同上</td>
+</tr>
+<tr class="even">
+<td><strong>GR00T N1 + NT</strong></td>
+<td style="text-align: right;"><strong>65.0</strong></td>
+<td style="text-align: right;"><strong>49.0</strong></td>
+<td style="text-align: right;"><strong>37.0</strong></td>
+<td style="text-align: right;">35.0</td>
+<td style="text-align: right;">60.0</td>
+<td style="text-align: right;">20.0</td>
+<td style="text-align: right;">30.0</td>
+<td style="text-align: right;">26.0</td>
+<td style="text-align: right;"><strong>65.0</strong></td>
+<td>同上</td>
+</tr>
+<tr class="odd">
+<td>GR00T N1 高数据</td>
+<td style="text-align: right;"><strong>75.0</strong></td>
+<td style="text-align: right;"><strong>50.0</strong></td>
+<td style="text-align: right;"><strong>66.6</strong></td>
+<td style="text-align: right;"><strong>85.0</strong></td>
+<td style="text-align: right;"><strong>80.0</strong></td>
+<td style="text-align: right;"><strong>50.0</strong></td>
+<td style="text-align: right;"><strong>40.0</strong></td>
+<td style="text-align: right;"><strong>36.0</strong></td>
+<td style="text-align: right;">40.0</td>
+<td>同上</td>
+</tr>
+</tbody>
+</table></div>
+<p>低数据 GR00T N1 + NT 相对同一基础策略在九项全部不降，绝对提升依次为
++5.0、+12.4、+10.0、+10.0、+20.0、+10.0、+10.0、+9.0、+40.0
+pp。可是高数据 GR00T N1 仍在 8/9 项更强，只有 Tic-Tac-Toe 被 +NT 的 65.0
+超过 25.0 pp；因此 DreamGen
+最合理的定位是低数据放大器，而不是高质量示教的完全替代物。</p>
+<p>DP 也揭示负迁移：Hammering 从 35.0 降到 15.0（−20 pp），Tool Usage
+保持
+10.0。故“神经轨迹对所有策略都一致有效”并不成立；收益依赖策略骨干、动作标签质量与混合方式。</p>
+</section>
+<section class="subsection" aria-labelledby="93-dreamgenbench四世界模型--四分布-title"><h3 id="93-dreamgenbench四世界模型--四分布-title">9.3 DreamGenBench：四世界模型 × 四分布</h3>
+<p>为控制表宽，只列 GPT instruction following 与 physics alignment；人工
+/ Qwen IF 仍见原表。</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="数据表，可横向滚动"><table>
+<thead>
+<tr class="header">
+<th scope="col">SFT 世界模型</th>
+<th scope="col" style="text-align: right;">RoboCasa IF / PA</th>
+<th scope="col" style="text-align: right;">GR1 Object IF / PA</th>
+<th scope="col" style="text-align: right;">GR1 Behavior IF / PA</th>
+<th scope="col" style="text-align: right;">GR1 Env IF / PA</th>
+<th scope="col">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Hunyuan</td>
+<td style="text-align: right;">68.8 / 44.8</td>
+<td style="text-align: right;">38.0 / 39.0</td>
+<td style="text-align: right;">38.3 / 12.8</td>
+<td style="text-align: right;">27.6 / 35.4</td>
+<td>表 2，PDF p.15</td>
+</tr>
+<tr class="even">
+<td>CogVideoX</td>
+<td style="text-align: right;">72.9 / 44.8</td>
+<td style="text-align: right;">72.0 / 55.0</td>
+<td style="text-align: right;">44.0 / 24.7</td>
+<td style="text-align: right;">55.2 / 51.3</td>
+<td>同上</td>
+</tr>
+<tr class="odd">
+<td>WAN2.1</td>
+<td style="text-align: right;">77.1 / 55.3</td>
+<td style="text-align: right;">72.0 / 69.0</td>
+<td style="text-align: right;"><strong>72.3 / 64.9</strong></td>
+<td style="text-align: right;">48.3 / <strong>66.5</strong></td>
+<td>同上</td>
+</tr>
+<tr class="even">
+<td>Cosmos</td>
+<td style="text-align: right;"><strong>79.2 / 61.5</strong></td>
+<td style="text-align: right;"><strong>90.0 / 73.0</strong></td>
+<td style="text-align: right;">59.6 / <strong>64.9</strong></td>
+<td style="text-align: right;"><strong>69.0 / 59.4</strong></td>
+<td>同上</td>
+</tr>
+</tbody>
+</table></div>
+<p>没有单模型在 8 个格子全胜：Cosmos 赢 RoboCasa、Object 和 Env
+IF；WAN2.1 赢 Behavior IF 与 Env PA，Behavior PA
+打平。这个矩阵支持“世界模型选择与目标分布相关”，反对把单一 DreamGenBench
+总分当通用排名。</p>
+</section>
+</section>
+
+<figure class="figure" aria-labelledby="platform-title">
+  <p class="fig-title" id="platform-title">低数据真机：GR00T N1 加入神经轨迹前后</p>
+  <p class="fig-sub">纵轴为平均成功率（%）；每个平台的任务数不同，图用于平台内前后比较。</p>
+  <svg class="chart" viewBox="0 0 760 400" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>GR1、Franka、SO-100 加入 DreamGen 神经轨迹前后的平均成功率</title>
+    <desc>GR1 37 到 46.4，Franka 23 到 37，SO-100 21 到 45.5。</desc>
+    <g stroke="var(--grid)"><line x1="70" y1="330" x2="730" y2="330"/><line x1="70" y1="275" x2="730" y2="275"/><line x1="70" y1="220" x2="730" y2="220"/><line x1="70" y1="165" x2="730" y2="165"/><line x1="70" y1="110" x2="730" y2="110"/><line x1="70" y1="55" x2="730" y2="55"/></g>
+    <g font-size="12"><text x="39" y="334">0</text><text x="33" y="279">10</text><text x="33" y="224">20</text><text x="33" y="169">30</text><text x="33" y="114">40</text><text x="33" y="59">50</text></g>
+    <g fill="var(--chart-comparison)">
+      <rect tabindex="0" data-tip="GR1 基线：37.0%" x="120" y="126.5" width="72" height="203.5"/>
+      <rect tabindex="0" data-tip="Franka 基线：23.0%" x="335" y="203.5" width="72" height="126.5"/>
+      <rect tabindex="0" data-tip="SO-100 基线：21.0%" x="550" y="214.5" width="72" height="115.5"/>
+    </g>
+    <g fill="var(--chart-primary)">
+      <rect tabindex="0" data-tip="GR1 + NT：46.4%" x="195" y="74.8" width="72" height="255.2"/>
+      <rect tabindex="0" data-tip="Franka + NT：37.0%" x="410" y="126.5" width="72" height="203.5"/>
+      <rect tabindex="0" data-tip="SO-100 + NT：45.5%" x="625" y="79.8" width="72" height="250.2"/>
+    </g>
+    <g text-anchor="middle" font-size="13"><text x="194" y="360">GR1</text><text x="409" y="360">Franka</text><text x="624" y="360">SO-100</text></g>
+    <g font-size="12"><rect x="510" y="16" width="13" height="13" fill="var(--chart-comparison)"/><text x="530" y="27">仅真实数据</text><rect x="625" y="16" width="13" height="13" fill="var(--chart-primary)"/><text x="645" y="27">+ 神经轨迹</text></g>
+  </svg>
+  <figcaption>来源：DreamGen 正文 p.3 与表 5（PDF p.20）。hover / 键盘聚焦柱体可显示精确值。</figcaption>
+</figure><section class="card" aria-labelledby="十逐层消融敏感性与相变-title"><h2 id="十逐层消融敏感性与相变-title">十、逐层消融、敏感性与相变</h2>
+<p>**第一层：是否需要真实数据。**仅 240k 神经轨迹达到 20.55；30
+条真实/任务为 17.44，100 条为 32.07。（表
+4）这表明合成轨迹跨过了“完全不可执行”门槛，但其样本效率介于低量与中量真实数据之间。</p>
+<p>**第二层：真实数据规模。**加 NT 的绝对收益从 +5.88 增至 +8.02
+pp，但相对收益从 +33.72% 降至
++16.17%。这不是性能反转，而是基线分母增大后的边际相对收益收缩。论文图 4
+称总体近似
+log-linear，但未给斜率、置信区间或拟合优度，不能据此外推到百万轨迹。</p>
+<p>**第三层：动作恢复。**正文图 4 比较 LAPA 与
+IDM，并称两者在各数据区间均有增益；GR00T N1 报告补充说 30 条低数据时
+LAPA 略强，而 100/300 条时 IDM 随监督数据增多拉开差距。DreamGen
+定稿没有表格化给出所有曲线点，所以本报告不从像素读数补造数值。</p>
+<p>**第四层：世界模型微调。**表 2 显示 zero-shot 模型多数接近 0；例如
+WAN2.1-zero 的 RoboCasa IF/PA 为 0.0/0.0，而 WAN2.1-sft 为
+77.1/55.3。这里存在明显“先适配 embodiment
+才可用”的相变。但四模型的微调预算并未证明等算力，不能将提升完全归因于架构。</p>
+<p>**第五层：下游策略。**GR00T N1 九任务全不降，DP 在 Hammering
+严重下降，π0 的 Franka 三任务只从 30/10/20 到
+40/20/20。说明神经轨迹不是独立于 learner 的数据资产；policy capacity
+与训练目标是关键交互项。</p>
+<p>**超参敏感性。**论文报告 WAN2.1 的 lr、LoRA rank/alpha、epoch 与
+batch，但没有 rank、学习率、1:1 混合比、生成采样步数、IDM horizon H
+的系统
+sweep，也没有失败相变图。因此能复现作者配置，不能推出配置鲁棒性。</p>
+</section>
+<section class="card" aria-labelledby="十一统计显著性与复算审计-title"><h2 id="十一统计显著性与复算审计-title">十一、统计显著性与复算审计</h2>
+<p>核心 DreamGen 表 1、4、5
+<strong>没有报告标准差、置信区间、显著性检验或跨 seed
+方差</strong>。真实机器人某些任务的成功率以 5 或 10
+个百分点跳变，暗示试验次数可能较少；没有明示分母时，不能判断 +5 pp
+是否超过随机波动。</p>
+<p>DreamGenBench 的自动 IF 与人工 IF 在四个模型点上的 Pearson
+<code>r</code> 报告为：GPT-4o 对 RoboCasa 0.94、GR1-Object
+0.93、Behavior 0.96、Env 1.00；Qwen2.5-VL 对应
+0.92、0.95、0.97、0.96。（表 6–7，PDF
+pp.20–21）但每个相关系数只有四个模型点，且选择同一批模型，无置信区间；高
+<code>r</code>
+只能说明该小样本内排序接近，不能证明代理指标在新世界模型上校准。</p>
+<p>本报告复算均按 <code>(新−旧)/旧×100%</code>。RoboCasa 三档相对增益为
+33.72%、24.54%、16.17%；GR1 新行为为 285.71%。新环境基线为
+0，故相对提升明确记为不可定义。</p>
+</section>
+<section class="card" aria-labelledby="十二相关工作问题来源与设计传递链-title"><h2 id="十二相关工作问题来源与设计传递链-title">十二、相关工作：问题来源与设计传递链</h2>
+<section class="subsection" aria-labelledby="121-robodreamer从视频作为计划到视频作为数据-title"><h3 id="121-robodreamer从视频作为计划到视频作为数据-title">12.1 RoboDreamer：从“视频作为计划”到“视频作为数据”</h3>
+<p>RoboDreamer
+解决语言组合泛化，把动作与空间关系拆成组合条件，再让视频模型生成未来计划。它在
+RLBench 六任务平均成功率 <strong>49.3%</strong>，高于 Hiveformer
+44.2、UniPi 41.0 与 Image-BC 31.6。（RoboDreamer 表 3，PDF
+p.7）遗留缺口是视频主要服务在线规划，执行仍依赖逆动力学，且生成规模受闭环时延限制。DreamGen
+的回应是把生成移到训练前离线完成；传递的关键设计是“语言条件视频 +
+逆动力学”，改变的是系统位置，而非完全新模块。</p>
+</section>
+<section class="subsection" aria-labelledby="122-lapa让无动作视频产生可学习动作空间-title"><h3 id="122-lapa让无动作视频产生可学习动作空间-title">12.2 LAPA：让无动作视频产生可学习动作空间</h3>
+<p>LAPA 解决互联网视频没有机器人动作标签的问题：VQ-VAE 把帧间变化量化成
+latent action，VLA 预测 latent，再用少量真实数据映射到控制。Language
+Table 的 in-domain unseen 成功率为 <strong>49.6±9.5%</strong>，Scratch
+为 15.2±8.3%；但带真动作预训练的 ActionVLA 仍为 58.8±6.6%。（LAPA 表
+1，PDF p.7）DreamGen 直接继承其 action tokenizer，却使用预量化连续
+embedding；关键传递是把“视频→latent
+action”从预训练目标改成合成轨迹标注器。</p>
+</section>
+<section class="subsection" aria-labelledby="123-gr00t-n1承接神经轨迹的强策略骨干-title"><h3 id="123-gr00t-n1承接神经轨迹的强策略骨干-title">12.3 GR00T N1：承接神经轨迹的强策略骨干</h3>
+<p>GR00T N1 以 VLM System 2 + diffusion-transformer System 1
+处理语义与连续动作。100 demonstrations/task 下，三仿真基准平均
+<strong>45.0%</strong>，对比 Diffusion Policy 33.4%。（GR00T N1 表
+2，PDF p.15）遗留缺口是新任务仍需动作数据；DreamGen
+把世界模型生成的轨迹注入其 post-training。关键设计传递是分离 action
+encoder/decoder：真实与合成被当作不同 embodiment，减少动作域冲突。</p>
+</section>
+<section class="subsection" aria-labelledby="124-openvla-oft数据之外解码配方同样决定上限-title"><h3 id="124-openvla-oft数据之外解码配方同样决定上限-title">12.4 OpenVLA-OFT：数据之外，解码配方同样决定上限</h3>
+<p>OpenVLA-OFT 解决 VLA 自回归动作慢且 chunk
+不稳定的问题，以并行解码、action chunking、连续动作和 L1 目标把 LIBERO
+四套件平均从 <strong>76.5% 提至 97.1%</strong>，吞吐提高
+<strong>26×</strong>。（表 I–II，PDF pp.5–6）DreamGen
+没有回应解码器效率，而是与 policy
+结构解耦；这条支线提醒我们，合成数据收益必须与更强 post-training recipe
+做 head-to-head，否则可能把 learner 攴善错记为数据贡献。</p>
+</section>
+<section class="subsection" aria-labelledby="125-drema显式数字孪生与生成式世界模型的另一条路线-title"><h3 id="125-drema显式数字孪生与生成式世界模型的另一条路线-title">12.5 DreMa：显式数字孪生与生成式世界模型的另一条路线</h3>
+<p>DreMa 用 Gaussian Splatting +
+物理模拟构建可编辑数字孪生，并从极少演示做等变变换。真机平均成功率从
+PerAct 的 <strong>31.7% 提升到 62.9%</strong>，OOD 从 25.0% 到
+58.3%。（DreMa 表 4，PDF
+p.10）它的缺口是全可观测、简单对象与场景构建成本；DreamGen
+以开放视频先验换掉显式几何建模，但也放弃严格可交互动力学。关键传递不是具体网络，而是“先想象大量轨迹，再训练策略”的数据范式。</p>
+<pre class="text"><code>                         ┌─ 显式几何 / 物理 ─ DreMa ───────┐
+少量机器人示教 ─────────┤                                  ├─ 合成轨迹扩增
+                         └─ 像素生成世界模型 ───────────────┘
+                                    │
+                   ┌────────────────┴───────────────┐
+                   │                                │
+              在线视频规划                    离线视频数据工厂
+        UniPi / RoboDreamer                     DreamGen
+                   │                                │
+             IDM 执行接口              ┌───────────┴───────────┐
+                                       │                       │
+                                  IDM 真动作              LAPA 潜动作
+                                       └───────────┬───────────┘
+                                                   v
+                             DP / π0 / GR00T N1 / 更强 OFT learner</code></pre>
+<p>演进动力经历三个转折：先从状态空间模型转向高维视频先验；再从“世界模型在线选动作”转成“世界模型离线生产数据”；最后从单一动作标签转成
+IDM 与 latent action
+双接口。真正未解决的是闭环纠错：生成视频不会因策略的错误动作重新演化，因此仍不是可反事实交互的环境。</p>
+</section>
+</section>
+<section class="card" aria-labelledby="十三跨论文对标-title"><h2 id="十三跨论文对标-title">十三、跨论文对标</h2>
+<div class="table-scroll" role="region" tabindex="0" aria-label="数据表，可横向滚动"><table>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">世界表示</th>
+<th scope="col">合成数据 / 在线规划</th>
+<th scope="col">动作接口</th>
+<th scope="col">真机</th>
+<th scope="col">最大可复用点</th>
+<th scope="col">主要缺口</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>RoboDreamer</td>
+<td>组合式视频扩散</td>
+<td>在线计划为主</td>
+<td>IDM</td>
+<td>否</td>
+<td>语言组合分解</td>
+<td>规模与闭环延迟</td>
+</tr>
+<tr class="even">
+<td>LAPA</td>
+<td>帧差 latent</td>
+<td>预训练</td>
+<td>latent→真动作</td>
+<td>是</td>
+<td>无标签视频动作化</td>
+<td>latent 可控性</td>
+</tr>
+<tr class="odd">
+<td>GR00T N1</td>
+<td>隐式视觉语义 + DiT</td>
+<td>learner</td>
+<td>连续 action chunk</td>
+<td>是</td>
+<td>双系统强骨干</td>
+<td>新任务动作数据</td>
+</tr>
+<tr class="even">
+<td>OpenVLA-OFT</td>
+<td>VLA 表征</td>
+<td>learner</td>
+<td>并行连续 chunk</td>
+<td>是</td>
+<td>高效微调配方</td>
+<td>不生成新数据</td>
+</tr>
+<tr class="odd">
+<td>DreMa</td>
+<td>3DGS + simulator</td>
+<td>离线想象</td>
+<td>规划器真动作</td>
+<td>是</td>
+<td>可编辑数字孪生</td>
+<td>全可观测 / 场景构建</td>
+</tr>
+<tr class="even">
+<td><strong>DreamGen</strong></td>
+<td>通用图生视频</td>
+<td><strong>离线数据工厂</strong></td>
+<td>IDM 或 LAPA</td>
+<td><strong>三平台</strong></td>
+<td>模块化神经轨迹管线</td>
+<td>成本、开放环、统计不足</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section class="card" aria-labelledby="十四真正贡献可复用设计与迁移潜力-title"><h2 id="十四真正贡献可复用设计与迁移潜力-title">十四、真正贡献、可复用设计与迁移潜力</h2>
+<p>第一项真贡献是<strong>系统重定位</strong>：把视频世界模型从在线
+planner 移到离线
+generator，绕开视频生成时延与控制频率的冲突。第二项是<strong>双动作接口</strong>：有动作标签时用
+IDM，只有视频时用
+LAPA，因此同一生成数据能跨数据条件。第三项是<strong>组合泛化证据</strong>：单场景单动词示教经
+50 条/任务神经轨迹，扩展到 14 新行为和 13
+新环境任务。第四项是<strong>可观测的中间基准</strong>：DreamGenBench
+尝试在昂贵真机训练前筛选世界模型。</p>
+<p>最值得复用的设计不是 WAN2.1
+具体骨干，而是三个接口契约：世界模型输出固定相机布局的视频；动作恢复器把相邻帧对齐为
+chunk；策略把真实 / 合成看成不同 domain 或
+embodiment。这个契约可迁移到导航、自动驾驶、双臂装配，甚至非视觉时序生成；但每次迁移都必须重新验证“视觉可信→动作可执行”链路。</p>
+</section>
+<section class="card" aria-labelledby="十五论文自述限制-title"><h2 id="十五论文自述限制-title">十五、论文自述限制</h2>
+<ol type="1">
+<li><strong>任务复杂度</strong>：任务相对简单，只覆盖机器人运动学能力的一小部分；更灵巧、更长程控制仍未验证。（限制
+§5，PDF p.8–9）</li>
+<li><strong>计算与人工首帧</strong>：240k RoboCasa 样本耗费 54
+小时×1,500 L40，且新场景仍需人工提供初始帧。（§5，p.9）</li>
+<li><strong>自动评审可靠性</strong>：轻量开源 VLM
+可能幻觉，尤其难判断精细物理真实性。（§5，p.9）</li>
+</ol>
+</section>
+<section class="card" aria-labelledby="十六独立批判-title"><h2 id="十六独立批判-title">十六、独立批判</h2>
+<ol type="1">
+<li><strong>[因果归因]</strong> 因为 DreamGen
+同时改变世界模型数据量、动作伪标签和策略训练混合，而表 4 没有“随机视频 /
+同量传统增广 / 等算力仿真”控制，所以观察到的 +5.88 至 +8.02 pp
+不能唯一归因于视频模型的物理先验。</li>
+<li><strong>[成本]</strong> 因为 240k 轨迹需要 81,000 L40
+GPU-hour，而论文未把该成本换算成与真实示教、Isaac
+仿真或图像增广相同预算，所以“扩展更便宜”只在人工时间维度成立，不能推成总经济成本更低。</li>
+<li><strong>[统计]</strong> 因为主结果没有标准差、置信区间或
+seed，且真机格子以 5–10 pp 为常见步长，所以 +5 pp 的 Hammering
+增益可能落在试验抽样噪声内；当前证据更支持大幅提升项，不支持所有小提升项。</li>
+<li><strong>[闭环动力学]</strong>
+因为世界模型按首帧与文本生成完整视频，不接收策略实际动作，错误动作不会反过来改变后续生成，所以它不是可以做反事实
+roll-out 的 MDP 模型；不能据此声称学到了可用于 MPC
+的动作条件动力学。</li>
+<li><strong>[评测代理]</strong> 因为 Pearson 相关每次只基于四个 SFT
+模型点，即使 r=0.92–1.00 也可能由单个排序决定，所以 DreamGenBench
+作为新模型筛选器需要留一模型外推与置信区间，而非同样本拟合。</li>
+<li><strong>[策略交互]</strong> 因为 DP 在 Hammering 从 35 降到 15，而
+GR00T N1 在九任务全不降，所以神经轨迹存在 learner-dependent
+负迁移；“策略无关”应限定为格式兼容，而非收益保证。</li>
+<li><strong>[数据泄漏 / 先验边界]</strong>
+因为视频骨干使用互联网预训练，论文没有系统审计测试对象、场景或动作是否在预训练视频中出现，所以所谓
+zero-shot
+是相对机器人示教集的零样本，不是相对所有视觉经验的零样本。</li>
+<li><strong>[安全]</strong>
+因为生成视频与伪动作在部署前主要通过视觉指标筛选，没有力、碰撞、关节限位或失败恢复矩阵，所以对擦拭、锤击、倒液等接触任务的安全性不能从成功视频推断。</li>
+</ol>
+</section>
+<section class="card" aria-labelledby="十七开放挑战可操作的-head-to-head-实验空白-title"><h2 id="十七开放挑战可操作的-head-to-head-实验空白-title">十七、开放挑战：可操作的 head-to-head 实验空白</h2>
+<section class="subsection" aria-labelledby="理论-title"><h3 id="理论-title">理论</h3>
+<p>**代理误差界。**固定策略骨干与训练样本数，对
+WAN2.1、Cosmos、Hunyuan、CogVideoX 各生成同一组 10k 轨迹；比较
+DreamGenBench、IDM replay 成功率与真实策略成功率，用 bootstrap 95% CI 与
+leave-one-model-out 回归。目标是检验 IF/PA
+是否跨模型外推，而不是只报告同样本 Pearson r。</p>
+<p>**伪动作噪声阈值。**对同一真实轨迹人工注入不同幅度、时间偏移与 chunk
+不一致噪声，比较 IDM、LAPA 与 oracle
+action；画成功率随动作误差的相变，并分 DP、π0、GR00T N1 三
+learner。这样才能估计视觉生成误差何时被策略吸收、何时产生灾难性负迁移。</p>
+</section>
+<section class="subsection" aria-labelledby="工程应用-title"><h3 id="工程应用-title">工程应用</h3>
+<p>**等预算数据源对决。**以 10k、40k、100k 美元等成本档，比较 DreamGen
+GPU 生成、真实遥操作、Isaac 仿真 domain randomization、DreMa
+数字孪生与普通图像增广；统一 24 RoboCasa + 9 真机任务、统一 policy
+与评测次数，报告 success、人工小时、GPU-hour、能耗和安全中断次数。</p>
+<p>**闭环与开放环对决。**DreamGen
+的文本条件视频对比动作条件世界模型：让两者在相同失败状态分布上生成
+<code>K=1,4,8,16</code> 步 roll-out，再用 MPC
+与离线数据增强两种使用方式测试。若开放环只适合数据增强、动作条件模型适合规划，系统边界会被定量厘清。</p>
+<p>**混合比与课程。**在真实:合成比例
+<code>{1:0, 3:1, 1:1, 1:3, 0:1}</code>
+和质量过滤阈值上做二维网格，比较固定混采、先合成后真实、先真实后合成。当前单一
+1:1 设置不足以解释 DP 负迁移。</p>
+</section>
+<section class="subsection" aria-labelledby="新兴方向-title"><h3 id="新兴方向-title">新兴方向</h3>
+<p>**生成失败驱动的主动闭环。**让策略先在真机执行，收集
+near-failure，再条件化世界模型生成局部反事实修复轨迹；与随机 prompt
+生成做等量比较。评价罕见失败覆盖、恢复成功率和每个新增成功行为的
+GPU-hour。</p>
+<p>**多模态物理监督。**给视频生成器加入力 / 触觉 /
+深度或关节状态条件，与纯 RGB DreamGen 在折叠、擦拭、锤击三接触任务
+head-to-head；报告视觉 PA、最大接触力误差、动作 replay
+偏差和真机成功率，验证“看起来物理正确”是否等于接触动力学正确。</p>
+</section>
+</section>
+<section class="card" aria-labelledby="十八近期工作雷达-title"><h2 id="十八近期工作雷达-title">十八、近期工作雷达</h2>
+<ul>
+<li><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/file/ec46d737282bb408e642ed883a145c40-Paper-Conference.pdf">Robot-R1（NeurIPS
+2025）</a>：把可验证机器人控制信号用于强化具身推理，适合与 DreamGen
+比较“优化 reasoning”与“扩充 data”两条扩展轴。</li>
+<li><a href="https://openreview.net/forum?id=hqFNqVQEUd">ERA（ICLR
+2026）</a>：以强化学习把 VLM 转成 embodied
+agent；重点应看奖励能否抑制语言捷径，以及是否使用真正物理交互。</li>
+<li><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/file/ab16cc8f472cf94b282dbff7b99f5f8e-Paper-Datasets_and_Benchmarks_Track.pdf">VIKI-R（NeurIPS
+2025 D&amp;B）</a>：将分层奖励用于多智能体具身协作，补足 DreamGen
+尚未处理的多机器人信用分配。</li>
+<li><a
+href="https://arxiv.org/abs/2504.16054">π0.5</a>：用异构多模态共训追求开放世界泛化；它代表“扩大真实与语义混合数据”，可作为
+DreamGen 合成视频路线的关键对照。</li>
+<li><a href="https://arxiv.org/abs/2506.09985">V-JEPA
+2</a>：以自监督视频表征支持理解、预测与规划；与像素生成世界模型比较，可检验高保真像素是否真是策略学习所必需。</li>
+<li><a
+href="https://arxiv.org/abs/2506.21539">WorldVLA</a>：统一动作与未来图像的自回归世界模型，更接近动作条件闭环；但需要审计图像预测收益是否独立于参数量增加。</li>
+<li><a href="https://arxiv.org/abs/2508.17424">RDT-2</a>：直接对
+generalist robot policy 做强化微调；若与 DreamGen
+合并，应分别隔离合成轨迹和 RL reward 的增益。</li>
+<li><a
+href="https://arxiv.org/abs/2509.09674">SimpleVLA-RL</a>：强调简化的 VLA
+强化学习扩展配方，适合作为“合成离线数据 vs 在线/离线
+RL”同算力比较对象。</li>
+</ul>
+</section>
+<section class="card" aria-labelledby="十九结论-title"><h2 id="十九结论-title">十九、结论</h2>
+<p>DreamGen 最值得看的不是“22 个新行为”这个
+headline，而是它把生成式世界模型安放在机器人栈中的位置：离线、大规模、可与不同动作恢复器和策略骨干组合。定量上，300
+条/任务的 RoboCasa 平均成功率由 49.59% 到 57.61%，真实九任务中的 GR00T
+N1 + NT 全部不降，证明神经轨迹确实携带可执行信息。</p>
+<p>但结论必须带边界：81,000 GPU-hour 没有等成本基线，DP 出现 −20 pp
+负迁移，自动指标只在四模型小样本上相关，主结果又无显著性。因此当前最稳妥的判断是：<strong>DreamGen
+建立了“用视频生成计算换机器人示教覆盖”的可行性，而没有证明它已经是成本最优、策略无关或动力学可靠的通用解决方案。</strong></p>
+<hr />
+<p>资料核验截至 2026-09-03。所有精确数字来自实际读取的 PMLR / arXiv
+PDF，缺失项均保留为“未报告 / 未找到”。索引已在本次运行追加。HTML 已通过
+Warm Editorial 结构验证器（0
+warnings），并以响应式规则检查表格与图表横向滚动；本机未发现
+<code>/usr/bin/chromium</code>、<code>chromium-browser</code> 或
+<code>/opt/pw-browsers</code> 下可执行 Chromium，因此无法诚实完成
+Playwright
+的浅色、深色与移动端截图验收，此项明确记为<strong>未执行</strong>。</p>
+</section>
+</div>
+</main>
+
+  <footer>来源：CoRL 2025 PMLR 定稿、arXiv:2505.12705v2、官方代码/项目页，以及五篇问题—技术来源链论文；全部链接于 2026-09-03 验证。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

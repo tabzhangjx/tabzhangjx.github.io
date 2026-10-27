@@ -1,0 +1,1168 @@
+---
+layout: null
+title: "RGM"
+date: 2026-09-28
+topic: "rl-peft"
+tags: ["rl-peft", "process-reward-models", "test-time-scaling"]
+excerpt: "QwQ-32B +54M SPRM exceeds a same-base PRM-72B by 0.9–1.6 pp on five tasks, but complete eight-path serving cost and actual process-error detection remain unresolved."
+permalink: "/blog/2026/09/28/rgm/en/"
+blog_post: false
+lang: "en"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_zh: "/blog/2026/09/28/rgm/"
+sitemap: true
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>RGM: In-Depth Research Report · 2026-09-28</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  main { display: grid; gap: 22px; min-width: 0; }
+  .card.level2 { margin: 0; min-width: 0; }
+  .subsection { margin-top: 24px; }
+  .subsection h3 { margin-top: 0; }
+  h4 { margin: 18px 0 8px; font-size: 16px; }
+  blockquote { margin: 14px 0; padding: 10px 14px; border-left: 4px solid var(--chart-primary); background: var(--surface-2); color: var(--text-secondary); }
+  pre { overflow-x: auto; padding: 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); font-size: 12.5px; line-height: 1.55; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  p code, li code, td code { padding: .08em .3em; border-radius: 4px; background: var(--surface-2); }
+  ol, ul { padding-left: 1.35em; }
+  li + li { margin-top: .38em; }
+  .table-scroll { margin: 15px 0 22px; }
+  table { min-width: 760px; }
+  .figure { margin: 0; min-width: 0; max-width: 100%; }
+  .legend { display: inline-flex; align-items: center; gap: 6px; margin-right: 12px; }
+  .swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  .swatch.primary { background: var(--chart-primary); }
+  .swatch.comparison { background: var(--chart-comparison); }
+  p, li, td, th, a { overflow-wrap: anywhere; }
+  .chart rect { outline: none; }
+  .chart rect:focus { stroke: var(--text-primary); stroke-width: 2; }
+  @media (max-width: 640px) {
+    .toolbar { position: static; justify-content: flex-end; margin-bottom: 10px; }
+    .hero { margin-top: 0; }
+    .chart { width: 760px; max-width: none; }
+    .figure { overflow-x: auto; }
+  }
+
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" aria-pressed="false">☾ Dark</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ICLR 2026 · LLM/NLP · Test-time scaling</p>
+    <h1>RGM: Combining Generation and Process Verification in One Model</h1>
+    <p class="subtitle">Shared backbone, lightweight scoring head, and outcome–pseudo-label consistency filtering remove the need for a second72B model in external test-time scaling.</p>
+    <div class="meta" aria-label="Report metadata">
+      <span class="chip source">Daily in-depth paper tracking</span>
+      <span class="chip">2026-09-28</span>
+      <span class="chip">ICLR 2026 Poster</span>
+    </div>
+    <p class="lede">QwQ-32B +54M SPRM exceeds a same-base PRM-72B by 0.9–1.6 pp on five tasks, but complete eight-path serving cost and actual process-error detection remain unresolved.</p>
+  </header>
+
+  <main>
+<figure class="figure" aria-labelledby="main-chart-title">
+      <p class="fig-title" id="main-chart-title">Same QwQ-32B base:54M shared head versus 72B standalone PRM</p>
+      <p class="fig-sub"><span class="legend"><i class="swatch comparison"></i>PRM-72B</span> <span class="legend"><i class="swatch primary"></i>RGM-54M</span>; RGM’s means across the five tasks are higher by 0.9–1.6 pp.</p>
+      <svg class="chart" viewBox="0 0 980 350" role="img" xmlns="http://www.w3.org/2000/svg">
+        <title>Five-benchmark comparison of QwQ-32B with PRM-72B and RGM-54M</title>
+        <desc>RGM achieves84.2,73.4,78.1,53.1,64.0 on AIME24, AIME25, BRUMO25, HMMT25, and LiveCodeBench respectively, all above the same-base PRM-72B.</desc>
+        <line x1="72" x2="928" y1="300.0" y2="300.0" stroke="var(--border)" stroke-width="1" /><text x="60" y="304.0" text-anchor="end" font-size="12">0</text><line x1="72" x2="928" y1="246.7" y2="246.7" stroke="var(--border)" stroke-width="1" /><text x="60" y="250.7" text-anchor="end" font-size="12">20</text><line x1="72" x2="928" y1="193.3" y2="193.3" stroke="var(--border)" stroke-width="1" /><text x="60" y="197.3" text-anchor="end" font-size="12">40</text><line x1="72" x2="928" y1="140.0" y2="140.0" stroke="var(--border)" stroke-width="1" /><text x="60" y="144.0" text-anchor="end" font-size="12">60</text><line x1="72" x2="928" y1="86.7" y2="86.7" stroke="var(--border)" stroke-width="1" /><text x="60" y="90.7" text-anchor="end" font-size="12">80</text><rect x="117" y="77.9" width="36" height="222.1" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="AIME24 · PRM-72B：83.3" /><rect x="165" y="75.5" width="36" height="224.5" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="AIME24 · RGM-54M：84.2" /><rect x="282" y="107.2" width="36" height="192.8" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="AIME25 · PRM-72B：72.3" /><rect x="330" y="104.3" width="36" height="195.7" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="AIME25 · RGM-54M：73.4" /><rect x="447" y="96.0" width="36" height="204.0" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="BRUMO25 · PRM-72B：76.5" /><rect x="495" y="91.7" width="36" height="208.3" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="BRUMO25 · RGM-54M：78.1" /><rect x="612" y="162.1" width="36" height="137.9" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="HMMT25 · PRM-72B：51.7" /><rect x="660" y="158.4" width="36" height="141.6" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="HMMT25 · RGM-54M：53.1" /><rect x="777" y="132.0" width="36" height="168.0" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="LiveCode · PRM-72B：63.0" /><rect x="825" y="129.3" width="36" height="170.7" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="LiveCode · RGM-54M：64.0" /><text x="135" y="70.9" text-anchor="middle" font-size="11">83.3</text><text x="183" y="68.5" text-anchor="middle" font-size="11">84.2</text><text x="155" y="326" text-anchor="middle" font-size="12">AIME24</text><text x="300" y="100.2" text-anchor="middle" font-size="11">72.3</text><text x="348" y="97.3" text-anchor="middle" font-size="11">73.4</text><text x="320" y="326" text-anchor="middle" font-size="12">AIME25</text><text x="465" y="89.0" text-anchor="middle" font-size="11">76.5</text><text x="513" y="84.7" text-anchor="middle" font-size="11">78.1</text><text x="485" y="326" text-anchor="middle" font-size="12">BRUMO25</text><text x="630" y="155.1" text-anchor="middle" font-size="11">51.7</text><text x="678" y="151.4" text-anchor="middle" font-size="11">53.1</text><text x="650" y="326" text-anchor="middle" font-size="12">HMMT25</text><text x="795" y="125.0" text-anchor="middle" font-size="11">63.0</text><text x="843" y="122.3" text-anchor="middle" font-size="11">64.0</text><text x="815" y="326" text-anchor="middle" font-size="12">LiveCode</text>
+      </svg>
+      <figcaption>Source: core Table 1(PDF p.6). Single Y-axis: accuracy/Pass@1(0–90). Hover or keyboard-focus bars for exact values.</figcaption>
+    </figure>
+
+<blockquote>
+<p><strong>Core positioning:</strong>“Test-Time Scaling with Reflective Generative Model” shares a backbone between policy and process reward model(PRM), adding only a5M–54M lightweight SPRM head. Filtering by outcome correctness×self-generated pseudo-label consistency reduces noise, allowing one network to generate and select reasoning trajectories.</p>
+</blockquote>
+<ul>
+<li>Date:2026-09-28</li>
+<li>Rotating field: LLM/NLP—reasoning, test-time scaling, post-training, evaluation</li>
+<li>Core paper: Zixiao Wang et al., <strong>Test-Time Scaling with
+Reflective Generative Model</strong>, ICLR 2026 Poster</li>
+<li>Final paper version:<a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/c1e854c0620b13668b93058455c7b183-Abstract-Conference.html">https://proceedings.iclr.cc/paper_files/paper/2026/hash/c1e854c0620b13668b93058455c7b183-Abstract-Conference.html</a></li>
+<li>Reporting convention: except differences and relative changes explicitly labeled as this report’s calculations, all numbers come from paper tables/text or public model cards actually read. Missing values are not inferred.</li>
+</ul>
+<h2 id="0-检索去重与随机选择审计">0. Search, deduplication, and random-selection audit</h2>
+<h3 id="01-最近-14-天去重">0.1 Deduplication over the preceding 14 days</h3>
+<p>First read <code>ml-report-index.md</code>. Closest recent coverage is ThinkSLM on 2026-09-14(small-model reasoning and compression evaluation) and HPS on 2026-09-21(preference optimization and hardest-negative sampling). These papers and their themes—post-compression reasoning matrices and hard-negative preference sampling—are excluded. RGM focuses on external test-time scaling, process verifiers, and shared backbones, without duplicating that coverage.</p>
+<h3 id="02-候选池与来源覆盖">0.2 Candidate pool and source coverage</h3>
+<p>Candidates center on official ICLR2026 proceedings, cross-checked through arXiv, OpenReview, Hugging Face Daily Papers, Papers with Code, and Semantic Scholar. Semantic Scholar’s arXiv API link returned403, so it is marked inaccessible and its metadata supports no quantitative conclusion. Papers with Code yielded no standalone core-paper entry but did return the lineage paper Math-Shepherd. ACL Anthology verifies Math-Shepherd’s ACL 2024 long-paper entry. All24 candidates lie within 24 months, and their titles/official pages were individually opened or verified from the same proceedings results:</p>
+<ol type="1">
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/1df27e31a0c0b916797a49198cb28d6a-Abstract-Conference.html">The
+End of Manual Decoding: Towards Truly End-to-End Language
+Models</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/5f124a1979570872ff46a6de8fbac35c-Abstract-Conference.html">Language
+Models are Injective and Hence Invertible</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/ae8d4084f418bb51575c2ca6c658a05b-Abstract-Conference.html">Plan
+and Budget: Effective and Efficient Test-Time Scaling on Reasoning Large
+Language Models</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/0d1941f73833eb107939f62d323d6cc0-Abstract-Conference.html">Language
+Models Use Lookbacks to Track Beliefs</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/2af179e30c16f3a6d44311adbb5ec63f-Abstract-Conference.html">Sequences
+of Logits Reveal the Low Rank Structure of Language Models</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/ac6bd5acdf0c9446389e56e919f62ff0-Abstract-Conference.html">Soft-Masked
+Diffusion Language Models</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/5ef998a50e6a4f9ff52d39833ded30a0-Abstract-Conference.html">On
+Predictive Power of Representation Dispersion in Language
+Models</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/ff6f1a8c167f5f17a32981ecae4f3539-Abstract-Conference.html">Comparing
+Learning Dynamics of In-Context Learning and Fine-Tuning in Language
+Models</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/1a96349bbc03432c5ec8c6c502d102e7-Abstract-Conference.html">Do
+Large Language Models Know What They Are Capable Of?</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/ccf6d8b4a1fe9d9c8192f00c713872ea-Abstract-Conference.html">Native
+Reasoning Models: Training Language Models to Reason on Unverifiable
+Data</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/b213d870740582dd6af77bbdaed900c9-Abstract-Conference.html">SynthWorlds:
+Controlled Parallel Worlds for Disentangling Reasoning and Knowledge in
+Language Models</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/a77eadda332b6d4a9ae1e0e4024555f2-Abstract-Conference.html">R-Horizon:
+How Far Can Your Large Reasoning Model Really Go in Breadth and
+Depth?</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/06d5f1fe6509b001e6d4e0ec1afd83dd-Abstract-Conference.html">Log-Augmented
+Generation: Scaling Test-Time Reasoning with Reusable
+Computation</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/ced46a50befedcb884ccf0cbe8c3ad23-Abstract-Conference.html">e3:
+Learning to Explore Enables Extrapolation of Test-Time Compute for
+LLMs</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/e52554a70e0df57a0bea11d1eca0c9b5-Abstract-Conference.html">RL
+Squeezes, SFT Expands: A Comparative Study of Reasoning LLMs</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/0edc72113440dceb0fd3e9408bb19485-Abstract-Conference.html">Understanding
+the Role of Training Data in Test-Time Scaling</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/a03037317560b8c5f2fb4b6466d4c439-Abstract-Conference.html">Are
+Reasoning LLMs Robust to Interventions on their
+Chain-of-Thought?</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/c1e854c0620b13668b93058455c7b183-Abstract-Conference.html">Test-Time
+Scaling with Reflective Generative Model</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/8a81180649011d1690e05c68bfeaa57c-Abstract-Conference.html">MoDr:
+Mixture-of-Depth-Recurrent Transformers for Test-Time Reasoning</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/48c292f57f37569241ea9191a507031d-Abstract-Conference.html">ATTS:
+Asynchronous Test-Time Scaling via Conformal Prediction</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/1eeacdf8770e6dd5164cdeec8bcfa8cc-Abstract-Conference.html">TrimR:
+Verifier-based Training-Free Thinking Trimming for Efficient Test-Time
+Scaling</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/da7ce04b3683b173691ecbb801f2690f-Abstract-Conference.html">Sample
+Smart, Not Hard: Correctness-First Decoding for Better Reasoning in
+LLMs</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/8984ee7aae8ae8bff19f7224f1f04a53-Abstract-Conference.html">Whatever
+Remains Must Be True: Filtering Drives Reasoning in LLMs, Shaping
+Diversity</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/b010241b9f1cdfc7d4c392db899cef86-Abstract-Conference.html">OpenThoughts:
+Data Recipes for Reasoning Models</a></li>
+</ol>
+<p>Actually executed <code>shuf -i 1-24 -n 1</code> returned <strong>18</strong>, namely RGM. The 18-page final paper contains five main evaluation sets,64 repeated evaluations, a complete main table, and 11 ablation/appendix comparisons, providing sufficient material, so <strong>zero redraws</strong>。</p>
+<h2 id="1-链接验证表">1. Link verification table</h2>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Conference / official page</th>
+<th scope="col">arXiv version and date</th>
+<th scope="col">Code</th>
+<th scope="col">Data / weights</th>
+<th scope="col">Project page / videos</th>
+<th scope="col">Status in this round</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>RGM(core)</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/c1e854c0620b13668b93058455c7b183-Abstract-Conference.html">ICLR
+2026 Poster</a></td>
+<td><a href="https://arxiv.org/abs/2507.01951">2507.01951v2</a>，v1
+2025-07-02，v2 2025-07-09</td>
+<td><a href="https://github.com/MetaStone-AI/XBai-o4">XBai-o4</a></td>
+<td>Repository includes data;<a
+href="https://huggingface.co/MetaStoneTec/MetaStone-S1-1.5B">1.5B</a>、<a
+href="https://huggingface.co/MetaStoneTec/MetaStone-S1-7B">7B</a>、<a
+href="https://huggingface.co/MetaStoneTec/MetaStone-S1-32B">32B</a>
+Weights public</td>
+<td>Project page hosted on GitHub; video not found</td>
+<td>All actually visited; OpenReview triggered a challenge, but official proceedings accessible</td>
+</tr>
+<tr class="even">
+<td>Let’s Verify Step by Step</td>
+<td>ICLR 2024；<a href="https://arxiv.org/abs/2305.20050">arXiv page</a></td>
+<td>2305.20050，2023-05-31</td>
+<td><a href="https://github.com/openai/prm800k">PRM800K</a></td>
+<td>800K filtered step labels /75K solutions /12K problems</td>
+<td>Video not found</td>
+<td>Main text and data links accessible</td>
+</tr>
+<tr class="odd">
+<td>Math-Shepherd</td>
+<td><a href="https://aclanthology.org/2024.acl-long.510/">ACL 2024 Main
+Long</a></td>
+<td><a href="https://arxiv.org/abs/2312.08935">2312.08935</a></td>
+<td>No standalone official training repository found</td>
+<td>Paper describes automatic MC data; weights not released on ACL page</td>
+<td>Video not found</td>
+<td>ACL page/PDF accessible; Papers with Code entry searchable</td>
+</tr>
+<tr class="even">
+<td>Scaling LLM Test-Time Compute Optimally</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2025/hash/1b623663fd9b874366f3ce019fdfdd44-Abstract-Conference.html">ICLR
+2025</a></td>
+<td><a href="https://arxiv.org/abs/2408.03314">2408.03314</a></td>
+<td>No official author code found; HF community reproduction is not the authors’ repository</td>
+<td>PaLM2/PRM weights not released</td>
+<td>Video not found</td>
+<td>Official PDF accessible</td>
+</tr>
+<tr class="odd">
+<td>Lessons of Developing PRMs</td>
+<td>arXiv paper</td>
+<td><a href="https://arxiv.org/abs/2501.07301">2501.07301</a>，v1
+2025-01-13</td>
+<td><a
+href="https://github.com/QwenLM/Qwen2.5-Math">Qwen2.5-Math</a></td>
+<td><a
+href="https://huggingface.co/Qwen/Qwen2.5-Math-PRM-72B">Qwen2.5-Math-PRM-72B</a></td>
+<td>Video not found</td>
+<td>Text, code, and weights accessible</td>
+</tr>
+<tr class="even">
+<td>ReasonFlux-PRM</td>
+<td>NeurIPS 2025 Spotlight(repository claim)</td>
+<td><a href="https://arxiv.org/abs/2506.18896">2506.18896</a>，v1
+2025-06-23</td>
+<td><a
+href="https://github.com/Gen-Verse/ReasonFlux">ReasonFlux</a></td>
+<td><a
+href="https://huggingface.co/Gen-Verse/ReasonFlux-PRM-1.5B">1.5B</a>、<a
+href="https://huggingface.co/Gen-Verse/ReasonFlux-PRM-7B">7B</a></td>
+<td>Video not found</td>
+<td>arXiv, repository, and weights accessible</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>Version alert.</strong> The arXiv v2 abstract still gives additional parameters as
+<strong>53M</strong>, whereas the ICLR final main table reports by base model
+<strong>5M、26M、54M、54M、17M</strong>, summarized in the final abstract as approximately
+<strong>50M</strong>. This is not a negligible typographical difference: it changes exact parameter-saving ratios against a72B reward model. The report follows per-model final-paper numbers, treating53M only as the older MetaStone-S1 convention.[arXiv abs lines 8–27; core Table 1, PDF p.6]</p>
+<h2 id="2-motivation为什么多采样仍不等于有效扩展">2. Motivation: why more samples do not guarantee effective scaling</h2>
+<p>External test-time scaling typically generates(k) complete reasoning trajectories with a policy, scores them with a reward model, and selects the best answer. Three problems arise.</p>
+<p>First, the verifier may exceed the policy in size. The core comparator is Qwen2.5-Math-RM/PRM-72B, versus RGM’s5M–54M SPRM head. Passing each candidate through a separate 72B verifier pushes inference compute and deployment memory back toward large-model costs.[Core Sec.1, PDF pp.1–2; Table 1, p.6]</p>
+<p>Second, process labels are expensive and unreliable. Even after filtering, PRM800K requires approximately
+<strong>800K</strong> human step labels covering <strong>75K</strong> solutions and
+<strong>12K</strong> problems. Although its large PRM reaches
+<strong>78.2%</strong>on a particular MATH subset, this approach bases verification quality on human process review.[Let’s Verify Step by Step, arXiv HTML lines 23–30,52–55,171]</p>
+<p>Third, final-answer-only supervision contaminates process labels. Math-Shepherd estimates step quality by continuing from intermediate steps and measuring final-answer success, avoiding human labels. Lessons of Developing PRMs later observes that MC labels can reward wrong reasoning ending in correct answers, and finds that most open PRMs except its own Qwen2.5-Math-PRM have error-step detection accuracy below
+<strong>50%</strong>. Thus, best-of-N final accuracy can rise without the verifier actually learning logical-error detection.[Math-Shepherd PDF pp.1–2; Lessons Sec.3, arXiv HTML lines 95–125,178–179]</p>
+<p>RGM therefore asks:<strong>Can a policy use its own hidden states with an extremely lightweight process-scoring head, learning only when its process judgment agrees with the final outcome, to reduce noisy propagation of outcome labels to every step?</strong></p>
+<h2 id="3-论文故事线假设与权衡">3. Argument, assumptions, and trade-offs</h2>
+<p>The narrative has four steps:</p>
+<ol type="1">
+<li><strong>Unified interface.</strong> Generation and SPRM heads share one Transformer backbone. Scoring reads step-token hidden states from the policy’s penultimate layer rather than requiring a separate LLM forward pass.</li>
+<li><strong>Self-supervised filtering.</strong> Final-answer correctness(y) supplies only a trajectory-level weak label. The current SPRM produces per-step pseudo-labels\hat y_n; only steps with(y=\hat y_n) enter BCE, while conflicts are discarded.</li>
+<li><strong>Length debiasing.</strong>
+The geometric mean of step scores defines trajectory score, avoiding exponential decay with step count under direct products.</li>
+<li><strong>Inference scaling.</strong> One model samples(k) reasoning paths, SPRM scores each, and the policy head outputs an answer from the highest-scoring path. Main experiments use(k=8).</li>
+</ol>
+<p>Implicit assumption A is that penultimate-layer hidden states retain sufficient process-quality information. Table 9 supports this: on DeepScaleR-1.5B, penultimate-layer SPRM AIME24 is
+<strong>53.1</strong>versus final-layer <strong>48.8</strong>, a gain of
+<strong>4.3 pp</strong>; HMMT25 is <strong>21.5 vs 18.8</strong>, a gain of
+<strong>2.7 pp</strong>.[Core Table 9, PDF pp.13–14]</p>
+<p>Implicit assumption B is that consistency filtering eventually separates correct and incorrect trajectories despite noisy early pseudo-labels. Figure 5 defines the aha moment as the first training step where the correct-trajectory curve’s slope becomes positive and the incorrect one negative. QwQ-32B reaches it around <strong>60 steps</strong> , prompting60 extra steps for a total of <strong>140 steps</strong>.[Core Sec.5.4, PDF p.8]</p>
+<p>Implicit assumption C is that parameter/forward savings outweigh multitask interference. Table 8 supplies the key counterevidence: standalone RGM8 adds <strong>1.5B</strong>
+parameters and exceeds the shared5M head on all four math benchmarks by <strong>0.6–1.6
+pp</strong>. Sharing is therefore an efficiency–accuracy compromise, not the accuracy optimum.[Core Table 8, PDF p.13]</p>
+<h2 id="4-方程级形式化">4. Equation-level formalization</h2>
+<p>For question(Q), a policy generates(k) reasoning trajectories(\tau_i). Traditional external TTS is:</p>
+<p>[ i^<em>=\arg\max_{i\in{1,\dots,k}} R_\phi(\tau_i),\qquad
+a=G_\theta(Q,\tau_{i^</em>}), ]</p>
+<p>where(G_\theta) and(R_\phi) are two large models. RGM instead shares backbone(H_\theta), separating only generation and lightweight scoring heads:</p>
+<p>[ h_{i,n}=H_\theta^{(L-1)}(\tau_i)[t_{i,n}], ]</p>
+<p>[
+s_{i,n}=\sigma\bigl(W_2,\mathrm{Dropout}<em>{0.5}(\mathrm{ReLU}(W_1h</em>{i,n}))\bigr),
+]</p>
+<p>where(t_{i,n}) is the(n)-th step-token,(W_1:c\rightarrow2c), and(W_2:2c\rightarrow1). English mathematical reasoning is split at tokens containing
+<code>.\n\n</code> ; consecutive step-tokens retain only the first, and leading step-tokens are ignored.[Core Sec.4.1, PDF pp.3–4]</p>
+<p>Trajectory scores use a geometric mean:</p>
+<p>[ S_i=\left(\prod_{n=1}^{N_i}s_{i,n}\right)^{1/N_i}
+=\exp\left(\frac{1}{N_i}\sum_{n=1}^{N_i}\log s_{i,n}\right). ]</p>
+<p>The equivalent second form reveals that it compares mean log-scores, avoiding an inherent penalty on long trajectories from multiplying more probabilities below 1. Table 3’s direct-product AIME24/AIME25/BRUMO25/HMMT25 values are
+<strong>44.2/31.1/40.0/17.9</strong>versus geometric-mean values of
+<strong>53.1/35.7/43.2/21.5</strong>; the largest gain is AIME24’s <strong>8.9
+pp</strong>.[Core Eq.5 and Table 3, PDF pp.4,8]</p>
+<p>SPRM’s key is masked rather than ordinary BCE:</p>
+<p>[ \hat y_{i,n}=\mathbb{I}[s_{i,n}&gt;0.5],\qquad
+\mathcal{L}<em>{SPR}=\frac{1}{N}\sum_n\mathbb{I}[y_i=\hat
+y</em>{i,n}],\mathrm{BCE}(s_{i,n},\hat y_{i,n}). ]</p>
+<p>A step is not updated when the final answer is correct but currently judged wrong, or the final answer is wrong but currently judged correct. This does not prove pseudo-label correctness; it avoids forcing visibly conflicting trajectory-level labels onto every step.</p>
+<h3 id="41-训练与推理伪代码">4.1 Training and inference pseudocode</h3>
+<pre class="text"><code>for question Q, gold answer a*:
+    trajectories = policy.sample(Q, group_size)
+    outcome y_i = exact_match(final_answer_i, a*)
+    GRPO_update(policy, trajectories, y)
+
+    for each trajectory i:
+        steps = split_by_step_token(trajectory_i)
+        for each step n:
+            h = penultimate_hidden_state(step_token_n)
+            s = SPRM_head(h)
+            pseudo = 1[s &gt; threshold]
+            if pseudo == y_i:
+                BCE_update(SPRM_head, s, pseudo)
+
+inference(Q, k=8):
+    sample k complete thoughts
+    score each thought by geometric_mean(step_scores)
+    select argmax score
+    generate final answer conditioned on selected thought</code></pre>
+<p>Note: the paper calls this joint training, but policy GRPO and SPRM masked BCE are parallel objectives; scoring-head gradients need not influence the policy through sampling selection. Complete total-loss weights and gradient-coupling ablations are absent, so superiority over alternating training cannot be inferred.</p>
+<h2 id="5-关键机制与工程细节">5. Key mechanisms and engineering details</h2>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">Component</th>
+<th scope="col">Implementation</th>
+<th scope="col">Role</th>
+<th scope="col">Known costs/risks</th>
+<th scope="col">Source</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Shared backbone</td>
+<td>Policy and SPRM heads share a Transformer</td>
+<td>Avoids a separate 72B verifier</td>
+<td>Multitask interference; standalone RGM is more accurate</td>
+<td>Sec.4.1；Table 8</td>
+</tr>
+<tr class="even">
+<td>SPRM head</td>
+<td>Linear(c,2c)→ReLU→Dropout(0.5)→Linear(2c,1)</td>
+<td>5M–54M additional parameters</td>
+<td>Dimensions depend on base model; inconsistent version reporting</td>
+<td>PDF p.3；Table 1</td>
+</tr>
+<tr class="odd">
+<td>Feature layer</td>
+<td>Penultimate-layer step-token hidden states</td>
+<td>Retains context beyond next-token logits</td>
+<td>Depends on layer semantics; may vary across architectures</td>
+<td>Table 9</td>
+</tr>
+<tr class="even">
+<td>Step segmentation</td>
+<td>English uses tokens containing <code>.\n\n</code> ; Chinese C-Eval uses those containing <code>\n</code>
+token</td>
+<td>No new dedicated tokens required</td>
+<td>Sensitive to formatting and tokenizer</td>
+<td>PDF p.4；Appendix A</td>
+</tr>
+<tr class="odd">
+<td>SPRLoss</td>
+<td>BCE only when outcome and pseudo-label agree</td>
+<td>Reduces trajectory-label noise</td>
+<td>May amplify initialization bias and discard hard counterexamples</td>
+<td>Eq.6；Figure 5</td>
+</tr>
+<tr class="even">
+<td>Aggregation</td>
+<td>Geometric mean of step scores</td>
+<td>Reduces length bias</td>
+<td>Still weights steps equally; does not locate the first fatal error</td>
+<td>Eq.5；Table 3</td>
+</tr>
+<tr class="odd">
+<td>Main inference</td>
+<td>Parallel sampling of(k=8) complete trajectories</td>
+<td>Best-of-N with smaller N</td>
+<td>First-token latency and total token cost still scale roughly with k</td>
+<td>Sec.5.1；Limitations</td>
+</tr>
+<tr class="even">
+<td>Training</td>
+<td>40K problems;64×H200; batch 128; response32K;80 iterations</td>
+<td>on-policy GRPO + SPR</td>
+<td>Wall-clock time, GPU-hours, and energy unreported</td>
+<td>PDF p.5</td>
+</tr>
+<tr class="odd">
+<td>Generation settings</td>
+<td>Math maximum38K tokens; others 32K; temperature0.6, GPT-OSS1.0</td>
+<td>Preserves room for long CoT</td>
+<td>Different temperatures confound cross-model comparisons with sampling differences</td>
+<td>PDF p.5</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h2 id="6-数据集基准与指标">6. Datasets, benchmarks, and metrics</h2>
+<p>Training combines NuminaMath, OpenR1-Math-220k, DeepScaleR, LIMR, and OREAL-RL, filters easy questions using a MATH difficulty classifier, then samples by pass rate, yielding
+<strong>40K</strong> examples. Source proportions, deduplication counts, and contamination checks against AIME/HMMT/BRUMO are absent.40K establishes quantity, not evaluation independence.[Core Sec.5.1, PDF p.5]</p>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">Benchmark</th>
+<th scope="col">Type</th>
+<th scope="col">Main metric</th>
+<th scope="col">Paper evaluation protocol</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>AIME24</td>
+<td>Competition mathematics</td>
+<td>Pass@1 / accuracy</td>
+<td>One final answer per question; mean over 64 repeats</td>
+</tr>
+<tr class="even">
+<td>AIME25</td>
+<td>Newer-year competition mathematics</td>
+<td>Same as above</td>
+<td>Same as above</td>
+</tr>
+<tr class="odd">
+<td>BRUMO25</td>
+<td>Difficult mathematics</td>
+<td>Same as above</td>
+<td>Same as above</td>
+</tr>
+<tr class="even">
+<td>HMMT25</td>
+<td>Difficult competition mathematics</td>
+<td>Same as above</td>
+<td>Same as above</td>
+</tr>
+<tr class="odd">
+<td>LiveCodeBench 240801–250201</td>
+<td>OOD code generation</td>
+<td>Pass@1</td>
+<td>Cross-domain test beyond math training</td>
+</tr>
+<tr class="even">
+<td>C-Eval</td>
+<td>Chinese comprehensive QA</td>
+<td>accuracy</td>
+<td>Appendix cross-language experiment after English training</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Pass@1 can be misunderstood here: configurations are repeatedly sampled and averaged over 64 evaluations, but each run submits only one RGM-selected answer. This is not conventional pass@k, where any correct candidate counts as success.[Core PDF pp.5–6, lines 324–374]</p>
+<h2 id="7-完整主结果矩阵">7. Complete main-results matrix</h2>
+<h3 id="71-六方法--五基准以-qwq-32b-为公平主干">7.1 Six methods × five benchmarks: QwQ-32B as the shared comparison base</h3>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">Additional verifier</th>
+<th scope="col" style="text-align: right;">AIME24</th>
+<th scope="col" style="text-align: right;">AIME25</th>
+<th scope="col" style="text-align: right;">BRUMO25</th>
+<th scope="col" style="text-align: right;">HMMT25</th>
+<th scope="col" style="text-align: right;">LiveCodeBench</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DeepSeek-R1-671B</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">79.8</td>
+<td style="text-align: right;">70.0</td>
+<td style="text-align: right;"><strong>80.8</strong></td>
+<td style="text-align: right;">44.4</td>
+<td style="text-align: right;">65.9</td>
+</tr>
+<tr class="even">
+<td>OpenAI o3-mini (med)</td>
+<td style="text-align: right;">not public</td>
+<td style="text-align: right;">79.6</td>
+<td style="text-align: right;"><strong>74.8</strong></td>
+<td style="text-align: right;">80.0</td>
+<td style="text-align: right;"><strong>53.0</strong></td>
+<td style="text-align: right;"><strong>67.4</strong></td>
+</tr>
+<tr class="odd">
+<td>Original QwQ-32B</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">79.5</td>
+<td style="text-align: right;">69.5</td>
+<td style="text-align: right;">75.2</td>
+<td style="text-align: right;">47.5</td>
+<td style="text-align: right;">63.4</td>
+</tr>
+<tr class="even">
+<td>QwQ-32B + GRPO</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">79.9</td>
+<td style="text-align: right;">70.5</td>
+<td style="text-align: right;">75.8</td>
+<td style="text-align: right;">47.1</td>
+<td style="text-align: right;">63.4</td>
+</tr>
+<tr class="odd">
+<td>QwQ-32B + PRM-72B, (k=8)</td>
+<td style="text-align: right;">72B</td>
+<td style="text-align: right;">83.3</td>
+<td style="text-align: right;">72.3</td>
+<td style="text-align: right;">76.5</td>
+<td style="text-align: right;">51.7</td>
+<td style="text-align: right;">63.0</td>
+</tr>
+<tr class="even">
+<td><strong>QwQ-32B + RGM8-54M</strong></td>
+<td style="text-align: right;"><strong>54M</strong></td>
+<td style="text-align: right;"><strong>84.2</strong></td>
+<td style="text-align: right;">73.4</td>
+<td style="text-align: right;">78.1</td>
+<td style="text-align: right;"><strong>53.1</strong></td>
+<td style="text-align: right;">64.0</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Source: core Table 1(PDF p.6). Bold has two scopes: RGM wins all five columns among the four same-base QwQ rows; including external closed/671B references, it leads the full table only on AIME24 and HMMT25. Against same-base PRM-72B, absolute gains are
+<strong>+0.9/+1.1/+1.6/+1.4/+1.0 pp</strong>and relative gains
+<strong>+1.08%/+1.52%/+2.09%/+2.71%/+1.59%</strong>(calculated from the table). Against o3-mini, RGM gains on AIME24 <strong>+4.6 pp</strong>and HMMT25
+<strong>+0.1 pp</strong>, but trails on AIME25/BRUMO25/LiveCodeBench by
+<strong>1.4/1.9/3.4 pp</strong>. “Outperforms o3-mini” therefore holds in only two columns, not overall.</p>
+<h3 id="72-五种策略骨干rgm-对各自最强-72b-奖励模型">7.2 Five policy backbones: RGM versus each backbone’s strongest72B reward model</h3>
+<p>Cells show
+<code>RGM score(versus the stronger same-base RM-72B/PRM-72B: absolute pp; relative %)</code>。</p>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">Base + RGM8</th>
+<th scope="col" style="text-align: right;">Extra parameters</th>
+<th scope="col" style="text-align: right;">AIME24</th>
+<th scope="col" style="text-align: right;">AIME25</th>
+<th scope="col" style="text-align: right;">BRUMO25</th>
+<th scope="col" style="text-align: right;">HMMT25</th>
+<th scope="col" style="text-align: right;">LiveCodeBench</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DeepScaleR-1.5B</td>
+<td style="text-align: right;">5M</td>
+<td style="text-align: right;">53.1 (+0.6; +1.14%)</td>
+<td style="text-align: right;">35.7 (+1.1; +3.18%)</td>
+<td style="text-align: right;">43.2 (+1.2; +2.86%)</td>
+<td style="text-align: right;">21.5 (+3.3; +18.13%)</td>
+<td style="text-align: right;">26.6 (+2.4; +9.92%)</td>
+</tr>
+<tr class="even">
+<td>R1-Distill-Qwen-7B</td>
+<td style="text-align: right;">26M</td>
+<td style="text-align: right;"><strong>66.3</strong> (+6.2;
++10.32%)</td>
+<td style="text-align: right;">48.3 (+1.0; +2.11%)</td>
+<td style="text-align: right;">56.9 (+1.1; +1.97%)</td>
+<td style="text-align: right;">33.4 (+3.5; +11.71%)</td>
+<td style="text-align: right;">44.1 (+1.3; +3.04%)</td>
+</tr>
+<tr class="odd">
+<td>QwQ-32B</td>
+<td style="text-align: right;">54M</td>
+<td style="text-align: right;">84.2 (+0.9; +1.08%)</td>
+<td style="text-align: right;">73.4 (+1.1; +1.52%)</td>
+<td style="text-align: right;">78.1 (+1.6; +2.09%)</td>
+<td style="text-align: right;">53.1 (+1.4; +2.71%)</td>
+<td style="text-align: right;">64.0 (+1.0; +1.59%)</td>
+</tr>
+<tr class="even">
+<td>Qwen3-32B</td>
+<td style="text-align: right;">54M</td>
+<td style="text-align: right;">83.8 (+0.9; +1.09%)</td>
+<td style="text-align: right;"><strong>77.6</strong> (+0.5; +0.65%)</td>
+<td style="text-align: right;"><strong>85.8</strong> (+2.3; +2.75%)</td>
+<td style="text-align: right;">56.3 (<strong>−0.4; −0.71%</strong>)</td>
+<td style="text-align: right;">66.2 (+1.3; +2.00%)</td>
+</tr>
+<tr class="odd">
+<td>GPT-OSS-20B</td>
+<td style="text-align: right;">17M</td>
+<td style="text-align: right;">81.9 (<strong>−0.3; −0.36%</strong>)</td>
+<td style="text-align: right;"><strong>79.1</strong> (+1.0; +1.28%)</td>
+<td style="text-align: right;">73.3 (+0.2; +0.27%)</td>
+<td style="text-align: right;"><strong>63.4</strong> (+3.0; +4.97%)</td>
+<td style="text-align: right;"><strong>69.9</strong> (+0.4; +0.58%)</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Source: core Table 1(PDF p.6); relative percentages computed by this report. Across 25 architecture×task cells, RGM wins <strong>23</strong>against the strongest same-base72B reward model. Exceptions are Qwen3-32B/HMMT25(−0.4 pp) and GPT-OSS-20B/AIME24(−0.3 pp). This is more precise than “consistently surpasses”: broadly consistent, without cellwise dominance.</p>
+<h2 id="8-逐层消融收益到底来自哪里">8. Component ablations: where do gains arise?</h2>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">Ablation/control</th>
+<th scope="col">Setting</th>
+<th scope="col">Result</th>
+<th scope="col">Supported inference</th>
+<th scope="col">Unsupported inference</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>SPRLoss versus ordinary BCE</td>
+<td>1.5B RGM32</td>
+<td>AIME24 57.9 vs 56.7；LCB 28.1 vs 27.9</td>
+<td>Consistency filtering provides small, consistent gains</td>
+<td>No multi-seed variance; significance unproven</td>
+</tr>
+<tr class="even">
+<td>SPRLoss versus ordinary BCE</td>
+<td>7B RGM32</td>
+<td>70.2 vs 69.1；44.4 vs 43.9</td>
+<td>Large base still gains+1.1/+0.5 pp</td>
+<td>Unclear whether sample-count changes explain it</td>
+</tr>
+<tr class="odd">
+<td>Trajectory aggregation</td>
+<td>1.5B RGM8</td>
+<td>Product 44.2/31.1/40.0/17.9；Arithmetic
+52.9/35.2/43.3/21.1；Geometric 53.1/35.7/43.2/21.5</td>
+<td>Geometric mean strongly corrects the product’s length penalty</td>
+<td>Arithmetic mean wins BRUMO25 by 0.1 pp; not universal</td>
+</tr>
+<tr class="even">
+<td>Process-level versus final-step-only</td>
+<td>1.5B RGM8</td>
+<td>Process versus outcome level:+4.6/+0.7/+0.7/+2.7/+0.9 pp</td>
+<td>Intermediate-step signals help, especially AIME24/HMMT25</td>
+<td>No evaluation against actual step-error labels</td>
+</tr>
+<tr class="odd">
+<td>MCTS search tokens</td>
+<td>0→40K→80K→120K→160K</td>
+<td>AIME24 43.8→48.8→50.0→51.7→52.8</td>
+<td>More tree-search budget monotonically improves results</td>
+<td>Still below Table 1 BoN53.1; wall-clock cost excluded</td>
+</tr>
+<tr class="even">
+<td>Pseudo-label threshold</td>
+<td>mean/median/hard 0.5</td>
+<td>AIME24:50.0/51.7/53.1; mixed elsewhere</td>
+<td>Fixed0.5 has the best average</td>
+<td>BRUMO25 mean 45.0 exceeds hard43.2; no task-universal optimum</td>
+</tr>
+<tr class="odd">
+<td>Shared versus standalone</td>
+<td>Standalone RGM1.5B versus shared5M</td>
+<td>Standalone wins all four by 0.6–1.6 pp</td>
+<td>Sharing mainly improves efficiency</td>
+<td>No throughput reported; efficiency remains parameter-based</td>
+</tr>
+<tr class="even">
+<td>SPRM placement</td>
+<td>last vs penultimate</td>
+<td>AIME24 48.8 vs 53.1；HMMT25 18.8 vs 21.5</td>
+<td>Intermediate layers better support auxiliary discrimination</td>
+<td>Only two layers tested; an earlier optimum is unknown</td>
+</tr>
+<tr class="odd">
+<td>Majority voting</td>
+<td>Majority vs RGM</td>
+<td>50.4/34.0/41.7/20.3 vs 53.1/35.7/43.2/21.5</td>
+<td>Learned scoring beats simple aggregation</td>
+<td>Only1.2–2.7 pp apart; costs need alignment</td>
+</tr>
+<tr class="even">
+<td>Scoring-head architecture</td>
+<td>Linear / 2-layer+gate / 2-layer</td>
+<td>Gate scores 46.7/22.3 on BRUMO25/HMMT25, beating standard 43.2/21.5; standard wins AIME25 by 0.1</td>
+<td>Expressivity matters; gating is promising</td>
+<td>Final design is not best in every column</td>
+</tr>
+<tr class="odd">
+<td>Cross-model transfer</td>
+<td>32B SPRM→1.5B</td>
+<td>52.2/37.1/45.5/21.1 versus native53.1/35.7/43.2/21.5</td>
+<td>Transfer works after linear projection, winning2/4 columns</td>
+<td>Only one direction and one source–target pair</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Sources: core Tables 2–5,7–13(PDF pp.8–15). Three mutually constraining conclusions matter most: process signals help; sharing sacrifices about 1 pp for substantial parameter savings; fixed thresholds and two-layer heads are reasonable defaults, not universal task optima.</p>
+<h2 id="9-超参敏感性与相变">9. Hyperparameter sensitivity and transitions</h2>
+<h3 id="91-候选数-k">9.1 Candidate count(k)</h3>
+<p>Figure 3 shows1.5B and 7B improving with candidate count on AIME24, AIME25, and LiveCodeBench, with SPRM usually above72B RM/PRM. Exact coordinates for each(k) are absent from PDF text, so this report invents none from images. The main table uses(k=8); appendix RGM32 appears only in the SPRLoss comparison. More candidates generally help, but superiority at equal FLOPs or latency over 72B PRM is unproven.</p>
+<h3 id="92-搜索预算">9.2 Search budget</h3>
+<p>MCTS AIME24 rises from the 0-token score of <strong>43.8</strong> to the 160K-token score of
+<strong>52.8</strong>, monotonically over five points, with marginal gains of
+<strong>+5.0、+1.2、+1.7、+1.1 pp</strong>. The first 40K is most cost-effective, with clear diminishing returns thereafter.[Table 5, PDF p.9] The paper acknowledges excessive depth and compute for tree search on long reasoning, which still underperforms BoN.</p>
+<h3 id="93-训练中的-aha-moment">9.3 The training aha moment</h3>
+<p>The authors define a transition by diverging slope signs: correct-trajectory scores turn positive from negative/flat, while incorrect-trajectory scores turn negative. QwQ-32B reaches it around 60 steps, then trains60 more. This threshold depends on smoothing, evaluation batches, and randomness, yet no confidence intervals or automatic detector are given. It is an informative diagnostic, not an established universal phase-transition law.</p>
+<h3 id="94-阈值与格式">9.4 Thresholds and formatting</h3>
+<p>The four-benchmark average at threshold0.5 is <strong>38.38</strong>, versus mean-threshold
+<strong>37.78</strong>and median-threshold <strong>37.30</strong>(computed from Table 7), only 0.60–1.08 points better on average. On BRUMO25, mean exceeds hard by
+<strong>1.8 pp</strong>. Moreover, English uses <code>.\n\n</code>while Chinese switches to all tokens containing
+<code>\n</code> , showing that zero format fine-tuning still requires manual rule transfer.</p>
+<h2 id="10-统计显著性与评测可信度">10. Statistical significance and evaluation credibility</h2>
+<p>Each question/configuration is evaluated repeatedly <strong>64 times</strong>and mean accuracy reported, more reliable than a single run.[Core PDF p.6] However, the paper
+<strong>reports no standard deviations, standard errors, confidence intervals, significance tests, or random-seed counts</strong>. Therefore:</p>
+<ul>
+<li>QwQ-RGM’s five means exceed same-base PRM-72B;</li>
+<li>small gaps such as+0.5 pp or+0.9 pp cannot be declared statistically significant;</li>
+<li>the+0.1 pp HMMT25 lead over o3-mini especially should not be described as robust, since closed-model evaluation may use unequal compute;</li>
+<li>winning23/25 cells supports directional consistency, not significance.</li>
+</ul>
+<p>End-to-end latency, tokens/s, peak memory, energy, and P95/P99 are also absent. The model card claims99% lower PRM inference cost, while the final paper mainly uses extra parameter count as an efficiency proxy. Without serving measurements, parameter savings must not be equated with 99% latency savings.</p>
+<h2 id="11-真正贡献可复用设计与迁移潜力">11. Genuine contributions, reusable design, and transfer potential</h2>
+<p><strong>Actual contribution 1: a verifier need not be a second model.</strong>
+If generation exposes suitable intermediate states, process scoring can use an auxiliary head on the same backbone. This extends to code-execution traces, tool plans, retrieval chains, and agent actions.</p>
+<p><strong>Actual contribution 2: consistency masks reduce process contamination from weak outcome labels.</strong> SPRLoss is simple, but demotes answer correctness from hard truth for every step to a screening signal used only when the model’s local judgment agrees. The reusable template is global weak label(y) + local pseudo-label\hat y + consistency mask.</p>
+<p><strong>Actual contribution 3: aggregation is central to TTS.</strong>
+Replacing products with geometric means alone adds on AIME24 <strong>8.9 pp</strong>. PRM comparisons must therefore include step segmentation, score calibration, and cross-length aggregation, beyond model size.</p>
+<p><strong>Transfer potential.</strong> Table 13’s32B→1.5B transfer aligns dimensions through a linear projection and exceeds the native SPRM on two of four tasks. This suggests general process-scoring representations adapted through small projections. A valuable next question is whether quality signals linearly align across architectures, languages, and tasks, rather than simply enlarging standalone PRMs.</p>
+<h2 id="12-技术来源链解决什么留下什么rgm-如何回应设计如何传递">12. Technical lineage: problem solved—remaining gap—RGM’s response—design transfer</h2>
+<h3 id="121-lets-verify-step-by-stepiclr-2024">12.1 Let’s Verify Step by
+Step（ICLR 2024）</h3>
+<p>Addresses whether process supervision is more reliable than outcome supervision, using PRM800K human step labels to reach
+<strong>78.2%</strong>on a particular MATH subset and improve data efficiency through active learning by
+<strong>2.6×</strong>. Remaining gaps are 800K human-label costs, closed large models, and math-only scope. RGM accepts the value of process scores but replaces human labels with outcome–pseudo-label consistency. Per-step aggregatable scores transfer, while supervision shifts from humans to the model itself.</p>
+<h3 id="122-math-shepherdacl-2024-main-long">12.2 Math-Shepherd（ACL
+2024 Main Long）</h3>
+<p>Uses MC success rates from intermediate-step rollouts to generate process labels automatically, removing manual annotation. Process RL raises Mistral-7B from
+<strong>77.9→84.1</strong>（GSM8K）、<strong>28.6→33.0</strong>on MATH, followed by verification reaching
+<strong>89.1/43.5</strong>.[ACL PDF pp.1–2] Each intermediate step still needs multiple rollouts, and wrong steps can accidentally lead to correct answers, contaminating labels. RGM avoids extra MC completions, filtering outcome labels through current SPRM binary judgments. Outcomes remain weak process supervision, but cost shifts from rollouts to one shared forward pass.</p>
+<h3 id="123-scaling-llm-test-time-compute-optimallyiclr-2025">12.3
+Scaling LLM Test-Time Compute Optimally（ICLR 2025）</h3>
+<p>Addresses allocation of fixed compute budgets, showing that search strategy depends on difficulty and compute-optimal strategies can save over <strong>4×</strong>
+relative to best-of-N, while smaller models beat <strong>14×</strong> larger ones at some difficulties.[Official PDF pp.1–3] The remaining gap is per-question difficulty estimation using <strong>2048
+samples</strong>whose cost is explicitly excluded; models and PRMs are also unreleased. RGM chooses fixed(k=8) and a shared verifier, addressing verifier cost rather than per-question budget routing. It inherits the proposer–verifier abstraction, not dynamic allocation.</p>
+<h3 id="124-lessons-of-developing-prms2025">12.4 Lessons of Developing
+PRMs（2025）</h3>
+<p>Tests whether high BoN scores imply good process verification, finding opposite trends for MC, LLM-judge, and human labels on BoN versus ProcessBench. Consensus filtering retains only about <strong>40%</strong>
+of data while approaching LLM-judge ProcessBench performance. It still requires a72B judge or extensive MC. RGM’s mask is endogenous single-model consensus: train only when global outcomes and local heads agree. It inherits filtering instead of indiscriminate data growth, but never tests process-error detection on ProcessBench.</p>
+<h3 id="125-reasonflux-prmneurips-2025-spotlight">12.5
+ReasonFlux-PRM（NeurIPS 2025 Spotlight）</h3>
+<p>Addresses different trajectory and final-response distributions in long CoT through step- and trajectory-level supervision for distillation, RL, and BoN. Its abstract reports mean SFT gains of <strong>12.1%</strong>、RL
+<strong>4.5%</strong>、TTS <strong>6.3%</strong>. It still needs a separate 1.5B/7B PRM. RGM shrinks the head to 5M–54M but uses one geometric mean without trajectory-structure encoding. A next step is transferring ReasonFlux’s two-granularity supervision to a shared backbone while retaining low overhead.</p>
+<h2 id="13-非线性技术演进树演进动力与转折">13. Nonlinear technical evolution, drivers, and turning points</h2>
+<pre class="text"><code>                                                  ┌─ Human process supervision ─ PRM800K(2023/ICLR2024)
+                         │      └─ Strong process discrimination; costly labels
+Final-answer supervision ┤
+                         └─ Automatic process supervision ─ Math-Shepherd(ACL 2024)
+                                ├─ MC rollout labels; costly, potentially wrong
+                                └─ Lessons of PRMs(2025)
+                                       └─ Consensus filtering + ProcessBench critique
+
+External best-of-N scaling ─ Snell et al.(ICLR2025)
+       ├─ Dynamic difficulty routing: search selection under fixed budgets
+       └─ Separate verifier; expensive difficulty estimation
+
+Long-CoT distribution shift ─ ReasonFlux-PRM(NeurIPS 2025)
+       └─ Step + trajectory supervision, still an external1.5B/7B model
+
+Branches converge ─ RGM(ICLR2026)
+       ├─ Shared backbone +5M–54M scoring head
+       ├─ Outcome × pseudo-label consistency filtering
+       └─ Fixed k=8: addresses verifier cost, not dynamic budget allocation</code></pre>
+<p>Three shifts drive this evolution: from correct final answers to trustworthy processes; from costly human labels to automatic weak supervision, exposing MC/BoN biases; and from larger standalone PRMs to embedding discrimination within generators. RGM’s main shift redefines deployment around whether<strong>verification can reuse representations from a generation forward pass.</strong></p>
+<h3 id="131-跨论文对标">13.1 Cross-paper comparison</h3>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Process labels</th>
+<th scope="col" style="text-align: right;">Verifier size</th>
+<th scope="col">Search/selection</th>
+<th scope="col">Independent process-level evaluation</th>
+<th scope="col">Deployment implications</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>PRM800K</td>
+<td>Human step labels</td>
+<td style="text-align: right;">Large model, unreleased</td>
+<td>Best-of-N</td>
+<td>Human process labels themselves</td>
+<td>High quality, high cost</td>
+</tr>
+<tr class="even">
+<td>Math-Shepherd</td>
+<td>MC rollout</td>
+<td style="text-align: right;">Standalone PRM</td>
+<td>rerank + PPO</td>
+<td>Mostly final accuracy</td>
+<td>Automatic, but rollout-heavy</td>
+</tr>
+<tr class="odd">
+<td>Snell et al.</td>
+<td>MC PRM</td>
+<td style="text-align: right;">Standalone PRM</td>
+<td>BoN/beam/lookahead + difficulty routing</td>
+<td>Mostly MATH accuracy</td>
+<td>Budget-optimal, but costly difficulty estimation</td>
+</tr>
+<tr class="even">
+<td>Lessons/Qwen PRM</td>
+<td>MC +72B judge consensus</td>
+<td style="text-align: right;">7B/72B</td>
+<td>BoN</td>
+<td>ProcessBench</td>
+<td>Exposes BoN bias</td>
+</tr>
+<tr class="odd">
+<td>ReasonFlux-PRM</td>
+<td>step + trajectory</td>
+<td style="text-align: right;">1.5B/7B</td>
+<td>SFT/RL/BoN</td>
+<td>Multiple downstream tasks, still final-task-dependent</td>
+<td>Suited to long CoT</td>
+</tr>
+<tr class="even">
+<td><strong>RGM</strong></td>
+<td>Outcome + self-generated pseudo-labels</td>
+<td style="text-align: right;"><strong>5M–54M head, shared backbone</strong></td>
+<td>Fixed BoN(k=8), plus MCTS</td>
+<td><strong>No ProcessBench results</strong></td>
+<td>Lightest, but policy-bound</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h2 id="14-论文自述限制">14. Limitations acknowledged by the paper</h2>
+<ol type="1">
+<li><strong>Complete-trajectory latency.</strong> All(k) complete trajectories must first be generated. The authors acknowledge added latency and use(k=8), versus common external TTS counts64–512. Parallel batching can reduce wall-clock time, but not total tokens or memory-bandwidth cost.[Appendix D, PDF p.15]</li>
+<li><strong>Limited benefit on short reasoning/knowledge tasks.</strong>
+Factual QA or tasks requiring little reasoning lack sufficient step-tokens/trajectories for RGM; the authors view knowledge, not TTS, as the bottleneck.[Appendix D, PDF p.15]</li>
+<li><strong>Bound to the target policy.</strong> Different hidden dimensions prevent direct cross-model SPRM use, requiring linear projection and separate head fine-tuning.[Appendix D, PDF p.15] Table 13 shows one transfer, but not genuine plug-and-play portability.</li>
+</ol>
+<h2 id="15-独立批判每点采用因为-x所以-y">15. Independent critique: evidence and implications</h2>
+<ol type="1">
+<li><strong>[Evaluation validity]</strong> Because evaluation uses final-answer accuracy and BoN selection without ProcessBench or human error-step localization, while Lessons of PRMs shows BoN can move opposite to actual process verification, Table 1 does not establish logical-step understanding. SPRM may learn trajectory styles correlated with success.</li>
+<li><strong>[Statistics]</strong> Because64 repeats lack standard deviations, confidence intervals, or tests, and most gains are only <strong>0.2–1.6
+pp</strong>,23/25 higher means do not imply cellwise significance. The+0.1 pp over o3-mini is especially difficult to interpret.</li>
+<li><strong>[Efficiency]</strong> Because inference still generates8 full paths, each up to 38K math tokens, without tokens/s, TTFT, P99, or GPU-hours, a lightweight head proves only low verifier parameter count—not cheap overall serving. Generation may dominate scoring cost.</li>
+<li><strong>[Fairness]</strong> Because GPT-OSS-20B uses temperature
+<strong>1.0</strong>while other models use
+<strong>0.6</strong>, and diversity directly affects the BoN ceiling, cross-base gains do not use identical protocols. Table 1 should prioritize within-base comparisons over cross-base rankings.</li>
+<li><strong>[Data contamination]</strong> Because40K training problems combine public math sources without reported deduplication or temporal cutoffs against AIME24/25, HMMT25, and BRUMO25, exact or near-duplicate leakage cannot be excluded. AIME24 predates the training paper and especially needs auditing.</li>
+<li><strong>[Mechanism attribution]</strong> Because standalone RGM8 adds 1.5B parameters and exceeds shared RGM by 0.6–1.6 pp across four math sets, sharing is not the source of accuracy superiority. Its contribution compresses most standalone verification ability into 5M parameters, rather than proving shared representations inherently better.</li>
+<li><strong>[Pseudo-label bias]</strong> Because only(y=\hat y) steps train, uncertain or outcome-conflicting hard steps are systematically discarded, potentially creating confirmation bias. Figure 5’s aha moment indicates this risk, but failure rates across initializations/seeds are absent.</li>
+<li><strong>[Versions and reproduction]</strong> Because arXiv v2 says 53M, the ICLR table5M–54M, its abstract about 50M, and the repository uses XBai o4 branding, model identity and parameter reporting have drifted. Reproduction must calculate from checkpoint hidden size/head configuration, not treat50M as constant.</li>
+</ol>
+<h2 id="16-开放挑战必须能做-head-to-head-的实验空白">16. Open challenges requiring head-to-head experiments</h2>
+<h3 id="161-理论">16.1 Theory</h3>
+<ul>
+<li><strong>Does consistency masking converge to true process labels?</strong>
+Fix policy, data, and compute; compare SPRLoss, ordinary BCE, co-teaching, and confidence-weighted soft labels. On human step-error data, report AUROC/F1, calibration, and final BoN accuracy, tracking erroneous pseudo-label transition matrices across training.</li>
+<li><strong>Is the geometric mean merely implicit length regularization?</strong> Compare product, arithmetic, geometric, minimum-step, and learned-attention aggregation, reporting selection accuracy by trajectory-length bucket. Use identical candidates to exclude generation differences.</li>
+<li><strong>Where is the best shared-representation layer?</strong>
+Train equal-parameter linear/two-layer heads at every layer with frozen backbones, forming a layer×task×model matrix. Compare against a standalone1.5B verifier at equal FLOPs to test for a universal middle-layer process-quality peak.</li>
+</ul>
+<h3 id="162-工程与应用">16.2 Engineering and applications</h3>
+<ul>
+<li><strong>Actual serving cost.</strong> On the same 8×H200 or 8×H100 node, compare Majority@8,72B-PRM@8,RGM@8, and dynamic-k RGM. Report TTFT, total latency, P50/P95/P99, tokens/s, peak memory, joules/query, and accuracy. Deployment superiority requires this table.</li>
+<li><strong>Early stopping instead of eight complete paths.</strong> With the same RGM head, compare post-completion scoring against online pruning triggered by step scores at fixed mean generated tokens. Measure accuracy–latency Pareto frontiers, especially errors caused by prematurely pruning exploratory paths.</li>
+<li><strong>Cross-language formatting robustness.</strong>
+Across Chinese, English, Japanese, Korean, and code, compare manual delimiters, syntactic segmentation, and learned boundary heads at a fixed checkpoint. Report step coverage, segmentation errors, and final performance to test whether
+<code>.\n\n</code> rules are a hidden engineering dependency.</li>
+</ul>
+<h3 id="163-新兴方向">16.3 Emerging directions</h3>
+<ul>
+<li><strong>RGM × dynamic budget routing.</strong> At fixed total FLOPs, directly compare fixed(k=8) with Plan-and-Budget/ATTS-style per-question routing over(k\in{1,2,4,8,16}). Include difficulty-estimation FLOPs; report accuracy per difficulty bucket and overcomputation rates.</li>
+<li><strong>Two-granularity shared verification.</strong> On one backbone, compare RGM’s step-only geometric mean with ReasonFlux-style step+trajectory heads at fixed 54M extra parameters. Use ProcessBench, AIME, and LiveCodeBench to measure both error detection and answer selection.</li>
+<li><strong>Agent/tool trajectories.</strong>
+For executable-code or tool tasks, use executor-provided sparse outcome rewards. Compare shared SPRM, standalone verifiers, and execution-result-only reranking on first-error action localization, task success, and tool-call cost.</li>
+</ul>
+<h2 id="17-近期值得跟进的-8-篇工作">17. Eight recent works to follow</h2>
+<ol type="1">
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/ae8d4084f418bb51575c2ca6c658a05b-Abstract-Conference.html">Plan
+and Budget: Effective and Efficient Test-Time Scaling on Reasoning
+LLMs</a>: frames reasoning duration as planning and budgeting, suitable for equal-FLOP comparison with fixed(k=8) RGM.</li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/ced46a50befedcb884ccf0cbe8c3ad23-Abstract-Conference.html">e3:
+Learning to Explore Enables Extrapolation of Test-Time
+Compute</a>: learns exploration during training for test-budget extrapolation, testing whether RGM scores remain calibrated at larger(k).</li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/48c292f57f37569241ea9191a507031d-Abstract-Conference.html">ATTS:
+Asynchronous Test-Time Scaling via Conformal Prediction</a>: manages candidates with asynchrony and conformal prediction, targeting fixed-batch tail latency.</li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/8a81180649011d1690e05c68bfeaa57c-Abstract-Conference.html">MoDr:
+Mixture-of-Depth-Recurrent Transformers for Test-Time
+Reasoning</a>: places extra compute into deep recursion rather than parallel candidates, representing an internal-TTS architectural route.</li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/1eeacdf8770e6dd5164cdeec8bcfa8cc-Abstract-Conference.html">TrimR:
+Verifier-based Training-Free Thinking Trimming</a>: uses verifiers to trim redundant reasoning, addressing RGM’s inability to reduce tokens online rather than merely selecting completed paths.</li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/da7ce04b3683b173691ecbb801f2690f-Abstract-Conference.html">Sample
+Smart, Not Hard</a>: shifts decoding from likelihood-first to correctness-first; combined with shared SPRM, it could reduce useless candidates rather than only rerank afterward.</li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/06d5f1fe6509b001e6d4e0ec1afd83dd-Abstract-Conference.html">Log-Augmented
+Generation</a>: reuses computation logs for reasoning, pursuing caching/reuse instead of resampling every time.</li>
+<li><a href="https://arxiv.org/abs/2608.04001">Test-Time Scaling in
+Reasoning LLMs: Inference Regimes, Evaluation, and
+Reproducibility</a>: unifies sequential, leaf-level, and prefix-level scaling as budgeted prefix trees, emphasizing compute, repeated sampling, and uncertainty reporting—a stricter audit framework for RGM.</li>
+</ol>
+<h2 id="18-结论该如何读这篇论文">18. Conclusion: how to read this paper</h2>
+<p>RGM’s value lies in changing external TTS’s system boundary: verification need not require a second large model, since process scores can be read from existing generator states. QwQ-32B +RGM8-54M exceeds same-base PRM-72B across five tasks by <strong>0.9–1.6
+pp</strong>and reaches on AIME24/HMMT25
+<strong>84.2/53.1</strong>; across five backbones, it beats the strongest72B reward model in23/25 cells. Yet standalone RGM remains about 1 pp better, full eight-path serving lacks measurements, process-error detection lacks an independent benchmark, and small gains lack statistical tests. The defensible conclusion is:<strong>RGM establishes that lightweight shared verifiers can be competitive, but not that they comprehensively outperform standalone PRMs at equal total compute, equal latency, and actual process reliability.</strong></p>
+<hr />
+<p>Footnote: updated local <code>ml-report-index.md</code>with 2026-09-28, LLM/NLP, core paper, venue, and a one-sentence conclusion; persistent-index replacement follows the save result. Semantic Scholar API returned403, so none of its numbers are cited. No standalone Papers with Code core entry was found; this is marked rather than substituting a different page.</p>
+
+  </main>
+
+  <footer>Based on the official ICLR2026 paper, five full technical-lineage papers, and verified conference, arXiv, code, and weight pages; generated 2026-09-28.</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ Light' : '☾ Dark';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

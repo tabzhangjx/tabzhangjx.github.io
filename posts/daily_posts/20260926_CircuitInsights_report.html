@@ -1,0 +1,1399 @@
+---
+layout: null
+title: "Circuit Insights"
+date: 2026-09-26
+topic: "trustworthy-theory"
+tags: ["trustworthy-theory", "interpretability", "circuits"]
+excerpt: "自动解释不应只写出流畅标签，还要说明固定权重、输入路径与输出后果为何一致。 WeightLens 的平均 Clarity 较 MaxAct* 提升 27.05%，但 Purity 下降 20.00%；所有方法的 Faithfulness 仍约 0.03–0.04，说明“可读说明”与“因果可信”之间仍有明显断层。"
+permalink: "/blog/2026/09/26/circuitinsights/"
+blog_post: true
+lang: "zh-CN"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_en: "/blog/2026/09/26/circuitinsights/en/"
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Circuit Insights 深度研究报告 · 2026-09-26</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  main { display: grid; gap: 22px; min-width: 0; }
+  .card.level2 { margin: 0; min-width: 0; }
+  .subsection { margin-top: 24px; }
+  .subsection h3 { margin-top: 0; }
+  h4 { margin: 18px 0 8px; font-size: 16px; }
+  blockquote { margin: 14px 0; padding: 10px 14px; border-left: 4px solid var(--chart-primary); background: var(--surface-2); color: var(--text-secondary); }
+  pre { overflow-x: auto; padding: 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); font-size: 12.5px; line-height: 1.55; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  p code, li code, td code { padding: .08em .3em; border-radius: 4px; background: var(--surface-2); }
+  ol, ul { padding-left: 1.35em; }
+  li + li { margin-top: .38em; }
+  .table-scroll { margin: 15px 0 22px; }
+  table { min-width: 720px; }
+  .figure { margin: 0; min-width: 0; max-width: 100%; }
+  p, li, td, th, a { overflow-wrap: anywhere; }
+  .chart rect { outline: none; }
+  .chart rect:focus { stroke: var(--text-primary); stroke-width: 2; }
+  @media (max-width: 640px) {
+    .toolbar { position: static; justify-content: flex-end; margin-bottom: 10px; }
+    .hero { margin-top: 0; }
+    .chart { width: 690px; max-width: none; }
+    .figure { overflow-x: auto; }
+  }
+
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ICLR 2026 · 理论与可信 · 机制可解释性</p>
+    <h1>Circuit Insights：从“看激活”走向“看权重与电路”</h1>
+    <p class="subtitle">自动解释不应只写出流畅标签，还要说明固定权重、输入路径与输出后果为何一致。</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">每日深度论文追踪</span>
+      <span class="chip">2026-09-26</span>
+      <span class="chip">ICLR 2026</span>
+    </div>
+    <p class="lede">WeightLens 的平均 Clarity 较 MaxAct* 提升 27.05%，但 Purity 下降 20.00%；所有方法的 Faithfulness 仍约 0.03–0.04，说明“可读说明”与“因果可信”之间仍有明显断层。</p>
+  </header>
+
+  <main>
+<figure class="figure" aria-labelledby="main-chart-title">
+      <p class="fig-title" id="main-chart-title">WeightLens 与 MaxAct* 的四维平均对比</p>
+      <p class="fig-sub">更清楚不等于更纯净：WeightLens 提升 Clarity，却在 Purity 上明显退让；Faithfulness 几乎原地不动。</p>
+      <div class="legend" aria-label="图例">
+        <span><span class="swatch" style="background:var(--chart-primary)"></span>WeightLens</span>
+        <span><span class="swatch" style="background:var(--chart-comparison)"></span>MaxAct*</span>
+      </div>
+      <svg class="chart" viewBox="0 0 900 350" role="img" xmlns="http://www.w3.org/2000/svg">
+        <title>WeightLens 与 MaxAct 星号的四项 FADE 指标均值</title>
+        <desc>WeightLens 的 Clarity、Responsiveness、Purity、Faithfulness 分别为 0.634、0.771、0.536、0.040；MaxAct 星号分别为 0.499、0.752、0.670、0.039。</desc>
+        <line x1="68" x2="850" y1="300.0" y2="300.0" stroke="var(--border)" stroke-width="1" /><text x="56" y="304.0" text-anchor="end" font-size="12">0.0</text><line x1="68" x2="850" y1="250.0" y2="250.0" stroke="var(--border)" stroke-width="1" /><text x="56" y="254.0" text-anchor="end" font-size="12">0.2</text><line x1="68" x2="850" y1="200.0" y2="200.0" stroke="var(--border)" stroke-width="1" /><text x="56" y="204.0" text-anchor="end" font-size="12">0.4</text><line x1="68" x2="850" y1="150.0" y2="150.0" stroke="var(--border)" stroke-width="1" /><text x="56" y="154.0" text-anchor="end" font-size="12">0.6</text><line x1="68" x2="850" y1="100.0" y2="100.0" stroke="var(--border)" stroke-width="1" /><text x="56" y="104.0" text-anchor="end" font-size="12">0.8</text><line x1="68" x2="850" y1="50.0" y2="50.0" stroke="var(--border)" stroke-width="1" /><text x="56" y="54.0" text-anchor="end" font-size="12">1.0</text>
+        <rect x="115" y="141.5" width="52" height="158.5" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="WeightLens Clarity: 0.634" /><rect x="175" y="175.2" width="52" height="124.8" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="MaxAct* Clarity: 0.499" /><rect x="305" y="107.2" width="52" height="192.8" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="WeightLens Responsiveness: 0.771" /><rect x="365" y="112.0" width="52" height="188.0" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="MaxAct* Responsiveness: 0.752" /><rect x="495" y="166.0" width="52" height="134.0" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="WeightLens Purity: 0.536" /><rect x="555" y="132.5" width="52" height="167.5" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="MaxAct* Purity: 0.670" /><rect x="685" y="290.0" width="52" height="10.0" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="WeightLens Faithfulness: 0.040" /><rect x="745" y="290.2" width="52" height="9.8" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="MaxAct* Faithfulness: 0.039" />
+        <text x="171" y="327" text-anchor="middle" font-size="13">Clarity</text><text x="361" y="327" text-anchor="middle" font-size="13">Responsiveness</text><text x="551" y="327" text-anchor="middle" font-size="13">Purity</text><text x="741" y="327" text-anchor="middle" font-size="13">Faithfulness</text>
+      </svg>
+      <figcaption>数据源：核心论文 Table 2（PDF p.24）；各层等权均值由本报告计算。纵轴为 0–1 分数，悬停或聚焦柱体可查看精确值。</figcaption>
+    </figure>
+
+<blockquote>
+<p><strong>一句话核心定位：</strong> ICLR 2026 的《Circuit Insights:
+Towards Interpretability Beyond
+Activations》把自动特征解释拆成两条互补路径：WeightLens
+用转码器权重提取输入不变的词元关系，CircuitLens
+用归因图追踪输入依赖的特征—注意力—输出交互；它显著提升了说明的清晰度并降低对超大语料的依赖，但没有解决低
+Faithfulness、解释器 LLM 依赖和电路因果充分性问题。</p>
+</blockquote>
+<p><strong>报告日期：</strong> 2026-09-26<br />
+<strong>轮转领域：</strong>
+理论与可信——机制可解释性、因果归因、自动解释评测<br />
+<strong>核心论文：</strong> Elena Golimblevskaia 等，《Circuit Insights:
+Towards Interpretability Beyond Activations》，ICLR 2026 Conference
+Paper<br />
+<strong>随机抽样：</strong> 候选池 N=24；执行
+<code>shuf -i 1-24 -n 1</code> 得到 <strong>19</strong>；第 19
+篇即核心论文；<strong>重抽 0 次</strong>。<br />
+<strong>数字口径：</strong> 下文实验数字均来自实际读取的 29 页 ICLR 论文
+PDF；聚合均值由论文 Table 2/3
+的逐层数据等权计算，明确标为“本报告计算”。相关工作数字来自相应
+PDF/项目页，均注明页码、表号或网页位置。</p>
+<section id="0-链接验证表" class="card level2">
+<h2>0. 链接验证表</h2>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">会议 / 正式页</th>
+<th scope="col">arXiv（版本与日期）</th>
+<th scope="col">代码</th>
+<th scope="col">数据 / 权重</th>
+<th scope="col">项目页 / 视频</th>
+<th scope="col">核验结论</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Circuit Insights</strong></td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/91c2b78460e6a1b431a625c471b842b8-Abstract-Conference.html">ICLR
+2026 proceedings</a>；<a
+href="https://openreview.net/forum?id=2Jyb1yu3nN">OpenReview</a></td>
+<td><a
+href="https://arxiv.org/abs/2510.14936">2510.14936v2</a>，2026-03-04</td>
+<td><a
+href="https://github.com/egolimblevskaia/WeightLens">WeightLens</a>；<a
+href="https://github.com/egolimblevskaia/CircuitLens">CircuitLens</a></td>
+<td><a
+href="https://huggingface.co/datasets/egolimblevskaia/circuitlens-gemma-2-2b-transcoder-circuit-analysis">电路分析数据，约
+7.98 GB</a>；<a
+href="https://huggingface.co/datasets/egolimblevskaia/circuitlens-gemma-2-2btranscoder-descriptions-and-evaluations">描述与评测</a></td>
+<td>独立项目页/公开视频：<strong>未找到</strong></td>
+<td>正式论文、预印本、代码与数据均可访问；HF 数据查看器对电路 JSONL
+报结构解析错误，但文件页与总大小可访问</td>
+</tr>
+<tr class="even">
+<td>Transcoders Find Interpretable LLM Feature Circuits</td>
+<td><a href="https://arxiv.org/pdf/2406.11944">NeurIPS 2024 / arXiv
+PDF</a></td>
+<td><a
+href="https://arxiv.org/abs/2406.11944">2406.11944v2</a>，2024-11-06</td>
+<td><a
+href="https://github.com/jacobdunefsky/transcoder_circuits/">transcoder_circuits</a></td>
+<td>训练权重/数据：仓库内说明；独立数据页未找到</td>
+<td>项目视频：未找到</td>
+<td>PDF 与仓库可访问</td>
+</tr>
+<tr class="odd">
+<td>Circuit Tracing</td>
+<td><a
+href="https://transformer-circuits.pub/2025/attribution-graphs/methods.html">Transformer
+Circuits Thread</a></td>
+<td>arXiv：<strong>未公开/未找到</strong></td>
+<td>独立代码链接：本次未核实</td>
+<td>交互式归因图见项目页</td>
+<td>同左；公开视频未找到</td>
+<td>项目正文可访问，属于技术报告而非会议论文</td>
+</tr>
+<tr class="even">
+<td>FADE</td>
+<td><a href="https://aclanthology.org/2025.findings-acl.881/">ACL 2025
+Findings</a></td>
+<td><a href="https://arxiv.org/abs/2502.16994">2502.16994</a>，初版
+2025-02-24</td>
+<td><a href="https://github.com/brunibrun/FADE">FADE</a></td>
+<td>Gemma Scope 等公开特征；专用数据页未找到</td>
+<td>视频：未找到</td>
+<td>ACL 页、PDF 与代码链接可访问</td>
+</tr>
+<tr class="odd">
+<td>PRISM</td>
+<td>NeurIPS 2025 Mechanistic Interpretability Workshop；正式
+proceedings：未找到</td>
+<td><a
+href="https://arxiv.org/abs/2506.15538">2506.15538v4</a>，2025-11-12</td>
+<td><a href="https://github.com/lkopf/prism">PRISM</a></td>
+<td>专用数据/权重页：未找到</td>
+<td><a
+href="https://www.atb-potsdam.de/en/research/research-programs/material-and-energetic-use-of-biomass/projekte/projekte-detailseite/vortraege-und-poster/capturing-polysemanticity-with-prism-a-multi-concept-feature-description-framework">机构出版页</a>；视频未核实</td>
+<td>arXiv HTML/PDF 与代码可访问</td>
+</tr>
+<tr class="even">
+<td>Output-Centric Feature Descriptions</td>
+<td><a href="https://aclanthology.org/2025.acl-long.288/">ACL 2025 Main
+Long</a></td>
+<td><a href="https://arxiv.org/abs/2501.08319">2501.08319</a>，初版
+2025-01-14</td>
+<td>代码：未找到</td>
+<td>数据/权重：未找到</td>
+<td>视频：未找到</td>
+<td>ACL 正式页与 PDF 可访问</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>补充检索说明：候选发现以 ICLR 2026 官方 proceedings/virtual list
+为主，随后用 arXiv、OpenReview 与 Hugging Face Papers 交叉核验；ACL
+Anthology用于技术来源链。Papers with Code 与 Semantic Scholar
+对核心标题未返回可稳定核验的独立条目，因此不把其聚合页作为证据来源。</p>
+</section>
+<section id="1-去重与候选池" class="card level2">
+<h2>1. 去重与候选池</h2>
+<p>持久索引显示，最近 14
+天已深度覆盖：坐标缺失/污染下的鲁棒线性回归、重尾与分布污染下的倾斜风险、ThinkSLM、MM-RLHF、MeanFlow、Embodied-R1、Ada-KV、MolJO、HPS、BridgeVLA、Seesaw
+等。故本轮排除“鲁棒统计污染相变”“多模态 RLHF”“生成模型一步流”“KV
+压缩”与“具身 VLA”主题，转向尚未覆盖的自动机制可解释性。以下 24 篇均为
+ICLR 2026 主会论文，核心不超过 12
+个月；顺序固定后再随机抽样，不按热度挑选。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">#</th>
+<th scope="col">候选论文</th>
+<th scope="col">方向</th>
+<th scope="col">官方链接</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td>Smooth Calibration Error: Uniform Convergence and Functional
+Gradient Analysis</td>
+<td>校准理论</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/00a5213b3479c9733eb3743459badc6b-Abstract-Conference.html">ICLR</a></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td>The Alignment Auditor: A Bayesian Framework for Verifying and
+Refining LLM Objectives</td>
+<td>目标审计</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/01946043eea3b55c4650e5dd07ae6cad-Abstract-Conference.html">ICLR</a></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td>Fair Graph Machine Learning under Adversarial Missingness
+Processes</td>
+<td>公平与缺失</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/07d7860b8d63981be0e2cae6e1433d1e-Abstract-Conference.html">ICLR</a></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td>Rote Learning Considered Useful: Generalizing over Memorized Data in
+LLMs</td>
+<td>记忆与泛化</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/08a362bd4ae1934e099ce025f06039fe-Abstract-Conference.html">ICLR</a></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td>Noisy but Valid: Robust Statistical Evaluation of LLMs with
+Imperfect Judges</td>
+<td>评测统计</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/08a67eb74bfb9ded9e949dd52973e997-Abstract-Conference.html">ICLR</a></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td>Robust Optimization for Mitigating Reward Hacking with Correlated
+Proxies</td>
+<td>奖励黑客</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/0904c7edde20d7134a77fc7f9cd86ea2-Abstract-Conference.html">ICLR</a></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td>The Devil behind the Mask: An Emergent Safety Vulnerability of
+Diffusion LLMs</td>
+<td>安全脆弱性</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/0a0eba34ab2ff40ca2d2843324dcc4ab-Abstract-Conference.html">ICLR</a></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">8</td>
+<td>Learning for Highly Faithful Explainability</td>
+<td>忠实解释</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/0a994b2eaeba0bef9b98b79d99a6c095-Abstract-Conference.html">ICLR</a></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td>PropensityBench: Evaluating Latent Safety Risks in LLMs via an
+Agentic Approach</td>
+<td>潜在安全倾向</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/0fc17bb2df83a78c879f111702de571a-Abstract-Conference.html">ICLR</a></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td>Forget Forgetting: Continual Learning in a World of Abundant
+Memory</td>
+<td>持续学习</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/17fc58b1ba92abbb72c5f457e140d851-Abstract-Conference.html">ICLR</a></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td>Explainable LLM Unlearning through Reasoning</td>
+<td>可解释遗忘</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/1e97fb8a7c9737e9e9f4e0389b25efe8-Abstract-Conference.html">ICLR</a></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">12</td>
+<td>Understanding Forgetting and Generalization in Continual Learning
+via the NTK</td>
+<td>泛化动力学</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/1f8638a87bddd34e090698f0bfaa9c02-Abstract-Conference.html">ICLR</a></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td>How to Cure Newton for Unlearning Neural Networks?</td>
+<td>二阶遗忘</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/1fb4f62b8df5059a41df270a65e9b462-Abstract-Conference.html">ICLR</a></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td>ProSafePrune: Projected Safety Pruning for Mitigating
+Over-Refusal</td>
+<td>安全剪枝</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/1fb591d5a6b1da9bd0d0648d122fe2a1-Abstract-Conference.html">ICLR</a></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td>Attention Smoothing Is All You Need For Unlearning</td>
+<td>机器遗忘</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/2163fff81515bd2d3dfca8577304456f-Abstract-Conference.html">ICLR</a></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">16</td>
+<td>Towards Safe Reasoning in Large Reasoning Models via Corrective
+Intervention</td>
+<td>过程安全</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/57aabe6fa43e111fb827256c574611ee-Abstract-Conference.html">ICLR</a></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td>FaithCoT-Bench: Benchmarking Instance-Level Faithfulness of
+Chain-of-Thought</td>
+<td>CoT 忠实度</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/6c7154e394e24c69409256ccf8bf0804-Abstract-Conference.html">ICLR</a></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td>Teach to Reason Safely: Policy-Guided Safety Tuning for MLRMs</td>
+<td>多模态安全</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/8ece25974724edad00c8d0bcc8a235e8-Abstract-Conference.html">ICLR</a></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;"><strong>19</strong></td>
+<td><strong>Circuit Insights: Towards Interpretability Beyond
+Activations</strong></td>
+<td><strong>机制可解释性</strong></td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/91c2b78460e6a1b431a625c471b842b8-Abstract-Conference.html">ICLR</a></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">20</td>
+<td>A2D: Any-Order, Any-Step Safety Alignment for Diffusion Language
+Models</td>
+<td>扩散 LM 安全</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/956e5427549a82a7472e02adc88360e9-Abstract-Conference.html">ICLR</a></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">21</td>
+<td>Safety Subspaces are Not Linearly Distinct</td>
+<td>安全表征</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/9a9f4e15ad0d680429a3e0570a96f763-Abstract-Conference.html">ICLR</a></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">22</td>
+<td>Formal Mechanistic Interpretability: Automated Circuit Discovery
+with Provable Guarantees</td>
+<td>可验证电路</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/b5afe13494c825089b1e3944fdaba212-Abstract-Conference.html">ICLR</a></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">23</td>
+<td>GuardAlign: Test-time Safety Alignment in Multimodal LLMs</td>
+<td>测试时安全</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/c10c771f52408a2de77d056a4109e93d-Abstract-Conference.html">ICLR</a></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">24</td>
+<td>Calibrating Verbalized Confidence with Self-Generated
+Distractors</td>
+<td>置信度校准</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/c50bf8e50041545841e28c0b052f76d0-Abstract-Conference.html">ICLR</a></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section
+id="2-motivation真正的痛点不是看不到激活而是看见了也不知道为什么"
+class="card level2">
+<h2>2.
+Motivation：真正的痛点不是“看不到激活”，而是“看见了也不知道为什么”</h2>
+<p>主流自动解释管线先在大语料中寻找某特征的高激活样本，再把文本与逐
+token 激活交给另一个 LLM
+生成自然语言说明。它把人工检查扩展到数万乃至数百万特征，却埋下四个结构性问题。</p>
+<p>第一，<strong>激活是相关，不是路径</strong>。一个 token
+与目标特征同时高激活，不等于该 token
+经哪一个注意力头、哪一个上游特征促成了目标特征，也不说明该特征最终改变了哪些输出。核心论文
+Figure 9 的 L21F91 就展示了这种错位：输入侧只看到 “on”
+或若干动词，输出归因却指向 “the basis of / based on” 之类短语（PDF
+p.9）。只看激活会把“触发条件”和“功能效果”混在一起。</p>
+<p>第二，<strong>数据集是隐性超参</strong>。论文用同一
+Pile-uncopyrighted 来源构造 24M-token 小集与 2.3B-token 大集，两者相差约
+<strong>95.8 倍</strong>；CircuitLens 在大集上的输入指标显著更强，但 24M
+集通过电路遮罩加 WeightLens 仍能在 Clarity 上超过 MaxAct*（PDF pp.8,15,
+Table
+3）。这意味着解释质量不仅反映特征，也反映“你碰巧拿什么语料去问它”。</p>
+<p>第三，<strong>解释器与裁判也是黑箱</strong>。CircuitLens 最终仍让
+<code>gpt-4o-mini-2024-07-18</code> 合并簇级描述，FADE 的四指标也依赖
+LLM-as-a-judge。若解释器和裁判共享语言偏好，就可能把文字流畅度当成机制真实性。论文自己承认
+Fully eliminating explainer LLM 仍困难（Limitations, PDF p.10）。</p>
+<p>第四，<strong>单特征干预未必能测试真实因果作用</strong>。转码器特征高度冗余，单个特征被
+steering 后，模型可能由平行路径补偿。核心论文 Table 2 的平均
+Faithfulness 仅约 0.04，Table 3 的多数方法约
+0.03–0.04；这不是“小幅落后”，而是表明当前说明在“能否按描述方向改变输出”上普遍缺证据。</p>
+<p>因此，论文的主假设不是“权重天然可解释”，而是更窄、更可检验的两段式判断：对上下文无关特征，异常大的固定权重连接能提供稳定语义；对上下文相关特征，必须把激活拆成具体上游组件与输出后果，再做聚类与描述。</p>
+</section>
+<section id="3-故事线与关键权衡" class="card level2">
+<h2>3. 故事线与关键权衡</h2>
+<p>故事线可压缩为三次转向：</p>
+<ol type="1">
+<li><strong>从神经元到稀疏特征。</strong> SAE
+缓解多义神经元，但只重构激活；转码器重构整个 MLP 映射，因此保留“输入激活
+× 固定连接”的可分解结构。</li>
+<li><strong>从高激活样本到结构证据。</strong> WeightLens 直接读
+encoder/decoder、embedding/unembedding 与跨层 decoder-to-encoder
+连接，避免大语料；CircuitLens 则用输入依赖 Jacobian、注意力头归因和输出
+logit 归因重建局部电路。</li>
+<li><strong>从单一说明到簇级说明。</strong>
+先按共享的上游特征与注意力头模式聚类，再逐簇解释并合并，目标是把
+polysemantic feature
+拆成多个机制簇，而不是强迫一个句子包办全部行为。</li>
+</ol>
+<p>代价也一并转移：WeightLens 便宜、无数据依赖，但只覆盖 <strong>Gemma
+32.7%、GPT-2 58.8%、Llama 25.4%</strong> 的可验证 token-based 特征（PDF
+p.8）；CircuitLens
+覆盖上下文机制，却要缓存激活、做反向传播、聚类并调用解释器
+LLM，且输出侧每新增 token 都增加前后向开销（Table 1, PDF p.16）。</p>
+</section>
+<section id="4-方程级形式化" class="card level2">
+<h2>4. 方程级形式化</h2>
+<section id="41-转码器与两类归因" class="subsection level3">
+<h3>4.1 转码器与两类归因</h3>
+<p>设第 <code>l</code> 层目标转码器特征为 <code>(l,i)</code>，encoder
+向量为 <code>f_enc^(l,i)</code>；更早第 <code>l'</code> 层特征
+<code>(l',i')</code> 的 decoder 向量为 <code>f_dec^(l',i')</code>，其在
+token <code>t</code> 上的激活为
+<code>a_(l',i')[t]</code>。最基本的跨特征归因为：</p>
+<p>[ A_{(l',i')\rightarrow(l,i)}(t)=a_{(l',i')}(t),\langle
+f_{dec}^{(l',i')},f_{enc}^{(l,i)}\rangle. ]</p>
+<p>前项随输入变化，后项只由权重决定。论文进一步加入局部 Jacobian：</p>
+<p>[
+A^{J}<em>{(l',i')\rightarrow(l,i)}(t)=a</em>{(l',i')}(t),f_{dec}^{(l',i')}J^{(l\rightarrow
+l')}(t)f_{enc}^{(l,i)}, ]</p>
+<p>其中 <code>J</code>
+在给定输入处把注意力、归一化与非线性局部冻结（Eq.2–3, PDF p.3）。这使
+CircuitLens
+能追踪“某一次运行”里的实际路径，但也意味着它只是局部线性归因，不是全局因果等价。</p>
+<p>注意力头 <code>(l',h)</code> 从源 token <code>s</code> 到目标 token
+<code>t</code> 对特征的贡献写成：</p>
+<p>[ A_{h,s\rightarrow
+i,t}=\operatorname{score}<em>{l',h}(r</em>{pre}[t],r_{pre}[s])\cdot\langle
+(W_{OV}^{l',h})^Tf_{enc}^{l,i},r_{pre}^{l'}[s]\rangle. ]</p>
+<p>输出侧则计算目标特征到预测 token <code>y_t</code> 的 logit 贡献：</p>
+<p>[ A_{i\rightarrow y_t}=a_{l,i}[t],
+f_{dec}^{l,i}J^{y\rightarrow(l,i)}[t]W_U[:,y_t]. ]</p>
+<p>前三式分别回答“固定连接是什么”“本次输入经何路径激活”“它把输出推向哪里”。</p>
+</section>
+<section id="42-weightlens-流程伪代码" class="subsection level3">
+<h3>4.2 WeightLens 流程伪代码</h3>
+<pre class="text"><code>for layer l from early to late:
+  for feature i in transcoder(l):
+    input_tokens  = zscore_outliers(W_emb · f_enc[l,i], τ_vocab)
+    output_tokens = zscore_outliers(f_dec[l,i] · W_U, τ_vocab)
+    upstream = union over l&#39;&lt;l of
+               zscore_outliers(W_dec[l&#39;] · f_enc[l,i], τ_feature)
+    input_tokens += inherit_validated_tokens(upstream)
+    validated = {token | forward(token) activates feature(l,i)}
+    if validated is empty: mark context-dependent
+    else: lemmatize(validated) [+ optional output_tokens / LLM refinement]</code></pre>
+<p>词表异常阈值：GPT-2 为 <code>z=4</code>，Gemma-2-2B 与 Llama-3.2-1B
+为 <code>z=4.5</code>；跨特征连接阈值 <code>z=3</code>（PDF
+pp.4–5）。核心假设是：若固定连接真的描述特征的内在 token 语义，则孤立
+token 前向验证仍应激活它。</p>
+</section>
+<section id="43-circuitlens-流程伪代码" class="subsection level3">
+<h3>4.3 CircuitLens 流程伪代码</h3>
+<pre class="text"><code>cache max activations over corpus
+partition activation distribution into B=20 quantile bins
+sample N=100 without replacement with weight w_i = 1 / n_bin^0.9
+for each sampled context:
+  trace significant upstream features and (head, token, relative-position)
+  mask non-contributing input tokens
+  optionally trace affected generated tokens
+  form sparse contributor set S_j
+filter contributors appearing in at least ρ fraction of inputs
+compute Jaccard(S_a,S_b)
+cluster; explain each cluster with an LLM; merge cluster descriptions</code></pre>
+<p>正文写 DBSCAN（PDF p.6），Appendix E.5 写
+HDBSCAN、<code>eps=0.7</code>、<code>min_samples=3</code>（PDF
+p.21）；这一命名不一致是复现时必须先澄清的地方。</p>
+</section>
+</section>
+<section id="5-关键机制与工程细节" class="card level2">
+<h2>5. 关键机制与工程细节</h2>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">模块</th>
+<th scope="col">关键设计</th>
+<th scope="col">为什么有效</th>
+<th scope="col">成本 / 风险</th>
+<th scope="col">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>WeightLens 输入侧</td>
+<td><code>W_emb·f_enc</code> 与上游 <code>W_dec·f_enc</code> 的 z-score
+异常值</td>
+<td>把固定权重连接转为候选 token/上游特征</td>
+<td>干扰与上下文会制造假阳性</td>
+<td>Eq.1、Sec.3.2，PDF pp.3–5</td>
+</tr>
+<tr class="even">
+<td>单 token 验证</td>
+<td>候选词单独前向，保留真激活</td>
+<td>过滤“权重大但运行时无效”的连接</td>
+<td>会拒绝依赖语境的真实语义</td>
+<td>Assumption 2，PDF p.4</td>
+</tr>
+<tr class="odd">
+<td>输出投影</td>
+<td><code>f_dec·W_U</code> 找 promoted/suppressed tokens</td>
+<td>给说明加入功能结果</td>
+<td>无法像输入 token 一样验证；实验中常降 Clarity</td>
+<td>Sec.3.2/4，Table 2</td>
+</tr>
+<tr class="even">
+<td>分位逆频采样</td>
+<td>20 个分位箱，指数 0.9，抽 100 个样本</td>
+<td>同时覆盖常见与尾部激活</td>
+<td>仍依赖语料分布，参数未系统扫描</td>
+<td>Sec.3.3，PDF p.5</td>
+</tr>
+<tr class="odd">
+<td>电路遮罩</td>
+<td>仅保留直接激活或经注意力头显著贡献的 token</td>
+<td>降低解释器从全文找模式的负担</td>
+<td>局部 Jacobian 冻结注意力模式</td>
+<td>Eq.4，PDF pp.3,5</td>
+</tr>
+<tr class="even">
+<td>电路聚类</td>
+<td>上游特征 + <code>(head,relative position)</code> 稀疏集合，Jaccard +
+H/DBSCAN</td>
+<td>按“如何被算出”而非语义相似度拆多义性</td>
+<td>易过分裂；算法命名不一致</td>
+<td>Sec.3.3、App.E.5</td>
+</tr>
+<tr class="odd">
+<td>输出追踪</td>
+<td>对后续生成 token 做前后向归因</td>
+<td>发现输入激活看不到的功能</td>
+<td>5/15 token 额外 +4/+12 A100 GPU-hour</td>
+<td>Table 1，PDF p.16</td>
+</tr>
+<tr class="even">
+<td>FADE 评测</td>
+<td>Clarity、Responsiveness、Purity、Faithfulness</td>
+<td>分离“说得清”“真的触发”“是否专一”“是否因果”</td>
+<td>仍由 LLM judge 与 steering 构成</td>
+<td>Sec.3.4，PDF p.6</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>工程资源方面，24M-token 激活缓存约 <strong>5 A100-40GB
+GPU-hour</strong>，每个 16K 转码器层约 <strong>12 GB</strong>
+稀疏缓存；1000 特征的输入侧分析约 <strong>8 GPU-hour</strong>；追踪 5/15
+个新 token 再加 <strong>4/12 GPU-hour</strong>（Table 1, PDF
+p.16）。这说明“可扩展”指相对于逐特征大语料扫描可复用缓存，而不是接近零成本。</p>
+</section>
+<section id="6-数据集模型基准与指标" class="card level2">
+<h2>6. 数据集、模型、基准与指标</h2>
+<p>实验涉及 GPT-2 Small、Gemma-2-2B、Llama-3.2-1B
+的转码器；定量主图集中在 Gemma-2-2B。语料为去版权版本 Pile，总体超过
+<strong>345.7 GB</strong>，作者切出 6GB/2.3B-token 大集与 40MB/24M-token
+小集；训练分区生成解释，测试分区评测，并做句长上下 5%
+过滤、去重与纯数字/符号过滤（Appendix B, PDF p.15）。</p>
+<p>FADE 四指标均在 <code>[0,1]</code>：</p>
+<ul>
+<li><strong>Clarity</strong>：说明是否足够明确，使 LLM
+能合成真正激活该特征的样本。</li>
+<li><strong>Responsiveness</strong>：概念样本激活相对随机/非概念样本能否分开。</li>
+<li><strong>Purity</strong>：自然数据里的高激活是否主要属于说明概念，而非无关样本。</li>
+<li><strong>Faithfulness</strong>：对特征做干预后，输出是否沿说明声称的方向变化。</li>
+</ul>
+<p>不能把这四者合成一个“总解释分”。例如 WeightLens
+清晰但不纯，说明它常抓到稳定 token 片段，却遗漏上下文条件；Faithfulness
+低则意味着自然语言说明还没成为可信的因果证书。</p>
+</section>
+<section id="7-主结果数据矩阵" class="card level2">
+<h2>7. 主结果数据矩阵</h2>
+<section id="71-五层--六方法clarity" class="subsection level3">
+<h3>7.1 五层 × 六方法：Clarity</h3>
+<p>下表从论文 Table 3 选择早层、转折层与晚层 5
+个层位，满足同一基准上的六方法横向比较；<strong>粗体为该行最优</strong>。<code>top</code>
+使用 2.3B-token 大集，其余 CircuitLens 使用 24M-token 小集；MaxAct*
+也使用大集。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">Gemma 层</th>
+<th scope="col" style="text-align: right;">CL-Input</th>
+<th scope="col" style="text-align: right;">CL-Full</th>
+<th scope="col" style="text-align: right;">WL+CL-Full</th>
+<th scope="col" style="text-align: right;">CL-Input (top)</th>
+<th scope="col" style="text-align: right;">CL-Full (top)</th>
+<th scope="col" style="text-align: right;">MaxAct*</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0.59</td>
+<td style="text-align: right;">0.64</td>
+<td style="text-align: right;">0.68</td>
+<td style="text-align: right;">0.80</td>
+<td style="text-align: right;"><strong>0.82</strong></td>
+<td style="text-align: right;">0.49</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">7</td>
+<td style="text-align: right;">0.37</td>
+<td style="text-align: right;">0.43</td>
+<td style="text-align: right;">0.49</td>
+<td style="text-align: right;"><strong>0.64</strong></td>
+<td style="text-align: right;"><strong>0.64</strong></td>
+<td style="text-align: right;">0.48</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">12</td>
+<td style="text-align: right;">0.19</td>
+<td style="text-align: right;">0.24</td>
+<td style="text-align: right;">0.25</td>
+<td style="text-align: right;"><strong>0.27</strong></td>
+<td style="text-align: right;"><strong>0.27</strong></td>
+<td style="text-align: right;">0.17</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">21</td>
+<td style="text-align: right;">0.41</td>
+<td style="text-align: right;">0.52</td>
+<td style="text-align: right;">0.55</td>
+<td style="text-align: right;">0.54</td>
+<td style="text-align: right;"><strong>0.56</strong></td>
+<td style="text-align: right;">0.39</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">25</td>
+<td style="text-align: right;">0.27</td>
+<td style="text-align: right;">0.27</td>
+<td style="text-align: right;">0.38</td>
+<td style="text-align: right;">0.43</td>
+<td style="text-align: right;"><strong>0.46</strong></td>
+<td style="text-align: right;">0.36</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>来源：</strong> Circuit Insights PDF p.25, Table 3。层 12
+所有方法都低，印证该层的强上下文依赖；大语料 top
+版本占优，说明电路方法并未消除覆盖率问题。</p>
+</section>
+<section id="72-十层等权平均绝对与相对变化" class="subsection level3">
+<h3>7.2 十层等权平均：绝对与相对变化</h3>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">比较</th>
+<th scope="col" style="text-align: right;">Clarity</th>
+<th scope="col" style="text-align: right;">绝对变化</th>
+<th scope="col" style="text-align: right;">相对变化</th>
+<th scope="col" style="text-align: right;">Responsiveness</th>
+<th scope="col" style="text-align: right;">Purity</th>
+<th scope="col" style="text-align: right;">Faithfulness</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>WeightLens</td>
+<td style="text-align: right;"><strong>0.634</strong></td>
+<td style="text-align: right;">+0.135 vs MaxAct*</td>
+<td style="text-align: right;"><strong>+27.05%</strong></td>
+<td style="text-align: right;">0.771</td>
+<td style="text-align: right;">0.536</td>
+<td style="text-align: right;">0.040</td>
+</tr>
+<tr class="even">
+<td>MaxAct*（WeightLens 表）</td>
+<td style="text-align: right;">0.499</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">0.752</td>
+<td style="text-align: right;"><strong>0.670</strong></td>
+<td style="text-align: right;">0.039</td>
+</tr>
+<tr class="odd">
+<td>WL+CL-Full（24M）</td>
+<td style="text-align: right;"><strong>0.506</strong></td>
+<td style="text-align: right;">+0.077 vs MaxAct*</td>
+<td style="text-align: right;"><strong>+17.95%</strong></td>
+<td style="text-align: right;">0.579</td>
+<td style="text-align: right;">0.488</td>
+<td style="text-align: right;">0.033</td>
+</tr>
+<tr class="even">
+<td>CL-Full (top, 2.3B)</td>
+<td style="text-align: right;"><strong>0.618</strong></td>
+<td style="text-align: right;">+0.189 vs MaxAct*</td>
+<td style="text-align: right;"><strong>+44.06%</strong></td>
+<td style="text-align: right;"><strong>0.769</strong></td>
+<td style="text-align: right;"><strong>0.639</strong></td>
+<td style="text-align: right;">0.033</td>
+</tr>
+<tr class="odd">
+<td>MaxAct*（CircuitLens 表）</td>
+<td style="text-align: right;">0.429</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">0.698</td>
+<td style="text-align: right;">0.619</td>
+<td style="text-align: right;"><strong>0.036</strong></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>来源与计算：</strong> Table 2/3，PDF pp.24–25；本报告对 10
+层算术平均。两张表中的 MaxAct* 值不同，因为 Table 2 只在可被 WeightLens
+验证的 token-based 特征子集上比较，而 Table 3 是 CircuitLens
+设置，不能跨表直接当作同一总体。</p>
+<p>最重要的定量结论不是单一 SOTA：</p>
+<ol type="1">
+<li>WeightLens Clarity 从 0.499 到 0.634，绝对
+<strong>+0.135</strong>、相对 <strong>+27.05%</strong>；但 Purity 从
+0.670 降到 0.536，绝对 <strong>−0.134</strong>、相对
+<strong>−20.00%</strong>。更清楚不等于更完整。</li>
+<li>24M-token 的 WL+CL-Full Clarity 0.506，仍高于用 2.3B-token 的
+MaxAct* 0.429，绝对 <strong>+0.077</strong>；语料 token 数少
+<strong>98.96%</strong>。但其 Responsiveness/Purity 分别低
+<strong>0.119/0.131</strong>，不能把“少数据胜过大数据”泛化到所有维度。</li>
+<li>同样用 2.3B-token 时，CL-Full(top) 的 Clarity/Responsiveness/Purity
+分别比 MaxAct* 高 <strong>0.189/0.071/0.020</strong>，对应相对
+<strong>44.06%/10.17%/3.23%</strong>；Faithfulness 则低
+<strong>0.003</strong>。</li>
+<li>所有方法的 Faithfulness 都非常低，主要落在
+0.02–0.06；最佳清晰度并未转化为强输出控制。</li>
+</ol>
+</section>
+</section>
+<section id="8-逐层消融超参敏感性与相变" class="card level2">
+<h2>8. 逐层消融、超参敏感性与相变</h2>
+<section id="81-weightlens-逐项消融" class="subsection level3">
+<h3>8.1 WeightLens 逐项消融</h3>
+<p>Table 2 给出三种组合。单独 WL 的十层平均 Clarity
+<strong>0.634</strong>；加入 output tokens 后，层 0 从 0.67 降到
+0.63、层 12 从 0.47 降到 0.38，几乎各层下降；再用 LLM
+汇总仅部分恢复。说明未经验证的 unembedding outliers
+更像噪声而非免费功能语义。Responsiveness 对 <code>+Out</code>
+略有提升，但 Purity 与
+Faithfulness没有系统改善。真正有效的部件是“固定连接 + 单 token
+前向验证”，不是“把更多词塞进说明”。</p>
+</section>
+<section id="82-circuitlens-逐项消融" class="subsection level3">
+<h3>8.2 CircuitLens 逐项消融</h3>
+<p>小数据下，CL-Input 与 CL-Full 的十层平均 Clarity 分别
+<strong>0.429/0.429</strong>，添加输出追踪几乎零平均收益；再融合
+WeightLens 才到 <strong>0.506</strong>。这与 Table 1
+的成本形成鲜明对比：15-token 输出侧要额外 12 GPU-hour，却没有在平均
+Clarity 上带来收益。大数据 top 设置中，CL-Full 比 CL-Input 的 Clarity
+<strong>0.618 vs
+0.609</strong>（本报告计算），有小幅收益；因此输出追踪更适合作为定性功能定位，而非默认全量步骤。</p>
+</section>
+<section id="83-层深相变" class="subsection level3">
+<h3>8.3 层深“相变”</h3>
+<p>WeightLens 可验证比例在 Gemma/Llama
+中从早层下降到中层，再在晚层部分恢复；Gemma layer 12 虽
+<code>l0=6</code>、非常稀疏，却最难用固定 token 描述，而早层
+<code>l0=70–88</code> 反而有大量 token-level 结构（PDF
+pp.7–8）。这说明稀疏度不是可解释性的充分条件。CircuitLens
+聚类数也呈层级变化：layer 0 平均 <strong>1.05</strong> 簇、layer 7
+<strong>4.5</strong>、layer 12 <strong>2.8</strong>、layer 21
+<strong>2.95</strong>（Figure 10, PDF p.10）。layer 7
+像是从词元检测转向复合电路的分界点。</p>
+</section>
+<section id="84-超参敏感性" class="subsection level3">
+<h3>8.4 超参敏感性</h3>
+<p>论文只给默认值：<code>B=20, α=0.9, N=100, eps=0.7, min_samples=3</code>，并做定性而非系统扫描。Appendix
+E.5
+承认该聚类会把单义特征细分成白色衣物、绿色/黑色箱包等子簇，有时单簇反而更清楚。<strong>论文未报告</strong>
+<code>ρ</code>、z 阈值、<code>eps/min_samples</code>
+的完整网格、稳定区间或性能曲线，因此不能证明这些默认值跨模型稳健，也不能确定
+4.5 簇是“真实多义性”还是过分裂。</p>
+</section>
+<section id="85-统计显著性" class="subsection level3">
+<h3>8.5 统计显著性</h3>
+<p>核心论文主表给逐层均值，但<strong>未报告</strong>标准差、置信区间、随机种子、bootstrap
+或显著性检验；Table 2 的每层约 250 个特征，但抽样方差未提供。故
+0.01–0.03 的小差异不应当作可靠胜负；0.189 的 Clarity
+差距更大、更值得复验，但也仍需独立重复。与之对照，PRISM Table 1 明确给
+95% CI（例如 GPT-2 XL neuron 的 PRISM(max) AUROC 0.85，CI 0.78–0.91，PDF
+p.6），说明同类工作完全可以报告不确定性。</p>
+</section>
+</section>
+<section id="9-真正贡献可复用设计与迁移潜力" class="card level2">
+<h2>9. 真正贡献、可复用设计与迁移潜力</h2>
+<p><strong>真正贡献一：把“输入不变结构”变成可运行基线。</strong>
+Dunefsky 等只展示权重连接可解释的案例；WeightLens
+将其流程化为词表投影、跨层继承、异常检测、单 token
+验证与轻量词形归并。最可复用的是验证门：任何权重型解释都应经过独立运行时检查。</p>
+<p><strong>真正贡献二：把多义性从语义聚类改为机制聚类。</strong> PRISM
+按句向量把高激活文本聚类；CircuitLens 按共享上游特征和
+<code>(attention head, relative position)</code>
+聚类。这是关键概念迁移：两个句子语义不同但经同一电路激活，应属于一个机制簇；语义相同却走不同路径，则应拆开。</p>
+<p><strong>真正贡献三：明确拆开触发与后果。</strong>
+输入归因回答“为什么激活”，输出归因回答“激活后做什么”。可迁移到安全监控、知识编辑与记忆分析：分别检查危险触发器、拒答/顺从输出路径，避免用同一标签混淆两端。</p>
+<p><strong>迁移限制：</strong> WeightLens 依赖转码器的 encoder/decoder
+可分解结构，不能直接套 SAE；CircuitLens 可通过梯度归因迁到
+SAE/crosscoder，但计算与“局部冻结非线性”的偏差仍在。视觉模型可把 token
+换成 patch，扩散模型可把输出 token 换成时间步/噪声预测，但必须重新定义
+causal intervention，而不能只复用 Jaccard 聚类。</p>
+</section>
+<section id="10-论文自述限制" class="card level2">
+<h2>10. 论文自述限制</h2>
+<ol type="1">
+<li><strong>架构限制（Limitations, PDF p.10）：</strong> WeightLens
+专用于转码器，无法直接用于 SAE；上下文依赖特征也难捕获。</li>
+<li><strong>依赖未消除（Limitations, PDF p.10）：</strong> CircuitLens
+减少数据规模与解释器负担，却仍依赖数据集和外部 LLM。</li>
+<li><strong>因果测量受冗余影响（Limitations, PDF p.10）：</strong>
+转码器特征与残差 SAE 结构不同，单特征 steering
+的输出影响弱，因此所有方法 Faithfulness 都低。</li>
+</ol>
+</section>
+<section id="11-独立批判" class="card level2">
+<h2>11. 独立批判</h2>
+<ol type="1">
+<li><strong>[内部效度] 因为</strong>平均 Faithfulness 约
+0.03–0.04，且最佳 Clarity
+方法并未改善它，<strong>所以</strong>论文最多证明“结构信息能生成更像样的说明”，不能证明说明忠实描述了产生输出的因果机制。</li>
+<li><strong>[评测闭环] 因为</strong>CircuitLens 用
+<code>gpt-4o-mini</code> 生成/合并说明，FADE 又用 LLM
+判断说明，且没有独立人类盲评，<strong>所以</strong>风格一致性可能同时抬高
+Clarity 与 Responsiveness；应增加跨家族解释器×裁判矩阵与人类标注。</li>
+<li><strong>[比较公平性] 因为</strong>Table 2 与 Table 3 的 MaxAct*
+实际落在不同特征总体，平均 Clarity 分别 0.499 与
+0.429，<strong>所以</strong>跨表宣称统一优势会混入样本选择效应；必须固定同一
+feature IDs 做 paired comparison。</li>
+<li><strong>[数据依赖] 因为</strong>24M 与 2.3B token 相差 95.8 倍，而
+CL-Full 的平均 Responsiveness 从 0.519 升至
+0.769，<strong>所以</strong>电路归因没有消除语料覆盖问题，只是在小数据时部分救回
+Clarity。</li>
+<li><strong>[超参/复现] 因为</strong>正文称 DBSCAN、Appendix E.5 称
+HDBSCAN，并只报告
+<code>eps=0.7, min_samples=3</code>，<strong>所以</strong>算法实现与文字之间存在复现歧义；应公开版本锁定和每层
+cluster stability 曲线。</li>
+<li><strong>[成本归因] 因为</strong>输出侧 15-token 分析为 1000 特征新增
+12 A100 GPU-hour，而小数据 CL-Full 相对 CL-Input 的平均 Clarity 增益约为
+0，<strong>所以</strong>默认全量输出追踪性价比不足；更合理是先用廉价指标筛选晚层候选。</li>
+<li><strong>[外部效度] 因为</strong>主矩阵只在 Gemma-2-2B、10 个层位与
+Pile 同分布语料上展开，GPT-2/Llama 主要用于 WeightLens
+覆盖率，<strong>所以</strong>不能推出代码、医疗、非英语或对话语料上的稳健性。</li>
+<li><strong>[因果定义] 因为</strong>Jacobian
+归因把注意力模式与非线性在当前输入处冻结，而 Circuit Tracing
+报告在注意力主导案例中归因图可“essentially useless”（项目页
+Limitations），<strong>所以</strong>CircuitLens
+的边是局部敏感度证据，不应直接称为全局机制；需要 activation
+patching/edge intervention 逐边验证。</li>
+</ol>
+</section>
+<section id="12-相关工作问题来源与技术传递链" class="card level2">
+<h2>12. 相关工作：问题来源与技术传递链</h2>
+<section
+id="121-transcoders-find-interpretable-llm-feature-circuitsdunefsky-et-al-neurips-2024"
+class="subsection level3">
+<h3>12.1 Transcoders Find Interpretable LLM Feature Circuits（Dunefsky
+et al., NeurIPS 2024）</h3>
+<p><strong>解决什么：</strong> 把密集 MLP 替换成稀疏转码器，在
+120M、410M、1.4B 参数模型上比较
+SAE，并把跨层边分解为激活与固定权重两部分（arXiv v2, Abstract；PDF
+p.1）。<br />
+<strong>遗留缺口：</strong> 主要是人工案例与 GPT-2 greater-than
+circuit；作者承认转码器仍是近似、会丢信息，且计算限制使超参不充分（PDF
+pp.10–11, Limitations）。<br />
+<strong>核心如何回应：</strong> WeightLens 把固定连接的 case study
+自动化，并加单 token 验证；CircuitLens 则把 prompt-specific attribution
+扩展成可抽样、聚类、描述的流水线。<br />
+<strong>设计传递：</strong>
+<code>activation × decoder–encoder dot product</code> 直接进入核心
+Eq.1；输入依赖/不变分离是整篇论文的代数支点。</p>
+</section>
+<section id="122-circuit-tracingameisen-et-al-2025" class="subsection level3">
+<h3>12.2 Circuit Tracing（Ameisen et al., 2025）</h3>
+<p><strong>解决什么：</strong> 用 cross-layer transcoder replacement
+model 生成单 prompt 的归因
+DAG，并通过误差节点让替代模型输出与原模型局部匹配。<br />
+<strong>遗留缺口：</strong> 项目页明确指出 replacement mechanism
+未必等于原模型机制；注意力主导任务可能令图失效，且 error nodes 构成“dark
+matter”。<br />
+<strong>核心如何回应：</strong> 采用 Jacobian 修正与注意力头 token
+归因，并把单 prompt 图变成跨样本的 sparse contributor sets。<br />
+<strong>设计传递：</strong> frozen attention/normalization
+的局部线性化、feature attribution
+graph、误差与冗余意识被继承；但核心没有把 error-node sufficiency
+作为主指标。</p>
+</section>
+<section id="123-fadepuri-et-al-acl-findings-2025" class="subsection level3">
+<h3>12.3 FADE（Puri et al., ACL Findings 2025）</h3>
+<p><strong>解决什么：</strong> 用
+Clarity、Responsiveness、Purity、Faithfulness
+把“好说明”分成四个可诊断维度；PDF pp.3–5 给出 Gini、自然样本分类与
+steering 流程。<br />
+<strong>遗留缺口：</strong> 评测依赖合成样本、LLM judge
+和特征干预；论文估计全量实验约 <strong>4,920 GPU-hour</strong>（FADE PDF
+Appendix，p.17）。<br />
+<strong>核心如何回应：</strong> 完整采用 FADE，避免只报一个 simulated
+activation score，并特别讨论低 Faithfulness。<br />
+<strong>设计传递：</strong> 四指标成为 Table 2/3
+的坐标系，使“更清晰但更不纯”的权衡可见。</p>
+</section>
+<section id="124-prismkopf-et-al-2025" class="subsection level3">
+<h3>12.4 PRISM（Kopf et al., 2025）</h3>
+<p><strong>解决什么：</strong>
+不再强迫每个特征一个标签，而是对高激活句向量聚成 5 簇，分别描述；GPT-2
+XL neuron 上 PRISM(max) AUROC <strong>0.85 (0.78–0.91)</strong>，高于
+MaxAct <strong>0.53 (0.49–0.58)</strong>（Table 1, PDF p.6）。<br />
+<strong>遗留缺口：</strong> 聚类依据语义 embedding
+而非计算路径；均值版有时显著落后 max，暴露 coverage–precision
+权衡。<br />
+<strong>核心如何回应：</strong>
+把聚类对象从句向量换成上游特征与注意力头模式，尝试按机制而非主题拆多义性。<br />
+<strong>设计传递：</strong> “簇级说明→合并说明”的结构直接传给
+CircuitLens，但聚类准则发生关键替换。</p>
+</section>
+<section
+id="125-output-centric-feature-descriptionsgur-arieh-et-al-acl-2025-main"
+class="subsection level3">
+<h3>12.5 Output-Centric Feature Descriptions（Gur-Arieh et al., ACL 2025
+Main）</h3>
+<p><strong>解决什么：</strong> 用 steering 后 token 变化或直接
+unembedding 投影描述“特征把输出推向什么”；评测覆盖
+<strong>2,560</strong> 个 MLP 特征，且人类评测抽取 100 个 Gemma SAE
+特征（PDF pp.6,8）。<br />
+<strong>遗留缺口：</strong> 输入侧与输出侧说明经常不一致，unembedding
+只给直接线性投影，难覆盖跨层间接后果。<br />
+<strong>核心如何回应：</strong> WeightLens 继承
+<code>f_dec·W_U</code>，CircuitLens 加生成 token 的 Jacobian
+归因。<br />
+<strong>设计传递：</strong> “触发—后果”双面说明成为
+CircuitLens-Full；消融却显示输出侧并非总能提升平均 Clarity。</p>
+</section>
+<section id="126-非线性技术演进树" class="subsection level3">
+<h3>12.6 非线性技术演进树</h3>
+<pre class="text"><code>                    自动解释：高激活样本 → LLM 标签
+                         /                    \
+        SAE：把多义神经元拆成稀疏特征       Output-Centric：看输出后果
+             |                    \                    |
+      FADE：四维评测             PRISM：语义簇拆多义性  |
+             \                    /                    /
+              \                  /                    /
+       Transcoder：重构 MLP 映射，可分输入依赖/固定权重
+                     |                         \
+          Circuit Tracing：单 prompt DAG      权重连接 case study
+                     \                         /
+                      \                       /
+              Circuit Insights（本篇）
+               ├─ WeightLens：固定权重 + token 验证
+               └─ CircuitLens：路径遮罩 + 机制聚类 + 输出归因
+                        |
+             下一步：边干预、统计稳定性、形式证书</code></pre>
+<p>演进动力有三次转折：从“神经元是否像一个概念”转向“稀疏特征是否更单义”；从“说明是否像激活样本”转向“说明是否解释输出后果”；再从“句子语义相似”转向“计算路径相同”。本篇处在第三次转折，但仍没有走到正式验证与反事实因果证书。</p>
+</section>
+<section id="127-跨论文对标" class="subsection level3">
+<h3>12.7 跨论文对标</h3>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">基本单元</th>
+<th scope="col">解释证据</th>
+<th scope="col">多义性处理</th>
+<th scope="col">输出因果</th>
+<th scope="col">主要短板</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Transcoders</td>
+<td>转码器特征</td>
+<td>权重 + prompt 归因</td>
+<td>人工辨析</td>
+<td>部分</td>
+<td>自动化不足</td>
+</tr>
+<tr class="even">
+<td>Circuit Tracing</td>
+<td>CLT 特征图</td>
+<td>单 prompt DAG</td>
+<td>supernodes</td>
+<td>有，但局部替代</td>
+<td>注意力/误差暗物质</td>
+</tr>
+<tr class="odd">
+<td>FADE</td>
+<td>任意特征+说明</td>
+<td>四维评测</td>
+<td>诊断不拆分</td>
+<td>steering 指标</td>
+<td>成本高、LLM judge</td>
+</tr>
+<tr class="even">
+<td>PRISM</td>
+<td>神经元/SAE</td>
+<td>高激活语义簇</td>
+<td>5 簇多说明</td>
+<td>间接</td>
+<td>语义簇非机制簇</td>
+</tr>
+<tr class="odd">
+<td>Output-Centric</td>
+<td>神经元/SAE</td>
+<td>unembedding/steering</td>
+<td>无</td>
+<td>强调输出侧</td>
+<td>输入输出不一致</td>
+</tr>
+<tr class="even">
+<td><strong>Circuit Insights</strong></td>
+<td>转码器特征/电路</td>
+<td>固定权重 + Jacobian + 头归因</td>
+<td>电路集合聚类</td>
+<td>生成 token 归因</td>
+<td>Faithfulness 低、统计缺失</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</section>
+<section id="13-开放挑战可操作的-head-to-head-实验空白" class="card level2">
+<h2>13. 开放挑战：可操作的 head-to-head 实验空白</h2>
+<section id="理论" class="subsection level3">
+<h3>理论</h3>
+<ol type="1">
+<li><strong>局部归因 vs 真因果边：</strong> 在同一批 feature edges
+上比较 CircuitLens Jacobian、Integrated Gradients、activation patching
+与 exact edge ablation；预注册边级 precision/recall、输出 KL
+与任务性能恢复率。若 Jacobian 边不能预测 patching
+效果，就不能叫“电路”。</li>
+<li><strong>聚类稳定性：</strong> 对同一特征做语料 bootstrap，比较
+HDBSCAN 电路簇与 PRISM 语义簇的 adjusted Rand
+index、簇数方差和人类概念一致性；扫描
+<code>eps∈[0.3,0.9]</code>、<code>min_samples∈{2,3,5,10}</code>，找稳定相区。</li>
+<li><strong>可识别性：</strong> 构造已知 ground-truth circuit 的半合成
+transformer，比较 WeightLens/CircuitLens
+是否在功能等价但基变换不同的表示下保持说明不变；这能检验解释是机制不变量还是坐标伪影。</li>
+</ol>
+</section>
+<section id="工程与应用" class="subsection level3">
+<h3>工程与应用</h3>
+<ol start="4" type="1">
+<li><strong>等预算对比：</strong> 固定 20 A100-hour，比 24M
+CircuitLens、2.3B MaxAct*、PRISM 与 output-centric
+的解释覆盖率×FADE×人工盲评；当前论文比较的数据量与计算预算不等，无法回答生产环境选谁。</li>
+<li><strong>选择性输出追踪：</strong> 比较“所有特征追踪 15
+token”与“只对晚层/低 Clarity 特征追踪 5 token”；报告总
+GPU-hour、Clarity、Faithfulness 和每 0.01 增益成本，验证能否砍掉大部分
++12 GPU-hour。</li>
+<li><strong>跨域迁移：</strong> 同一 Gemma 转码器在
+Pile、代码、医学、中文四域分别生成说明，再交叉评测 4×4 矩阵；若跨域
+Purity 崩溃，就说明权重解释也没有真正摆脱数据语境。</li>
+</ol>
+</section>
+<section id="新兴方向" class="subsection level3">
+<h3>新兴方向</h3>
+<ol start="7" type="1">
+<li><strong>安全电路监控：</strong> 在 jailbreak/拒答对上比较
+activation-only、CircuitLens 和 formal circuit
+verification，评估危险边召回、假阳性、攻击后迁移与实时延迟；最终目标是可验证
+guardrail，而非事后漂亮标签。</li>
+<li><strong>训练数据→电路形成：</strong> 将 Mechanistic Data Attribution
+找到的高影响训练样本与 CircuitLens
+电路簇对应，删/增极少量样本后测试电路是否按预测出现或消失，建立“数据—电路—行为”三段因果链。</li>
+<li><strong>自动解释器代理：</strong> 用 AgenticInterpBench 的
+hypothesis–validate–explain 代理与单次 <code>gpt-4o-mini</code>
+对比；必须限制相同 token/工具预算，并以未见 circuit 的 component
+accuracy、validation failure rate 与人类复核时间评价。</li>
+</ol>
+</section>
+</section>
+<section id="14-近期工作雷达" class="card level2">
+<h2>14. 近期工作雷达</h2>
+<ol type="1">
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/b5afe13494c825089b1e3944fdaba212-Abstract-Conference.html">Formal
+Mechanistic Interpretability（ICLR 2026）</a>：把输入域鲁棒、patching
+鲁棒与最小性转成验证问题，是 CircuitLens
+从启发式图走向证书的直接补线。</li>
+<li><a href="https://huggingface.co/papers/2606.24026">Can Language
+Model Agents be Helpful Circuit Explainers?</a>：用 84 个半合成电路、163
+个组件标注测试代理式解释；最有价值的结论是失败多发生在验证环，而非提出假设。</li>
+<li><a href="https://huggingface.co/papers/2601.21996">Mechanistic Data
+Attribution</a>：把解释对象从推理期电路向训练来源延伸，用 influence
+functions 追踪“哪些样本造出哪些单元”。</li>
+<li><a href="https://huggingface.co/papers/2602.22968">Certified
+Circuits</a>：以随机数据子采样给电路稳定性保证，直击 CircuitLens
+的数据集敏感性。</li>
+<li><a href="https://huggingface.co/papers/2603.09988">Causally Grounded
+Mechanistic Interpretability</a>：在 GPT-2 IOI 上报告 100% sufficiency
+但仅 22%
+comprehensiveness，提醒“找到足够解释输出的子图”不等于覆盖全部备份机制。</li>
+<li><a
+href="https://papers.neurips.cc/paper_files/paper/2025/hash/68dced1638d71d4d21598f79ae91262e-Abstract-Conference.html">ProxySPEX（NeurIPS
+2025）</a>：利用层级交互把 SPEX 推理次数降
+10×，适合作为非转码器的稀疏交互基线。</li>
+<li><a
+href="https://papers.neurips.cc/paper_files/paper/2025/hash/5b6ce2529a79862a2d8ac57ac0e01d90-Abstract-Conference.html">Revising
+and Falsifying SAE Feature Explanations（NeurIPS
+2025）</a>：用近邻负样本主动证伪过宽说明，与 WeightLens 的单 token
+正向验证形成互补；下一步应把正反验证合并。</li>
+</ol>
+</section>
+<section id="15-结论" class="card level2">
+<h2>15. 结论</h2>
+<p>Circuit Insights 值得看，不是因为它已经“解释了
+LLM”，而是因为它把自动解释的证据分成固定权重、输入路径与输出后果，并用统一矩阵暴露了三者不一致。最关键结果是：WeightLens
+的平均 Clarity 比 MaxAct* 高 <strong>0.135（+27.05%）</strong>，但
+Purity 低 <strong>0.134（−20.00%）</strong>；同时所有方法 Faithfulness
+仍约 0.03–0.04。对实践者而言，最佳复用策略是：先用 WeightLens
+做廉价候选与验证，再把 CircuitLens
+只用于上下文依赖或高风险特征，最后必须用成对干预和跨语料复验，而不能把自然语言说明当作因果证明。</p>
+<hr />
+<p><strong>索引更新：</strong> 已准备向 <code>ml-report-index.md</code>
+追加 2026-09-26 条目；若持久写回失败，将在交付消息中明确说明。<br />
+<strong>生成说明：</strong> 本报告基于 ICLR 2026 正式 PDF、arXiv
+v2、公开代码与数据页，以及 5
+篇技术来源链全文/项目正文；未报告的数据保持缺失，不补造标准差、置信区间或超参曲线。</p>
+</section>
+
+  </main>
+
+  <footer>基于 ICLR 2026 正式论文、arXiv v2、公开代码与数据页，以及五篇技术来源链全文；生成于 2026-09-26。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

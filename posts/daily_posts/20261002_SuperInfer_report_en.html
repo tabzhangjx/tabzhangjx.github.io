@@ -1,0 +1,950 @@
+---
+layout: null
+title: "SuperInfer"
+date: 2026-10-02
+topic: "llm-systems"
+tags: ["llm-systems", "kv-cache", "llm-serving"]
+excerpt: "DuplexKV reduces16GB bidirectional KV migration from 1556.15ms to 46.80ms. Under high GH200 load, SuperInfer improves TTFT SLO attainment by up to 74.7 pp, but cross-hardware evidence, Pie comparisons, and statistical intervals remain missing."
+permalink: "/blog/2026/10/02/superinfer/en/"
+blog_post: false
+lang: "en"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_zh: "/blog/2026/10/02/superinfer/"
+sitemap: true
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>SuperInfer: In-Depth Research Report · 2026-10-02</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  main { display: grid; gap: 22px; min-width: 0; }
+  .card.level2 { margin: 0; min-width: 0; }
+  .subsection { margin-top: 24px; }
+  .subsection h3 { margin-top: 0; }
+  blockquote { margin: 14px 0; padding: 10px 14px; border-left: 4px solid var(--chart-primary); background: var(--surface-2); color: var(--text-secondary); }
+  pre { overflow-x: auto; padding: 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); font-size: 12.5px; line-height: 1.55; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  p code, li code, td code { padding: .08em .3em; border-radius: 4px; background: var(--surface-2); }
+  ol, ul { padding-left: 1.35em; }
+  li + li { margin-top: .38em; }
+  .table-scroll { margin: 15px 0 22px; }
+  table { min-width: 720px; }
+  .figure { margin: 0; min-width: 0; max-width: 100%; }
+  p, li, td, th, a { overflow-wrap: anywhere; }
+  math[display="block"] { display: block; max-width: 100%; margin: 14px 0; padding: 10px 12px; overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+  .chart rect { outline: none; }
+  .chart rect:focus { stroke: var(--text-primary); stroke-width: 2; }
+  @media (max-width: 640px) {
+    .toolbar { position: static; justify-content: flex-end; margin-bottom: 10px; }
+    .hero { margin-top: 0; }
+    .chart { width: 760px; max-width: none; }
+    .figure { overflow-x: auto; }
+  }
+
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" aria-pressed="false">☾ Dark</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">MLSys 2026 · LLM Serving · KV Cache</p>
+    <h1>SuperInfer</h1>
+    <p class="subtitle">Turning KV Offloading from a Memory Workaround into an SLO Scheduling Primitive</p>
+    <div class="meta" aria-label="Report metadata">
+      <span class="chip source">arXiv:2601.20309v2</span>
+      <span class="chip">2026-10-02</span>
+      <span class="chip">RotaSched · VLT/LVF · DuplexKV</span>
+    </div>
+    <p class="lede">DuplexKV reduces16GB bidirectional KV migration from 1556.15ms to 46.80ms. Under high GH200 load, SuperInfer improves TTFT SLO attainment by up to 74.7 pp, but cross-hardware evidence, Pie comparisons, and statistical intervals remain missing.</p>
+  </header>
+
+  <main>
+
+<blockquote>
+<p>Core positioning: on tightly coupled CPU–GPU Superchips such as GH200, SuperInfer turns HBM–DRAM KV migration into proactive rotation driven by latency debt. Its contribution integrates scheduling objectives, layout, and full-duplex transfers along the serving critical path, beyond simply adding host memory.</p>
+</blockquote>
+<p><strong>Report date:</strong> 2026-10-02　<strong>Field:</strong>
+Efficiency and Systems(LLM serving, KV cache, SLOs, Superchips)　<strong>Core paper:</strong> Jiahuan Yu、Mingtao
+Hu、Zichao Lin、Minjia Zhang，MLSys 2026。</p>
+<section id="链接验证表" class="card level2">
+<h2>0. Link verification table</h2>
+<p>All links were visited when generating this report. Official conference pages/PDFs take precedence over aggregators. Not released/not found means no resource located in the paper, arXiv, official repository, or author project pages—not proven nonexistence.</p>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0">
+<table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Conference / official page</th>
+<th scope="col">arXiv version and date</th>
+<th scope="col">Code</th>
+<th scope="col">Data / weights</th>
+<th scope="col">Project page / videos</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>SuperInfer</strong></td>
+<td><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/07fd64f9316f40193c6a4d87d8afa011-Abstract-Conference.html">Official MLSys 2026 page</a>；<a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/file/07fd64f9316f40193c6a4d87d8afa011-Paper-Conference.pdf">Official PDF</a></td>
+<td><a
+href="https://arxiv.org/abs/2601.20309">2601.20309v2</a>,2026-05-18; v1 dated 2026-01-28</td>
+<td><a
+href="https://github.com/Supercomputing-System-AI-Lab/SuperInfer">Official repository</a>,Apache-2.0, with AE drivers</td>
+<td>Uses ShareGPT, LMSYS-Chat-1M, and public models; no new datasets/weights</td>
+<td><a
+href="https://supercomputing-system-ai-lab.github.io/projects/superinfer/">Project page</a>；<a
+href="https://mlsys.org/media/mlsys-2026/Slides/3809.pdf">MLSys slides</a>; video not found</td>
+</tr>
+<tr class="even">
+<td>PagedAttention / vLLM</td>
+<td>SOSP 2023；<a
+href="https://arxiv.org/abs/2309.06180">Paper page</a></td>
+<td><a
+href="https://arxiv.org/abs/2309.06180">2309.06180v1</a>，2023-09-12</td>
+<td><a href="https://github.com/vllm-project/vllm">vLLM</a></td>
+<td>No proprietary data/weights</td>
+<td><a href="https://vllm.ai/">Project page</a>; video unverified</td>
+</tr>
+<tr class="odd">
+<td>Sarathi-Serve</td>
+<td><a
+href="https://www.usenix.org/conference/osdi24/presentation/agrawal">Official OSDI 2024 page</a>，pp.117–134</td>
+<td><a href="https://arxiv.org/abs/2403.02310">2403.02310</a></td>
+<td><a
+href="https://github.com/microsoft/sarathi-serve">Official repository</a></td>
+<td>Public models/request traces; no new weights</td>
+<td>Official page includes slides/video</td>
+</tr>
+<tr class="even">
+<td>Pie</td>
+<td>arXiv; conference not found</td>
+<td><a
+href="https://arxiv.org/abs/2411.09317">2411.09317v1</a>，2024-11-14</td>
+<td>Not found</td>
+<td>No new data/weights</td>
+<td>Not found</td>
+</tr>
+<tr class="odd">
+<td>NEO</td>
+<td>arXiv; conference not found</td>
+<td><a
+href="https://arxiv.org/abs/2411.01142">2411.01142v1</a>，2024-11-02</td>
+<td>Not found</td>
+<td>No new data/weights</td>
+<td>Not found</td>
+</tr>
+<tr class="even">
+<td>LTR</td>
+<td><a
+href="https://papers.nips.cc/paper_files/paper/2024/hash/6c8985579293e0209bdaa4f21bb1d237-Abstract-Conference.html">NeurIPS
+2024 Main</a></td>
+<td><a href="https://arxiv.org/abs/2408.15792">2408.15792</a></td>
+<td><a href="https://github.com/hao-ai-lab/vllm-ltr">Official repository</a></td>
+<td>Ranking-model training data described with code; no general weight-release commitment</td>
+<td><a
+href="https://haoailab.com/blogs/vllm-ltr/">Project description</a>; video not found</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="候选池排重与随机选择" class="card level2">
+<h2>1. Candidate pool, deduplication, and random selection</h2>
+<p>Today <code>date +%u</code> and for
+<strong>5</strong>rotates to Efficiency and Systems. First checked
+<code>ml-report-index.md</code>: recent coverage includes Ada-KV(KV budgets), Seesaw(dynamic resharding), DFM(generation), and PointMapPolicy(embodiment), excluding duplicates. Candidates come from the actually visited
+<a href="https://proceedings.mlsys.org/paper_files/paper/2026">official MLSys 2026 paper list</a>, showing135 papers that day. The following 24 meet recency within 12 months, main-conference, systems relevance, and no recent deep-read criteria:</p>
+<ol type="1">
+<li>ProfInfer；2. SpecDiff-2；3. <strong>SuperInfer</strong>；4.
+HELIOS；5. FlashInfer-Bench；6. CRAFT；7. Stream2LLM；8. PRISM；9.
+Efficient Long-Context Training by Core Attention Disaggregation；10.
+Demystifying the Mixture of Experts Serving Tax；11. SkipKV；12.
+BatchLLM；13. Accelerating Large-Scale Reasoning Model Inference with
+Sparse Self-Speculative Decoding；14. FaaScale；15. OPKV；16.
+TeleRAG；17. MorphServe；18. MoEBlaze；19. FlexiCache；20. Optimizing
+Deployment Configurations for LLM Inference；21. SHIP；22.
+FlashAttention-4；23. ContextPilot；24. PLA-Serve。</li>
+</ol>
+<p>Running <code>shuf -i 1-24 -n 1</code> returned <strong>3</strong>, selecting SuperInfer. No redraw: the 19-page official paper, complete implementation, project, Table 1, Figure 16 main results, Figure 17 ablations, and Figures 18–21 hyperparameters provide sufficient material. Randomness selects only the core; related work follows problem/technical lineage.</p>
+</section>
+<section id="motivation为什么有-900-gbs仍然服务不快" class="card level2">
+<h2>2. Motivation: why900GB/s does not automatically mean fast serving</h2>
+<p>Online inference couples changing resources: request KV grows linearly with generated length while HBM is fixed. At high arrival rates, new requests wait while old ones occupy HBM, preventing unlimited batch growth. TTFT measures time to first token; TBT measures continuity between tokens. Pauses affect them asymmetrically.</p>
+<p>Static strategies reveal the conflict(§3.1, Figure 1, official PDF pp.3–4): Waiting-First improves TTFT but pauses active generations and worsens TBT. Swapped-First protects TBT by restoring offloaded requests, approaching FCFS and underusing swap space. Thus,<strong>choosing whom to swap is an SLO decision</strong>rather than passive cleanup after OOM.</p>
+<p>Bandwidth is the second problem. PCIe Gen5×16 offers roughly 32–64GB/s one way. Figure 2 shows P99 TTFT/TBT continue improving only as simulated swap bandwidth exceeds PCIe limits(§3.2, PDF p.4). Slow D2H blocks clearing waiting backlogs; slow H2D blocks rotary/swapped requests awaiting restoration.</p>
+<p>Most counterintuitively, GH200 NVLink-C2C advertises900GB/s aggregate bidirectional bandwidth, but directly ported vLLM small-block copies reach only about <strong>10
+GB/s</strong>, below <strong>5%</strong>of achievable bandwidth(Figures 4–5, PDF p.4). Grace DRAM is the practical limit: concurrent D2H/H2D reaches approximately
+<strong>200+200 GB/s</strong>rather than 450+450GB/s because single-NUMA DRAM bandwidth is <strong>384 GB/s</strong>
+with an overall half-duplex constraint. Fragmented PagedAttention layouts, tiny copies, serialized directions, and races prevent exploiting the fast link.</p>
+<p>The quantitative chain is 900GB/s advertised→about 384GB/s measured total DRAM budget→about 10GB/s existing software. SuperInfer aims to approach the realizable concurrent192+192GB/s bound and expose that capacity to SLO scheduling, not exceed physical limits.</p>
+</section>
+<section id="论文故事线假设与权衡" class="card level2">
+<h2>3. Argument, assumptions, and trade-offs</h2>
+<p>The design has two halves.<strong>RotaSched</strong>
+Determines who runs, extending waiting/running states with rotary: paused requests whose KV resides in CPU DRAM awaiting rotation.<strong>DuplexKV</strong>
+Makes rotation fast through eager block rotation, block-first layouts, batched transfer kernels, and inter-iteration pipelining behind model execution(Figures 6,15, PDF pp.5,9).</p>
+<p>Four assumptions underlie the design:</p>
+<ol type="1">
+<li>GH200-like Superchips provide much faster CPU–GPU links than PCIe and ample host memory. On one GH200 the paper allocates <strong>400 GB</strong>
+Grace DRAM to KV, reserving <strong>80 GB</strong> for OS/runtime(§5.2, PDF p.9).</li>
+<li>Model execution can hide scheduling/transfers. Mean main-experiment latency is scheduling
+<strong>7.63 ms</strong>, KV transfer <strong>15.8 ms</strong>, and model execution
+<strong>69.82 ms</strong>; only <strong>0.021%</strong> of engine iterations stall from incomplete overlap(§5.3.4, PDF pp.11–12).</li>
+<li>Fixed TTFT/TBT SLOs express the serving objective. Main TTFT is <strong>5
+s</strong>、TBT <strong>100
+ms</strong>rather than varying by user, request type, or price tier(§5.2, PDF p.9).</li>
+<li>KV migration is lossless: no token pruning or precision reduction, preserving output quality while paying full-byte movement and GH200-specific implementation costs.</li>
+</ol>
+<p>Proactive preemption clears waiting backlogs but may harm active-request TBT; larger transfer budgets reduce both tails but need stronger engines; protecting rotary requests sacrifices newcomers. The design exposes positions on the Pareto frontier through interpretable parameters rather than eliminating tradeoffs.</p>
+</section>
+<section id="方程级形式化与伪代码" class="card level2">
+<h2>4. Equations and pseudocode</h2>
+<section id="virtual-lag-time" class="subsection level3">
+<h3>4.1 Virtual Lag Time</h3>
+<p>RotaSched uses Virtual Lag Time(VLT) to place three states on one priority axis. From§4.2.2 and its equation(PDF p.6):</p>
+[ _i =
+<math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">{</mo><mtable><mtr><mtd columnalign="left" style="text-align: left"><mi>α</mi><mspace width="0.167em"></mspace><mrow><mi mathvariant="normal">R</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">L</mi><mi mathvariant="normal">U</mi></mrow><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>t</mi><mrow><mi>n</mi><mi>o</mi><mi>w</mi></mrow></msub><mo>−</mo><msub><mi>t</mi><mrow><mi>l</mi><mi>a</mi><mi>s</mi><mi>t</mi></mrow></msub><mo>−</mo><msub><mi>β</mi><mi>B</mi></msub><msub><mi>S</mi><mi>B</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>,</mo></mtd><mtd columnalign="left" style="text-align: left"><mi>i</mi><mo>∈</mo><mi>r</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>r</mi><mi>y</mi></mtd></mtr><mtr><mtd columnalign="left" style="text-align: left"><mrow><mi mathvariant="normal">R</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">L</mi><mi mathvariant="normal">U</mi></mrow><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>t</mi><mrow><mi>n</mi><mi>o</mi><mi>w</mi></mrow></msub><mo>−</mo><msub><mi>t</mi><mrow><mi>a</mi><mi>r</mi><mi>r</mi></mrow></msub><mo>−</mo><msub><mi>β</mi><mi>F</mi></msub><msub><mi>S</mi><mi>F</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>,</mo></mtd><mtd columnalign="left" style="text-align: left"><mi>i</mi><mo>∈</mo><mi>w</mi><mi>a</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>g</mi></mtd></mtr><mtr><mtd columnalign="left" style="text-align: left"><mo>−</mo><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>t</mi><mrow><mi>n</mi><mi>o</mi><mi>w</mi></mrow></msub><mo>−</mo><msub><mi>t</mi><mrow><mi>r</mi><mi>u</mi><mi>n</mi></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>,</mo></mtd><mtd columnalign="left" style="text-align: left"><mi>i</mi><mo>∈</mo><mi>r</mi><mi>u</mi><mi>n</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi></mtd></mtr></mtable></mrow><annotation encoding="application/x-tex">\begin{cases}
+\alpha\,\mathrm{ReLU}(t_{now}-t_{last}-\beta_B S_B), &amp; i\in rotary\\
+\mathrm{ReLU}(t_{now}-t_{arr}-\beta_F S_F), &amp; i\in waiting\\
+-(t_{now}-t_{run}), &amp; i\in running
+\end{cases}</annotation></semantics></math>
+<p>]</p>
+<p>(S_B) is the TBT SLO and(S_F) the TTFT SLO; t_last is the last-token time, t_arr arrival, and t_run entry into the current running period. Positive VLT means lagging; negative means relatively well served.() controls TBT sensitivity versus TTFT, with(_B,_F) tolerance windows.</p>
+</section>
+<section id="largest-vlt-first" class="subsection level3">
+<h3>4.2 Largest-VLT-First</h3>
+<pre class="text"><code>Each engine iteration:
+  If HBM fits every request: fall back to FCFS
+  Otherwise:
+    1. Compute VLT for waiting/rotary/running requests
+    2. Sort into L by descending VLT
+    3. Select waiting/rotary requests from L’s head within B_HBM+B_xfer blocks
+    4. If space is insufficient, preempt lowest-VLT running requests from the tail
+    5. DuplexKV concurrently swaps in/eagerly swaps out; next iteration uses the prepared batch</code></pre>
+<p>From§4.2.3 and Figure 10(PDF p.6). B_xfer is the KV-block rotation budget per iteration, converting bandwidth into how much SLO debt can be repaid. The reusable principle is:<strong>system capacity should enter scheduling constraints rather than remain hidden in downstream backpressure.</strong></p>
+</section>
+<section id="duplexkv-的数据竞争规避" class="subsection level3">
+<h3>4.3 Avoiding races in DuplexKV</h3>
+<p>Concurrent H2D restoration and D2H writeback of updated KV can race. DuplexKV eagerly copies full, immutable blocks to DRAM and marks them synced, rather than waiting for preemption. Synced HBM blocks can then be discarded; only unsynced tails require handling. Block-first layouts merge small cross-layer/head segments into roughly <strong>4
+MB</strong> transfer units, batching same-direction copies into large kernels(§4.3, Figures 11–14, PDF pp.7–8).</p>
+</section>
+</section>
+<section id="关键机制与工程细节" class="card level2">
+<h2>5. Key mechanisms and engineering details</h2>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0">
+<table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Mechanism</th>
+<th scope="col">Problem addressed</th>
+<th scope="col">Implementation</th>
+<th scope="col">Explicit cost/boundary</th>
+<th scope="col">Source</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Rotary state</td>
+<td>Passive preemption occurs only at OOM</td>
+<td>KV resides in Grace DRAM; paused requests retain progress</td>
+<td>Requires ample host memory/high-bandwidth C2C</td>
+<td>§4.2.1，pp.5–6</td>
+</tr>
+<tr class="even">
+<td>VLT + LVF</td>
+<td>No unified TTFT/TBT urgency</td>
+<td>Three-state piecewise function, descending VLT; preempt running requests at tail</td>
+<td>Depends on fixed SLOs and manual(,)</td>
+<td>§4.2.2–4.2.3，p.6</td>
+</tr>
+<tr class="odd">
+<td>eager block rotation</td>
+<td>Concurrent H2D/D2H races</td>
+<td>Background sync after blocks fill; preemption handles only unsynced tails</td>
+<td>Adds ongoing background traffic/state management</td>
+<td>§4.3.2，pp.7–8</td>
+</tr>
+<tr class="even">
+<td>block-first layout</td>
+<td>Paged KV creates many64KB segments</td>
+<td>Merges into roughly 4MB segments</td>
+<td>Layout changes make implementation more intrusive</td>
+<td>§4.3.1，Figure 13</td>
+</tr>
+<tr class="odd">
+<td>merged transfer kernels</td>
+<td>High per-segment launch overhead</td>
+<td>Batched kernels per direction</td>
+<td>Merging alone still serializes directions</td>
+<td>Table 1，p.11</td>
+</tr>
+<tr class="even">
+<td>cross-iteration pipeline</td>
+<td>Transfers/scheduling block GPUs</td>
+<td>Iteration t executes batch t−1 while preparing t+1</td>
+<td>Assumes compute hides7.63/15.8ms</td>
+<td>Figure 15，§5.3.4</td>
+</tr>
+<tr class="odd">
+<td>vLLM fork + AE harness</td>
+<td>Reproducible experiments</td>
+<td>vLLM0.6.6.post1; Python/C++; CLI exposes swap budget</td>
+<td>README verifies only one GH200; other GPUs untested</td>
+<td>Code README;§5.1</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="数据集模型指标与实验设计" class="card level2">
+<h2>6. Datasets, models, metrics, and design</h2>
+<p>Experiments use NVIDIA GH200 NVL2; each Superchip has <strong>144 GB HBM
++ 480 GB DRAM</strong>, with <code>numactl</code> pinning memory to the same NUMA node(§5.1, PDF p.8). Dense/MoE models are LLaMA-3-8B, Qwen2.5-32B, and Mixtral-8x7B. ShareGPT/LMSYS-Chat-1M requests arrive with Poisson intervals, modeling random arrivals but not production bursts, temporal correlations, or tenant priorities.</p>
+<p>SLO attainment is the request fraction meeting TTFT/TBT thresholds. It captures tail experience better than means, but treats5.01s and 50s equally as failures and hides within-threshold distributions. Sensitivity plots therefore also show P99 TTFT/TBT, with throughput separately reported.</p>
+<p>Six baselines: vLLM0.6.6.post1(V1 engine), TensorRT-LLM1.1.0, LightLLM Past-Future scheduler, LTR, NEO, and SuperInfer. All enable PagedAttention/chunked prefill. Pie, HeteGen, and Select-N lack public code at the time; FlexGen lacks those features; lossy methods such as InfiniGen are excluded(§5.2, PDF p.9). This keeps implementations runnable but omits the closest GH200 competitor Pie.</p>
+</section>
+<section id="主结果矩阵能精确读出的数字与不能精确读出的数字"
+class="card level2">
+<h2>7. Main-results matrices: exact versus unavailable numbers</h2>
+<section id="六工作负载-六方法" class="subsection level3">
+<h3>7.1 Six workloads × six methods</h3>
+<p>Figure 16(PDF p.10) covers <strong>3 models ×2 datasets ×6 methods</strong>across RPS levels, with TTFT/TBT attainment rows. Curves lack point tables/CSV, so exact five-benchmark×six-method values cannot honestly be reconstructed from small plot pixels. The report preserves matrix structure and supported conclusions:</p>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0">
+<table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Workloads</th>
+<th scope="col">Method columns</th>
+<th scope="col">TTFT conclusion</th>
+<th scope="col">TBT conclusion</th>
+<th scope="col">Exact-value status</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>ShareGPT × Qwen2.5-32B</td>
+<td>vLLM / TensorRT-LLM / LTR / LightLLM / NEO / SuperInfer</td>
+<td>SuperInfer leads at high load; maximum included in the reported up-to+74.7 pp</td>
+<td>Comparable to strong baselines, clearly above TTFT-focused LTR</td>
+<td>Figure 16 supplies no point table;<strong>exact transcription unavailable</strong></td>
+</tr>
+<tr class="even">
+<td>LMSYS × Qwen2.5-32B</td>
+<td>Same as above</td>
+<td>SuperInfer remains high at high RPS</td>
+<td>TBT near vLLM/LightLLM</td>
+<td>Same as above</td>
+</tr>
+<tr class="odd">
+<td>ShareGPT × LLaMA-3-8B</td>
+<td>Same as above</td>
+<td>Declines more slowly with RPS</td>
+<td>Comparable or higher</td>
+<td>Same as above</td>
+</tr>
+<tr class="even">
+<td>LMSYS × LLaMA-3-8B</td>
+<td>Same as above</td>
+<td>Clear high-RPS advantage</td>
+<td>Comparable to vLLM/LightLLM</td>
+<td>Same as above</td>
+</tr>
+<tr class="odd">
+<td>ShareGPT × Mixtral-8x7B</td>
+<td>NEO unsupported; remaining five methods</td>
+<td>Clear high-load advantage</td>
+<td>Remains comparable</td>
+<td>Same as above</td>
+</tr>
+<tr class="even">
+<td>LMSYS × Mixtral-8x7B</td>
+<td>NEO unsupported; remaining five methods</td>
+<td>Clear high-load advantage</td>
+<td>Remains comparable</td>
+<td>Same as above</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>The only main-result magnitude explicitly given in abstract/text is:<strong>up to 74.7 percentage points higher TTFT SLO attainment</strong>(not relative 74.7%). High-request-rate throughput improves by up to
+<strong>29.2%</strong>and is generally comparable or slightly higher(Abstract,§5.3.6, PDF pp.1,12). Missing means, SDs, CIs, and per-workload peak RPS prevent determining whether 74.7 pp is stable or a single stress-transition maximum.</p>
+</section>
+<section id="可审计的-duplexkv-主表" class="subsection level3">
+<h3>7.2 Auditable DuplexKV table</h3>
+<p>Table 1(PDF p.11) transfers bidirectionally for Qwen2.5-32B <strong>16 GB
+KV</strong>(8GB/32768 tokens per direction), with exact values:</p>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0">
+<table>
+<colgroup>
+<col style="width: 11%" />
+<col style="width: 15%" />
+<col style="width: 15%" />
+<col style="width: 11%" />
+<col style="width: 15%" />
+<col style="width: 15%" />
+<col style="width: 15%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Transfer engine</th>
+<th scope="col" style="text-align: right;">D2H GB/s</th>
+<th scope="col" style="text-align: right;">H2D GB/s</th>
+<th scope="col">Mode</th>
+<th scope="col" style="text-align: right;">E2E ms ↓</th>
+<th scope="col" style="text-align: right;">Speedup over Naive</th>
+<th scope="col" style="text-align: right;">Distance from Ideal</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Naive（64 KB segment）</td>
+<td style="text-align: right;">10.75</td>
+<td style="text-align: right;">9.86</td>
+<td>Sequential unidirectional</td>
+<td style="text-align: right;">1556.15</td>
+<td style="text-align: right;">1.00×</td>
+<td style="text-align: right;">37.35× slower</td>
+</tr>
+<tr class="even">
+<td>MS（4 MB merged segment）</td>
+<td style="text-align: right;">80.05</td>
+<td style="text-align: right;">133.51</td>
+<td>Sequential unidirectional</td>
+<td style="text-align: right;">159.87</td>
+<td style="text-align: right;">9.73×</td>
+<td style="text-align: right;">3.84× slower</td>
+</tr>
+<tr class="odd">
+<td>MS + MK(merged kernels)</td>
+<td style="text-align: right;">238.95</td>
+<td style="text-align: right;">269.69</td>
+<td>Sequential unidirectional</td>
+<td style="text-align: right;">63.14</td>
+<td style="text-align: right;">24.65×</td>
+<td style="text-align: right;">1.52× slower</td>
+</tr>
+<tr class="even">
+<td><strong>DuplexKV</strong></td>
+<td style="text-align: right;"><strong>180.99</strong></td>
+<td style="text-align: right;"><strong>179.37</strong></td>
+<td><strong>Concurrent bidirectional</strong></td>
+<td style="text-align: right;"><strong>46.80</strong></td>
+<td style="text-align: right;"><strong>33.25×</strong></td>
+<td style="text-align: right;"><strong>1.12× slower</strong></td>
+</tr>
+<tr class="odd">
+<td>Ideal(DRAM half-duplex384GB/s)</td>
+<td style="text-align: right;">192.00</td>
+<td style="text-align: right;">192.00</td>
+<td>Concurrent bidirectional</td>
+<td style="text-align: right;">41.66</td>
+<td style="text-align: right;">37.35×</td>
+<td style="text-align: right;">1.00×</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Calculation: speedup=1556.15/E2E; distance from Ideal=E2E/41.66. DuplexKV reduces E2E versus Naive by
+<strong>96.99%</strong>and reaches per-direction bandwidth equal to <strong>94.27%
+/ 93.42%</strong>of the ideal 192GB/s. The benchmark correctly uses Grace DRAM’s realizable192+192GB/s ceiling rather than advertised900GB/s link capacity.</p>
+</section>
+</section>
+<section id="逐层消融超参敏感性与相变" class="card level2">
+<h2>8. Layered ablations, hyperparameter sensitivity, and transitions</h2>
+<section id="组件消融" class="subsection level3">
+<h3>8.1 Component ablations</h3>
+<p>Figure 17(PDF p.10) compares vLLM, RotaSched with low budget L(B_xfer=300), RotaSched forced to high budget H(B_xfer=2400), and full SuperInfer. Three conclusions follow:</p>
+<ol type="1">
+<li>RotaSched(L) improves TTFT attainment, establishing scheduling value;</li>
+<li>forcing2400 blocks through an inefficient engine harms TBT because compute cannot hide transfers;</li>
+<li>full SuperInfer supports large budgets while preserving TBT, showing RotaSched/DuplexKV interact multiplicatively rather than as independent minor optimizations.</li>
+</ol>
+<p>Figure 17 lacks exact tables. Table 1 decomposes Naive→MS→MS+MK→full duplex, showing the largest gains from bigger segments/merged kernels; eager full duplex further reduces63.14ms to 46.80ms, an absolute
+<strong>16.34 ms</strong>, corresponding to relative gains of
+<strong>25.88%</strong>. Novelty and the largest performance source are not identical.</p>
+</section>
+<section id="ttfttbt-的明确-pareto" class="subsection level3">
+<h3>8.2(): explicit TTFT/TBT Pareto tradeoff</h3>
+<p>Figure 18(PDF p.10) fixes(_B=_F=0) and sweeps{1,2,3,4,5,10,50,100}. Larger() prioritizes rotary requests sooner, improving TBT but delaying waiting requests and worsening TTFT. Authors suggest() for TTFT-sensitive use and() as balance; larger values give diminishing TBT benefits with substantial TTFT harm. Main experiments choose3.</p>
+</section>
+<section id="f_b阈值相变" class="subsection level3">
+<h3>8.3(_F),(_B): threshold transitions</h3>
+<p>Figure 19 fixes(,_B=0); when(_F), P99 TTFT rises sharply with little TBT benefit because waiting-request VLT stays suppressed too long. Figure 20 fixes(,_F=0); larger(_B) delays rotary restoration and worsens P99 TBT. Authors recommend(_B&lt;0) for better TBT tails at the expense of TTFT tails(§5.3.2, PDF pp.10–11). These are clear SLO transition regions, not uniformly smooth tuning.</p>
+</section>
+<section id="b_xfer硬件能力被显式写入调度" class="subsection level3">
+<h3>8.4 B_xfer: hardware capacity enters scheduling</h3>
+<p>Figure 21 sweeps{300,600,1200,2400,4800}, with larger budgets lowering P99 TTFT/TBT(§5.3.4, PDF p.11), though point values are absent. More backlog clears per iteration, increasing DuplexKV dependence. Together with Figure 17, the conclusion is that larger budgets help only when the transfer engine can support them.</p>
+</section>
+</section>
+<section id="统计显著性与可复现性" class="card level2">
+<h2>9. Statistical significance and reproducibility</h2>
+<p>The paper<strong>Not reported</strong>multiple seeds, repeats, error bars, CIs, or hypothesis tests; Figures 16–23 are single system curves. Large differences are observed on specified GH200 hardware, Poisson arrivals, fixed SLOs/software, without establishing stability across machines/times. Request sampling, arrivals, and runtime noise require repeats; maximum+74.7 pp particularly needs request-level bootstrap CIs.</p>
+<p>Reproducibility is relatively strong: the repository includes a vLLM fork, C++ swap thread, LVF scheduler, AsyncEngine server, load generator, and
+<code>AE_AIO_0309_v1.py</code>, specifying CUDA12.4 and one GH200. README says other Ampere/Hopper cards should work but remain untested. Most of 3930 commits derive from vLLM history; pin branches/commits rather than infer project maturity from total commits.</p>
+</section>
+<section id="技术来源链解决什么遗留缺口superinfer-如何回应"
+class="card level2">
+<h2>10. Technical lineage: problems, gaps, and responses</h2>
+<section id="pagedattention-vllm从碎片浪费到块式-kv" class="subsection level3">
+<h3>10.1 PagedAttention/vLLM: from fragmentation to block KV</h3>
+<p>PagedAttention adapts OS virtual memory to KV, minimizing waste and enabling sharing. SOSP2023 reports equal-latency throughput gains of
+<strong>2–4×</strong>. Paging improves capacity but scatters request KV into many small segments, impairing CPU–GPU transfers. SuperInfer retains paging while adding block-first physical layouts/merged kernels:<strong>preserve logical paging, reorganize physical movement</strong>。</p>
+</section>
+<section id="sarathi-serve从-prefill-抢占-decode-到-stall-free-batching"
+class="subsection level3">
+<h3>10.2 Sarathi-Serve: stall-free batching instead of prefill blocking decode</h3>
+<p>Chunked prefill/stall-free scheduling reduce interference; OSDI 2024 reports single-A100 Mistral-7B capacity
+<strong>2.6×</strong>, Yi-34B on two A100s of <strong>3.7×</strong>、Falcon-180B
+pipeline parallel <strong>5.6×</strong>. It assumes request KV fits GPU memory; chunking cannot admit requests when HBM is full. SuperInfer retains chunking and proactively rotates residency:<strong>make iterations composable, then residency rotatable</strong>。</p>
+</section>
+<section id="ltr从-fcfs-到预测式-sjf" class="subsection level3">
+<h3>10.3 LTR: predicted SJF instead of FCFS</h3>
+<p>LTR learns relative output-length ordering rather than exact lengths. NeurIPS 2024 reports chatbot latency reductions up to <strong>2.8×</strong>and synthetic throughput gains of <strong>6.5×</strong>. It needs an offline ranker and cannot overcome exhausted HBM through queue order alone. SuperInfer uses observable waiting/last-token times and can actually evict running requests:<strong>replace predicted workload with measured SLO debt</strong>。</p>
+</section>
+<section id="neo从纯搬运到-cpugpu-协同计算" class="subsection level3">
+<h3>10.4 NEO: CPU–GPU computation beyond transfers</h3>
+<p>NEO offloads some attention with KV to CPU, using asymmetric pipelines/load-aware scheduling to expand batches. Abstract T4/A10G/H100 peak gains are <strong>7.5× / 26% / 14%</strong>, with stronger CPUs giving A10G up to <strong>79.3%</strong>. CPU enters the compute critical path, complicating hardware balance/model support; the baseline cannot run Mixtral-8x7B. SuperInfer keeps computation on Hopper and uses CPU only as a large KV tier:<strong>retain heterogeneous pipelines but narrow CPU responsibilities to reduce model coupling</strong>。</p>
+</section>
+<section id="piesuperchip-上性能透明的内存池" class="subsection level3">
+<h3>10.5 Pie: performance-transparent Superchip memory pooling</h3>
+<p>Pie is closest: predictable accesses/concurrent swapping on GH200 produce reported peak vLLM-relative throughput <strong>1.9×</strong>, latency
+<strong>2×</strong>, and equal-performance GPU-memory reduction <strong>1.67×</strong>, with FlexGen-relative throughput <strong>9.4×</strong>. Pie emphasizes capacity/performance transparency without explicit TTFT/TBT urgency or high-load proactive rotation. SuperInfer turns the CPU pool into an SLO-controlled execution tier, but lacks measured Pie head-to-head results because code was unavailable(§5.2).</p>
+<pre class="text"><code>                                                  ┌─ Sarathi-Serve: chunked prefill/stall-free batches
+PagedAttention: block KV ┤
+                         └─ LTR/LightLLM: queue ordering/future-memory prediction
+                                  │
+NEO: CPU attention ────────────────┼──&gt; SuperInfer: VLT/LVF proactive rotation
+                                  │             + DuplexKV full-duplex migration
+Pie: GH200 CPU memory pool ────────┘
+                                  │
+                                  └─ New shift: achievable bandwidth becomes budget B_xfer</code></pre>
+<p>Three shifts drive this evolution: operators to KV management, mean throughput to TTFT/TBT SLOs, and discrete PCIe devices to integrated CPU–GPU memory hierarchies. SuperInfer turns interconnect capacity into a schedulable resource rather than backend detail.</p>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0">
+<table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Main objective</th>
+<th scope="col">Request residency</th>
+<th scope="col">Scheduling signal</th>
+<th scope="col">Lossy data?</th>
+<th scope="col">Hardware prerequisite</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>vLLM</td>
+<td>KV utilization/throughput</td>
+<td>GPU HBM</td>
+<td>FCFS / continuous batching</td>
+<td>Lossless</td>
+<td>General GPUs</td>
+</tr>
+<tr class="even">
+<td>Sarathi-Serve</td>
+<td>Prefill/decode interference</td>
+<td>GPU HBM</td>
+<td>Iteration composition</td>
+<td>Lossless</td>
+<td>General GPUs</td>
+</tr>
+<tr class="odd">
+<td>LTR</td>
+<td>HOL ordering</td>
+<td>GPU HBM</td>
+<td>Predicted output-length rank</td>
+<td>Lossless</td>
+<td>Requires ranker</td>
+</tr>
+<tr class="even">
+<td>NEO</td>
+<td>Larger batches/heterogeneous utilization</td>
+<td>GPU + CPU</td>
+<td>load-aware</td>
+<td>Lossless</td>
+<td>CPU participates in attention</td>
+</tr>
+<tr class="odd">
+<td>Pie</td>
+<td>Performance-transparent capacity expansion</td>
+<td>HBM + DRAM</td>
+<td>adaptive expansion</td>
+<td>Lossless</td>
+<td>GH200-like Superchips</td>
+</tr>
+<tr class="even">
+<td><strong>SuperInfer</strong></td>
+<td>TTFT/TBT attainment</td>
+<td>running / rotary / waiting</td>
+<td>VLT + LVF</td>
+<td>Lossless</td>
+<td>High-bandwidth C2C + large DRAM</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</section>
+<section id="真正贡献可复用设计与迁移潜力" class="card level2">
+<h2>11. Genuine contributions, reusable design, and transfer potential</h2>
+<p>Three actual contributions. First,<strong>scheduling abstraction</strong>: rotary states/VLT unify progress, first response, and continuous response into debt, transferable to SSD KV tiers, remote pools, and disaggregated clusters. Second,<strong>layout–protocol co-design</strong>: eager synchronization separates mutable tails from immutable full blocks, eliminating duplex races at protocol level. This extends to activation offloading, checkpoint streaming, and embedding caches. Third,<strong>awareness of physical limits</strong>: using192+192GB/s DRAM rather than advertised900GB/s as the ideal baseline is a sound evaluation practice.</p>
+<p>Transfer is not free. MI300A differs in coherence, NUMA, copy engines, and bandwidth, requiring segment/concurrency retuning. PCIe systems may reuse VLT but cannot assume large B_xfer or DuplexKV throughput. Distributed rotary states add RTT/reliability to VLT. Combining lossy compression adds quality-loss budgets beyond time.</p>
+</section>
+<section id="论文自述边界与独立批判" class="card level2">
+<h2>12. Stated boundaries and independent critique</h2>
+<section id="论文自述-可直接定位的边界" class="subsection level3">
+<h3>12.1 Stated/directly identifiable boundaries</h3>
+<ol type="1">
+<li><strong>Parameters are not automatically predicted from workloads.</strong> §5.3.2(PDF p.11) offers qualitative behavior only;(,_B,_F) require application customization, without online-query-distribution prediction.</li>
+<li><strong>Benefits vanish at low load.</strong> Introduction(PDF p.2) states that with ample memory SuperInfer matches baselines. Its value is SLO-aware memory management under pressure, not universal per-token kernel acceleration.</li>
+<li><strong>Code validation covers one GH200.</strong> README’s AE setup uses one GH200(144GB HBM,480GB DRAM); other Ampere/Hopper cards should work but are untested. TP=2 experiments still use related GH200/NVLink hardware.</li>
+</ol>
+</section>
+<section id="独立批判每点均为因为-x所以-y" class="subsection level3">
+<h3>12.2 Independent critique(evidence→implication)</h3>
+<ol type="1">
+<li><strong>[External validity]</strong> Because main experiments use only GH200 NVL2 and a fixed 400GB pool,74.7 pp cannot generalize to PCIe, MI300A, CXL, or heterogeneous cloud instances with different feasible B_xfer ranges.</li>
+<li><strong>[Baseline fairness]</strong> Because Pie is excluded for unavailable code despite being the closest GH200 pooling approach, evidence establishes superiority only over implemented baselines, not the nearest contemporary Superchip system.</li>
+<li><strong>[Statistical reliability]</strong> Because Figures 16–23 lack repeats/error bars/CIs/tests, maximum+74.7 pp may amplify load-transition/runtime noise. Request-level bootstrap and repeated trace-replay intervals are needed.</li>
+<li><strong>[Threshold dependence]</strong> Because main SLOs are TTFT5s/TBT100ms and the quality of(,_B=0,_F=0.5) depends directly on thresholds, balance is not intrinsic. If interactive voice requires TBT&lt;50ms, rankings/transitions may change.</li>
+<li><strong>[Workload realism]</strong> Because Poisson-driven ShareGPT/LMSYS misses bursts, daily cycles, priorities, shared prefixes, and retry correlations, production-burst recovery is unproven. Self-exciting arrivals and real-trace replay are needed.</li>
+<li><strong>[Contribution attribution]</strong> Because merging64KB segments into 4MB alone cuts1556.15→159.87ms(9.73×), while full DuplexKV cuts63.14→46.80ms(1.35×), layout/batching drive the largest gains. They should not all be attributed to duplex transfers or scheduling.</li>
+<li><strong>[Cost/energy]</strong> Because only SLOs, throughput, and latency are reported—not GH200 price, CPU/DRAM power, energy per million tokens, or TCO against two H100s—economic superiority of large-DRAM Superchips with 400GB KV pools is unknown.</li>
+<li><strong>[Multitenant fairness]</strong> Because LVF prioritizes maximum debt without per-tenant slowdown, starvation, or Jain fairness measurements, combinations of priorities, long outputs, and frequent restoration may monopolize service. Tenant weights and maximum consecutive rotations should be explicit.</li>
+</ol>
+</section>
+</section>
+<section id="开放挑战可操作的-head-to-head-实验空白" class="card level2">
+<h2>13. Open challenges: actionable head-to-head experiment gaps</h2>
+<section id="理论" class="subsection level3">
+<h3>Theory</h3>
+<ul>
+<li><strong>VLT vs. deadline/queueing optimum：</strong> Under equal traces, HBM/DRAM, and transfer budgets, compare LVF, EDF, Whittle-index, and estimated SRPT on both SLO violations, worst-case starvation, and competitive ratio. Existing curves do not establish when piecewise VLT approximates optimality.</li>
+<li><strong>Fixed parameters versus online control:</strong> On stationary Poisson, Markov-burst, and self-exciting Hawkes arrivals, compare fixed(,), bandit controllers, and MPC, preregistering weighted TTFT/TBT violations plus parameter-switch costs.</li>
+<li><strong>Lossless offloading versus lossy compression:</strong> At equal HBM+DRAM byte budgets, compare SuperInfer, KV quantization/eviction, and combinations. Add perplexity, task accuracy, and exact-output agreement to SLOs, forming quality–capacity–tail-latency frontiers.</li>
+</ul>
+</section>
+<section id="工程应用" class="subsection level3">
+<h3>Engineering applications</h3>
+<ul>
+<li><strong>SuperInfer vs. Pie：</strong> Run identical ShareGPT/LMSYS traces on the same GH200, vLLM commit, and 400GB pool. Report TTFT/TBT CDFs, throughput, C2C/DRAM bandwidth, CPU use, power, and 30 repeats. This is the key missing comparison.</li>
+<li><strong>GH200 vs. MI300A vs. PCIe H200：</strong>
+Fix models/traces, tune segment sizes/B_xfer separately, and compare fractions of platform-specific physical limits rather than raw GB/s.</li>
+<li><strong>One versus 8 tenants:</strong> Assign different SLOs/weights, compare LVF/weighted-LVF, and report per-tenant attainment, P99 slowdown, and starvation to test production QoS.</li>
+</ul>
+</section>
+<section id="新兴方向" class="subsection level3">
+<h3>Emerging directions</h3>
+<ul>
+<li><strong>Reasoning models with long CoT:</strong> Compare SuperInfer, SkipKV, and combinations on DeepSeek/Qwen reasoning at fixed accuracy/max tokens, testing complementarity or interference between moving full KV and suppressing redundant generation.</li>
+<li><strong>prefill/decode disaggregation：</strong> Place rotary tiers in decode pools, remote KV servers, or CXL memory, comparing local GH200. Measure restoration latency under congestion and failure recovery to test cross-node VLT.</li>
+<li><strong>Agents and shared multi-turn context:</strong> Compare ContextPilot/prefix caching at equal reuse rates, assessing avoided prefill versus proactive rotation, marginal gains, and cache pollution in long conversations.</li>
+</ul>
+</section>
+</section>
+<section id="近期工作雷达" class="card level2">
+<h2>14. Recent-work radar</h2>
+<p>The following come from visited official MLSys 2026 pages for future tracking, not deep readings here:</p>
+<ol type="1">
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/ae8b0b5838ba510daff1198474e7b984-Abstract-Conference.html">FlashAttention-4</a>: redesigns pipelines for asymmetric Blackwell scaling, achieving up to
+<strong>1.3×</strong>over cuDNN9.13 on B200 and reaching <strong>1613 TFLOPs/s / 71%
+utilization</strong>; operator optimization complements SuperInfer residency/SLO management.</li>
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/b0131b6ee02a00b03fc3320176fec8f5-Abstract-Conference.html">ContextPilot</a>: context indexing/alignment/deduplication accelerates long-context prefill by up to
+<strong>3×</strong>while preserving quality; worth combining with rotation/offloading.</li>
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/8144a9d62e506af0fcdeac0e456b2710-Abstract-Conference.html">MorphServe</a>: swaps quantized layers at runtime and changes KV capacity, reducing mean SLO violations by <strong>92.45%</strong>and improving P95 TTFT by
+<strong>2.2–3.9×</strong>, but adds a quality dimension requiring equal-quality comparisons.</li>
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/45c1f6a8cbf2da59ebf2c802b4f742cd-Abstract-Conference.html">SkipKV</a>: sentence deduplication/steering reduce storage and generation, reaching throughput <strong>1.7×</strong>and sequences
+<strong>1.6×</strong> shorter. It changes model trajectories, not a lossless SuperInfer substitute.</li>
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/5b7ae1758452854dee4e962207d38304-Abstract-Conference.html">BatchLLM</a>: global prefix sharing and throughput-oriented token batching yield offline gains over vLLM/SGLang of
+<strong>1.3–10.8×</strong>, reminding us online SLO conclusions do not directly transfer to batch serving.</li>
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/97dc07f1253ab33ee514f395a82fa7cc-Abstract-Conference.html">Optimizing
+Deployment Configurations for LLM Inference</a>: draws on millions of configuration searches for Meta’s nearly billion monthly users, emphasizing phase-specific parallelism, heterogeneous hardware, and MoE effects. SuperInfer belongs in that broader deployment search space.</li>
+</ol>
+</section>
+<section id="结论" class="card level2">
+<h2>15. Conclusion</h2>
+<p>SuperInfer offers a coherent co-design path: identify the two-order-of-magnitude gap between advertised C2C and software performance, improve layouts to cut16GB bidirectional KV movement from
+<strong>1556.15 ms</strong> to <strong>46.80
+ms</strong>, then convert bandwidth into proactive TTFT/TBT rotation through VLT/LVF. Evidence supports alleviating HOL blocking on GH200 under fixed SLOs/high load, not universal serving optimality. Pie remains unmeasured, plots lack tables/statistical intervals, and hardware/workload generalization is narrow. The reusable lesson is:<strong>proactive rotation helps scheduling only when transfers approach physical limits and overlap compute; otherwise it merely moves HOL blocking from waiting to swap queues.</strong></p>
+<hr />
+<p><strong>Index update:</strong> Appended this report to
+<code>ml-report-index.md</code>with date, field, title, venue, and one-sentence conclusion.</p>
+</section>
+
+<figure class="figure" aria-labelledby="transfer-chart-title">
+      <p class="fig-title" id="transfer-chart-title">16GB bidirectional KV migration: end-to-end milliseconds(lower is better)</p>
+      <p class="fig-sub">DuplexKV reduces Naive1556.15ms to 46.80ms, only 1.12× the ideal 41.66ms.</p>
+      <div class="legend" aria-label="Legend">
+        <span><span class="swatch" style="background:var(--chart-primary)"></span>Duplex / Ideal</span>
+        <span><span class="swatch" style="background:var(--chart-comparison)"></span>Sequential/incremental optimizations</span>
+      </div>
+      <svg class="chart" viewBox="0 0 900 355" role="img" xmlns="http://www.w3.org/2000/svg">
+        <title>SuperInfer Table 1 bidirectional KV end-to-end times</title>
+        <desc>Naive1556.15ms, MS159.87ms, MS+MK63.14ms, DuplexKV46.80ms, ideal 41.66ms.</desc>
+        <line x1="76" x2="850" y1="305.0" y2="305.0" stroke="var(--border)" stroke-width="1" /><text x="64" y="309.0" text-anchor="end" font-size="12">0</text><line x1="76" x2="850" y1="242.5" y2="242.5" stroke="var(--border)" stroke-width="1" /><text x="64" y="246.5" text-anchor="end" font-size="12">400</text><line x1="76" x2="850" y1="180.0" y2="180.0" stroke="var(--border)" stroke-width="1" /><text x="64" y="184.0" text-anchor="end" font-size="12">800</text><line x1="76" x2="850" y1="117.5" y2="117.5" stroke="var(--border)" stroke-width="1" /><text x="64" y="121.5" text-anchor="end" font-size="12">1200</text><line x1="76" x2="850" y1="55.0" y2="55.0" stroke="var(--border)" stroke-width="1" /><text x="64" y="59.0" text-anchor="end" font-size="12">1600</text><rect x="105" y="61.9" width="72" height="243.1" rx="6" fill="var(--chart-comparison)" opacity="0.84" tabindex="0" data-tip="Naive: 1556.15 ms" /><rect x="250" y="280.0" width="72" height="25.0" rx="6" fill="var(--chart-comparison)" opacity="0.84" tabindex="0" data-tip="MS: 159.87 ms" /><rect x="395" y="295.1" width="72" height="9.9" rx="6" fill="var(--chart-comparison)" opacity="0.84" tabindex="0" data-tip="MS+MK: 63.14 ms" /><rect x="540" y="297.7" width="72" height="7.3" rx="6" fill="var(--chart-primary)" opacity="1" tabindex="0" data-tip="DuplexKV: 46.80 ms" /><rect x="685" y="298.5" width="72" height="6.5" rx="6" fill="var(--chart-primary)" opacity="1" tabindex="0" data-tip="Ideal: 41.66 ms" /><text x="141" y="52.9" text-anchor="middle" font-size="11">1556.15</text><text x="286" y="271.0" text-anchor="middle" font-size="11">159.87</text><text x="431" y="286.1" text-anchor="middle" font-size="11">63.14</text><text x="576" y="288.7" text-anchor="middle" font-size="11">46.80</text><text x="721" y="289.5" text-anchor="middle" font-size="11">41.66</text><text x="141" y="331" text-anchor="middle" font-size="12">Naive</text><text x="286" y="331" text-anchor="middle" font-size="12">MS</text><text x="431" y="331" text-anchor="middle" font-size="12">MS+MK</text><text x="576" y="331" text-anchor="middle" font-size="12">DuplexKV</text><text x="721" y="331" text-anchor="middle" font-size="12">Ideal</text>
+      </svg>
+      <figcaption>Source: official SuperInfer Table 1(PDF p.11). Hover/keyboard-focus for exact values; identical data appear in the text table.</figcaption>
+    </figure>
+  </main>
+
+  <footer>Based on official MLSys 2026 paper, arXiv v2, official code/project, and five technical-lineage full papers/official pages; generated 2026-10-02.</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ Light' : '☾ Dark';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

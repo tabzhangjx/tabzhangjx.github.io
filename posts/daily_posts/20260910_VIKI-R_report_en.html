@@ -1,0 +1,1218 @@
+---
+layout: null
+title: "VIKI-R"
+date: 2026-09-10
+topic: "rl-peft"
+tags: ["rl-peft", "robotics", "multi-agent"]
+excerpt: "The 7B model improves L2 OOD from 25.62% to 33.25%, but L2 ID drops 1.67 pp, and the real-world table does not evaluate VIKI-R."
+permalink: "/blog/2026/09/10/viki-r/en/"
+blog_post: false
+lang: "en"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_zh: "/blog/2026/09/10/viki-r/"
+sitemap: true
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>VIKI-R: Training Heterogeneous Multi-Robot Cooperation with Verifiable Reinforcement Learning · 2026-09-10</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" aria-pressed="false">☾ Dark</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ML / AI DAILY DEEP PAPER · NEURIPS 2025 D&amp;B</p>
+    <h1>VIKI-R: Training Heterogeneous Multi-Robot Cooperation with Verifiable Reinforcement Learning</h1>
+    <p class="subtitle">Hierarchical embodied-cooperation benchmark × CoT cold start × rule-based GRPO rewards</p>
+    <div class="meta" aria-label="Report metadata">
+      <span class="chip source">NeurIPS 2025 Datasets &amp; Benchmarks Track</span>
+      <span class="chip">2026-09-10</span>
+      <span class="chip">Reinforcement learning / agents / embodied intelligence</span>
+    </div>
+    <p class="lede">The 7B model improves L2 OOD from 25.62% to 33.25%, but L2 ID drops 1.67 pp, and the real-world table does not evaluate VIKI-R.</p>
+  </header>
+
+  <main>
+<section class="card" aria-labelledby="0-链接验证与版本审计"><h2 id="0-链接验证与版本审计">0. Verified links and version audit</h2>
+<p>The links below were visited on <strong>2026-09-10</strong> . Venue status prioritizes official NeurIPS/CVF/IEEE entries, and dates follow arXiv submission history. Not public / not found means no verifiable resource was located in papers, project pages, official repositories, or common indexes. Core numbers come from the 32-page NeurIPS 2025 final PDF; arXiv is currently v3.</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">The paper</th>
+<th scope="col">Conference / official page</th>
+<th scope="col">arXiv version and date</th>
+<th scope="col">Code</th>
+<th scope="col">Data / weights</th>
+<th scope="col">Project page / videos</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Core: VIKI-R</strong></td>
+<td><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/ab16cc8f472cf94b282dbff7b99f5f8e-Abstract-Datasets_and_Benchmarks_Track.html">NeurIPS
+2025 D&amp;B official page</a>；DOI 10.52202/085713-3935</td>
+<td><a href="https://arxiv.org/abs/2506.09049v3">2506.09049v3</a>：v1
+2025-06-10，v2 2025-10-21，v3 2026-01-22</td>
+<td><a
+href="https://github.com/MARS-EAI/VIKI-R">MARS-EAI/VIKI-R</a>，Apache-2.0</td>
+<td><a
+href="https://huggingface.co/datasets/henggg/VIKI-R">Dataset</a>；<a
+href="https://huggingface.co/collections/henggg/viki-r-68ef92c3a67e90535ecc1a9b">3B/7B weight collection</a></td>
+<td><a href="https://faceong.github.io/VIKI-R/">Project page</a>；<a
+href="https://mars-eai.github.io/MARS-Challenge-Webpage/">MARS
+Challenge</a>; no separate explanatory video found</td>
+</tr>
+<tr class="even">
+<td>PARTNR</td>
+<td>No official conference entry found; paper lists arXiv</td>
+<td><a
+href="https://arxiv.org/abs/2411.00081v1">2411.00081v1</a>，2024-10-31</td>
+<td><a
+href="https://github.com/facebookresearch/partnr-planner">facebookresearch/partnr-planner</a></td>
+<td>Tasks and Habitat resources are in the repository; weights not found</td>
+<td><a
+href="https://aihabitat.org/partnr/">Project page</a>; videos on the project page</td>
+</tr>
+<tr class="odd">
+<td>LLaMAR / MAP-THOR</td>
+<td><a
+href="https://proceedings.neurips.cc/paper_files/paper/2024/hash/bb3cfcb0284642a973dd631ec9184f2f-Abstract-Conference.html">NeurIPS 2024 official paper</a></td>
+<td><a href="https://arxiv.org/abs/2407.10031v2">2407.10031v2</a>：v1
+2024-07-14，v2 2025-01-13</td>
+<td><a href="https://github.com/nsidn98/LLaMAR">nsidn98/LLaMAR</a></td>
+<td>MAP-THOR/configurations are public; dedicated weights not found</td>
+<td><a href="https://llamar.info/">Project page</a>; videos on the project page</td>
+</tr>
+<tr class="even">
+<td>RoCo / RoCoBench</td>
+<td>IEEE ICRA 2024; verified through title and official bibliographic information</td>
+<td><a
+href="https://arxiv.org/abs/2307.04738v1">2307.04738v1</a>，2023-07-10</td>
+<td><a
+href="https://github.com/MandiZhao/robot-collab">project-roco</a></td>
+<td>RoCoBench/examples are public; weights inapplicable</td>
+<td><a
+href="https://project-roco.github.io/">Project page</a>; videos on the project page</td>
+</tr>
+<tr class="odd">
+<td>RoboFactory</td>
+<td><a
+href="https://openaccess.thecvf.com/content/ICCV2025/html/Qin_RoboFactory_Exploring_Embodied_Agent_Collaboration_with_Compositional_Constraints_ICCV_2025_paper.html">ICCV 2025 paper page</a></td>
+<td><a
+href="https://arxiv.org/abs/2503.16408v1">2503.16408v1</a>，2025-03-20</td>
+<td><a
+href="https://github.com/MARS-EAI/RoboFactory">RoboFactory</a></td>
+<td>Data and benchmark links are in the repository; dedicated weights not found</td>
+<td><a
+href="https://robofactory-mars.github.io/">Project page</a>; videos on the project page</td>
+</tr>
+<tr class="even">
+<td>DeepSeek-R1 (GRPO source)</td>
+<td>Initially a technical report; formal extended version in Nature 2025</td>
+<td><a href="https://arxiv.org/abs/2501.12948v2">2501.12948v2</a>：v1
+2025-01-22，v2 2026-01-04</td>
+<td><a
+href="https://github.com/deepseek-ai/DeepSeek-R1">DeepSeek-R1</a></td>
+<td>Weights are public; training data not fully released</td>
+<td>Project/model links in repository; separate paper video not found</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Public-resource consistency alert.</strong> Table 1, the project README, and Appendix C.1 all report <strong>23,737</strong> tasks, but the Hugging Face datasets server returns <strong>22,637</strong> rows: train 17,134, validation 1,218, test 4,285, about 813 MB of raw files. The difference is exactly
+<strong>1,100</strong>, matching Appendix D's cold-start SFT counts of L1 500, L2 500, L3 100, totaling 1,100. This strongly suggests that 23,737 includes cold-start samples omitted from standard HF splits, but the data card does not explain it. This is a<strong>cautious inference</strong>, not a verified split definition.</p>
+</section><section class="card" aria-labelledby="1-候选池近-14-天排除与随机选择"><h2 id="1-候选池近-14-天排除与随机选择">1. Candidate pool, 14-day exclusions, and random selection</h2>
+<p>First check <code>ml-report-index.md</code>: TARL (reward-free test-time adaptation), DreamGen (world-model-generated robot trajectories), and neighboring VLA/visual-world-model topics were covered in the preceding 14 days. Duplicate papers and the highly overlapping video-world-model robot-data theme were excluded. Cross-searches of arXiv, NeurIPS/ICML/CVF proceedings, OpenReview, Hugging Face Daily Papers, Papers with Code, and Semantic Scholar collected 24 papers; removing DreamGen left <strong>23 eligible candidates</strong>。</p>
+<p>The first strict execution of <code>shuf -i 1-23 -n 1</code> selected
+<strong>OpenVLA-OFT</strong>. It was within 24 months but older than 12 months and arXiv-only, while the pool contained official top-conference papers from the past 12 months. A redraw therefore followed the predefined priority rule, not popularity or results. The second draw selected
+<em>Grounding Multimodal LLMs to Embodied Agents that Ask for
+Help</em>, but acceptance could not be verified in ICLR 2026 proceedings and OpenReview refused automated access. To avoid treating a submission as accepted, another draw among officially verified Robot-R1 and VIKI-R used
+<code>shuf -e Robot-R1 VIKI-R -n 1</code> and selected
+<strong>VIKI-R</strong>. There were <strong>two redraws</strong>, both due to evidence/status constraints rather than subjective preference.</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">#</th>
+<th scope="col">Candidate paper</th>
+<th scope="col">Source / status</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td><a href="https://openreview.net/forum?id=hqFNqVQEUd">ERA:
+Transforming VLMs into Embodied Agents via RL</a></td>
+<td>ICLR 2026 OpenReview</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/file/ec46d737282bb408e642ed883a145c40-Paper-Conference.pdf">Robot-R1</a></td>
+<td>NeurIPS 2025 Main</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td><a href="https://openreview.net/forum?id=qwA04SZeCa">Grounding MLLMs
+to Embodied Agents that Ask for Help</a></td>
+<td>OpenReview; official acceptance unverified</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;"><strong>4</strong></td>
+<td><strong><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/file/ab16cc8f472cf94b282dbff7b99f5f8e-Paper-Datasets_and_Benchmarks_Track.pdf">VIKI-R</a></strong></td>
+<td><strong>NeurIPS 2025 D&amp;B; selected</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td><a href="https://arxiv.org/abs/2504.16054">π0.5</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td><a href="https://arxiv.org/abs/2503.14734">GR00T N1</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td><a href="https://arxiv.org/abs/2502.19645">OpenVLA-OFT</a></td>
+<td>arXiv 2025; first draw followed by a date-priority redraw</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">8</td>
+<td><a href="https://arxiv.org/abs/2506.01844">SmolVLA</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td><a href="https://arxiv.org/abs/2502.05855">DexVLA</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td><a href="https://arxiv.org/abs/2501.15830">SpatialVLA</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td><a href="https://arxiv.org/abs/2503.20384">MoLe-VLA</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">12</td>
+<td><a href="https://arxiv.org/abs/2506.21539">WorldVLA</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td><a href="https://arxiv.org/abs/2506.09985">V-JEPA 2</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td><a href="https://arxiv.org/abs/2508.05635">Genie Envisioner</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td><a href="https://arxiv.org/abs/2502.19417">Hi Robot</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">16</td>
+<td><a href="https://arxiv.org/abs/2505.10911">ReWiND</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td><a href="https://arxiv.org/abs/2505.13031">VidMan</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td><a href="https://arxiv.org/abs/2506.07961">BridgeVLA</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">19</td>
+<td><a href="https://arxiv.org/abs/2508.17424">RDT-2</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">20</td>
+<td><a href="https://arxiv.org/abs/2509.09674">SimpleVLA-RL</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">21</td>
+<td><a href="https://arxiv.org/abs/2506.18088">RoboTwin 2.0</a></td>
+<td>arXiv 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">22</td>
+<td><a
+href="https://proceedings.mlr.press/v267/huang25y.html">Empowering World
+Models with Reflection</a></td>
+<td>ICML 2025 Main</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">23</td>
+<td><a
+href="https://proceedings.mlr.press/v267/shen25d.html">BiAssemble</a></td>
+<td>ICML 2025 Main</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="2-motivation多机器人问题的瓶颈不只是动作而是协作结构"><h2 id="2-motivation多机器人问题的瓶颈不只是动作而是协作结构">2. Motivation: cooperation structure, not just actions, is the bottleneck</h2>
+<p>Single-robot VLAs often predict actions directly from images and instructions. Multi-robot cooperation adds three coupled decisions: which robots to activate, which subtasks can run in parallel, and whether each robot can reach targets without collisions. Final success rates conflate wrong embodiment selection, infeasible symbolic plans, and mistaken interpretation of partners' trajectories.</p>
+<p>VIKI-Bench addresses fragmented coverage. Core Table 1 (p.3) lists only <strong>6</strong> RoCo tasks,
+<strong>11</strong> RoboFactory composition-constrained tasks, and LLaMAR/MAP-THOR with
+<strong>225</strong> tasks; although PARTNR contains <strong>100,000</strong>
+natural-language tasks, it primarily targets human–robot household collaboration. VIKI-Bench chooses an intermediate scale:<strong>100 scenes, 6 heterogeneous robot types, over 1,000 asset combinations, and 23,737 task instances</strong>, with both global and first-person views. Its distinction is not having the most tasks, but decomposing capabilities and providing programmatically verifiable supervision.</p>
+<p>Zero-shot results show that this hierarchy is substantive. In core Table 2 (p.8), GPT-4o achieves only <strong>18.40%</strong>L1 activation accuracy and an L2 average of
+<strong>17.50%</strong>; although Gemini-2.5-Flash-preview reaches
+<strong>31.40%</strong>on L1, its L2 OOD accuracy is only
+<strong>10.51%</strong>. Qwen2.5-VL-7B achieves zero-shot L2 OOD accuracy of
+<strong>0%</strong>. General VLMs may describe a scene yet almost never spontaneously produce multi-agent plans satisfying strict action syntax, preconditions, and step budgets.</p>
+<p>Stronger external evidence comes from PARTNR: its 100,000 tasks span 60 houses and 5,819 objects; ReAct without privileged information achieves only
+<strong>0.30</strong>success, versus <strong>0.93</strong>for humans (PARTNR Table 2 and text, pp.10–11). Thus VIKI-R asks more than whether a VLM can write additional CoT: can<strong>verifiable collaboration constraints</strong>be converted into sufficiently dense post-training signals to move models from format compliance to compositional collaboration?</p>
+</section><section class="card" aria-labelledby="3-论文故事线假设与权衡"><h2 id="3-论文故事线假设与权衡">3. Argument, assumptions, and trade-offs</h2>
+<p>The paper follows three steps: decomposition, synthesis, and optimization.</p>
+<ol type="1">
+<li><strong>Decompose capabilities.</strong> L1 selects the required robot set; L2 produces parallel, parameterized action plans; L3 predicts 2D trajectories for itself and partners from one robot's first-person view. These correspond to team formation, symbolic coordination, and spatial anticipation.</li>
+<li><strong>Synthesize data.</strong> Construct scenes using RoboCasa and ManiSkill3 assets, generate/refine plans with GPT-4o, then iteratively filter them through an Action Checker, World Simulator, and Plan Refiner. Supervision is not wholly manual; executable rules close the loop where possible.</li>
+<li><strong>Two-stage learning.</strong> First apply SFT to CoT demonstrations so outputs enter the reward-recognizable region; then use GRPO to sample a group of answers for each input, reward format and task compliance, and reinforce relatively better samples.</li>
+</ol>
+<p>The central assumption is that hierarchical rule rewards proxy real collaboration quality. L1 exact match assumes a unique correct team; L2 additionally assumes the ground-truth plan is near-optimal in length; L3 converts average trajectory distance into reward. Rewards are cheap, deterministic, and critic-free, but recognize only the benchmark's formal world. A realistic recovery plan one step longer than GT gets zero in L2; a 2D trajectory near the annotation can still score highly in L3 despite collisions or infeasible dynamics.</p>
+<p>Cold start is another key tradeoff. DeepSeek-R1 showed reasoning can emerge from pure RL, but VIKI-R L2 barely learns from scratch: 3B/7B VIKI-R-Zero achieve L2 averages of only
+<strong>0.00/0.10</strong>, rising with CoT cold start to
+<strong>68.78/69.25</strong>(core Table 2, p.8). The more accurate account is therefore that<strong>SFT brings the policy onto a verifiable planning manifold, and RL redistributes its probability mass</strong>, rather than RL spontaneously learning multi-robot collaboration.</p>
+</section><section class="card" aria-labelledby="4-方程级形式化奖励与算法流程"><h2 id="4-方程级形式化奖励与算法流程">4. Equation-level formalization, rewards, and algorithm</h2>
+<h3 id="41-sft-冷启动">4.1 SFT cold start</h3>
+<p>Let the input state contain visual observations and the question <span
+class="math inline"><em>s</em> = (<em>x</em>,<em>q</em>)</span>, and let the CoT/answer sequence be
+<span
+class="math inline"><em>y</em><sub>1 : <em>T</em></sub></span>. The SFT objective is</p>
+<p><span class="math display">$$
+\mathcal L_{\mathrm{SFT}}(\theta)=-\mathbb E_{(x,q,y)}\sum_{t=1}^{T}\log
+\pi_\theta(y_t\mid x,q,y_{&lt;t}).
+$$</span></p>
+<p>This is core Eq. (1), p.6. Each level is trained separately: L1 activation, L2 planning, and L3 trajectories do not share a unified policy head. Thus “hierarchical” describes the benchmark and training-task organization, not an end-to-end policy completing all three levels in one rollout.</p>
+<h3 id="42-组相对优势与-clipped-objective">4.2 Group-relative advantages and clipped objective</h3>
+<p>For the same state, sample <span class="math inline"><em>G</em></span>
+outputs from the old policy, <span
+class="math inline">{<em>a</em><sub><em>i</em></sub>}<sub><em>i</em> = 1</sub><sup><em>G</em></sup></span>, and compute within-group normalized advantages:</p>
+<p><span class="math display">$$
+A_i=\frac{R_i-\bar R}{\sigma_R},\qquad
+r_i(\theta)=\frac{\pi_\theta(a_i\mid s)}{\pi_0(a_i\mid s)}.
+$$</span></p>
+<p>Then optimize</p>
+<p><span
+class="math display">ℒ<sub>clip</sub> = 𝔼<sub><em>i</em></sub>[min(<em>r</em><sub><em>i</em></sub><em>A</em><sub><em>i</em></sub>, clip(<em>r</em><sub><em>i</em></sub>,1−<em>ϵ</em>,1+<em>ϵ</em>)<em>A</em><sub><em>i</em></sub>)],</span></p>
+<p><span
+class="math display"><em>J</em>(<em>θ</em>) = ℒ<sub>clip</sub> − <em>β</em><em>D</em><sub><em>K</em><em>L</em></sub>(<em>π</em><sub><em>θ</em></sub>∥<em>π</em><sub>0</sub>).</span></p>
+<p>These are Eqs. (2)–(5), pp.6–7. The notation is mildly ambiguous:<span
+class="math inline"><em>π</em><sub>0</sub></span> is described as serving both old/reference-policy roles, while the implementation hyperparameters use a KL-loss coefficient of 0.01. Reproduction must check whether rollout policy, pre-update old policy, and fixed reference model are actually the same object.</p>
+<h3 id="43-层级奖励">4.3 Hierarchical rewards</h3>
+<p>The total reward is</p>
+<p><span
+class="math display"><em>R</em> = <em>λ</em><sub>1</sub><em>R</em><sub>format</sub> + <em>λ</em><sub>2</sub><em>R</em><sub>acc</sub>.</span></p>
+<ul>
+<li><strong>L1：</strong> Only when parsing succeeds and the predicted robot set exactly matches ground truth does<span
+class="math inline"><em>R</em><sub><em>a</em><em>c</em><em>c</em></sub> = 1</span>。</li>
+<li><strong>L2：</strong> A plan <span
+class="math inline"><em>A</em></span> must be judged feasible by the executor and have an action count
+<span
+class="math inline"><em>N</em>(<em>A</em>) ≤ <em>N</em><sub><em>g</em><em>t</em></sub></span>to receive 1: <span
+class="math display"><em>R</em><sub><em>L</em>2</sub> = <strong>1</strong>[feasible(<em>A</em>)]<strong>1</strong>[<em>N</em>(<em>A</em>)≤<em>N</em><sub><em>g</em><em>t</em></sub>].</span></li>
+<li><strong>L3：</strong> For each agent, normalize RMSE, Hausdorff, and Dynamic Fréchet distances to <span class="math inline"><em>d̂</em></span>, transform them into
+<span class="math inline">1 − <em>d̂</em></span>, then average across agents and metrics (Eq. (9), p.8).</li>
+</ul>
+<p>These rewards have very different distributions: L1/L2 are approximately sparse Bernoulli signals, while L3 provides continuous shaped rewards. Pure RL can therefore improve from nonzero distance signals on L3, but on L2 it encounters almost no feasible samples to learn from.</p>
+<h3 id="44-伪代码">4.4 Pseudocode</h3>
+<pre class="text"><code>Input: level-specific data Dk, Qwen2.5-VL-Instruct, format checker, task verifier
+1  SFT the backbone on each level's CoT cold-start subset to obtain πsft
+2  For each training state s=(image, question):
+3      Sample G=5 answers a1...aG from the old policy for the same s
+4      Parse answers; malformed outputs receive only format penalty/zero task reward
+5      L1: exact-match robot set
+6      L2: Action Checker → World Simulator; require feasibility and no more steps than GT
+7      L3: compute multi-agent RMSE/HD/DFD and normalize into continuous reward
+8      Normalize rewards within the group to obtain Ai
+9      Update policy with clipped ratios + KL regularization
+10 Repeat for the prescribed epochs; export separate L1/L2/L3 checkpoints
+Output: one VIKI-R model per level, not a closed-loop three-level controller</code></pre>
+</section><section class="card" aria-labelledby="5-关键机制与工程细节"><h2 id="5-关键机制与工程细节">5. Key mechanisms and engineering details</h2>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Component</th>
+<th scope="col">Paper implementation</th>
+<th scope="col">Design purpose</th>
+<th scope="col">Audit conclusion</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Backbone</td>
+<td>Qwen2.5-VL-Instruct 3B/7B; appendix also reports 32B scaling</td>
+<td>Retain general vision-language capabilities</td>
+<td>Not an action-native VLA; outputs remain text/coordinate structures</td>
+</tr>
+<tr class="even">
+<td>CoT SFT</td>
+<td>L1/L2/L3 cold-start sizes: 500/500/100</td>
+<td>Make sparse rewards reachable</td>
+<td>Necessary for L2, not merely an accelerator</td>
+</tr>
+<tr class="odd">
+<td>GRPO rollout</td>
+<td>Per prompt, <strong>5</strong> responses</td>
+<td>Use relative group rewards to eliminate the critic</td>
+<td>For small groups, handling of <span
+class="math inline"><em>σ</em><sub><em>R</em></sub> = 0</span>
+is not explained</td>
+</tr>
+<tr class="even">
+<td>Reward</td>
+<td>format + task accuracy；KL coeff <strong>0.01</strong></td>
+<td>Preserve format and limit drift</td>
+<td>L2 is tied to GT step count and may penalize valid alternatives</td>
+</tr>
+<tr class="odd">
+<td>Context</td>
+<td>prompt 4096、response 2048</td>
+<td>Accommodate vision and long plans</td>
+<td>Effective token distributions and truncation rates are not reported</td>
+</tr>
+<tr class="even">
+<td>Optimization</td>
+<td>lr <span class="math inline">10<sup>−6</sup></span>，batch 256；PPO
+mini-batch 128，micro-batch 10</td>
+<td>Uniform settings across three levels</td>
+<td>How “micro-batch 10” divides/accumulates into a global batch of 256 on 8 GPUs is unexplained</td>
+</tr>
+<tr class="odd">
+<td>Epoch</td>
+<td>L1 5、L2 15、L3 2</td>
+<td>Train harder planning tasks longer</td>
+<td>Unequal compute budgets prevent attributing cross-level differences solely to reward difficulty</td>
+</tr>
+<tr class="even">
+<td>Hardware</td>
+<td>Single node <strong>8×A800 80GB</strong></td>
+<td>Reproduce training experiments</td>
+<td>All three 7B levels total 36h, approximately <strong>288 A800-GPU-hour</strong></td>
+</tr>
+<tr class="odd">
+<td>Data generation</td>
+<td>GPT-4o + Action Checker + World Simulator + Plan Refiner</td>
+<td>Expand executable supervision</td>
+<td>Teacher/style and evaluation rules share a common origin</td>
+</tr>
+</tbody>
+</table></div>
+<p>All hyperparameters come from Appendix D and Table 13 (pp.23, 28–29); training times are from Table 12 (p.28). The three 3B levels total <strong>21.5h×8=172 A800-GPU-hour</strong>; for 7B, <strong>36h×8=288 A800-GPU-hour</strong>. The paper does not separately report SFT/GRPO time, throughput for five rollouts, data-generation API costs, or energy use.</p>
+</section><section class="card" aria-labelledby="6-数据集任务与指标到底测什么"><h2 id="6-数据集任务与指标到底测什么">6. What datasets, tasks, and metrics actually measure</h2>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Level</th>
+<th scope="col">Input → output</th>
+<th scope="col">Size/split</th>
+<th scope="col">Metric</th>
+<th scope="col">Supported / unsupported conclusions</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>VIKI-L1 activation</td>
+<td>Scene image + instruction → robot set</td>
+<td class="num">10,714；train 8,171、test 2,043、cold-start 500</td>
+<td>Exact-set accuracy↑</td>
+<td>Measures team selection, not whether subsequent control succeeds</td>
+</tr>
+<tr class="even">
+<td>VIKI-L2 planning</td>
+<td>Scene/capabilities + instruction → parallel action sequence</td>
+<td>Main text: 10,714; Appendix D: 10,174; OOD 1,218; ID train 7,196, test 1,800, cold-start 500</td>
+<td>ID/OOD plan accuracy↑, average↑</td>
+<td>Measures symbolic executability and step constraints, not physical robot success</td>
+</tr>
+<tr class="odd">
+<td>VIKI-L3 trajectory perception</td>
+<td>Ego image + description → own/partner 2D trajectories</td>
+<td class="num">2,309；train 1,767、test 442、cold-start 100</td>
+<td>RMSE/HD/DFD↓</td>
+<td>Maps static observations to trajectory coordinates; does not test prediction–control–observation loops</td>
+</tr>
+<tr class="even">
+<td>Real-world L1</td>
+<td>Real photos + GPT-4o-generated instructions → robot set</td>
+<td class="num">100 examples</td>
+<td>accuracy↑</td>
+<td>Tests only zero-shot commercial VLMs;<strong>VIKI-R is not tested</strong></td>
+</tr>
+<tr class="odd">
+<td>Human comparison</td>
+<td>150 samples per level</td>
+<td class="num">450 human evaluations</td>
+<td>Same metrics as the corresponding level</td>
+<td>Provides an upper-bound reference; limited samples and no inter-rater agreement</td>
+</tr>
+</tbody>
+</table></div>
+<p>The three distances have different semantics. RMSE penalizes pointwise deviations; Hausdorff measures the worst nearest-point distance; Dynamic Fréchet also preserves curve order. The paper averages them into AVG. Although pixel-based/normalized, their scales do not establish that equal weights reflect control risk. More fundamentally, L3 is trajectory <strong>perception/prediction</strong>, not a policy rollout. It may support collision avoidance, but does not establish multi-robot trajectory coordination.</p>
+</section><section class="card" aria-labelledby="7-完整主结果矩阵"><h2 id="7-完整主结果矩阵">7. Complete main-results matrix</h2>
+<h3 id="71-表-2三层八指标十四种系统">7.1 Table 2: three levels, eight metrics, fourteen systems</h3>
+<p>The following fully transcribes core Table 2 (p.8). Higher is better for L1/L2; lower for L3. Bold marks column bests. The paper does not provide a six-method matrix across five independent benchmarks: it evaluates three levels of one benchmark. This report preserves that structure rather than presenting levels as independent benchmarks.</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">L1 ID↑</th>
+<th scope="col" style="text-align: right;">L2 ID↑</th>
+<th scope="col" style="text-align: right;">L2 OOD↑</th>
+<th scope="col" style="text-align: right;">L2 Avg↑</th>
+<th scope="col" style="text-align: right;">L3 RMSE↓</th>
+<th scope="col" style="text-align: right;">L3 HD↓</th>
+<th scope="col" style="text-align: right;">L3 DFD↓</th>
+<th scope="col" style="text-align: right;">L3 Avg↓</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>GPT-4o</td>
+<td style="text-align: right;">18.40</td>
+<td style="text-align: right;">22.56</td>
+<td style="text-align: right;">10.02</td>
+<td style="text-align: right;">17.50</td>
+<td style="text-align: right;">100.80</td>
+<td style="text-align: right;">115.34</td>
+<td style="text-align: right;">131.05</td>
+<td style="text-align: right;">115.73</td>
+</tr>
+<tr class="even">
+<td>Claude-3.7-Sonnet</td>
+<td style="text-align: right;">12.40</td>
+<td style="text-align: right;">19.44</td>
+<td style="text-align: right;">0.57</td>
+<td style="text-align: right;">11.82</td>
+<td style="text-align: right;">283.31</td>
+<td style="text-align: right;">323.53</td>
+<td style="text-align: right;">346.88</td>
+<td style="text-align: right;">317.91</td>
+</tr>
+<tr class="odd">
+<td>Gemini-2.5-Flash-preview</td>
+<td style="text-align: right;">31.40</td>
+<td style="text-align: right;">20.00</td>
+<td style="text-align: right;">10.51</td>
+<td style="text-align: right;">16.17</td>
+<td style="text-align: right;">453.89</td>
+<td style="text-align: right;">519.14</td>
+<td style="text-align: right;">540.80</td>
+<td style="text-align: right;">504.61</td>
+</tr>
+<tr class="even">
+<td>Qwen2.5-VL-72B-Instruct</td>
+<td style="text-align: right;">11.31</td>
+<td style="text-align: right;">8.40</td>
+<td style="text-align: right;">1.20</td>
+<td style="text-align: right;">5.49</td>
+<td style="text-align: right;">81.31</td>
+<td style="text-align: right;">94.62</td>
+<td style="text-align: right;">113.15</td>
+<td style="text-align: right;">96.36</td>
+</tr>
+<tr class="odd">
+<td>Qwen2.5-VL-32B-Instruct</td>
+<td style="text-align: right;">9.50</td>
+<td style="text-align: right;">3.60</td>
+<td style="text-align: right;">0.00</td>
+<td style="text-align: right;">2.15</td>
+<td style="text-align: right;">88.48</td>
+<td style="text-align: right;">99.80</td>
+<td style="text-align: right;">119.78</td>
+<td style="text-align: right;">102.69</td>
+</tr>
+<tr class="even">
+<td>Llama-3.2-11B-Vision</td>
+<td style="text-align: right;">0.40</td>
+<td style="text-align: right;">0.50</td>
+<td style="text-align: right;">0.00</td>
+<td style="text-align: right;">0.30</td>
+<td style="text-align: right;">192.69</td>
+<td style="text-align: right;">223.57</td>
+<td style="text-align: right;">231.85</td>
+<td style="text-align: right;">216.04</td>
+</tr>
+<tr class="odd">
+<td>Qwen2.5-VL-3B Zero-shot</td>
+<td style="text-align: right;">1.95</td>
+<td style="text-align: right;">0.22</td>
+<td style="text-align: right;">0.00</td>
+<td style="text-align: right;">0.13</td>
+<td style="text-align: right;">96.22</td>
+<td style="text-align: right;">114.93</td>
+<td style="text-align: right;">130.98</td>
+<td style="text-align: right;">114.04</td>
+</tr>
+<tr class="even">
+<td class="num">3B + Ans-SFT</td>
+<td style="text-align: right;">35.29</td>
+<td style="text-align: right;">81.06</td>
+<td style="text-align: right;">30.71</td>
+<td style="text-align: right;">60.74</td>
+<td style="text-align: right;"><strong>74.70</strong></td>
+<td style="text-align: right;">90.28</td>
+<td style="text-align: right;"><strong>102.26</strong></td>
+<td style="text-align: right;"><strong>89.08</strong></td>
+</tr>
+<tr class="odd">
+<td class="num">3B + VIKI-R-Zero</td>
+<td style="text-align: right;">20.40</td>
+<td style="text-align: right;">0.00</td>
+<td style="text-align: right;">0.00</td>
+<td style="text-align: right;">0.00</td>
+<td style="text-align: right;">80.36</td>
+<td style="text-align: right;">95.36</td>
+<td style="text-align: right;">120.27</td>
+<td style="text-align: right;">98.66</td>
+</tr>
+<tr class="even">
+<td class="num">3B + VIKI-R</td>
+<td style="text-align: right;"><strong>74.10</strong></td>
+<td style="text-align: right;"><strong>93.61</strong></td>
+<td style="text-align: right;"><strong>32.11</strong></td>
+<td style="text-align: right;"><strong>68.78</strong></td>
+<td style="text-align: right;">75.69</td>
+<td style="text-align: right;"><strong>90.25</strong></td>
+<td style="text-align: right;">103.65</td>
+<td style="text-align: right;">89.86</td>
+</tr>
+<tr class="odd">
+<td>Qwen2.5-VL-7B Zero-shot</td>
+<td style="text-align: right;">4.26</td>
+<td style="text-align: right;">0.44</td>
+<td style="text-align: right;">0.00</td>
+<td style="text-align: right;">0.26</td>
+<td style="text-align: right;">81.93</td>
+<td style="text-align: right;">103.82</td>
+<td style="text-align: right;">112.91</td>
+<td style="text-align: right;">99.55</td>
+</tr>
+<tr class="even">
+<td class="num">7B + Ans-SFT</td>
+<td style="text-align: right;">72.20</td>
+<td style="text-align: right;"><strong>96.89</strong></td>
+<td style="text-align: right;">25.62</td>
+<td style="text-align: right;">68.13</td>
+<td style="text-align: right;">65.32</td>
+<td style="text-align: right;">81.20</td>
+<td style="text-align: right;">90.89</td>
+<td style="text-align: right;">79.14</td>
+</tr>
+<tr class="odd">
+<td class="num">7B + VIKI-R-Zero</td>
+<td style="text-align: right;"><strong>93.59</strong></td>
+<td style="text-align: right;">0.17</td>
+<td style="text-align: right;">0.00</td>
+<td style="text-align: right;">0.10</td>
+<td style="text-align: right;">67.42</td>
+<td style="text-align: right;">85.30</td>
+<td style="text-align: right;">95.32</td>
+<td style="text-align: right;">82.68</td>
+</tr>
+<tr class="even">
+<td class="num">7B + VIKI-R</td>
+<td style="text-align: right;">93.00</td>
+<td style="text-align: right;">95.22</td>
+<td style="text-align: right;"><strong>33.25</strong></td>
+<td style="text-align: right;"><strong>69.25</strong></td>
+<td style="text-align: right;"><strong>64.87</strong></td>
+<td style="text-align: right;"><strong>79.23</strong></td>
+<td style="text-align: right;"><strong>89.36</strong></td>
+<td style="text-align: right;"><strong>77.82</strong></td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="72-rl-相对-sft-的逐项复算">7.2 Recomputing RL versus SFT, metric by metric</h3>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Size</th>
+<th scope="col">Metric</th>
+<th scope="col" style="text-align: right;">Ans-SFT→VIKI-R</th>
+<th scope="col" style="text-align: right;">Absolute change</th>
+<th scope="col" style="text-align: right;">Relative change</th>
+<th scope="col">Assessment</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td class="num">3B</td>
+<td>L1</td>
+<td style="text-align: right;">35.29→74.10</td>
+<td style="text-align: right;"><strong>+38.81 pp</strong></td>
+<td style="text-align: right;">+109.98%</td>
+<td>Clear RL gain</td>
+</tr>
+<tr class="even">
+<td class="num">3B</td>
+<td>L2 ID</td>
+<td style="text-align: right;">81.06→93.61</td>
+<td style="text-align: right;"><strong>+12.55 pp</strong></td>
+<td style="text-align: right;">+15.48%</td>
+<td>Clear RL gain</td>
+</tr>
+<tr class="odd">
+<td class="num">3B</td>
+<td>L2 OOD</td>
+<td style="text-align: right;">30.71→32.11</td>
+<td style="text-align: right;">+1.40 pp</td>
+<td style="text-align: right;">+4.56%</td>
+<td>Small; significance unreported</td>
+</tr>
+<tr class="even">
+<td class="num">3B</td>
+<td>L2 Avg</td>
+<td style="text-align: right;">60.74→68.78</td>
+<td style="text-align: right;">+8.04 pp</td>
+<td style="text-align: right;">+13.24%</td>
+<td>Positive overall</td>
+</tr>
+<tr class="odd">
+<td class="num">3B</td>
+<td>L3 Avg↓</td>
+<td style="text-align: right;"><strong>89.08→89.86</strong></td>
+<td style="text-align: right;"><strong>+0.78 (worse)</strong></td>
+<td style="text-align: right;">−0.88% error reduction</td>
+<td>RL regression</td>
+</tr>
+<tr class="even">
+<td class="num">7B</td>
+<td>L1</td>
+<td style="text-align: right;">72.20→93.00</td>
+<td style="text-align: right;"><strong>+20.80 pp</strong></td>
+<td style="text-align: right;">+28.81%</td>
+<td>Clear RL gain</td>
+</tr>
+<tr class="odd">
+<td class="num">7B</td>
+<td>L2 ID</td>
+<td style="text-align: right;"><strong>96.89→95.22</strong></td>
+<td style="text-align: right;"><strong>−1.67 pp</strong></td>
+<td style="text-align: right;">−1.72%</td>
+<td>RL regression</td>
+</tr>
+<tr class="even">
+<td class="num">7B</td>
+<td>L2 OOD</td>
+<td style="text-align: right;">25.62→33.25</td>
+<td style="text-align: right;"><strong>+7.63 pp</strong></td>
+<td style="text-align: right;">+29.78%</td>
+<td>Most convincing generalization gain</td>
+</tr>
+<tr class="odd">
+<td class="num">7B</td>
+<td>L2 Avg</td>
+<td style="text-align: right;">68.13→69.25</td>
+<td style="text-align: right;">+1.12 pp</td>
+<td style="text-align: right;">+1.64%</td>
+<td>Very small; significance unreported</td>
+</tr>
+<tr class="even">
+<td class="num">7B</td>
+<td>L3 Avg↓</td>
+<td style="text-align: right;">79.14→77.82</td>
+<td style="text-align: right;">−1.32</td>
+<td style="text-align: right;"><strong>1.67% error
+reduction</strong></td>
+<td>Small positive change</td>
+</tr>
+</tbody>
+</table></div>
+<p>Thus “substantially outperforms baselines and works across all levels” should be read as:<strong>L1 and L2 OOD benefit most consistently; L2 ID and 3B L3 are not universal wins.</strong> 7B VIKI-R-Zero even scores slightly higher on L1 than full VIKI-R, 93.59 versus 93.00 (+0.59 pp), showing that CoT cold start does not improve final accuracy at every level.</p>
+<h3 id="73-与人类反馈式推理和真实世界的边界">7.3 Boundaries of human comparison, feedback reasoning, and real-world evidence</h3>
+<p>Core Table 6 (p.10; 150 samples per level) reports:</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">L1↑</th>
+<th scope="col" style="text-align: right;">L2↑</th>
+<th scope="col" style="text-align: right;">L3 RMSE↓</th>
+<th scope="col" style="text-align: right;">L3 HD↓</th>
+<th scope="col" style="text-align: right;">L3 DFD↓</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>VIKI-R 7B</td>
+<td style="text-align: right;">93.00</td>
+<td style="text-align: right;">69.25</td>
+<td style="text-align: right;">64.87</td>
+<td style="text-align: right;">79.23</td>
+<td style="text-align: right;">89.36</td>
+</tr>
+<tr class="even">
+<td><strong>Human</strong></td>
+<td style="text-align: right;"><strong>98.00</strong></td>
+<td style="text-align: right;"><strong>96.50</strong></td>
+<td style="text-align: right;"><strong>48.84</strong></td>
+<td style="text-align: right;"><strong>58.97</strong></td>
+<td style="text-align: right;"><strong>71.30</strong></td>
+</tr>
+<tr class="odd">
+<td>Gap</td>
+<td style="text-align: right;">−5.00 pp</td>
+<td style="text-align: right;"><strong>−27.25 pp</strong></td>
+<td style="text-align: right;">+16.03（+32.82%）</td>
+<td style="text-align: right;">+20.26（+34.36%）</td>
+<td style="text-align: right;">+18.06（+25.33%）</td>
+</tr>
+</tbody>
+</table></div>
+<p>“Human-comparable” therefore barely applies to L1 and cannot cover L2/L3. Commercial-VLM feedback results in Table 3 (p.9) are also informative: GPT-4o pass@1 is 18.4, ordinary pass@6 only 18.7, but feedback pass@6 reaches 22.3; Gemini rises from 31.4 to 34.7. Extra sampling barely helps, while explicit feedback adds about 3 pp, suggesting systematic errors rather than pure sampling variance.</p>
+<p>Real-world Table 5 (p.9) tests only 100 GPT-4o-generated L1 instructions: Qwen-32B 8%, Qwen-72B 14%, Claude 15%, Gemini 28%.<strong>VIKI-R does not appear in this table.</strong> The “beyond simulation” experiment therefore establishes that the benchmark remains difficult on real images, not successful sim-to-real transfer by VIKI-R.</p>
+</section><figure class="figure" aria-labelledby="rl-chart-title">
+<p class="fig-title" id="rl-chart-title">7B: RL gains concentrate in L1 and L2 OOD</p>
+<p class="fig-sub">Vertical axis: accuracy (%); comparisons on L1, L2 ID, and L2 OOD. Ans-SFT is higher on L2 ID.</p>
+<div class="legend"><span><span class="swatch" style="background:#2a78d6"></span>Ans-SFT</span><span><span class="swatch" style="background:#eb6834"></span>VIKI-R</span></div>
+<svg class="chart" viewBox="0 0 860 385" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>7B Ans-SFT versus VIKI-R on three accuracy metrics</title>
+<desc>VIKI-R is higher on L1 and L2 OOD, but 1.67 percentage points below Ans-SFT on L2 ID.</desc>
+<line x1="80" y1="320" x2="820" y2="320" stroke="var(--grid)"/>
+<line x1="80" y1="60" x2="80" y2="320" stroke="var(--grid)"/>
+<line x1="80" y1="190" x2="820" y2="190" stroke="var(--grid)" stroke-dasharray="4 5"/>
+<line x1="80" y1="60" x2="820" y2="60" stroke="var(--grid)" stroke-dasharray="4 5"/>
+<text x="68" y="324" text-anchor="end" font-size="12">0</text>
+<text x="68" y="194" text-anchor="end" font-size="12">50</text>
+<text x="68" y="64" text-anchor="end" font-size="12">100%</text>
+<rect x="165" y="132.3" width="46" height="187.7" rx="5" fill="#2a78d6" tabindex="0" data-tip="7B · L1 · Ans-SFT: 72.20%"/><rect x="223" y="78.2" width="46" height="241.8" rx="5" fill="#eb6834" tabindex="0" data-tip="7B · L1 · VIKI-R: 93.00%"/><text x="217" y="348" text-anchor="middle" font-size="13">L1</text><rect x="380" y="68.1" width="46" height="251.9" rx="5" fill="#2a78d6" tabindex="0" data-tip="7B · L2 ID · Ans-SFT: 96.89%"/><rect x="438" y="72.4" width="46" height="247.6" rx="5" fill="#eb6834" tabindex="0" data-tip="7B · L2 ID · VIKI-R: 95.22%"/><text x="432" y="348" text-anchor="middle" font-size="13">L2 ID</text><rect x="595" y="253.4" width="46" height="66.6" rx="5" fill="#2a78d6" tabindex="0" data-tip="7B · L2 OOD · Ans-SFT: 25.62%"/><rect x="653" y="233.6" width="46" height="86.5" rx="5" fill="#eb6834" tabindex="0" data-tip="7B · L2 OOD · VIKI-R: 33.25%"/><text x="647" y="348" text-anchor="middle" font-size="13">L2 OOD</text>
+</svg>
+<figcaption>Source: core Table 2, final version p.8; the recomputation table below gives absolute pp and relative changes. Hover or keyboard-focus bars for values.</figcaption>
+</figure><section class="card" aria-labelledby="8-逐层消融超参敏感性与相变"><h2 id="8-逐层消融超参敏感性与相变">8. Layered ablations, hyperparameter sensitivity, and transitions</h2>
+<h3 id="81-step-penalty挑战子集很大全量-split-很小">8.1 Step penalty: large on a challenging subset, small on the full split</h3>
+<p>Main-text Table 4 (p.9) reports OOD-H/ID-H on “challenging L2” without the step penalty as <strong>7.1/8.0</strong>, and with it as
+<strong>46.8/96.0</strong>, an absolute gain of <strong>39.7/88.0
+pp</strong>, while average excess steps fall from 1.97 to 0.05. Yet on the full L2 split in Appendix Table 7 (p.26), the same ablation gives only ID <strong>92.06→95.22（+3.16
+pp）</strong>、OOD <strong>29.51→33.25（+3.74
+pp）</strong>. This is not contradictory, but indicates gains concentrated in specially selected difficult cases. The challenging subset's selection criteria and size are unspecified, so 88 pp cannot represent the overall effect.</p>
+<h3 id="82-model-scale不同层级存在不同相变">8.2 Model scale: different transitions at different levels</h3>
+<p>Appendix Table 8 (p.26) gives 3B/7B/32B L1 scores of
+<strong>74.10/93.00/95.30</strong>and L2 scores of
+<strong>68.78/69.25/74.74</strong>. Scaling 3B→7B adds 18.90 pp on L1 but only 0.47 pp on L2; 7B→32B mainly improves L2 (+5.49 pp), with only +2.30 pp on L1. This suggests, without proving, two transitions: team selection approaches saturation near 7B, while compositional planning needs more capacity. Denser scale points or compute-matched curves are absent.</p>
+<h3 id="83-prompt-guidance-与-optimizer">8.3 Prompt guidance and optimizer</h3>
+<p>Appendix Table 9 (p.26): removing guidance prompts reduces 3B L1 from 74.10 to 73.47 (−0.63 pp) and 7B from 93.00 to 92.95 (−0.05 pp). The authors report slower convergence but no steps-to-threshold. Prompts thus appear to accelerate optimization rather than determine final performance.</p>
+<p>Appendix Table 10 (p.26) compares GRPO and DAPO: 3B ID/OOD is 93.61/32.11 for GRPO and 93.22/<strong>33.33</strong>for DAPO; 7B is 95.22/33.25 for GRPO and <strong>95.44/33.58</strong>for DAPO. DAPO wins three of four metrics by 0.22–1.22 pp. Without variance, this does not establish significance, but it shows GRPO itself is not the main novelty; verifiable hierarchical rewards and cold-start data are central.</p>
+<h3 id="84-训练曲线揭示的-reward-support-相变">8.4 Training curves reveal a reward-support transition</h3>
+<p>Appendix Figures 5–7 (pp.24–25) support only visual estimates, so all following values are approximate. On L2, 3B R-Zero reward rises from about 0.009 to 0.019 before declining, while 7B stays around 0.06–0.075; with SFT both reach about 0.9 by roughly 60 steps. L3 differs: 7B R-Zero ends around 0.80 versus about 0.75 for full VIKI-R, so pure RL is even higher. L2 has a discrete feasibility gate, while L3 uses continuous distances. Whether cold start is needed depends on the initial policy's coverage of nonzero rewards—a more transferable insight than “CoT always helps.”</p>
+<h3 id="85-统计显著性">8.5 Statistical significance</h3>
+<p><strong>not reported by the paper</strong>seed counts, mean±standard deviation, bootstrap CIs, or significance tests. Table 2 also lacks episode-level predictions, so this report cannot add paired tests. Large differences, such as 7B L2 R-Zero 0.10→VIKI-R 69.25, have a credible direction; differences of 0.05, 0.22, 0.47, or 1.12 pp cannot establish stable superiority.</p>
+</section><section class="card" aria-labelledby="9-相关工作链解决什么遗留缺口viki-r-如何回应设计如何传递"><h2 id="9-相关工作链解决什么遗留缺口viki-r-如何回应设计如何传递">9. Related-work chain: problem solved → remaining gap → VIKI-R response → inherited design</h2>
+<h3 id="91-roco从语言协商到可执行多臂轨迹">9.1 RoCo: from language negotiation to executable multi-arm trajectories</h3>
+<p>RoCo uses LLM dialogue to form high-level multi-robot strategies and passes waypoints to a low-level motion planner. RoCoBench has only six task types, but includes collision feedback and real multi-arm demonstrations. Table 2 (p.5) reports success/steps/replans over 20 runs per task; real-world settings use ten runs each (Table 3, p.7). Remaining gaps are small scale, expensive in-context LLM dialectics, and no unified activation–planning–trajectory diagnosis. VIKI-R replaces dialogue loops with an offline-learned policy, translating environment-based plan correction into Action Checker/World Simulator rewards, but drops the real execution loop.</p>
+<h3 id="92-llamarplanactcorrectverify-的长时闭环">9.2 LLaMAR: a long-horizon plan–act–correct–verify loop</h3>
+<p>LLaMAR addresses partially observed, long-horizon multi-agent planning using Planner, Actor, Corrector, and Verifier modules in MAP-THOR/SAR. Its abstract/conclusion reports approximately <strong>30%</strong> success-rate improvement over prior planners (pp.1,11; full Table 2 on p.9). MAP-THOR contains only 225 tasks and relies primarily on inference-time module orchestration. VIKI-R inherits verifier-generated structural feedback but moves it from inference-time correction into training-time rewards, reducing interaction costs per inference. The tradeoff is lacking LLaMAR-style online replanning when the environment changes.</p>
+<h3 id="93-partnr规模化人机协作暴露-trackingrecovery-缺陷">9.3 PARTNR: scaled human–robot collaboration exposes tracking/recovery failures</h3>
+<p>PARTNR uses an LLM with a simulator in the loop to generate <strong>100,000</strong>
+natural-language tasks across 60 houses and 5,819 objects (p.1, Table 1 p.3). It targets large-scale household human–robot planning and finds ReAct success of 0.30 without privileged perception versus 0.93 for humans; an 8B fine-tuned planner approaches 70B performance while being <strong>8.6×</strong>faster (Table 2 and text, pp.10–11). Gaps remain in hierarchical visual-collaboration diagnosis and diverse robot embodiments. VIKI-R transfers simulator-verified generation to a multi-embodiment visual setting, adding team activation and partner-trajectory perception, but reduces scale from 100k to 23.7k and offers weaker evidence for real human–robot interaction.</p>
+<h3 id="94-robofactory组合约束让数据生成先变得安全可行">9.4 RoboFactory: compositional constraints make generated data safe and feasible</h3>
+<p>RoboFactory automates heterogeneous multi-agent manipulation data generation with explicit viewpoint, spatial, and temporal compositional constraints. Its 11 tasks compare data quantities and shared/separate architectures using diffusion policies and imitation learning (Tables 2/3, p.7). It is closer to low-level imitation/control, with limited coverage of why agents are selected or how long plans and OOD are evaluated. VIKI-R directly reuses the MARS lineage, lifting compositional constraints into verifiable symbolic rewards and expanding to three cognitive levels, but does not retain RoboFactory's actual action-success evaluation loop.</p>
+<h3 id="95-deepseek-r1grpo-与-cold-start-不是机器人专属发明">9.5 DeepSeek-R1: GRPO and cold start are not robot-specific inventions</h3>
+<p>DeepSeek-R1 addresses LLM reasoning post-training using group rewards instead of a value model and rule-based accuracy/format rewards; see GRPO in §2.1 (p.2) and PPO comparisons in Appendix A.3 (pp.16–18). Mathematics/code answers are naturally verifiable but lack vision, physics, and multi-agent feasibility. VIKI-R's transfer is direct: group-relative advantages, clipping, KL, and format/task rewards remain; the new elements are three embodied verifiers. Its contribution is transplanting verifiable RL into a hierarchical collaboration benchmark, not inventing a new RL algorithm.</p>
+<h3 id="96-非线性技术演进树">9.6 Nonlinear technical evolution</h3>
+<pre class="text"><code>        RoCo 2023/24: LLM dialogue negotiation + motion/collision feedback
+                    │
+                    ├──────────────┐
+                    ▼              ▼
+ LLaMAR 2024: plan-act-correct-verify     PARTNR 2024: 100k simulator-verified tasks
+        │ inference-time loop            │ scale, human–robot
+        └──────────────┬───────────────────┘
+                       ▼
+      RoboFactory 2025: compositional constraints + multi-agent imitation/control
+                       │
+ DeepSeek-R1/GRPO ─────┼── rule reward + cold start
+ (verifiable text reasoning) │
+                       ▼
+          VIKI-Bench / VIKI-R 2025
+   Activation ── planning ── trajectory perception; SFT → GRPO
+           │                   │
+           ▼                   ▼
+  Next A: unified closed-loop policy   Next B: OOD embodiment / sim-to-real</code></pre>
+<p>Two shifts drive this evolution: from repeated LLM dialogue at inference time to verifiers turning collaboration trajectories into training signals, and from a single final success rate to capability decomposition. An unfinished third shift is reconnecting all three levels into one real loop: select agents, execute plans, observe deviations, and update trajectories, rather than score separately on three static datasets.</p>
+<h3 id="97-跨论文对标">9.7 Cross-paper comparison</h3>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Core object</th>
+<th scope="col">Visual/heterogeneous</th>
+<th scope="col">Online feedback</th>
+<th scope="col">Learning approach</th>
+<th scope="col" style="text-align: right;">Size</th>
+<th scope="col">Largest evidence gap</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>RoCo</td>
+<td>Multi-arm negotiation and waypoints</td>
+<td>Yes/limited</td>
+<td>Yes</td>
+<td>prompt-only</td>
+<td style="text-align: right;">6 tasks</td>
+<td>Scale and cost</td>
+</tr>
+<tr class="even">
+<td>LLaMAR</td>
+<td>Partially observed long-horizon planning</td>
+<td>Yes/multi-agent</td>
+<td>Strong</td>
+<td>Modular prompting</td>
+<td style="text-align: right;">225</td>
+<td>Learned generalization</td>
+</tr>
+<tr class="odd">
+<td>PARTNR</td>
+<td>Human–robot household planning</td>
+<td>Yes/human + robot</td>
+<td>Yes</td>
+<td>prompt + fine-tune</td>
+<td style="text-align: right;">100,000</td>
+<td>Diverse robot embodiments</td>
+</tr>
+<tr class="even">
+<td>RoboFactory</td>
+<td>Compositionally constrained manipulation</td>
+<td>Yes/yes</td>
+<td>Execution evaluation</td>
+<td>imitation/diffusion policy</td>
+<td style="text-align: right;">11 tasks</td>
+<td>High-level reasoning</td>
+</tr>
+<tr class="odd">
+<td><strong>VIKI-R</strong></td>
+<td>Activation, symbolic plans, 2D trajectories</td>
+<td><strong>Yes/6 types</strong></td>
+<td>Training-time verifier</td>
+<td><strong>SFT+GRPO</strong></td>
+<td style="text-align: right;">23,737 (authors' count)</td>
+<td>Unified loop and physical robots</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="10-真正贡献可复用设计与迁移潜力"><h2 id="10-真正贡献可复用设计与迁移潜力">10. Contributions, reusable designs, and transfer potential</h2>
+<p>There are three genuine contributions. First,<strong>evaluation decomposition</strong>separates team selection, symbolic planning, and trajectory perception, locating structural failures such as selecting the right agents but failing to schedule parallel steps. Second,<strong>rule interfaces</strong>turn format checkers, Action Checkers, World Simulators, and trajectory distances directly into rewards without training another black-box reward model. Third,<strong>reward-support diagnosis</strong>shows, somewhat unexpectedly, that discrete feasibility rewards need cold start while continuous distance rewards can support pure RL—a methodological insight more valuable than one SOTA score.</p>
+<p>The most reusable design is not the particular Qwen/GRPO recipe, but “write the verifier first, then choose the post-training method”:</p>
+<ul>
+<li>For exact-match team formation, use set rewards and separately report precision/recall to detect overactivation.</li>
+<li>For compositional plans, verify feasibility with an executor and treat length, collision risk, and energy as multiple reward objectives, rather than using only <span
+class="math inline"><em>N</em>(<em>A</em>) ≤ <em>N</em><sub><em>g</em><em>t</em></sub></span>
+as a hard gate.</li>
+<li>For sparse rewards, use a small number of CoT/trajectory demonstrations to enter the support; for continuous rewards, compare pure RL to reduce teacher-imitation bias.</li>
+<li>Retain LLaMAR/RoCo-style feedback at deployment: let the learned policy propose and the verifier correct, rather than compressing the entire loop into one generation.</li>
+</ul>
+<p>Real-robot transfer needs three further layers: camera calibration and occlusion uncertainty, dynamics/safety controllers, and communication latency/agent failure. For the user's current Agent Memory interest, the analogy is to make agent/fact selection, parallel planning, and collaborator-state prediction separately verifiable, then use continuous/discrete reward-support properties to decide on cold start. VIKI-R itself has no long-term memory, conflicting-fact updates, or cross-session evaluation.</p>
+</section><section class="card" aria-labelledby="11-论文自述限制与独立批判"><h2 id="11-论文自述限制与独立批判">11. Stated limitations and independent critique</h2>
+<h3 id="111-作者自述限制">11.1 Authors' limitations</h3>
+<ol type="1">
+<li><strong>Simulation limitations</strong>: the first Limitations paragraph (pp.22–23) acknowledges primarily simulated experiments and a fixed hierarchy unable to cover unexpected obstacles, changing goals, or adaptive agent behavior. Open-world extrapolation therefore requires caution.</li>
+<li><strong>Compute cost</strong>: the second paragraph acknowledges expensive multi-level fine-tuning. Table 12 (p.28) gives 36 hours on 8×A800 for all three 7B levels, without comprehensive cost accounting.</li>
+<li><strong>Limited interpretability</strong>: the third paragraph acknowledges insufficient study of reasoning interpretability in complex scenes. CoT currently serves as a training/output format, not a faithful causal trace.</li>
+</ol>
+<h3 id="112-独立批判每点均为因为-x所以-y">11.2 Independent critique: explicit “because X, therefore Y” arguments</h3>
+<ol type="1">
+<li><strong>[RL attribution/statistics]</strong> Because 7B VIKI-R falls below Ans-SFT on L2 ID by <strong>1.67 pp</strong>and 3B L3 Avg worsens by
+<strong>0.78</strong>, DAPO slightly beats GRPO on three of four L2 values (Table 10, p.26), and the main table lacks seeds, standard deviations, or confidence intervals, neither universal cross-level improvement nor small differences can be uniquely attributed to GRPO. The gains more plausibly reflect data, verifiers, and RL together.</li>
+<li><strong>[Missing strong baselines]</strong> Because there are no compute-matched longer-SFT, SFT+best-of-5, rejection-sampling, or all-level DPO/DAPO comparisons, while GRPO samples five rollouts per prompt, the gains cannot be separated into policy-gradient effects versus extra sampling and rule filtering.</li>
+<li><strong>[Real-world extrapolation]</strong> Because the real-photo experiment in Table 5 includes only four zero-shot general VLMs and<strong>no VIKI-R</strong>, “beyond simulation” does not establish sim-to-real transfer by the proposed method. At most, it shows L1 can be transferred to real photos and remains difficult.</li>
+<li><strong>[Human comparability]</strong> Because VIKI-R trails humans on L2 by
+<strong>27.25 pp</strong>and has L3 errors higher by
+<strong>25.33%–34.36%</strong>(Table 6, p.10), “human-comparable” must be restricted to L1 activation, not overall capability.</li>
+<li><strong>[Reward validity]</strong> Because L2 assigns zero to every executable plan satisfying <span
+class="math inline"><em>N</em>(<em>A</em>) &gt; <em>N</em><sub><em>g</em><em>t</em></sub></span>
+, while alternative embodiments, recovery, or safer plans may naturally take longer, the reward conflates matching GT efficiency with task correctness and may suppress diverse, reasonable collaboration strategies.</li>
+<li><strong>[Data/statistical definitions]</strong> Because the paper gives L2 counts of both
+<strong>10,714</strong>(Appendix C.1) and <strong>10,174</strong>(Appendix D), and its 23,737 total differs from HF's 22,637 rows by 1,100, overlap between splits and cold-start data cannot be reproduced unambiguously. Numerical coincidence is a clue, not a substitute for a data card.</li>
+<li><strong>[Ablation selection bias]</strong> Because the step penalty improves an unspecified challenging subset by <strong>39.7/88.0 pp</strong>but the full ID/OOD splits by only <strong>3.16/3.74 pp</strong>, its headline effect depends on subset selection. The subset list and preregistered difficulty criteria are needed.</li>
+<li><strong>[Static tasks substituted for a closed loop]</strong> Because L1/L2/L3 are trained and evaluated separately, L3 outputs only annotated 2D trajectories, and no joint select-agents→execute→observe→replan rollout is shown, the evidence establishes hierarchical visual-reasoning benchmark performance, not end-to-end multi-robot collaboration success.</li>
+</ol>
+</section><section class="card" aria-labelledby="12-开放挑战必须能落地为-head-to-head-实验"><h2 id="12-开放挑战必须能落地为-head-to-head-实验">12. Open challenges that can become head-to-head experiments</h2>
+<h3 id="121-理论">12.1 Theory</h3>
+<ol type="1">
+<li><strong>A theorem for sparse reward support.</strong> Fix Qwen2.5-VL, data, and 288 A800-GPU-hours; compare RL-zero, SFT→GRPO, curriculum rewards, and continuous feasibility scores on L2. Plot initial nonzero-reward probability against final OOD accuracy to test for a cold-start transition.</li>
+<li><strong>Is the GT-length gate consistent?</strong> On the same feasible plans, compare the hard gate
+<span
+class="math inline"><strong>1</strong>[<em>N</em>≤<em>N</em><sub><em>g</em><em>t</em></sub>]</span>, soft length penalties, and Pareto rewards (success/safety/energy). Have three robotics experts blindly rate diverse plans and measure reward–preference Kendall <span class="math inline"><em>τ</em></span>。</li>
+<li><strong>Within-group normalization stability.</strong> Under <span
+class="math inline"><em>G</em> ∈ {2, 5, 8, 16}</span> , report the proportion of <span
+class="math inline"><em>σ</em><sub><em>R</em></sub> = 0</span>
+, effective gradient batches, KL, and OOD performance. Compare directly with critic-based PPO to determine whether GRPO's memory savings sacrifice stability on sparse levels.</li>
+</ol>
+<h3 id="122-工程应用">12.2 Engineering applications</h3>
+<ol type="1">
+<li><strong>Unified closed-loop control.</strong> On the same 100 unseen scenes, compare three chained VIKI-R checkpoints, a shared backbone with jointly trained heads, and a LLaMAR feedback planner. Report task success, collisions, steps, p95 latency, and recovery counts.</li>
+<li><strong>Physical-robot sim-to-real.</strong> Use at least three physical robot types, 20 tasks, and ten trials per task to compare base Qwen, Ans-SFT, VIKI-R, and VIKI-R+online verifier. Separate lighting, occlusion, and camera-pose perturbations and report paired bootstrap CIs instead of only successful videos.</li>
+<li><strong>Compute-matched post-training.</strong> Fix the 7B budget at 288 A800-GPU-hours and compare SFT, SFT+best-of-5, rejection fine-tuning, DPO, DAPO, and GRPO with equal generated-token counts. Primary metrics: L2 OOD and real closed-loop success.</li>
+<li><strong>Audit dataset counts.</strong> Build manifests for the paper's 23,737 examples, both appendix L2 counts, and HF's 22,637 rows. Check cold-start/train/test overlap by unique sample ID, publish hashes and deduplication scripts, then rerun Table 2.</li>
+</ol>
+<h3 id="123-新兴方向">12.3 Emerging directions</h3>
+<ol type="1">
+<li><strong>Dynamic teams and agent failure.</strong>
+Randomly disable one robot at 30%/60% task progress and compare static VIKI-R, online replanning, and communication-aware MARL. Measure recovery success, unnecessary activations, and replanning tokens.</li>
+<li><strong>Memory-enhanced collaboration.</strong> Provide cross-episode robot reliability/history and compare no memory, vector memory, and dynamic graph memory. Inject stale-fact conflicts and capability updates; measure team-selection accuracy, incorrect fact citations, and update latency.</li>
+<li><strong>3D/probabilistic trajectories.</strong> Compare 3D probabilistic trajectories with 2D point predictions under occlusion, reporting ADE/FDE, NLL, and collision-calibration ECE. Test whether low 2D error actually reduces physical collisions.</li>
+</ol>
+</section><section class="card" aria-labelledby="13-近期值得跟踪的-7-篇工作"><h2 id="13-近期值得跟踪的-7-篇工作">13. Seven recent works to track</h2>
+<ol type="1">
+<li>**<a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/file/ec46d737282bb408e642ed883a145c40-Paper-Conference.pdf">Robot-R1（NeurIPS
+2025）</a>**: applies RL to embodied reasoning and control, closer to action execution than VIKI-R. Examine whether rewards truly close the loop and whether SFT is compute-matched.</li>
+<li>**<a href="https://openreview.net/forum?id=hqFNqVQEUd">ERA（ICLR
+2026 OpenReview）</a>**: directly studies RL paths from VLMs to embodied agents. Recheck OpenReview identity and final version before citation.</li>
+<li>**<a
+href="https://arxiv.org/abs/2509.09674">SimpleVLA-RL</a>**: explores scalable VLA reinforcement fine-tuning, a nearby comparison for whether verifiable text planning transfers to continuous actions.</li>
+<li>**<a href="https://arxiv.org/abs/2508.17424">RDT-2</a>**: reinforcement fine-tuning for generalist robot policies; compare safety constraints needed for VIKI-R's symbolic rewards versus action-level rewards.</li>
+<li>**<a href="https://arxiv.org/abs/2504.16054">π0.5</a>**: focuses on open-world generalization, reminding us that VIKI-R OOD is a symbolic/scene split, not open-world deployment.</li>
+<li>**<a href="https://arxiv.org/abs/2506.18088">RoboTwin
+2.0</a>**: expands data generation and benchmarking through strong domain randomization, potentially supplementing VIKI-R sim-to-real experiments.</li>
+<li>**<a href="https://arxiv.org/abs/2511.21510">Tool-RoCo</a>**: treats other agents as tools and evaluates self-organization, reporting cooperative tools at only 7.09% versus activation tools at 96.42% (abstract). It targets when to deactivate partners or seek help beyond VIKI-L1's exact-set metric.</li>
+</ol>
+</section><section class="card" aria-labelledby="14-结论"><h2 id="14-结论">14. Conclusion</h2>
+<p>VIKI-R merits attention not because GRPO supposedly brings robots to human level, but because it decomposes multi-agent visual collaboration into verifiable, trainable, auditable hierarchical interfaces. Its strongest result is 7B L2 OOD versus Ans-SFT rising from <strong>25.62% to 33.25% (+7.63 pp, +29.78%)</strong>, alongside L1 from 72.20% to 93.00%. Key counterevidence is the 1.67 pp L2 ID decline, 0.78 regression on 3B L3, and absence of VIKI-R in real-world experiments. The justified conclusion is:<strong>CoT cold start plus hierarchical rule rewards can substantially expand the support of feasible plans, but three levels of static reasoning have not been shown equivalent to real closed-loop collaboration.</strong></p>
+<hr />
+<p><strong>Sources and recomputation.</strong> Core values come from the actual NeurIPS 2025 final PDF, Tables 1–13, Figures 5–7, and appendices; related-work values come from the actual PARTNR, LLaMAR, RoCo, RoboFactory, and DeepSeek-R1 PDFs. Percentages and pp differences were recomputed from single reported values; visual curve estimates are not presented as exact. All URLs were accessed on the generation date. Some OpenReview pages restrict automated access, so acceptance identities that could not be independently verified are marked. HTML passed the Warm Editorial validator (0 warnings) and static responsive/placeholder checks; the runtime has Playwright but lacks
+<code>/usr/bin/chromium</code>、<code>/opt/pw-browsers</code>
+or a downloaded local Chromium executable, and did not run
+<code>playwright install</code>as requested, so a three-viewport browser screenshot review cannot honestly be claimed.<code>ml-report-index.md</code>
+This record has been appended.</p>
+</section>
+  </main>
+
+  <footer>Core sources: NeurIPS final paper, arXiv v3, official code, and Hugging Face data/weights; technical lineage readings: PARTNR, LLaMAR, RoCo, RoboFactory, DeepSeek-R1. Generated 2026-09-10.</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ Light' : '☾ Dark';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1309 @@
+---
+layout: null
+title: "MolJO"
+date: 2026-09-20
+topic: "ai4science"
+tags: ["ai4science", "molecular-generation", "bayesian-flow-networks"]
+excerpt: "MolJO makes joint gradients useful for molecular optimization, but docking proxies, size bias, and search budgets mean better scores are not yet better drugs."
+permalink: "/blog/2026/09/20/moljo/en/"
+blog_post: false
+lang: "en"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_zh: "/blog/2026/09/20/moljo/"
+sitemap: true
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>MolJO: Structured Molecular Optimization with Gradient-Guided Bayesian Flow Networks · 2026-09-20</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #246fca;
+    --chart-comparison: #c95224;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  :root{--page:#f7f3ea;--surface-1:#fffaf1;--chart-primary:#2a78d6;--chart-comparison:#eb6834;--highlight-row:#e7f0fb}
+  :root[data-theme="dark"]{--page:#16130f;--surface-1:#211d18;--chart-primary:#3987e5;--chart-comparison:#d95926}
+  .card{overflow-wrap:anywhere}.card>h2{scroll-margin-top:70px}.card table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .card th,.card td{min-width:100px}.card td:nth-child(n+2),.card th:nth-child(n+2){font-variant-numeric:tabular-nums}
+  .card blockquote{margin:18px 0;padding:14px 18px;border-left:3px solid var(--chart-comparison);border-radius:0 8px 8px 0;background:var(--page);color:var(--text-secondary)}
+  .card .math.display,.card pre{max-width:100%;overflow-x:auto}.card code{overflow-wrap:anywhere}
+  @media(max-width:640px){.chart{min-width:620px}.figure{overflow-x:auto}.card table{font-size:13px}}
+
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" aria-pressed="false">☾ Dark</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ICML 2025 · AI4Science and Interdisciplinary Research</p>
+    <h1>MolJO: Structured Molecular Optimization with Gradient-Guided Bayesian Flow Networks</h1>
+    <p class="subtitle">How continuous coordinates, discrete types, and backward correction jointly optimize molecules</p>
+    <div class="meta" aria-label="Report metadata">
+      <span class="chip source">ICML 2025 / PMLR 267</span>
+      <span class="chip">2026-09-20</span>
+      <span class="chip">Structure-Based Drug Design · Molecular Optimization</span>
+    </div>
+    <p class="lede">MolJO makes joint gradients useful for molecular optimization, but docking proxies, size bias, and search budgets mean better scores are not yet better drugs.</p>
+  </header>
+
+  <main>
+<div class="report-body">
+<p><strong>Date:</strong> 2026-09-20<br />
+<strong>Field:</strong> AI4Science and Interdisciplinary Research—structure-based drug design, molecular generation, joint continuous–discrete optimization<br />
+<strong>Core paper:</strong> Keyue Qiu, Yuxuan Song, Jie Yu, Hongbo Ma,
+Ziyao Cao, Zhilong Zhang, Yushuai Wu, Mingyue Zheng, Hao Zhou, Wei-Ying
+Ma. <em>Empower Structure-Based Molecule Optimization with Gradient
+Guided Bayesian Flow Networks</em>. ICML 2025, PMLR
+267:50645–50671.<br />
+<strong>Core positioning:</strong> MolJO maps coordinates/types into differentiable Bayesian-flow parameters, combining joint gradients and sliding-window backward correction for affinity, drug-likeness, and synthesizability. CrossDocked2020 success rises 39.4%→51.3% over the strongest same-protocol baseline, but docking proxies, one benchmark, and unmatched search budgets do not establish real efficacy breakthroughs.</p>
+<hr />
+<section id="链接验证表与证据口径" class="card level2">
+<h2>0. Verified links and evidence conventions</h2>
+<p>Links accessed 2026-09-20. Core numbers come from arXiv v4 tables/algorithms/text; marked recomputations use arithmetic only. More negative docking usually means stronger predicted binding; QED, SA, Success, Connected, and Diversity are higher-is-better; Energy, Clash, RMSD lower-is-better. Different papers, sample counts, and success definitions are not compared unconditionally.</p>
+<table style="width:100%;">
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Item</th>
+<th scope="col">Conference / official page</th>
+<th scope="col">arXiv version and date</th>
+<th scope="col">Code</th>
+<th scope="col">Data / weights</th>
+<th scope="col">Project page / videos</th>
+<th scope="col">Verification conclusion</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Core: MolJO</td>
+<td><a href="https://proceedings.mlr.press/v267/qiu25h.html">ICML 2025 /
+PMLR 267</a>；<a
+href="https://openreview.net/forum?id=CIoBEB17FT">OpenReview</a></td>
+<td><a
+href="https://arxiv.org/abs/2411.13280">arXiv:2411.13280v4</a>, first version 2024-11-20, v4 2025-06-05;<a
+href="https://arxiv.org/html/2411.13280v4">HTML</a>；<a
+href="https://arxiv.org/pdf/2411.13280">PDF</a></td>
+<td><a href="https://github.com/GenSI-THUAIR/MolCRAFT">GitHub：MolCRAFT
+series</a>; old PMLR link redirects to official repository</td>
+<td><a href="https://huggingface.co/GenSI/MolJO">Hugging
+Face：GenSI/MolJO</a>; repository/HF cards link CrossDocked data, property predictors, backbone checkpoint, and generated samples</td>
+<td>Separate project page/video not found; repository is the project overview</td>
+<td>Official PMLR 267:50645–50671; arXiv versions, code, data instructions, model cards accessible</td>
+</tr>
+<tr class="even">
+<td>Technical origin: Bayesian Flow Networks</td>
+<td>Formal conference page not found; follow arXiv</td>
+<td><a
+href="https://arxiv.org/abs/2308.07037">arXiv:2308.07037</a>, first version 2023-08-14</td>
+<td>Paper-linked official repository not found</td>
+<td>Not public / not applicable</td>
+<td>Separate project page/video not found</td>
+<td>Foundation for continuous/discrete modeling in Bayesian-update parameter space</td>
+</tr>
+<tr class="odd">
+<td>Generative backbone: MolCRAFT</td>
+<td><a href="https://proceedings.mlr.press/v235/qu24a.html">ICML 2024 /
+PMLR 235</a></td>
+<td><a
+href="https://arxiv.org/abs/2404.12141">arXiv:2404.12141v4</a>，v4
+2024-05-28</td>
+<td><a
+href="https://github.com/GenSI-THUAIR/MolCRAFT">Same official repository</a></td>
+<td>HF card links backbone/data</td>
+<td>Separate video not found</td>
+<td>Unifies coordinates/types in continuous parameter space; MolJO's direct backbone</td>
+</tr>
+<tr class="even">
+<td>Gradient precursor: TAGMol</td>
+<td><a href="https://openreview.net/forum?id=tTtHBSGikn">ICML 2024
+ML4LMS OpenReview</a></td>
+<td><a
+href="https://arxiv.org/abs/2406.01650">arXiv:2406.01650v1</a>，2024-06-03</td>
+<td><a
+href="https://github.com/MoleculeAI/TAGMol">GitHub：MoleculeAI/TAGMol</a></td>
+<td>Repository provides configurations; separate weights page not found</td>
+<td>Separate project page/video not found</td>
+<td>Explicit coordinate guidance with implicit type responses motivates the continuous-modality gradient limitation</td>
+</tr>
+<tr class="odd">
+<td>Search precursor: DecompOpt</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2024/hash/180f6184a3458fa19c28c5483bc61877-Abstract-Conference.html">ICLR
+2024 Proceedings</a></td>
+<td><a
+href="https://arxiv.org/abs/2403.13829">arXiv:2403.13829v1</a>，2024-03-07</td>
+<td><a
+href="https://github.com/bytedance/DecompOpt">GitHub：bytedance/DecompOpt</a></td>
+<td>Repository provides training/optimization code; separate weights page not found</td>
+<td>Separate project page/video not found</td>
+<td>Strong but expensive black-box generate–filter–retrain optimization, contrasting with optimization inside one generation process</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Search coverage.</strong> PMLR, OpenReview, and arXiv establish identities/publication. Hugging Face Daily Papers, Papers with Code, and Semantic Scholar assist discovery/code/citations. No stable independent MolJO Papers with Code entry was found; Semantic Scholar is accessible through arXiv References &amp; Citations, but aggregators are not numerical evidence. ACL Anthology checked biomedical NLP candidates; the final random pool primarily uses verifiable ICML 2025 main-conference papers.</p>
+</section>
+<section id="候选池排重与随机选择" class="card level2">
+<h2>1. Candidate pool, deduplication, and random selection</h2>
+<p>First checked <code>ml-report-index.md</code>to exclude closely related topics and papers covered in the preceding 14 days, including
+<strong>Foundation Molecular
+Grammar</strong>(2026-09-06, molecular neurosymbolic grammar) and
+<strong>PemNN</strong>(2026-09-13, physical priors for protein force spectroscopy), also avoiding the previous day's robust theory. The frozen pool has 24 ICML 2025 main-conference papers within 24 months:</p>
+<ol type="1">
+<li>From Mechanistic Interpretability to Mechanistic Biology: Training,
+Evaluating, and Interpreting Sparse Autoencoders on Protein Language
+Models</li>
+<li>Training Flexible Models of Genetic Variant Effects from Functional
+Annotations using Accelerated Linear Algebra</li>
+<li>Raptor: Scalable Train-Free Embeddings for 3D Medical Volumes
+Leveraging Pretrained 2D Foundation Models</li>
+<li>Visual and Domain Knowledge for Professional-level Graph-of-Thought
+Medical Reasoning</li>
+<li>Breaking the Barrier of Hard Samples: A Data-Centric Approach to
+Synthetic Data for Medical Tasks</li>
+<li>MedRAX: Medical Reasoning Agent for Chest X-ray</li>
+<li>HealthGPT: A Medical Large Vision-Language Model for Unifying
+Comprehension and Generation via Heterogeneous Knowledge Adaptation</li>
+<li>TinyMIG: Transferring Generalization from Vision Foundation Models
+to Single-Domain Medical Imaging</li>
+<li>Distribution-aware Fairness Learning in Medical Image Segmentation
+From A Control-Theoretic Perspective</li>
+<li>Modalities Contribute Unequally: Enhancing Medical Multi-modal
+Learning through Adaptive Modality Token Re-balancing</li>
+<li>Multimodal Medical Code Tokenizer</li>
+<li>BoxLM: Unifying Structures and Semantics of Medical Concepts for
+Diagnosis Prediction in Healthcare</li>
+<li>LangDAug: Langevin Data Augmentation for Multi-Source Domain
+Generalization in Medical Image Segmentation</li>
+<li>GraphCL: Graph-based Clustering for Semi-Supervised Medical Image
+Segmentation</li>
+<li>MMedPO: Aligning Medical Vision-Language Models with Clinical-Aware
+Multimodal Preference Optimization</li>
+<li>MedXpertQA: Benchmarking Expert-Level Medical Reasoning and
+Understanding</li>
+<li>Hierarchical Graph Tokenization for Molecule-Language Alignment</li>
+<li>Scalable Non-Equivariant 3D Molecule Generation via Rotational
+Alignment</li>
+<li><strong>Empower Structure-Based Molecule Optimization with Gradient
+Guided Bayesian Flow Networks</strong></li>
+<li>Compositional Flows for 3D Molecule and Synthesis Pathway
+Co-design</li>
+<li>Protriever: End-to-End Differentiable Protein Homology Search for
+Fitness Prediction</li>
+<li>Protein Structure Tokenization: Benchmarking and New Recipe</li>
+<li>ReQFlow: Rectified Quaternion Flow for Efficient and High-Quality
+Protein Backbone Generation</li>
+<li>All-atom inverse protein folding through discrete flow matching</li>
+</ol>
+<p>Actually executed <code>shuf -i 1-24 -n 1</code>returned
+<strong>19</strong>. MolJO's official page, v4 full text, code, data instructions, weights, and supplements were sufficient, so redraw count was
+<strong>0</strong>. Selection was not popularity-based; importance is explained after the draw from evidence, not preselected subjectively.</p>
+</section>
+<section id="motivation为什么让分子更好比生成一个分子更难"
+class="level2">
+<h2>2. Motivation: why improving molecules is harder than generating them</h2>
+<p>Structure-based generation combines continuous 3D coordinates and discrete atom types under competing objectives. Better Vina affinity need not improve QED, SA, or connectivity. Coordinate-only gradients may move atoms to proxy-friendly positions without appropriate type changes; hard argmax breaks gradients; RL or generate–filter–retrain loops increase search costs rapidly.</p>
+<p>Under one CrossDocked2020 protocol, gradient-guided TAGMol has Success Rate <strong>11.1%</strong>; stronger iterative-search DecompOpt has
+<strong>39.4%</strong>; MolJO reaches <strong>51.3%</strong>(main Table 1, HTML lines 279–297). Versus TAGMol, absolute gain is <strong>40.2
+pp</strong>and relative gain <strong>362.16%</strong>; versus strongest same-protocol DecompOpt, <strong>11.9 pp</strong>and
+<strong>30.20%</strong>. Beyond more negative Vina, MolJO improves DecompOpt Vina Dock −7.63→−9.05, 1.42 kcal/mol in magnitude (+18.61%); SA 0.73→0.78 (+0.05, +6.85%), with QED tied at 0.56.</p>
+<p>This is multiobjective, not one leaderboard. MolJO Diversity 0.66 trails TAGMol 0.69/IPDiff 0.74 but exceeds DecompOpt 0.63. Selecting the best of ten samples per pocket raises MolJO† success from 51.3% to
+<strong>70.3%</strong>while diversity falls 0.66→
+<strong>0.61</strong>(Table 1): +19.0 pp/+37.04% success, −0.05/−7.58% diversity. Search budget contributes materially; top-of-ten and single-sample quality cannot be conflated.</p>
+</section>
+<section id="论文故事线核心假设与权衡" class="card level2">
+<h2>3. Argument, core assumptions, and trade-offs</h2>
+<p>Four steps define the method. Inherit MolCRAFT's BFN, representing types as probabilities and coordinates as Gaussian parameters—a continuous belief state behind discrete samples. Train affinity/QED/SA energy predictors and jointly differentiate coordinate/type parameters, unlike TAGMol's explicit-coordinate/implicit-type guidance. Use sliding-window backward correction over the latest k states to escape premature local guidance and balance exploration/exploitation. Prove SE(3)-equivariant coordinate guidance and extend to R-group redesign, fragment growing, scaffold hopping, joint objectives, and large-pocket OOD.</p>
+<p>Three assumptions matter: energy-predictor (E_phi( heta,t,p)) gradients near BFN trajectories align with true property improvements, though validation uses proxies, not wet labs; probability gradients translate into useful discrete type choices despite categorical sampling; and backward windows find better basins without destroying validity. Appendix k sweeps support an empirical stable region, not global optimality.</p>
+<p>Three tradeoffs are central:<strong>Properties versus validity</strong>: stronger affinity guidance can reduce connectivity;<strong>Exploitation versus exploration</strong>: short B.C. windows accumulate local error, long windows add rollback cost;<strong>Quality versus budget</strong>: top-of-ten boosts success but no longer matches single-sample cost. The appendix exposes these transitions, though the abstract's SOTA claim does not state their boundaries alongside it.</p>
+</section>
+<section id="方程级形式化与算法" class="card level2">
+<h2>4. Equation-level formalization and algorithm</h2>
+<section id="bfn-的可微参数空间" class="level3">
+<h3>4.1 Differentiable BFN parameter space</h3>
+<p>For data (x) and latent parameters ( heta), BFN maintains sender, Bayesian-update, and output distributions over time (t). Eqs.1–3 (HTML lines 145–155) update parameters after noisy message (y):</p>
+<p>[ p_F(x;t)=E_{yp_S(yx;(t))},!(-h(_0,y,(t))), ]</p>
+<p>A neural network ((,t,p)) predicts clean data or the next distribution, conditioned on pocket p. Coordinates use Gaussian means/precisions; types use categorical probabilities. Discrete atoms are not pretended continuous: derivatives act on the probability simplex before sampling.</p>
+</section>
+<section id="联合梯度引导" class="level3">
+<h3>4.2 Joint gradient guidance</h3>
+<p>Given property energy (E(,t,p)) and scale s, Eqs.4–5 (lines 170–177) approximate conditioned transitions through exponential tilting:</p>
+<p>[ p(‘,p,E)p(’,p). ]</p>
+<p>For coordinates, Eqs.6–7 (lines 180–189) shift means along (-_{}E); for types, Eqs.8–9 (lines 191–203) adjust probabilities and renormalize. Energy uses SE(3)-invariant/equivariant coordinate representations, preserving rotation/translation equivariance under Proposition 4.4 (lines 204–210). Multiobjective gradients are simply averaged—interpretable but not adaptive Pareto weighting.</p>
+</section>
+<section id="backward-correction" class="level3">
+<h3>4.3 Backward correction</h3>
+<p>Single-step guidance propagates current errors. At step i, B.C. stores history, revisits the latest k steps, resamples historical posteriors, and corrects with current gradients. Eqs.11–14 (lines 243–258) summarize as</p>
+<p>[ <em>i^{} =!(</em>{i-k}, y_{i-k+1:i}, -s_E(_i,t_i,p)), ]</p>
+<p>The discrete implementation substitutes approximate derivative ((1-)) for numerical stability. This is an engineering heuristic, not uniquely implied by the exact categorical Jacobian, and a key gap between effectiveness and theoretical completeness to reproduce.</p>
+</section>
+<section id="伪代码" class="level3">
+<h3>4.4 Pseudocode</h3>
+<pre class="text"><code>Input: protein pocket p; pretrained MolCRAFT; property energy Eφ; n=200 steps; scale s=50; window k=130
+Initialize coordinate belief θx,0, type probabilities θv,0; history H←∅
+for i = 1..n:
+    t ← i/n
+    x̂, v̂ ← Φ(θx,i-1, θv,i-1, t, p)
+    gx ← ∂Eφ/∂θx ; gv ← ∂Eφ/∂θv
+    θx,i ← ContinuousBFNUpdate(θx,i-1, x̂, -s·gx)
+    θv,i ← DiscreteBFNUpdate(θv,i-1, v̂, -s·gv)
+    H.push(θx,i, θv,i)
+    if correction step:
+        j ← max(0, i-k)
+        (θx,i, θv,i) ← ReconstructAndResample(H[j:i], gx, gv)
+Sample final atom types, decode coordinates, check connectivity/chemical validity
+Output: candidate molecules; optionally generate ten per pocket and select by success criteria</code></pre>
+</section>
+</section>
+<section id="关键机制与工程细节" class="card level2">
+<h2>5. Key mechanisms and engineering details</h2>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Layer</th>
+<th scope="col">Reported in paper/repository</th>
+<th scope="col">Why it matters</th>
+<th scope="col">Reuse considerations</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Generative backbone</td>
+<td>Load pretrained MolCRAFT without MolJO-specific fine-tuning; coordinate noise (_1=0.03), type precision (_1=1.5) (implementation appendix, lines 517–538)</td>
+<td>Focus gains on test-time guidance, not a larger generator</td>
+<td>Calibrate backbone density coverage before new-domain transfer; OOD gradients may escape into low-density regions</td>
+</tr>
+<tr class="even">
+<td>Network</td>
+<td>kNN graph k=32, nine layers, hidden size 128, sixteen heads; jointly encoded atom/pocket features (lines 517–538)</td>
+<td>One representation supports coordinate/type energies</td>
+<td>Ablate pocket radius, neighbor count, and large-protein memory separately</td>
+</tr>
+<tr class="odd">
+<td>Property predictors</td>
+<td>MSE-trained Vina/QED/SA energies; Adam, lr (5^{-4}), batch eight; under eight hours on one RTX 3090, at most five epochs (lines 517–538)</td>
+<td>Predictors determine gradient quality</td>
+<td>Report OOD calibration/gradient smoothness, not only final sample scores</td>
+</tr>
+<tr class="even">
+<td>Sampling</td>
+<td>200 steps; position/type scales both 50; simple multiobjective gradient averaging (repository command/appendix)</td>
+<td>No inference-time RL/retraining</td>
+<td>Different units implicitly reweight averaged gradients; normalize gradient norms first</td>
+</tr>
+<tr class="odd">
+<td>B.C.</td>
+<td>Final k=130; appendix says k&gt;50 improves and k∈(50,200] is relatively stable (lines 744–750)</td>
+<td>Backward correction is a major performance source</td>
+<td>k depends on step count; resweep time fractions at 50/100/1000 steps</td>
+</tr>
+<tr class="even">
+<td>Data</td>
+<td>CrossDocked2020: remove RMSD&gt;1Å; protein-sequence similarity &lt;30% clustering; 100,000 training poses, 100 test proteins; 100 molecules/pocket for main results (lines 267–275)</td>
+<td>Rigorous but single benchmark</td>
+<td>Sequence deduplication does not rule out pocket-geometry/scaffold leakage; add those splits</td>
+</tr>
+<tr class="odd">
+<td>Success criteria</td>
+<td>Vina Dock &lt; -8.18、QED &gt;0.25、SA &gt;0.59 (lines 267–275)</td>
+<td>One Success Rate combines three objectives</td>
+<td>Thresholds can reorder models; report 3D Pareto surfaces/threshold curves</td>
+</tr>
+</tbody>
+</table>
+<p>A configuration discrepancy needs explicit labeling: HF/README training examples specify
+<code>epochs 15</code>while the appendix says property predictors train at most five epochs. These may be generic defaults versus actual runs, but no checkpoint-hash/config mapping resolves it. Public weights still require pinned commits, hashes, and commands for training reproduction, not merely README defaults.</p>
+</section>
+<section id="数据集基准与指标" class="card level2">
+<h2>6. Datasets, benchmarks, and metrics</h2>
+<p>CrossDocked2020 aligns protein pockets/ligand complexes and is common in SBDD/SBMO. Evaluation covers de novo optimization, R-group redesign, fragment growing, scaffold hopping, and large-pocket OOD, plus joint objectives, geometry, and timing. Vina Score typically evaluates unoptimized poses, Vina Min applies local minimization, and Vina Dock performs docking search—distinct variables. QED combines empirical drug-likeness, SA proxies synthesizability, Diversity measures variation, and Success is the conjunction of three thresholds.</p>
+<p>These metrics compare generation strategies under the same docking/proxy pipeline, not clinical activity, selectivity, toxicity, ADMET, synthetic yield, or binding free energy. Docking often improves with molecular size; despite main-experiment atom-count controls, large-pocket OOD results require checking average atom counts.</p>
+</section>
+<section id="完整主结果矩阵" class="card level2">
+<h2>7. Complete main-results matrix</h2>
+<section id="标准-crossdocked2020十五方法七指标" class="level3">
+<h3>7.1 Standard CrossDocked2020: fifteen methods, seven metrics</h3>
+<p>Transcribed from core Table 1 (HTML lines 279–297); slash-separated values are mean/median. More negative Vina is better; other metrics are higher-is-better.<code>—</code>
+means unreported, without invented values.</p>
+<table>
+<colgroup>
+<col style="width: 11%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">Vina Score ↓</th>
+<th scope="col" style="text-align: right;">Vina Min ↓</th>
+<th scope="col" style="text-align: right;">Vina Dock ↓</th>
+<th scope="col" style="text-align: right;">QED ↑</th>
+<th scope="col" style="text-align: right;">SA ↑</th>
+<th scope="col" style="text-align: right;">Div ↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Reference</td>
+<td style="text-align: right;">-6.36/-6.46</td>
+<td style="text-align: right;">-6.71/-6.49</td>
+<td style="text-align: right;">-7.45/-7.26</td>
+<td style="text-align: right;">0.48</td>
+<td style="text-align: right;">0.73</td>
+<td style="text-align: right;">—</td>
+</tr>
+<tr class="even">
+<td>AR</td>
+<td style="text-align: right;">-5.75/-5.64</td>
+<td style="text-align: right;">-6.18/-5.88</td>
+<td style="text-align: right;">-6.75/-6.62</td>
+<td style="text-align: right;">0.51</td>
+<td style="text-align: right;">0.63</td>
+<td style="text-align: right;">0.70</td>
+</tr>
+<tr class="odd">
+<td>GraphBP</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">-4.80/-4.70</td>
+<td style="text-align: right;">0.43</td>
+<td style="text-align: right;">0.49</td>
+<td style="text-align: right;">0.79</td>
+</tr>
+<tr class="even">
+<td>Pocket2Mol</td>
+<td style="text-align: right;">-5.14/-4.70</td>
+<td style="text-align: right;">-6.42/-5.82</td>
+<td style="text-align: right;">-7.15/-6.79</td>
+<td style="text-align: right;">0.57</td>
+<td style="text-align: right;">0.76</td>
+<td style="text-align: right;">0.69</td>
+</tr>
+<tr class="odd">
+<td>FLAG</td>
+<td style="text-align: right;">45.85/36.52</td>
+<td style="text-align: right;">9.71/-2.43</td>
+<td style="text-align: right;">-4.84/-5.56</td>
+<td style="text-align: right;">0.61</td>
+<td style="text-align: right;">0.63</td>
+<td style="text-align: right;">0.70</td>
+</tr>
+<tr class="even">
+<td>DiffSBDD</td>
+<td style="text-align: right;">-1.44/-4.91</td>
+<td style="text-align: right;">-4.52/-5.84</td>
+<td style="text-align: right;">-7.14/-7.30</td>
+<td style="text-align: right;">0.47</td>
+<td style="text-align: right;">0.58</td>
+<td style="text-align: right;">0.73</td>
+</tr>
+<tr class="odd">
+<td>TargetDiff</td>
+<td style="text-align: right;">-5.47/-6.30</td>
+<td style="text-align: right;">-6.64/-6.83</td>
+<td style="text-align: right;">-7.80/-7.91</td>
+<td style="text-align: right;">0.48</td>
+<td style="text-align: right;">0.58</td>
+<td style="text-align: right;">0.72</td>
+</tr>
+<tr class="even">
+<td>DecompDiff</td>
+<td style="text-align: right;">-5.19/-5.27</td>
+<td style="text-align: right;">-6.03/-6.00</td>
+<td style="text-align: right;">-7.03/-7.16</td>
+<td style="text-align: right;">0.51</td>
+<td style="text-align: right;">0.66</td>
+<td style="text-align: right;">0.73</td>
+</tr>
+<tr class="odd">
+<td>IPDiff</td>
+<td style="text-align: right;">-6.41/-7.01</td>
+<td style="text-align: right;">-7.45/-7.48</td>
+<td style="text-align: right;">-8.57/-8.51</td>
+<td style="text-align: right;">0.52</td>
+<td style="text-align: right;">0.59</td>
+<td style="text-align: right;"><strong>0.74</strong></td>
+</tr>
+<tr class="even">
+<td>MolCRAFT</td>
+<td style="text-align: right;">-6.55/-6.95</td>
+<td style="text-align: right;">-7.21/-7.14</td>
+<td style="text-align: right;">-7.67/-7.82</td>
+<td style="text-align: right;">0.50</td>
+<td style="text-align: right;">0.67</td>
+<td style="text-align: right;">0.70</td>
+</tr>
+<tr class="odd">
+<td>AutoGrow4</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">-8.99/-9.00</td>
+<td style="text-align: right;">0.46</td>
+<td style="text-align: right;">0.76</td>
+<td style="text-align: right;">0.47</td>
+</tr>
+<tr class="even">
+<td>RGA</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">-8.01/-8.17</td>
+<td style="text-align: right;"><strong>0.57</strong></td>
+<td style="text-align: right;">0.71</td>
+<td style="text-align: right;">0.41</td>
+</tr>
+<tr class="odd">
+<td>DecompOpt</td>
+<td style="text-align: right;">-5.75/-5.97</td>
+<td style="text-align: right;">-6.58/-6.70</td>
+<td style="text-align: right;">-7.63/-8.02</td>
+<td style="text-align: right;">0.56</td>
+<td style="text-align: right;">0.73</td>
+<td style="text-align: right;">0.63</td>
+</tr>
+<tr class="even">
+<td>TAGMol</td>
+<td style="text-align: right;">-7.02/-7.77</td>
+<td style="text-align: right;">-7.95/-8.07</td>
+<td style="text-align: right;">-8.59/-8.69</td>
+<td style="text-align: right;">0.55</td>
+<td style="text-align: right;">0.56</td>
+<td style="text-align: right;">0.69</td>
+</tr>
+<tr class="odd">
+<td><strong>MolJO</strong></td>
+<td style="text-align: right;"><strong>-7.52/-8.02</strong></td>
+<td style="text-align: right;"><strong>-8.33/-8.34</strong></td>
+<td style="text-align: right;"><strong>-9.05/-9.13</strong></td>
+<td style="text-align: right;">0.56</td>
+<td style="text-align: right;"><strong>0.78</strong></td>
+<td style="text-align: right;">0.66</td>
+</tr>
+<tr class="even">
+<td>MolJO†（top-of-10）</td>
+<td style="text-align: right;">-8.54/-8.81</td>
+<td style="text-align: right;">-9.48/-9.09</td>
+<td style="text-align: right;">-10.50/-10.14</td>
+<td style="text-align: right;">0.67</td>
+<td style="text-align: right;">0.79</td>
+<td style="text-align: right;">0.61</td>
+</tr>
+</tbody>
+</table>
+<p><code>MolJO†</code> 's stronger results use ten times as many candidates and are not equal-budget bests. Versus TAGMol, MolJO gains Success +40.2 pp (+362.16%), SA +0.22 (+39.29%), and Vina Dock magnitude 0.46 (+5.36%). Versus DecompOpt: Success +11.9 pp (+30.20%), Vina Dock 1.42 (+18.61%), SA +0.05 (+6.85%).</p>
+</section>
+<section id="三类约束优化" class="level3">
+<h3>7.2 Three constrained optimization tasks</h3>
+<p>Table 2 (lines 299–313) reports only Success Rate. Against strongest baseline MolCRAFT, gains are redesign +6.3 pp/+27.75%, growing +12.8 pp/+64.32%, hopping +9.0 pp/+61.64%.</p>
+<table>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">R-group redesign ↑</th>
+<th scope="col" style="text-align: right;">Fragment growing ↑</th>
+<th scope="col" style="text-align: right;">Scaffold hopping ↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>TargetDiff</td>
+<td style="text-align: right;">18.9%</td>
+<td style="text-align: right;">11.2%</td>
+<td style="text-align: right;">6.2%</td>
+</tr>
+<tr class="even">
+<td>TAGMol</td>
+<td style="text-align: right;">19.2%</td>
+<td style="text-align: right;">11.8%</td>
+<td style="text-align: right;">6.9%</td>
+</tr>
+<tr class="odd">
+<td>MolCRAFT</td>
+<td style="text-align: right;">22.7%</td>
+<td style="text-align: right;">19.9%</td>
+<td style="text-align: right;">14.6%</td>
+</tr>
+<tr class="even">
+<td><strong>MolJO</strong></td>
+<td style="text-align: right;"><strong>29.0%</strong></td>
+<td style="text-align: right;"><strong>32.7%</strong></td>
+<td style="text-align: right;"><strong>23.6%</strong></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="大-pocket-ood" class="level3">
+<h3>7.3 Large-pocket OOD</h3>
+<p>Table 3 (lines 331–338): MolJO success 64.2% versus DecompOpt 52.5% (+11.7 pp/+22.29%), Vina Dock −10.53, SA 0.72. But MolJO averages 30.0 atoms versus Reference 22.8, +7.2/+31.58%; DecompOpt reaches 32.9. Size-sensitive docking supports superiority under these atom-count/proxy distributions, not better efficiency per heavy atom.</p>
+<table>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">Vina Dock ↓</th>
+<th scope="col" style="text-align: right;">QED ↑</th>
+<th scope="col" style="text-align: right;">SA ↑</th>
+<th scope="col" style="text-align: right;">Success ↑</th>
+<th scope="col" style="text-align: right;">Mean atom count</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Reference</td>
+<td style="text-align: right;">-7.45</td>
+<td style="text-align: right;">0.48</td>
+<td style="text-align: right;"><strong>0.73</strong></td>
+<td style="text-align: right;">25.0%</td>
+<td style="text-align: right;">22.8</td>
+</tr>
+<tr class="even">
+<td>DecompDiff</td>
+<td style="text-align: right;">-8.39</td>
+<td style="text-align: right;">0.45</td>
+<td style="text-align: right;">0.61</td>
+<td style="text-align: right;">24.5%</td>
+<td style="text-align: right;">29.4</td>
+</tr>
+<tr class="odd">
+<td>DecompOpt</td>
+<td style="text-align: right;">-9.01</td>
+<td style="text-align: right;">0.48</td>
+<td style="text-align: right;">0.65</td>
+<td style="text-align: right;">52.5%</td>
+<td style="text-align: right;">32.9</td>
+</tr>
+<tr class="even">
+<td>MolCRAFT</td>
+<td style="text-align: right;">-9.25</td>
+<td style="text-align: right;">0.46</td>
+<td style="text-align: right;">0.62</td>
+<td style="text-align: right;">36.6%</td>
+<td style="text-align: right;">29.4</td>
+</tr>
+<tr class="odd">
+<td><strong>MolJO</strong></td>
+<td style="text-align: right;"><strong>-10.53</strong></td>
+<td style="text-align: right;"><strong>0.50</strong></td>
+<td style="text-align: right;">0.72</td>
+<td style="text-align: right;"><strong>64.2%</strong></td>
+<td style="text-align: right;">30.0</td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
+
+<figure class="figure" aria-labelledby="success-chart-title">
+  <p class="fig-title" id="success-chart-title">Same-protocol Success Rate and search budget</p>
+  <p class="fig-sub">MolJO's standard configuration beats TAGMol/DecompOpt; top-of-ten improves further at unequal budget.</p>
+  <div class="legend" aria-label="Legend">
+    <span><span class="swatch" style="background:#2a78d6"></span>Standard configuration / reported</span>
+    <span><span class="swatch" style="background:#eb6834"></span>MolJO variants</span>
+  </div>
+  <svg class="chart" viewBox="0 0 900 390" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>Success rates of TAGMol, DecompOpt, MolJO, and top-of-ten MolJO</title>
+    <desc>Bars: 11.1%, 39.4%, 51.3%, 70.3%. The last selects among ten candidates per pocket, not equal compute.</desc>
+    <g stroke="var(--grid)" stroke-width="1">
+      <line x1="105" y1="315" x2="850" y2="315"/><line x1="105" y1="247.5" x2="850" y2="247.5"/>
+      <line x1="105" y1="180" x2="850" y2="180"/><line x1="105" y1="112.5" x2="850" y2="112.5"/>
+      <line x1="105" y1="45" x2="850" y2="45"/>
+    </g>
+    <g font-size="13">
+      <text x="88" y="320" text-anchor="end">0%</text><text x="88" y="252" text-anchor="end">20%</text>
+      <text x="88" y="185" text-anchor="end">40%</text><text x="88" y="117" text-anchor="end">60%</text>
+      <text x="88" y="50" text-anchor="end">80%</text>
+    </g>
+    <g>
+      <rect x="145" y="277.5" width="115" height="37.5" rx="5" fill="#2a78d6" tabindex="0" data-tip="TAGMol：11.1%"><title>TAGMol 11.1%</title></rect>
+      <rect x="325" y="182.0" width="115" height="133.0" rx="5" fill="#2a78d6" tabindex="0" data-tip="DecompOpt：39.4%"><title>DecompOpt 39.4%</title></rect>
+      <rect x="505" y="141.9" width="115" height="173.1" rx="5" fill="#eb6834" tabindex="0" data-tip="MolJO：51.3%"><title>MolJO 51.3%</title></rect>
+      <rect x="685" y="77.7" width="115" height="237.3" rx="5" fill="#d95926" tabindex="0" data-tip="MolJO† top-of-ten: 70.3%, higher search budget"><title>MolJO top-of-10 70.3%</title></rect>
+    </g>
+    <g font-size="13" text-anchor="middle">
+      <text x="202" y="338">TAGMol</text><text x="382" y="338">DecompOpt</text>
+      <text x="562" y="338">MolJO</text><text x="742" y="338">MolJO†</text>
+      <text x="202" y="270">11.1%</text><text x="382" y="174">39.4%</text>
+      <text x="562" y="134">51.3%</text><text x="742" y="70">70.3%</text>
+    </g>
+    <text x="475" y="378" text-anchor="middle" font-size="12">Success Rate, higher is better. MolJO† selects among ten candidates/pocket.</text>
+  </svg>
+  <figcaption>Data: MolJO Table 1, arXiv v4 HTML lines 279–297; percent.</figcaption>
+</figure>
+
+<section id="逐层消融真正的收益来自哪里" class="card level2">
+<h2>8. Layered ablations: where gains originate</h2>
+<p>Table 4 (lines 343–353) separates gradients and three samplers. Mean metrics are retained; parentheses are original relative changes, not inferred significance.</p>
+<table>
+<colgroup>
+<col style="width: 13%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Sampler/guidance</th>
+<th scope="col" style="text-align: right;">Vina Score ↓</th>
+<th scope="col" style="text-align: right;">Vina Min ↓</th>
+<th scope="col" style="text-align: right;">Vina Dock ↓</th>
+<th scope="col" style="text-align: right;">QED ↑</th>
+<th scope="col" style="text-align: right;">SA ↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Vanilla, no gradient</td>
+<td style="text-align: right;">-5.23</td>
+<td style="text-align: right;">-6.30</td>
+<td style="text-align: right;">-7.37</td>
+<td style="text-align: right;">0.46</td>
+<td style="text-align: right;">0.62</td>
+</tr>
+<tr class="even">
+<td>Vanilla, gradient</td>
+<td style="text-align: right;">-5.47（+4.6%）</td>
+<td style="text-align: right;">-6.29（-0.2%）</td>
+<td style="text-align: right;">-7.49（+2.2%）</td>
+<td style="text-align: right;">0.46（0）</td>
+<td style="text-align: right;">0.62（0）</td>
+</tr>
+<tr class="odd">
+<td>SDE, no gradient</td>
+<td style="text-align: right;">-6.62</td>
+<td style="text-align: right;">-7.31</td>
+<td style="text-align: right;">-8.22</td>
+<td style="text-align: right;">0.51</td>
+<td style="text-align: right;">0.65</td>
+</tr>
+<tr class="even">
+<td>SDE, gradient</td>
+<td style="text-align: right;">-7.11（+7.4%）</td>
+<td style="text-align: right;">-7.76（+6.1%）</td>
+<td style="text-align: right;">-8.39（+2.1%）</td>
+<td style="text-align: right;">0.50（-1.9%）</td>
+<td style="text-align: right;">0.68（+4.6%）</td>
+</tr>
+<tr class="odd">
+<td>B.C., no gradient</td>
+<td style="text-align: right;">-6.50</td>
+<td style="text-align: right;">-7.03</td>
+<td style="text-align: right;">-7.95</td>
+<td style="text-align: right;">0.49</td>
+<td style="text-align: right;">0.69</td>
+</tr>
+<tr class="even">
+<td><strong>B.C., gradient (MolJO)</strong></td>
+<td style="text-align: right;"><strong>-7.52（+15.7%）</strong></td>
+<td style="text-align: right;"><strong>-8.34（+18.6%）</strong></td>
+<td style="text-align: right;"><strong>-9.11（+14.6%）</strong></td>
+<td style="text-align: right;"><strong>0.56（+14.3%）</strong></td>
+<td style="text-align: right;"><strong>0.77（+11.6%）</strong></td>
+</tr>
+</tbody>
+</table>
+<p>First, Vanilla+gradient barely solves multiobjective optimization: QED/SA stay flat and Vina Min slightly worsens. Gradients alone are insufficient. Second, SDE randomness expands exploration and improves affinity but slightly lowers QED. Third, only B.C.+gradient improves all five metrics, identifying backward resampling as the mechanism sustaining local guidance.</p>
+<p>Table 11 (lines 727–740) isolates joint guidance. For affinity, removing type gradients worsens Vina Score −7.74→−7.13; removing coordinates gives −6.61. Coordinates matter more, but types contribute 0.61. For QED, full guidance reaches 0.66, no type gradient 0.52, no coordinate gradient 0.65. Geometry primarily drives affinity, types drive QED; the gradients are not redundant.</p>
+</section>
+<section id="超参敏感性相变与统计显著性" class="card level2">
+<h2>9. Sensitivity, transitions, and significance</h2>
+<section id="引导尺度的可见相变" class="level3">
+<h3>9.1 Visible guidance-scale transitions</h3>
+<p>Appendix Table 13 (lines 765–787) is crucial. Affinity scale 20→50 improves Vina Min −7.84→−8.39 while Connected falls only 0.98→0.90. At 100, Vina Min reaches −9.87 but Connected drops
+<strong>0.90→0.55, −35 pp / −38.89% relative</strong>and SA 0.68→0.63. Between scales 50–100, better proxies coincide with worse structure.</p>
+<table>
+<colgroup>
+<col style="width: 13%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Affinity scale</th>
+<th scope="col" style="text-align: right;">Vina Score ↓</th>
+<th scope="col" style="text-align: right;">Vina Min ↓</th>
+<th scope="col" style="text-align: right;">QED ↑</th>
+<th scope="col" style="text-align: right;">SA ↑</th>
+<th scope="col" style="text-align: right;">Connected ↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>0.1</td>
+<td style="text-align: right;">-6.28</td>
+<td style="text-align: right;">-7.17</td>
+<td style="text-align: right;">0.50</td>
+<td style="text-align: right;">0.70</td>
+<td style="text-align: right;">0.96</td>
+</tr>
+<tr class="even">
+<td>1</td>
+<td style="text-align: right;">-6.24</td>
+<td style="text-align: right;">-7.27</td>
+<td style="text-align: right;">0.50</td>
+<td style="text-align: right;">0.69</td>
+<td style="text-align: right;">0.96</td>
+</tr>
+<tr class="odd">
+<td>10</td>
+<td style="text-align: right;">-6.69</td>
+<td style="text-align: right;">-7.46</td>
+<td style="text-align: right;">0.51</td>
+<td style="text-align: right;">0.70</td>
+<td style="text-align: right;">0.97</td>
+</tr>
+<tr class="even">
+<td>20</td>
+<td style="text-align: right;">-7.03</td>
+<td style="text-align: right;">-7.84</td>
+<td style="text-align: right;">0.51</td>
+<td style="text-align: right;">0.70</td>
+<td style="text-align: right;"><strong>0.98</strong></td>
+</tr>
+<tr class="odd">
+<td>50 (main configuration)</td>
+<td style="text-align: right;">-7.64</td>
+<td style="text-align: right;">-8.39</td>
+<td style="text-align: right;">0.53</td>
+<td style="text-align: right;">0.68</td>
+<td style="text-align: right;">0.90</td>
+</tr>
+<tr class="even">
+<td>100</td>
+<td style="text-align: right;"><strong>-9.33</strong></td>
+<td style="text-align: right;"><strong>-9.87</strong></td>
+<td style="text-align: right;"><strong>0.55</strong></td>
+<td style="text-align: right;">0.63</td>
+<td style="text-align: right;">0.55</td>
+</tr>
+</tbody>
+</table>
+<p>QED guidance reaches 0.66 at scales 10–50, then falls to 0.62 with SA 0.60 at 100. SA guidance saturates at 0.79 for 20–50. Scale 50 is not universally optimal; objectives have distinct saturation/collapse points, and one shared scale assumes unverified unit compatibility.</p>
+</section>
+<section id="b.c.-窗口" class="level3">
+<h3>9.2 B.C. window</h3>
+<p>The text reports improved balance when k&gt;50, selects k=130, and describes relative stability over k∈(50,200] (lines 744–750). However,<strong>no complete numerical table or variance is reported</strong>, only plots/prose. The supported inference is that short windows accumulate error and 130 works at 200 steps, not that 130 is optimal for every step count, pocket size, or objective.</p>
+</section>
+<section id="显著性" class="level3">
+<h3>9.3 Significance</h3>
+<p>Appendix Table 12 (lines 751–756) uses independent t-tests at N=1000. MolJO versus Vanilla p-values: Vina Score (2.63^{-13}), Vina Min (3.31^{-31}), Vina Dock (2.79^{-35}), SA (8.10^{-115}), QED (1.98^{-26}); versus SDE: (2.55<sup>{-19})、(6.48</sup>{-19})、(7.84<sup>{-4})、(2.10</sup>{-50}), (1.82^{-12}). Table 6 also gives continuous-metric 95% CIs, e.g. MolJO Vina Dock −9.048±0.083, QED 0.556±0.003, SA 0.775±0.003 (lines 644–657).</p>
+<p>But Success Rate, constrained tasks, OOD, and top-of-ten have
+<strong>no confidence intervals or paired tests</strong>, and multiple-comparison correction is unspecified. Continuous proxy gains are unlikely to be mean noise in this sample; success gaps such as 11.9/6.3 pp are not all established significant.</p>
+</section>
+</section>
+<section id="构象质量与系统成本" class="card level2">
+<h2>10. Conformation quality and system cost</h2>
+<p>Table 14 (lines 804–817): MolJO energy 163, clash 6.72, RMSD&lt;2Å pass rate 43.5%, connected 97.3%. RMSD pass slightly beats MolCRAFT 42.4%; energy beats MolCRAFT 196 but trails Reference 114, with clash above Reference 5.46. Optimization avoids wholesale geometric destruction without matching crystal conformations.</p>
+<table>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">Energy ↓</th>
+<th scope="col" style="text-align: right;">Clash ↓</th>
+<th scope="col" style="text-align: right;">RMSD&lt;2Å ↑</th>
+<th scope="col" style="text-align: right;">Connected ↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Reference</td>
+<td style="text-align: right;"><strong>114</strong></td>
+<td style="text-align: right;">5.46</td>
+<td style="text-align: right;">34.0%</td>
+<td style="text-align: right;"><strong>100%</strong></td>
+</tr>
+<tr class="even">
+<td>Pocket2Mol</td>
+<td style="text-align: right;">186</td>
+<td style="text-align: right;">6.22</td>
+<td style="text-align: right;">31.3%</td>
+<td style="text-align: right;">96.3%</td>
+</tr>
+<tr class="odd">
+<td>TargetDiff</td>
+<td style="text-align: right;">1208</td>
+<td style="text-align: right;">10.67</td>
+<td style="text-align: right;">31.0%</td>
+<td style="text-align: right;">90.4%</td>
+</tr>
+<tr class="even">
+<td>MolCRAFT</td>
+<td style="text-align: right;">196</td>
+<td style="text-align: right;">6.91</td>
+<td style="text-align: right;">42.4%</td>
+<td style="text-align: right;">96.7%</td>
+</tr>
+<tr class="odd">
+<td>TAGMol</td>
+<td style="text-align: right;">2058</td>
+<td style="text-align: right;">7.41</td>
+<td style="text-align: right;">37.2%</td>
+<td style="text-align: right;">92.0%</td>
+</tr>
+<tr class="even">
+<td><strong>MolJO</strong></td>
+<td style="text-align: right;">163</td>
+<td style="text-align: right;">6.72</td>
+<td style="text-align: right;"><strong>43.5%</strong></td>
+<td style="text-align: right;">97.3%</td>
+</tr>
+</tbody>
+</table>
+<p>Table 16 (lines 839–844), one RTX 3090, batch five, ten proteins, reports mean±sd time: MolJO <strong>146±11 s</strong>, TAGMol 667±69 s, RGA 458±43 s, AutoGrow4 2586±360 s, DecompOpt 11714±1115 s. Recomputed speedups are
+<strong>4.57×、3.14×、17.71×、80.23×</strong>. This is practical progress without thirty rounds of black-box retraining. However, batch/pocket-size/sample-count throughput curves are absent, and predictor training, docking, and top-of-ten selection are not fully amortized into total cost.</p>
+</section>
+<section id="相关工作问题来源与技术传递链" class="card level2">
+<h2>11. Related work: problem origins and technical transfer</h2>
+<section id="bayesian-flow-networks统一参数空间" class="level3">
+<h3>11.1 Bayesian Flow Networks: unified parameter space</h3>
+<p><strong>Problem solved.</strong> BFNs express noise and generation through Bayesian updates in distribution-parameter space, unifying continuous/discrete variables (arXiv:2308.07037).<br />
+<strong>Remaining gap.</strong> Original BFN addresses generation, not pocket-conditioned joint coordinate/type optimization through properties.<br />
+<strong>MolJO's response.</strong> Train/differentiate energies on intermediate beliefs, avoiding gradients through final hard type sampling.<br />
+<strong>Design transfer.</strong>
+Mapping heterogeneous modalities into differentiable belief parameters before joint guidance transfers to protein sequence–structure, material composition–lattice, and reactant–pathway generation.</p>
+</section>
+<section id="molcraft从统一生成到可控优化" class="level3">
+<h3>11.2 MolCRAFT: unified generation to controllable optimization</h3>
+<p><strong>Problem solved.</strong> MolCRAFT jointly generates coordinates/types in continuous parameter space. The ICML 2024 page reports reference-level Vina Score −6.59 kcal/mol, improving a strong baseline by 0.84.<br />
+<strong>Remaining gap.</strong> It is a pocket-conditioned generator, not a direct inference-time interface for higher affinity/QED/SA.<br />
+<strong>MolJO's response.</strong> Reuse the pretrained backbone and train only property predictors, isolating controller gains rather than a larger generator.<br />
+<strong>Design transfer.</strong>
+Pretrain a feasible-domain model, then attach small differentiable property heads: often more economical than full AI4Science retraining.</p>
+</section>
+<section id="tagmol连续坐标可引导离散类型仍滞后" class="level3">
+<h3>11.3 TAGMol: guided coordinates, lagging discrete types</h3>
+<p><strong>Problem solved.</strong> TAGMol adds property gradients to diffusion sampling. Table 1 reports Vina Score −7.02, Min −7.95, Dock −8.59, QED 0.55, SA 0.56, Diversity 0.69, establishing test-time optimization without RL.<br />
+<strong>Remaining gap.</strong>
+Guidance explicitly acts on coordinates; types respond through generator coupling, and SA remains low. Hit/success definitions also differ between papers.<br />
+<strong>MolJO's response.</strong> Direct type-probability gradients plus B.C. prevent accumulating local errors. Under the core paper's common protocol, TAGMol success is 11.1% versus MolJO 51.3%.<br />
+<strong>Design transfer.</strong>
+Mixed-modal optimization must address more than the easily differentiated half; ablate every modality against every objective.</p>
+</section>
+<section id="decompopt强黑盒搜索但计算极重" class="level3">
+<h3>11.4 DecompOpt: strong but expensive black-box search</h3>
+<p><strong>Problem solved.</strong> DecompOpt combines decomposed generation, property filtering, and iterative optimization. With Opt Prior, its original reports Success 52.5%, Vina Dock −8.98, Diversity 0.60 over thirty rounds.<br />
+<strong>Remaining gap.</strong> Repeated retraining/filtering costs 11714±1115 s in MolJO Table 16's remeasurement; no universal multiobjective optimum emerges.<br />
+<strong>MolJO's response.</strong> Differentiable optimization within one 200-step trajectory takes 146±11 s. Under MolJO's unified protocol, DecompOpt success is 39.4% versus MolJO 51.3%.<br />
+<strong>Design transfer.</strong> When scientific proxies are differentiable or distillable, trajectory control can be cheaper than outer-loop search. Unreliable surrogates still require black-box verification.</p>
+</section>
+<section id="非线性技术演进树" class="level3">
+<h3>11.5 Nonlinear technical evolution tree</h3>
+<pre class="text"><code>                         ┌─ TAGMol: diffusion + coordinate gradients ─┐
+BFN: Bayesian flows in parameter space ─┤                          ├─ MolJO: joint coordinate/type gradients
+                                       └─ MolCRAFT: continuous-parameter SBDD ─┘       │
+                                                                                     ├─ backward correction
+Black-box optimization ─ DecompOpt: generate→filter→retrain (30 rounds) ──────────────┘
+                                                                                     │
+                    ┌─ R-group redesign / growing / hopping ──────────────────────────┤
+                    ├─ affinity + QED + SA objectives ────────────────────────────────┤
+                    └─ large-pocket OOD / top-of-N search ────────────────────────────┘
+                                      ↓
+           Next: calibrated proxies, Pareto weights, wet-lab feedback, synthesis-route constraints</code></pre>
+<p>Two shifts drive this evolution: valid generation becomes goal-conditioned generation, with gradients more direct than RL/black-box search; coordinate-only control becomes mixed-modal joint control through BFN parameters. Next comes uncertainty, synthesis routes, and experimental feedback—not another docking metric alone.</p>
+</section>
+<section id="跨论文对标" class="level3">
+<h3>11.6 Cross-paper comparison</h3>
+<table>
+<colgroup>
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 16%" />
+<col style="width: 12%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Backbone/search</th>
+<th scope="col">Coordinate guidance</th>
+<th scope="col">Type guidance</th>
+<th scope="col">Exploration</th>
+<th scope="col">Multiple objectives</th>
+<th scope="col" style="text-align: right;">Common-protocol Success</th>
+<th scope="col">Core cost</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>MolCRAFT</td>
+<td>BFN</td>
+<td>No explicit property gradients</td>
+<td>No explicit property gradients</td>
+<td>Native sampling</td>
+<td>No</td>
+<td style="text-align: right;">26.8%</td>
+<td>Limited controllability</td>
+</tr>
+<tr class="even">
+<td>TAGMol</td>
+<td>Diffusion</td>
+<td>Explicit</td>
+<td>Implicit coupling</td>
+<td>Stochastic diffusion</td>
+<td>Yes</td>
+<td style="text-align: right;">11.1%</td>
+<td>Weak SA/discrete control</td>
+</tr>
+<tr class="odd">
+<td>DecompOpt</td>
+<td>Decomposed generation + thirty iterations</td>
+<td>Black box</td>
+<td>Black box</td>
+<td>Outer-loop filtering</td>
+<td>Yes</td>
+<td style="text-align: right;">39.4%</td>
+<td>11714±1115 s</td>
+</tr>
+<tr class="even">
+<td><strong>MolJO</strong></td>
+<td>BFN + B.C.</td>
+<td>Explicit</td>
+<td>Explicit</td>
+<td>Sliding-window backward resampling</td>
+<td>Yes, averaged gradients</td>
+<td style="text-align: right;"><strong>51.3%</strong></td>
+<td>Proxy bias and scale transitions</td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
+<section id="真正贡献可复用设计与迁移潜力" class="card level2">
+<h2>12. Genuine contributions, reusable design, and transfer potential</h2>
+<p><strong>Contribution one: an interface for discrete guidance.</strong> The key is retaining categorical types as probabilities until final sampling, so gradients change what atoms are, not only where they are. This suits mixed continuous–discrete scientific objects.</p>
+<p><strong>Contribution two: B.C. is an optimizer, not a sampling trick.</strong> Vanilla+gradient barely helps, SDE+gradient helps partly, and B.C.+gradient improves all five metrics. Scientific test-time guidance needs explicit exploration/error recovery.</p>
+<p><strong>Contribution three: practical efficiency.</strong> An 80.23× single-GPU time advantage over DecompOpt replaces expensive per-pocket adaptation with one controlled sample using shared backbone/property heads. This matters for screening scale beyond one mean metric.</p>
+<p>Transfers include amino-acid types plus backbone coordinates, crystal element occupancy plus lattice coordinates, and reaction templates plus conditions/barriers. All need differentiable parameterization, proxy uncertainty, and B.C.-like exploration/recovery—not just copying a gradient update.</p>
+</section>
+<section id="论文自述限制" class="card level2">
+<h2>13. Author-stated limitations</h2>
+<ol type="1">
+<li><strong>Multiobjective conflict (joint-objective appendix, lines 679–681).</strong> The authors note QED+SA guidance can hurt affinity and use simple averaging. Uncalibrated gradient units/angles mean an empirical compromise, not guaranteed Pareto optimality.</li>
+<li><strong>Window error and hyperparameter dependence (Eqs.11–14; appendix lines 744–750).</strong> Small k accumulates errors; 130 is selected. Without cross-step-count/backbone tables, stability applies only to the current 200-step CrossDocked setting.</li>
+<li><strong>Evaluation and potential misuse (conformation lines 795–797; Impact lines 371–373).</strong> The authors acknowledge Auto-Dock pose/RMSD limitations and potential harmful-substance design requiring wet-lab resources. All main conclusions remain computational; real safety/activity are unverified.</li>
+</ol>
+</section>
+<section id="独立批判每一点都用证据推出边界" class="card level2">
+<h2>14. Independent critique: evidence-defined boundaries</h2>
+<ol type="1">
+<li><strong>[Construct validity] Because</strong>claims rely on Auto-Dock Vina, QED, and SA without assays, free-energy perturbation, or synthesis,<strong>therefore</strong>51.3% Success means passing three computational thresholds, not proven binding, selectivity, toxicity, or synthetic yield.</li>
+<li><strong>[Proxy rewards/OOD optimization] Because</strong> scale 50→100 improves Vina Min −8.39→−9.87 while Connected falls 0.90→0.55 and SA 0.68→0.63 (Table 13),<strong>therefore</strong>energy guidance has a reward-hacking region where better proxies leave chemical feasibility.</li>
+<li><strong>[Size confounding] Because</strong>large-pocket MolJO averages 30.0 atoms versus Reference 22.8 (+31.58%), and docking depends on size/contact area,<strong>therefore</strong>−10.53 cannot be credited entirely to better chemistry. Add ligand efficiency, per-heavy-atom scores, and atom-count-matched controls.</li>
+<li><strong>[Search-budget fairness] Because</strong>MolJO† selects among ten candidates/pocket, raising success 51.3→70.3% and reducing diversity 0.66→0.61 without matched baseline oracle calls,<strong>therefore</strong>70.3% is not equal-budget SOTA; plot success versus oracle calls.</li>
+<li><strong>[Statistical completeness] Because</strong>t-tests/CIs cover selected continuous metrics, not success, constrained tasks, OOD, or top-of-ten, with no multiple-testing correction,<strong>therefore</strong>stable continuous-score differences do not prove all success gaps exceed between-pocket variability.</li>
+<li><strong>[Consistency/reproduction] Because</strong>Table 1 and Appendix Table 6 disagree on some DecompOpt/MolCRAFT means, such as DecompOpt Vina Score −5.75 versus −4.839, and README examples use fifteen epochs versus at most five for property heads in the paper,<strong>therefore</strong>reproduction must pin the table, checkpoint, and command rather than assume repository defaults match the paper.</li>
+<li><strong>[Discrete-gradient theory] Because</strong>the implementation uses ((1-)) derivative approximations for stability without bias/convergence bounds,<strong>therefore</strong>joint discrete guidance is effective engineering, not a theoretically complete optimal update. Compare exact simplex Jacobians, Gumbel-softmax, and straight-through estimators at equal budgets.</li>
+<li><strong>[Extrapolation] Because</strong>training/main testing uses CrossDocked2020's 100,000 poses/100 proteins, and 30% sequence similarity does not audit pocket/scaffold leakage,<strong>therefore</strong>effectiveness across target families, covalent ligands, metal pockets, or flexible proteins is unestablished.</li>
+</ol>
+</section>
+<section id="开放挑战可直接执行的-head-to-head-实验空白" class="card level2">
+<h2>15. Open challenges: executable head-to-head experiments</h2>
+<section id="理论" class="level3">
+<h3>15.1 Theory</h3>
+<ol type="1">
+<li><strong>Discrete-gradient estimators.</strong> Fix MolCRAFT, property heads, 200 steps, samples/pocket, and seeds; compare ((1-)), exact simplex Jacobian, Gumbel-softmax, and straight-through updates. Report properties, connectivity, gradient variance, time, and final type flips. Estimator-specific B.C. effects would separate rollback from approximation benefits.</li>
+<li><strong>Budget-equivalent B.C.</strong> Give all methods 200 energy/network calls; compare B.C. k∈{25,50,100,130,200}, SDE, multistart beam, and MCMC rejuvenation. Use success–calls AUC rather than only endpoints.</li>
+<li><strong>Multiobjective Pareto mechanisms.</strong> At fixed total gradient norm, compare averaging, GradNorm, MGDA, PCGrad, and uncertainty weighting. Report affinity/QED/SA hypervolume, connectivity, and worst objective regressions to assess averaging.</li>
+</ol>
+</section>
+<section id="工程与应用" class="level3">
+<h3>15.2 Engineering and applications</h3>
+<ol start="4" type="1">
+<li><strong>Blinded proxy/physical validation.</strong> On one pocket/scaffold split, have MolJO/TAGMol/DecompOpt submit fixed candidate counts, rerank with unseen docking engines/FEP, then blindly assay top candidates. Calibrate Vina gains against real K_d/IC50 gains.</li>
+<li><strong>Size-matched controls.</strong> Match heavy atoms, formal charge, and rotatable bonds across methods; report Vina/heavy atom, ligand efficiency, QED, SA, and success to isolate size's contribution to OOD −10.53.</li>
+<li><strong>Full-cost audit.</strong> On identical GPU/CPU and target successes/pocket, include predictor training, sampling, docking, top-N selection, retries, and I/O. Report energy, P50/P95 time-to-valid, and GPU-hours per successful molecule.</li>
+</ol>
+</section>
+<section id="新兴方向" class="level3">
+<h3>15.3 Emerging directions</h3>
+<ol start="7" type="1">
+<li><strong>Uncertainty-aware guidance.</strong> Add ensemble/conformal uncertainty to property heads and attenuate scales in uncertain regions. Compare fixed 50/100 to test retaining roughly −9 docking without scale-100 connectivity collapse to 0.55.</li>
+<li><strong>Joint synthesis-route generation.</strong> Combine MolJO with CGFlow-like molecule/route design. Compare SA-only guidance and explicit reaction paths using real synthesis success, steps, cost, yield, and property Pareto surfaces. Explicit routes improving only proxies would falsify the benefit.</li>
+<li><strong>Protein-flexibility feedback.</strong> At fixed ligand budgets, compare rigid-pocket MolJO, side-chain ensembles, induced-fit docking, and short MD/FEP rescoring by protein family. Test real complementarity versus overadaptation to rigid pockets.</li>
+</ol>
+</section>
+</section>
+<section id="近期值得跟踪的-6-篇工作" class="card level2">
+<h2>16. Six recent works to track</h2>
+<ol type="1">
+<li><strong>MolPilot / Piloting Structure-Based Drug Design via
+Modality-Specific Optimal Schedule（ICML 2025）</strong>：<a
+href="https://proceedings.mlr.press/v267/qiu25g.html">PMLR</a>｜<a
+href="https://arxiv.org/abs/2505.07286">arXiv:2505.07286</a>. Optimizes mixed-modal noise schedules rather than property gradients, reporting 95.9% PoseBusters pass; potentially a stronger backbone for steadier MolJO guidance.</li>
+<li><strong>Compositional Flows for 3D Molecule and Synthesis Pathway
+Co-design（ICML 2025）</strong>：<a
+href="https://arxiv.org/abs/2504.08051">arXiv:2504.08051</a>｜<a
+href="https://github.com/tsa87/cgflow">Code</a>. Joint molecular/synthesis-path compositional flows report 4.2× sampling efficiency, directly addressing SA as a proxy rather than route evidence.</li>
+<li><strong>LDMol: Text-Conditioned Molecule Diffusion Model Leveraging
+Chemically Informative Latent Space（ICML 2025）</strong>：<a
+href="https://proceedings.mlr.press/v267/chang25d.html">PMLR</a>｜<a
+href="https://arxiv.org/abs/2405.17829">arXiv:2405.17829</a>. Language-conditioned chemical latents complement pocket-conditioned MolJO, testing whether natural-language goals yield reliable joint gradients.</li>
+<li><strong>Scalable Non-Equivariant 3D Molecule Generation via
+Rotational Alignment（ICML 2025）</strong>：<a
+href="https://proceedings.mlr.press/v267/ding25a.html">PMLR</a>｜<a
+href="https://arxiv.org/abs/2506.10186">arXiv:2506.10186</a>. Challenges the cost of enforcing equivariance throughout; compare accuracy/throughput against MolJO's SE(3) guarantees.</li>
+<li><strong>Multi-Fidelity Latent Active Learning for Molecular Property
+Discovery（ICML 2025）</strong>：<a
+href="https://proceedings.mlr.press/v267/eckmann25a.html">PMLR</a>. Official materials report 50% mean binding-free-energy improvement. Multifidelity active learning could allocate budgets between docking surrogates and expensive physical validation.</li>
+<li><strong>Hierarchical Graph Tokenization for Molecule-Language
+Alignment（ICML 2025）</strong>：<a
+href="https://arxiv.org/abs/2406.14021">arXiv:2406.14021</a>｜<a
+href="https://openreview.net/forum?id=wpbNczwAwV">OpenReview</a>. Hierarchical graph tokens align molecules/language; connecting them to type parameters could test whether semantic edits are more stable than atomwise gradients.</li>
+</ol>
+</section>
+<section id="结论" class="card level2">
+<h2>17. Conclusion</h2>
+<p>MolJO's reusable contribution is the control chain: BFN unifies coordinate/type beliefs, joint gradients provide direction, and backward correction recovers from local errors. Main results, type/coordinate ablations, and the 80.23× DecompOpt time advantage support its effectiveness.</p>
+<p>The scientific conclusion is narrower: MolJO advances<strong>structured molecular optimization on computational proxies</strong>without crossing the proxy-to-experiment gap. At scale 100, connectivity collapses 0.90→0.55: pleasing evaluators can improve scores while degrading molecules. Prioritize uncertainty, budget matching, size controls, and blinded experiments over another Vina record.</p>
+<hr />
+<p><strong>Footnotes and index status.</strong> Core values come from MolJO arXiv v4 Tables 1–4,6,11–16, Algorithm 1, and corresponding HTML sections. Related-work numbers use their official pages/text.<code>ml-report-index.md</code>
+This entry was appended. HTML passed Warm Editorial validation (0 errors/warnings). Playwright is installed, but
+<code>/usr/bin/chromium</code>、<code>/opt/pw-browsers</code> and its cache contain no executable browser; as requested,
+<code>playwright install</code>was not run, preventing real Chromium light/dark/mobile screenshots. Missing project pages, videos, and aggregator entries are marked without inferring absolute nonexistence.</p>
+</section>
+</div>
+
+  </main>
+
+  <footer>Sources: ICML 2025 / PMLR 267, arXiv:2411.13280v4, OpenReview, author repository. Generated 2026-09-20.</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ Light' : '☾ Dark';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

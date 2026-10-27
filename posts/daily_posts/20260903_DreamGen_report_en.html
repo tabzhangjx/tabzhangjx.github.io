@@ -1,0 +1,927 @@
+---
+layout: null
+title: "DreamGen"
+date: 2026-09-03
+topic: "rl-peft"
+tags: ["rl-peft", "robotics", "world-models"]
+excerpt: "DreamGen shows that video generation can produce executable training signals. However, 81,000 GPU-hours, learner-dependent negative transfer, and insufficient statistical evidence still preclude the stronger claim of a low-cost, general-purpose data engine."
+permalink: "/blog/2026/09/03/dreamgen/en/"
+blog_post: false
+lang: "en"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_zh: "/blog/2026/09/03/dreamgen/"
+sitemap: true
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>DreamGen In-Depth Research Report · 2026-09-03</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+.chart rect{transition:opacity .15s}.chart rect:hover,.chart rect:focus{opacity:.72;outline:none}.chart text{fill:var(--ink)} @media(max-width:640px){.figure{padding:16px 10px}.chart{min-width:650px}.figure{overflow-x:auto}}
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" aria-pressed="false">☾ Dark</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">CoRL 2025 · EMBODIED AI</p>
+    <h1>DreamGen: Turning Video World Models into a Robot Data Factory</h1>
+    <p class="subtitle">From embodiment adaptation and pseudo-action recovery to real-robot generalization with limited data</p>
+    <div class="meta" aria-label="Report metadata">
+      <span class="chip source">CoRL 2025 / PMLR 305</span>
+      <span class="chip">2026-09-03</span>
+      <span class="chip">World-model-driven expansion of robot data</span>
+    </div>
+    <p class="lede">DreamGen shows that video generation can produce executable training signals. However, 81,000 GPU-hours, learner-dependent negative transfer, and insufficient statistical evidence still preclude the stronger claim of a low-cost, general-purpose data engine.</p>
+  </header>
+
+  <main><div class="report-body">
+<section class="card" aria-labelledby="一链接验证与证据边界-title"><h2 id="一链接验证与证据边界-title">1. Verified links and evidence boundaries</h2>
+<p>All links below were visited on 2026-09-03. Numerical results for the core paper preferentially follow the final CoRL 2025 PMLR version; page numbers refer to physical pages of the downloaded PDF. arXiv version dates come from the submission history, rather than search snippets substituting for the full text.</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="Horizontally scrollable data table"><table>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Conference / official entry</th>
+<th scope="col">arXiv version and date</th>
+<th scope="col">Code</th>
+<th scope="col">Data / weights</th>
+<th scope="col">Project page / videos</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>DreamGen</strong></td>
+<td><a href="https://proceedings.mlr.press/v305/jang25a.html">CoRL 2025,
+PMLR 305:5170–5194</a></td>
+<td><a
+href="https://arxiv.org/abs/2505.12705">2505.12705v2，2025-06-17</a></td>
+<td><a
+href="https://github.com/nvidia/gr00t-dreams">NVIDIA/GR00T-Dreams</a></td>
+<td>The repository provides a Cosmos-Predict2 pipeline; a complete public download of the paper's 240k RoboCasa neural trajectories and fine-tuned WAN2.1 weights was<strong>not found</strong></td>
+<td><a
+href="https://research.nvidia.com/labs/gear/dreamgen/">Project page and real-robot videos</a></td>
+</tr>
+<tr class="even">
+<td>GR00T N1</td>
+<td>No official conference entry found; technical report</td>
+<td><a
+href="https://arxiv.org/abs/2503.14734">2503.14734v2，2025-03-27</a></td>
+<td><a href="https://github.com/NVIDIA/Isaac-GR00T">Isaac-GR00T</a></td>
+<td><a
+href="https://huggingface.co/nvidia/GR00T-N1-2B">GR00T-N1-2B</a></td>
+<td><a
+href="https://research.nvidia.com/publication/2025-03_nvidia-isaac-gr00t-n1-open-foundation-model-humanoid-robots">NVIDIA
+Research</a></td>
+</tr>
+<tr class="odd">
+<td>OpenVLA-OFT</td>
+<td>RSS 2025 (according to the arXiv comments)</td>
+<td><a
+href="https://arxiv.org/abs/2502.19645">2502.19645v2，2025-04-28</a></td>
+<td><a
+href="https://github.com/moojink/openvla-oft">moojink/openvla-oft</a></td>
+<td>The repository includes checkpoint links</td>
+<td><a href="https://openvla-oft.github.io/">Project page / videos</a></td>
+</tr>
+<tr class="even">
+<td>LAPA</td>
+<td>ICLR 2025</td>
+<td><a
+href="https://arxiv.org/abs/2410.11758">2410.11758v2，2025-05-15</a></td>
+<td><a
+href="https://github.com/LatentActionPretraining/LAPA">LatentActionPretraining/LAPA</a></td>
+<td>Code is public; the complete pretraining mixture depends on several existing datasets</td>
+<td><a href="https://latentactionpretraining.github.io/">Project page</a></td>
+</tr>
+<tr class="odd">
+<td>RoboDreamer</td>
+<td>No official conference entry found</td>
+<td><a
+href="https://arxiv.org/abs/2404.12377">2404.12377v1，2024-04-18</a></td>
+<td><a
+href="https://github.com/UMass-Embodied-AGI/robodreamer">Official code</a></td>
+<td>Weights / complete generated dataset not found</td>
+<td><a href="https://robovideo.github.io/">Project page</a></td>
+</tr>
+<tr class="even">
+<td>DreMa</td>
+<td>ICLR 2025</td>
+<td><a
+href="https://arxiv.org/abs/2412.14957">2412.14957v2，2025-03-10</a></td>
+<td><a
+href="https://github.com/leobarcellona/drema_code">drema_code</a></td>
+<td>Code is public; no unified download found for raw real-robot trajectories and all reconstructed scenes</td>
+<td><a href="https://dreamtomanipulate.github.io/">Project page</a></td>
+</tr>
+</tbody>
+</table></div>
+<p>**Search procedure.** First check <code>ml-report-index.md</code>to exclude SimbaV2 (stability when scaling deep RL) and TARL (test-time adaptation in offline RL), covered in depth within the preceding 14 days, and avoid repeating EARL-BO. Candidates were collected from CoRL/PMLR, NeurIPS proceedings, ICLR/OpenReview, and arXiv; Hugging Face Daily Papers and Semantic Scholar were used to cross-check DreamGen and related work. ACL Anthology did not yield a more suitable main-conference core paper for this embodied-learning search. No stable, more comprehensive dedicated DreamGen task page was found on Papers with Code, so aggregator information is not treated as evidence.</p>
+</section>
+<section class="card" aria-labelledby="二候选池与随机选择-title"><h2 id="二候选池与随机选择-title">2. Candidate pool and random selection</h2>
+<p>The pool contains 24 papers. Every entry returned an accessible page or PDF, and all fall within 24 months. Official main-conference papers are prioritized, followed by recent high-quality technical reports. Candidates: ① ERA; ② Robot-R1; ③ Asking-for-Help RL; ④ VIKI-R; ⑤ π0.5; ⑥ GR00T N1; ⑦ OpenVLA-OFT; ⑧ SmolVLA; ⑨ DexVLA; ⑩ SpatialVLA; ⑪ MoLe-VLA; ⑫ WorldVLA; ⑬ V-JEPA 2; ⑭ DreamGen; ⑮ Genie Envisioner; ⑯ Hi Robot; ⑰ ReWiND; ⑱ VidMan; ⑲ BridgeVLA; ⑳ RDT-2; ㉑ SimpleVLA-RL; ㉒ RoboTwin 2.0; ㉓ Reflective World Models; ㉔ BiAssemble. Full titles, venues, and verified URLs are in the candidate list saved with the report.</p>
+<p>Running <code>shuf -i 1-24 -n 1</code> returned <strong>14</strong>, selecting DreamGen. Its main text, appendix, final PMLR version, code, and videos are available, so<strong>no redraw was needed</strong>. DreamGen is not itself an RL algorithm: it belongs to today's topic because it studies the interface between embodied-policy data and world models. Its downstream policies are trained primarily through behavior cloning / flow matching, rather than online RL.</p>
+</section>
+<section class="card" aria-labelledby="三一句话核心定位-title"><h2 id="三一句话核心定位-title">3. Core contribution in one sentence</h2>
+<p><strong>DreamGen transforms the Internet priors of a large image-to-video model into scalable robot training data through four stages—robot embodiment adaptation, conditional video generation, pseudo-action recovery, and visuomotor policy training—replacing expensive demonstrations for new tasks with a GPU generation budget.</strong></p>
+<p>This definition also establishes how to read the paper: it is an offline data production pipeline, rather than a stronger controller or a closed-loop simulator supporting counterfactual interaction. The world model proposes visually plausible trajectories; IDM or LAPA translates pixel changes into actions; GR00T N1, π0, or Diffusion Policy ultimately executes them.</p>
+</section>
+<section class="card" aria-labelledby="四motivation具体痛点与量化证据-title"><h2 id="四motivation具体痛点与量化证据-title">4. Motivation: concrete bottlenecks and quantitative evidence</h2>
+<p>Robot learning faces three data bottlenecks. Demonstration requires both people and hardware to be available; combinations of tasks, objects, and scenes grow multiplicatively; and conventional simulation struggles to cover contact-rich tasks accurately. DreamGen quantifies these issues directly.</p>
+<p>First, the GR1 behavior-generalization experiment starts with only <strong>2,885 pick-and-place trajectories</strong>from one laboratory. GR00T N1 fine-tuned on this data alone achieves an average success rate across 14 new behaviors of <strong>11.2%</strong>. Generating just
+<strong>50</strong>neural trajectories per new behavior raises the average to <strong>43.2%</strong>: +32.0 pp in absolute terms and +285.71% relatively. (DreamGen Table 1, PDF p.8)</p>
+<p>Second, across 13 tasks in new environments, the base policy averages
+<strong>0.0%</strong>, versus DreamGen's
+<strong>28.5%</strong>. Relative improvement is undefined because the baseline is zero; it cannot be called an infinite percentage. The supported statement is that the method moves from complete failure into a nonzero usable range. (Table 1, PDF p.8)</p>
+<p>Third, real-robot augmentation with limited data spans three embodiments: the four GR1 tasks move, in the paper's overview, from
+<strong>37% → 46.4%</strong>; the three Franka tasks from <strong>23% →
+37%</strong>; and the two SO-100 tasks from <strong>21% → 45.5%</strong>. (Main text p.3; individual results in Table 5, PDF p.20.) SO-100 gains +24.5 pp, or +116.67% relatively, showing that inexpensive arms can benefit without large real-world datasets. However, only two tasks are tested, so coverage remains narrow.</p>
+<p>Fourth, scale is not free: generating RoboCasa's <strong>240k</strong>
+neural trajectories required <strong>54 hours × 1,500 NVIDIA L40 GPUs = 81,000 GPU-hours</strong>. (Limitations, PDF p.9.) Ignoring this denominator conflates less real-robot data collection with lower cost. The paper demonstrates substitution of compute for human–robot demonstration effort, rather than a reduction in total cost.</p>
+</section>
+<section class="card" aria-labelledby="五论文故事线假设接口与权衡-title"><h2 id="五论文故事线假设接口与权衡-title">5. Argument: assumptions, interfaces, and trade-offs</h2>
+<p>The argument starts from a key observation: general video generators have learned object appearance, language semantics, and some motion priors from Internet videos, but lack knowledge of a particular robot's joints, cameras, and dynamics. Instead of deploying such a model directly as a controller, the authors use a small amount of target-robot video for LoRA adaptation, aiming to preserve Internet knowledge while introducing embodiment constraints.</p>
+<p>There are four core assumptions.</p>
+<ol type="1">
+<li><strong>Visual transferability</strong>: after embodiment adaptation, the world model retains priors about unseen objects, verbs, and scenes.</li>
+<li><strong>Invertibility</strong>: consecutive video frames allow recovery of pseudo-labels sufficiently close to executable actions.</li>
+<li><strong>Absorbable noise</strong>: a policy can tolerate world-model and pseudo-action errors when trained with a 1:1 real/synthetic mixture or abundant synthetic data.</li>
+<li><strong>Proxy validity</strong>: instruction following and physics alignment in videos predict downstream policy performance.</li>
+</ol>
+<p>Each assumption entails a trade-off. Stronger LoRA adaptation fits the robot better but risks forgetting open-world priors. IDM actions have physical units but require real action data; LAPA needs no target action labels but supplies only latent actions. More video broadens coverage while increasing GPU costs and distribution bias. Automatic VLM judging is inexpensive but may mistake visual plausibility for executable dynamics.</p>
+</section>
+<section class="card" aria-labelledby="六方程级形式化与流程-title"><h2 id="六方程级形式化与流程-title">6. Equations and pipeline</h2>
+<p>The following is a unified formalization of the paper's pipeline, with notation organized for this report;<strong>it is not a theorem reproduced verbatim from the paper</strong>。</p>
+<p>Let the real demonstration dataset be</p>
+<p>[ \mathcal D_r={(o_{0:T},a_{0:T-1},c)}, ]</p>
+<p>where the observation is image <code>o</code>, the action is <code>a</code>, and the language instruction is
+<code>c</code>. Stage one adapts the pretrained image-to-video model <code>p_{\theta_0}</code>
+using LoRA parameters <code>Δθ=BA</code> to the target embodiment:</p>
+<p>[ \theta^*=\arg\min_{\Delta\theta};\mathbb E_{\mathcal
+D_r,t,\epsilon}
+|\epsilon-\epsilon_{\theta_0+\Delta\theta}(z_t,o_0,c,t)|_2^2, \quad
+\mathrm{rank}(BA)=4. ]</p>
+<p>Stage two samples a video from an initial frame and a new instruction:</p>
+<p>[ \tilde o_{1:T}\sim p_{\theta^*}(\cdot\mid o_0,c), ]</p>
+<p>Novelty comes from changing
+<code>c</code>, the object, or the initial frame, rather than explicitly changing state inside a physics simulator. Stage three has two action-recovery branches. IDM learns</p>
+<p>[ f_\phi(o_t,o_{t+1:t+H},c)\rightarrow \hat a_{t:t+H-1}, ]</p>
+<p>and generates overlapping action chunks frame by frame using a sliding window. LAPA instead feeds frame pairs roughly one second apart into a VQ-VAE encoder to produce a continuous pre-quantization embedding <code>\hat z_t</code>. The paper uses a codebook size of 8 and sequence length of 16 for LAPA, with a pretraining mixture totaling
+<strong>438.1M frames / 5,721.3 hours</strong>. (Table 3, PDF p.17)</p>
+<p>Stage four feeds neural trajectories <code>\mathcal D_n={(\tilde o,\hat a,c)}</code>
+to the policy:</p>
+<p>[ \psi^*=\arg\min_\psi \mathbb E_{(o,a,c)\sim \lambda\mathcal
+D_r+(1-\lambda)\mathcal D_n} \mathcal L_{policy}(\pi_\psi(o,c),a). ]</p>
+<p>Real-data augmentation experiments use <code>λ=0.5</code>, corresponding to 1:1 real/synthetic sampling; GR00T N1 uses separate action encoders/decoders for the two trajectory types. New-behavior and new-environment experiments use
+<code>λ=0</code>, relying entirely on neural trajectories. (Methods §2.4, PDF p.5)</p>
+<pre class="text"><code>Internet video priors ──┐
+                       ├─[LoRA embodiment adaptation]─&gt; Conditional video world model
+A few robot demonstrations ──┘          │
+       │                                ├─ New-verb prompts
+       └─&gt; IDM / LAPA &lt;── Generated video frames ──┤─ New objects / initial frames
+                    │                      └─ Initial frames of new environments
+                    v
+         (Video, pseudo-actions, instruction) neural trajectories
+                    │
+          ┌─────────┴─────────┐
+          v                   v
+      1:1 with real data   Synthetic trajectories only
+      Data augmentation    Generalization without new demonstrations
+          └─────────┬─────────┘
+                    v
+          DP / π0 / GR00T N1 policy</code></pre>
+</section>
+<section class="card" aria-labelledby="七关键机制与工程细节-title"><h2 id="七关键机制与工程细节-title">7. Key mechanisms and engineering details</h2>
+<div class="table-scroll" role="region" tabindex="0" aria-label="Horizontally scrollable data table"><table>
+<thead>
+<tr class="header">
+<th scope="col">Module</th>
+<th scope="col">Paper configuration</th>
+<th scope="col">Why it matters</th>
+<th scope="col">Potential failure mode</th>
+<th scope="col">Source</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>World-model adaptation</td>
+<td>WAN2.1 in most experiments; LoRA rank=4, alpha=4, lr=1e-4</td>
+<td>Low-rank updates preserve general video priors</td>
+<td>Insufficient adaptation fails to learn the robot; excessive adaptation forgets new scenes</td>
+<td>Appendix F, PDF p.18</td>
+</tr>
+<tr class="even">
+<td>RoboCasa video training</td>
+<td>100 epochs，batch 32</td>
+<td>The multiview simulation domain requires substantial adaptation</td>
+<td>The 2×2 grid includes one black image, wasting visual capacity</td>
+<td>Appendices E/F, pp.17–18</td>
+</tr>
+<tr class="odd">
+<td>GR1 / DROID fine-tuning</td>
+<td>GR1 75 epochs、batch 64；DROID 5 epochs、batch 64</td>
+<td>Different data domains require different training amounts</td>
+<td>No quantitative ablation establishes a unified stopping rule</td>
+<td>Appendix F, p.18</td>
+</tr>
+<tr class="even">
+<td>SO-100 fine-tuning</td>
+<td>200 epochs for each of two tasks, batch size 8</td>
+<td>Repeated training on a small dataset</td>
+<td>Overfitting risk is not quantified with validation curves</td>
+<td>Appendix F, p.18</td>
+</tr>
+<tr class="odd">
+<td>Multiple views</td>
+<td>Combined into a 2×2 grid with the fourth cell black</td>
+<td>No need to redesign the video backbone</td>
+<td>Geometry between views is implicit, and resolution is reduced</td>
+<td>Methods §2.1 / Appendix E</td>
+</tr>
+<tr class="even">
+<td>IDM</td>
+<td>Predict H steps using a sliding window</td>
+<td>Outputs actions in real coordinates</td>
+<td>Consistency of overlapping chunks and error accumulation are not reported</td>
+<td>Methods §2.3, p.5</td>
+</tr>
+<tr class="odd">
+<td>LAPA</td>
+<td>Frames one second apart; continuous pre-quantization latent</td>
+<td>No target-robot action labels required</td>
+<td>Accurate decoding of latents by a particular actuator is not guaranteed</td>
+<td>§2.3, Table 3</td>
+</tr>
+<tr class="even">
+<td>Policy training</td>
+<td>1:1 real/synthetic mixture; neural-trajectory states set to zero</td>
+<td>Compatible with multiple policies</td>
+<td>Missing state information across training/testing and visual artifacts may become shortcuts</td>
+<td>§2.4，p.5</td>
+</tr>
+</tbody>
+</table></div>
+<p>An often-overlooked engineering detail: although compatibility with three downstream policies is shown, the complete matrix for the largest RoboCasa experiment in Table 4 covers only GR00T N1. Thus, policy-agnostic primarily describes the interface, rather than equivalent benefits for all policies at the same scale.</p>
+</section>
+<section class="card" aria-labelledby="八数据集基准与指标-title"><h2 id="八数据集基准与指标-title">8. Datasets, benchmarks, and metrics</h2>
+<p><strong>RoboCasa</strong>Covers 24 kitchen manipulation tasks grouped into carrying, opening/closing doors and drawers, knobs, levers, buttons, and insertion. The metric is mean success rate. The exact number of evaluation episodes per task is not restated near Table 4 of the final DreamGen paper; the RoboCasa protocol is followed. Table 4 uses 30, 100, or 300 real demonstrations per task, plus 240k neural trajectories in total.</p>
+<p><strong>GR1 generalization set</strong>Contains 14 tasks with seen environments but new behaviors, and 13 tasks in new environments. Some tasks award 0.5 points for picking up an object, so success is not strictly binary in every cell; this explains some nonzero base-model scores on unseen behaviors. (Main text p.8)</p>
+<p><strong>Real-world augmentation set</strong>Includes four GR1 tasks (hammering, wiping, folding, stacking), three Franka tasks, and two SO-100 tasks. Only nine tasks are evaluated, but embodiments, controllers, and contact types are relatively diverse.</p>
+<p><strong>DreamGenBench</strong>Compares zero-shot and SFT versions of Hunyuan, CogVideoX, WAN2.1, and Cosmos across RoboCasa and GR1 Object / Behavior / Environment settings. Instruction Following is judged by GPT-4o, Qwen2.5-VL, and, in part, humans; Physics Alignment combines VideoCon-Physics and Qwen2.5-VL. These dimensions should not be collapsed into an overall capability score without specifying weights.</p>
+</section>
+<section class="card" aria-labelledby="九完整主结果矩阵-title"><h2 id="九完整主结果矩阵-title">9. Complete main-results matrices</h2>
+<section class="subsection" aria-labelledby="91-robocasa三种真实数据量--七种训练条件-title"><h3 id="91-robocasa三种真实数据量--七种训练条件-title">9.1 RoboCasa: three real-data amounts × seven training conditions</h3>
+<div class="table-scroll" role="region" tabindex="0" aria-label="Horizontally scrollable data table"><table>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">Real demonstrations / task</th>
+<th scope="col" style="text-align: right;">Real-only GR00T N1</th>
+<th scope="col" style="text-align: right;">+240k neural trajectories</th>
+<th scope="col" style="text-align: right;">Absolute gain</th>
+<th scope="col" style="text-align: right;">Relative gain</th>
+<th scope="col" style="text-align: right;">Neural trajectories only</th>
+<th scope="col">Source</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">30</td>
+<td style="text-align: right;">17.44</td>
+<td style="text-align: right;"><strong>23.32</strong></td>
+<td style="text-align: right;">+5.88 pp</td>
+<td style="text-align: right;">+33.72%</td>
+<td style="text-align: right;">20.55 (same value throughout)</td>
+<td>Table 4, PDF p.19</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">100</td>
+<td style="text-align: right;">32.07</td>
+<td style="text-align: right;"><strong>39.94</strong></td>
+<td style="text-align: right;">+7.87 pp</td>
+<td style="text-align: right;">+24.54%</td>
+<td style="text-align: right;">20.55</td>
+<td>Same as above</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">300</td>
+<td style="text-align: right;">49.59</td>
+<td style="text-align: right;"><strong>57.61</strong></td>
+<td style="text-align: right;">+8.02 pp</td>
+<td style="text-align: right;">+16.17%</td>
+<td style="text-align: right;">20.55</td>
+<td>Same as above</td>
+</tr>
+</tbody>
+</table></div>
+<p>The neural-only score of 20.55 does not vary with real-data quantity because it uses no real trajectories. Repeating it aligns the three conditions, rather than representing three independent measurements. The low-data comparison is most informative: neural-only 20.55 exceeds 17.44 from 30 real demonstrations by 3.11 pp, but is far below 32.07 from 100 real demonstrations. Synthetic data contains executable information, yet does not match the efficiency of high-quality real data at comparable quantities.</p>
+</section>
+<section class="subsection" aria-labelledby="92-真实机器人九任务--方法-title"><h3 id="92-真实机器人九任务--方法-title">9.2 Real robots: nine tasks × methods</h3>
+<div class="table-scroll" role="region" tabindex="0" aria-label="Horizontally scrollable data table"><table>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">GR1 Hammer</th>
+<th scope="col" style="text-align: right;">Wipe</th>
+<th scope="col" style="text-align: right;">Fold</th>
+<th scope="col" style="text-align: right;">Stack</th>
+<th scope="col" style="text-align: right;">Franka P&amp;P</th>
+<th scope="col" style="text-align: right;">Cube</th>
+<th scope="col" style="text-align: right;">Tool</th>
+<th scope="col" style="text-align: right;">SO-100 P&amp;P</th>
+<th scope="col" style="text-align: right;">Tic-Tac-Toe</th>
+<th scope="col">Source</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DP</td>
+<td style="text-align: right;">35.0</td>
+<td style="text-align: right;">23.3</td>
+<td style="text-align: right;">6.6</td>
+<td style="text-align: right;">25.0</td>
+<td style="text-align: right;">20.0</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">10.0</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td>Table 5, PDF p.20</td>
+</tr>
+<tr class="even">
+<td>π0</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">30.0</td>
+<td style="text-align: right;">10.0</td>
+<td style="text-align: right;">20.0</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td>Same as above</td>
+</tr>
+<tr class="odd">
+<td>GR00T N1</td>
+<td style="text-align: right;">60.0</td>
+<td style="text-align: right;">36.6</td>
+<td style="text-align: right;">27.0</td>
+<td style="text-align: right;">25.0</td>
+<td style="text-align: right;">40.0</td>
+<td style="text-align: right;">10.0</td>
+<td style="text-align: right;">20.0</td>
+<td style="text-align: right;">17.0</td>
+<td style="text-align: right;">25.0</td>
+<td>Same as above</td>
+</tr>
+<tr class="even">
+<td>DP + NT</td>
+<td style="text-align: right;">15.0</td>
+<td style="text-align: right;">33.3</td>
+<td style="text-align: right;">26.4</td>
+<td style="text-align: right;">35.0</td>
+<td style="text-align: right;">30.0</td>
+<td style="text-align: right;">20.0</td>
+<td style="text-align: right;">10.0</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td>Same as above</td>
+</tr>
+<tr class="odd">
+<td>π0 + NT</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">40.0</td>
+<td style="text-align: right;">20.0</td>
+<td style="text-align: right;">20.0</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td>Same as above</td>
+</tr>
+<tr class="even">
+<td><strong>GR00T N1 + NT</strong></td>
+<td style="text-align: right;"><strong>65.0</strong></td>
+<td style="text-align: right;"><strong>49.0</strong></td>
+<td style="text-align: right;"><strong>37.0</strong></td>
+<td style="text-align: right;">35.0</td>
+<td style="text-align: right;">60.0</td>
+<td style="text-align: right;">20.0</td>
+<td style="text-align: right;">30.0</td>
+<td style="text-align: right;">26.0</td>
+<td style="text-align: right;"><strong>65.0</strong></td>
+<td>Same as above</td>
+</tr>
+<tr class="odd">
+<td>High-data GR00T N1</td>
+<td style="text-align: right;"><strong>75.0</strong></td>
+<td style="text-align: right;"><strong>50.0</strong></td>
+<td style="text-align: right;"><strong>66.6</strong></td>
+<td style="text-align: right;"><strong>85.0</strong></td>
+<td style="text-align: right;"><strong>80.0</strong></td>
+<td style="text-align: right;"><strong>50.0</strong></td>
+<td style="text-align: right;"><strong>40.0</strong></td>
+<td style="text-align: right;"><strong>36.0</strong></td>
+<td style="text-align: right;">40.0</td>
+<td>Same as above</td>
+</tr>
+</tbody>
+</table></div>
+<p>Low-data GR00T N1 + NT never declines relative to its base policy across the nine tasks, gaining +5.0, +12.4, +10.0, +10.0, +20.0, +10.0, +10.0, +9.0, and +40.0 pp. However, high-data GR00T N1 remains stronger on 8/9 tasks. Only on Tic-Tac-Toe does +NT's 65.0 exceed it by 25.0 pp. DreamGen is therefore best viewed as a low-data amplifier, rather than a complete replacement for high-quality demonstrations.</p>
+<p>DP also reveals negative transfer: Hammering falls from 35.0 to 15.0 (−20 pp), while Tool Usage stays at 10.0. Neural trajectories do not consistently help every policy; gains depend on the backbone, action-label quality, and mixing strategy.</p>
+</section>
+<section class="subsection" aria-labelledby="93-dreamgenbench四世界模型--四分布-title"><h3 id="93-dreamgenbench四世界模型--四分布-title">9.3 DreamGenBench: four world models × four distributions</h3>
+<p>To limit table width, only GPT instruction-following and physics-alignment scores are shown; human / Qwen IF results remain in the original table.</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="Horizontally scrollable data table"><table>
+<thead>
+<tr class="header">
+<th scope="col">SFT world model</th>
+<th scope="col" style="text-align: right;">RoboCasa IF / PA</th>
+<th scope="col" style="text-align: right;">GR1 Object IF / PA</th>
+<th scope="col" style="text-align: right;">GR1 Behavior IF / PA</th>
+<th scope="col" style="text-align: right;">GR1 Env IF / PA</th>
+<th scope="col">Source</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Hunyuan</td>
+<td style="text-align: right;">68.8 / 44.8</td>
+<td style="text-align: right;">38.0 / 39.0</td>
+<td style="text-align: right;">38.3 / 12.8</td>
+<td style="text-align: right;">27.6 / 35.4</td>
+<td>Table 2, PDF p.15</td>
+</tr>
+<tr class="even">
+<td>CogVideoX</td>
+<td style="text-align: right;">72.9 / 44.8</td>
+<td style="text-align: right;">72.0 / 55.0</td>
+<td style="text-align: right;">44.0 / 24.7</td>
+<td style="text-align: right;">55.2 / 51.3</td>
+<td>Same as above</td>
+</tr>
+<tr class="odd">
+<td>WAN2.1</td>
+<td style="text-align: right;">77.1 / 55.3</td>
+<td style="text-align: right;">72.0 / 69.0</td>
+<td style="text-align: right;"><strong>72.3 / 64.9</strong></td>
+<td style="text-align: right;">48.3 / <strong>66.5</strong></td>
+<td>Same as above</td>
+</tr>
+<tr class="even">
+<td>Cosmos</td>
+<td style="text-align: right;"><strong>79.2 / 61.5</strong></td>
+<td style="text-align: right;"><strong>90.0 / 73.0</strong></td>
+<td style="text-align: right;">59.6 / <strong>64.9</strong></td>
+<td style="text-align: right;"><strong>69.0 / 59.4</strong></td>
+<td>Same as above</td>
+</tr>
+</tbody>
+</table></div>
+<p>No single model wins all eight cells: Cosmos leads RoboCasa, Object, and Env IF; WAN2.1 leads Behavior IF and Env PA, and ties on Behavior PA. This supports selecting a world model for the target distribution, rather than treating one aggregate DreamGenBench score as a universal ranking.</p>
+</section>
+</section>
+
+<figure class="figure" aria-labelledby="platform-title">
+  <p class="fig-title" id="platform-title">Real robots with limited data: GR00T N1 before and after neural-trajectory augmentation</p>
+  <p class="fig-sub">The vertical axis shows mean success rate (%). Task counts differ by platform; the chart is intended for within-platform before/after comparisons.</p>
+  <svg class="chart" viewBox="0 0 760 400" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>Mean success rates for GR1, Franka, and SO-100 before and after adding DreamGen neural trajectories</title>
+    <desc>GR1: 37 to 46.4; Franka: 23 to 37; SO-100: 21 to 45.5.</desc>
+    <g stroke="var(--grid)"><line x1="70" y1="330" x2="730" y2="330"/><line x1="70" y1="275" x2="730" y2="275"/><line x1="70" y1="220" x2="730" y2="220"/><line x1="70" y1="165" x2="730" y2="165"/><line x1="70" y1="110" x2="730" y2="110"/><line x1="70" y1="55" x2="730" y2="55"/></g>
+    <g font-size="12"><text x="39" y="334">0</text><text x="33" y="279">10</text><text x="33" y="224">20</text><text x="33" y="169">30</text><text x="33" y="114">40</text><text x="33" y="59">50</text></g>
+    <g fill="var(--chart-comparison)">
+      <rect tabindex="0" data-tip="GR1 baseline: 37.0%" x="120" y="126.5" width="72" height="203.5"/>
+      <rect tabindex="0" data-tip="Franka baseline: 23.0%" x="335" y="203.5" width="72" height="126.5"/>
+      <rect tabindex="0" data-tip="SO-100 baseline: 21.0%" x="550" y="214.5" width="72" height="115.5"/>
+    </g>
+    <g fill="var(--chart-primary)">
+      <rect tabindex="0" data-tip="GR1 + NT：46.4%" x="195" y="74.8" width="72" height="255.2"/>
+      <rect tabindex="0" data-tip="Franka + NT：37.0%" x="410" y="126.5" width="72" height="203.5"/>
+      <rect tabindex="0" data-tip="SO-100 + NT：45.5%" x="625" y="79.8" width="72" height="250.2"/>
+    </g>
+    <g text-anchor="middle" font-size="13"><text x="194" y="360">GR1</text><text x="409" y="360">Franka</text><text x="624" y="360">SO-100</text></g>
+    <g font-size="12"><rect x="510" y="16" width="13" height="13" fill="var(--chart-comparison)"/><text x="530" y="27">Real data only</text><rect x="625" y="16" width="13" height="13" fill="var(--chart-primary)"/><text x="645" y="27">+ Neural trajectories</text></g>
+  </svg>
+  <figcaption>Source: DreamGen main text p.3 and Table 5 (PDF p.20). Hover over or keyboard-focus a bar for exact values.</figcaption>
+</figure><section class="card" aria-labelledby="十逐层消融敏感性与相变-title"><h2 id="十逐层消融敏感性与相变-title">10. Layered ablations, sensitivity, and transitions</h2>
+<p>**Layer 1: Is real data necessary?** The 240k neural-only trajectories achieve 20.55, versus 17.44 for 30 real demonstrations per task and 32.07 for 100. (Table 4.) Synthetic trajectories cross the threshold of executability, but their sample efficiency lies between the low- and medium-real-data regimes.</p>
+<p>**Layer 2: Real-data scale.** Absolute gains from NT rise from +5.88 to +8.02 pp, while relative gains shrink from +33.72% to +16.17%. Performance does not reverse; the larger baseline denominator reduces relative marginal benefits. Figure 4 describes an approximately log-linear trend, but provides no slope, confidence interval, or goodness of fit, so extrapolation to a million trajectories is unwarranted.</p>
+<p>**Layer 3: Action recovery.** Figure 4 compares LAPA with IDM and reports gains from both across data regimes. The GR00T N1 report adds that LAPA is slightly stronger with 30 demonstrations, whereas IDM pulls ahead with 100/300 as supervised data increases. The final DreamGen paper does not tabulate every curve point, so this report does not invent numerical values by reading pixels.</p>
+<p>**Layer 4: World-model adaptation.** Most zero-shot models score near zero in Table 2. For example, WAN2.1-zero achieves RoboCasa IF/PA of 0.0/0.0, versus 77.1/55.3 for WAN2.1-sft. Embodiment adaptation creates a clear transition to usability. However, equal adaptation compute is not established for the four models, so gains cannot be attributed entirely to architecture.</p>
+<p>**Layer 5: Downstream policy.** GR00T N1 never declines across nine tasks, DP declines sharply on Hammering, and π0 improves only from 30/10/20 to 40/20/20 on the three Franka tasks. Neural trajectories are not a learner-independent data asset: policy capacity and training objectives are key interactions.</p>
+<p>**Hyperparameter sensitivity.** The paper reports WAN2.1's learning rate, LoRA rank/alpha, epochs, and batch size, but provides no systematic sweep of rank, learning rate, the 1:1 mixture, generation sampling steps, or IDM horizon H, and no failure-transition map. The authors' configuration can be reproduced; configuration robustness cannot be inferred.</p>
+</section>
+<section class="card" aria-labelledby="十一统计显著性与复算审计-title"><h2 id="十一统计显著性与复算审计-title">11. Statistical significance and numerical audit</h2>
+<p>The core DreamGen results in Tables 1, 4, and 5
+<strong>provide no standard deviations, confidence intervals, significance tests, or across-seed variance</strong>. Some real-robot success rates change in 5- or 10-point increments, suggesting limited trial counts. Without explicit denominators, it is impossible to tell whether +5 pp exceeds sampling noise.</p>
+<p>For DreamGenBench, Pearson correlations between automatic IF and human IF across four model points
+<code>r</code> are reported as follows: GPT-4o yields 0.94 for RoboCasa, 0.93 for GR1-Object, 0.96 for Behavior, and 1.00 for Env; Qwen2.5-VL yields 0.92, 0.95, 0.97, and 0.96. (Tables 6–7, PDF pp.20–21.) Each coefficient uses only four models, selected from the same set, without confidence intervals. A high
+<code>r</code>
+only indicates similar rankings in this small sample; it does not establish proxy calibration for new world models.</p>
+<p>All recalculations in this report use <code>(new−old)/old×100%</code>. Relative RoboCasa gains in the three regimes are 33.72%, 24.54%, and 16.17%; the new-behavior GR1 gain is 285.71%. The new-environment baseline is 0, so relative improvement is explicitly undefined.</p>
+</section>
+<section class="card" aria-labelledby="十二相关工作问题来源与设计传递链-title"><h2 id="十二相关工作问题来源与设计传递链-title">12. Related work: problem origins and transferred designs</h2>
+<section class="subsection" aria-labelledby="121-robodreamer从视频作为计划到视频作为数据-title"><h3 id="121-robodreamer从视频作为计划到视频作为数据-title">12.1 RoboDreamer: from video as a plan to video as data</h3>
+<p>RoboDreamer addresses compositional language generalization by decomposing actions and spatial relations into compositional conditions, then generating future video plans. Its mean success rate on six RLBench tasks is <strong>49.3%</strong>, exceeding Hiveformer's 44.2, UniPi's 41.0, and Image-BC's 31.6. (RoboDreamer Table 3, PDF p.7.) The remaining gap is that video mainly supports online planning, execution still needs inverse dynamics, and closed-loop latency limits generation scale. DreamGen moves generation offline, before training. It transfers language-conditioned video plus inverse dynamics, changing their position in the system rather than introducing entirely new modules.</p>
+</section>
+<section class="subsection" aria-labelledby="122-lapa让无动作视频产生可学习动作空间-title"><h3 id="122-lapa让无动作视频产生可学习动作空间-title">12.2 LAPA: learning an action space from action-free video</h3>
+<p>LAPA addresses the absence of robot action labels in Internet videos: a VQ-VAE quantizes frame changes into latent actions, a VLA predicts these latents, and limited real data maps them to controls. Its Language Table in-domain unseen success rate is <strong>49.6±9.5%</strong>, versus 15.2±8.3% for Scratch; ActionVLA, pretrained with real actions, still achieves 58.8±6.6%. (LAPA Table 1, PDF p.7.) DreamGen directly inherits the action tokenizer but uses continuous pre-quantization embeddings, repurposing video-to-latent-action modeling from a pretraining objective into an annotator for synthetic trajectories.</p>
+</section>
+<section class="subsection" aria-labelledby="123-gr00t-n1承接神经轨迹的强策略骨干-title"><h3 id="123-gr00t-n1承接神经轨迹的强策略骨干-title">12.3 GR00T N1: a strong policy backbone for neural trajectories</h3>
+<p>GR00T N1 combines VLM System 2 with diffusion-transformer System 1 to handle semantics and continuous actions. With 100 demonstrations per task, its average across three simulation benchmarks is
+<strong>45.0%</strong>, versus 33.4% for Diffusion Policy. (GR00T N1 Table 2, PDF p.15.) New tasks still require action data; DreamGen injects world-model-generated trajectories into post-training. The transferred design is separate action encoders/decoders: real and synthetic trajectories are treated as different embodiments to reduce action-domain conflicts.</p>
+</section>
+<section class="subsection" aria-labelledby="124-openvla-oft数据之外解码配方同样决定上限-title"><h3 id="124-openvla-oft数据之外解码配方同样决定上限-title">12.4 OpenVLA-OFT: decoding recipes also determine the ceiling</h3>
+<p>OpenVLA-OFT addresses slow autoregressive VLA actions and unstable chunks. Parallel decoding, action chunking, continuous actions, and an L1 objective raise the four-suite LIBERO average from <strong>76.5% to 97.1%</strong>and improve throughput by
+<strong>26×</strong>. (Tables I–II, PDF pp.5–6.) DreamGen does not address decoder efficiency; its data pipeline is decoupled from policy structure. This branch highlights the need to compare synthetic-data gains head-to-head with stronger post-training recipes, lest learner improvements be misattributed to data.</p>
+</section>
+<section class="subsection" aria-labelledby="125-drema显式数字孪生与生成式世界模型的另一条路线-title"><h3 id="125-drema显式数字孪生与生成式世界模型的另一条路线-title">12.5 DreMa: explicit digital twins as an alternative world-model route</h3>
+<p>DreMa combines Gaussian Splatting and physics simulation to construct editable digital twins and apply equivariant transformations to very few demonstrations. Mean real-robot success improves over PerAct from <strong>31.7% to 62.9%</strong>, with OOD success rising from 25.0% to 58.3%. (DreMa Table 4, PDF p.10.) Its limitations include full observability, simple objects, and scene-construction costs. DreamGen replaces explicit geometry with open-world video priors but gives up strictly interactive dynamics. The transferred idea is the data paradigm of imagining many trajectories before training a policy, rather than a particular network.</p>
+<pre class="text"><code>                                                  ┌─ Explicit geometry / physics ─ DreMa ─┐
+Few robot demonstrations ┤                                       ├─ Synthetic trajectory expansion
+                         └─ Pixel-generating world models ──────┘
+                                    │
+                   ┌────────────────┴───────────────┐
+                   │                                │
+          Online video planning             Offline video data factory
+          UniPi / RoboDreamer                       DreamGen
+                   │                                │
+          IDM execution interface        ┌──────────┴──────────┐
+                                         │                     │
+                                   IDM real actions      LAPA latent actions
+                                         └──────────┬──────────┘
+                                                    v
+                             DP / π0 / GR00T N1 / stronger OFT learner</code></pre>
+<p>The evolution has three turning points: from state-space models to high-dimensional video priors; from world models choosing actions online to producing data offline; and from a single action-label type to dual IDM and latent-action interfaces. Closed-loop correction remains unsolved: generated video does not evolve in response to the policy's mistaken actions, so it is still not a counterfactually interactive environment.</p>
+</section>
+</section>
+<section class="card" aria-labelledby="十三跨论文对标-title"><h2 id="十三跨论文对标-title">13. Cross-paper comparison</h2>
+<div class="table-scroll" role="region" tabindex="0" aria-label="Horizontally scrollable data table"><table>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">World representation</th>
+<th scope="col">Synthetic data / online planning</th>
+<th scope="col">Action interface</th>
+<th scope="col">Real robot</th>
+<th scope="col">Most reusable idea</th>
+<th scope="col">Main gap</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>RoboDreamer</td>
+<td>Compositional video diffusion</td>
+<td>Primarily online planning</td>
+<td>IDM</td>
+<td>No</td>
+<td>Compositional language decomposition</td>
+<td>Scale and closed-loop latency</td>
+</tr>
+<tr class="even">
+<td>LAPA</td>
+<td>Frame-difference latents</td>
+<td>Pretraining</td>
+<td>Latents → real actions</td>
+<td>Yes</td>
+<td>Turning unlabeled video into actions</td>
+<td>Latent controllability</td>
+</tr>
+<tr class="odd">
+<td>GR00T N1</td>
+<td>Implicit visual semantics + DiT</td>
+<td>learner</td>
+<td>Continuous action chunks</td>
+<td>Yes</td>
+<td>Strong dual-system backbone</td>
+<td>Action data for new tasks</td>
+</tr>
+<tr class="even">
+<td>OpenVLA-OFT</td>
+<td>VLA representations</td>
+<td>learner</td>
+<td>Parallel continuous chunks</td>
+<td>Yes</td>
+<td>Efficient fine-tuning recipe</td>
+<td>Does not generate new data</td>
+</tr>
+<tr class="odd">
+<td>DreMa</td>
+<td>3DGS + simulator</td>
+<td>Offline imagination</td>
+<td>Real actions from a planner</td>
+<td>Yes</td>
+<td>Editable digital twins</td>
+<td>Full observability / scene construction</td>
+</tr>
+<tr class="even">
+<td><strong>DreamGen</strong></td>
+<td>General image-to-video generation</td>
+<td><strong>Offline data factory</strong></td>
+<td>IDM or LAPA</td>
+<td><strong>Three platforms</strong></td>
+<td>Modular neural-trajectory pipeline</td>
+<td>Cost, open-loop operation, insufficient statistics</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section class="card" aria-labelledby="十四真正贡献可复用设计与迁移潜力-title"><h2 id="十四真正贡献可复用设计与迁移潜力-title">14. Contributions, reusable designs, and transfer potential</h2>
+<p>The first substantive contribution is<strong>system repositioning</strong>: moving the video world model from online planner to offline generator avoids the conflict between video-generation latency and control frequency. The second is<strong>dual action interfaces</strong>: use IDM with action labels, or LAPA with video alone, allowing the same generation pipeline to span data conditions. The third is<strong>evidence of compositional generalization</strong>: demonstrations from one scene and one verb, augmented with 50 neural trajectories per task, extend to 14 new behaviors and 13 new-environment tasks. The fourth is<strong>an observable intermediate benchmark</strong>: DreamGenBench attempts to select world models before expensive real-robot policy training.</p>
+<p>The most reusable design is not the particular WAN2.1 backbone, but three interface contracts: the world model produces video with a fixed camera layout; the action recoverer aligns adjacent frames into chunks; and the policy treats real and synthetic data as distinct domains or embodiments. These contracts may transfer to navigation, autonomous driving, dual-arm assembly, or even nonvisual time-series generation. Each transfer must revalidate the chain from visual plausibility to executable actions.</p>
+</section>
+<section class="card" aria-labelledby="十五论文自述限制-title"><h2 id="十五论文自述限制-title">15. Limitations acknowledged by the paper</h2>
+<ol type="1">
+<li><strong>Task complexity</strong>: relatively simple tasks cover only a small fraction of robot kinematic capabilities; more dexterous and longer-horizon control remains unverified. (Limitations §5, PDF pp.8–9)</li>
+<li><strong>Compute and manual initial frames</strong>: 240k RoboCasa samples cost 54 hours × 1,500 L40 GPUs, and new scenes still require manually supplied initial frames. (§5, p.9)</li>
+<li><strong>Reliability of automatic judging</strong>: lightweight open-source VLMs may hallucinate and struggle especially with fine-grained physical realism. (§5, p.9)</li>
+</ol>
+</section>
+<section class="card" aria-labelledby="十六独立批判-title"><h2 id="十六独立批判-title">16. Independent critique</h2>
+<ol type="1">
+<li><strong>[Causal attribution]</strong> DreamGen simultaneously changes world-model data quantity, pseudo-action labels, and policy-training mixtures. Table 4 lacks random-video, equal-volume conventional augmentation, and compute-matched simulation controls, so gains of +5.88 to +8.02 pp cannot uniquely be attributed to the video model's physics priors.</li>
+<li><strong>[Cost]</strong> Generating 240k trajectories requires 81,000 L40 GPU-hours, yet the paper does not compare this with real demonstrations, Isaac simulation, or image augmentation at equal budgets. Cheaper scaling is established only in human time, not total economic cost.</li>
+<li><strong>[Statistics]</strong> The main results lack standard deviations, confidence intervals, and seed counts, while real-robot scores commonly change in 5–10 pp increments. The +5 pp Hammering gain may therefore fall within trial-sampling noise. Current evidence supports large gains more strongly than every small gain.</li>
+<li><strong>[Closed-loop dynamics]</strong>
+The world model generates complete videos from an initial frame and text without receiving actual policy actions. Mistakes cannot alter subsequent generation. It is therefore not an MDP model supporting counterfactual rollouts, and these results do not demonstrate action-conditioned dynamics suitable for MPC.</li>
+<li><strong>[Evaluation proxies]</strong> Each Pearson correlation uses only four SFT model points; even r=0.92–1.00 may be determined by a single ranking. Using DreamGenBench to select new models requires leave-one-model-out validation and confidence intervals, rather than fitting the same sample.</li>
+<li><strong>[Policy interactions]</strong> DP drops from 35 to 15 on Hammering while GR00T N1 never declines across nine tasks, demonstrating learner-dependent negative transfer. Policy-agnostic should therefore mean format compatibility, not guaranteed benefits.</li>
+<li><strong>[Data leakage / prior boundaries]</strong>
+The video backbone is pretrained on Internet data, but the paper does not systematically audit whether test objects, scenes, or actions appear in pretraining videos. Zero-shot is relative to the robot demonstration set, not all prior visual experience.</li>
+<li><strong>[Safety]</strong>
+Generated videos and pseudo-actions are screened mainly through visual metrics, without matrices covering forces, collisions, joint limits, or failure recovery. Successful-looking videos cannot establish safety for contact tasks such as wiping, hammering, and pouring.</li>
+</ol>
+</section>
+<section class="card" aria-labelledby="十七开放挑战可操作的-head-to-head-实验空白-title"><h2 id="十七开放挑战可操作的-head-to-head-实验空白-title">17. Open challenges: actionable head-to-head experiments</h2>
+<section class="subsection" aria-labelledby="理论-title"><h3 id="理论-title">Theory</h3>
+<p>**Proxy-error bounds.** Fix the policy backbone and training-set size; generate the same 10k trajectories with each of WAN2.1, Cosmos, Hunyuan, and CogVideoX. Compare DreamGenBench, IDM replay success, and real-policy success using bootstrap 95% CIs and leave-one-model-out regression. Test whether IF/PA generalizes across models instead of merely reporting in-sample Pearson r.</p>
+<p>**Pseudo-action noise thresholds.** Inject varying magnitudes, temporal offsets, and chunk-inconsistency noise into identical real trajectories; compare IDM, LAPA, and oracle actions. Plot success transitions against action error separately for DP, π0, and GR00T N1. This estimates when policies absorb generation errors and when catastrophic negative transfer occurs.</p>
+</section>
+<section class="subsection" aria-labelledby="工程应用-title"><h3 id="工程应用-title">Engineering applications</h3>
+<p>**Budget-matched data-source comparison.** At budgets of $10k, $40k, and $100k, compare DreamGen GPU generation, real teleoperation, Isaac domain randomization, DreMa digital twins, and ordinary image augmentation. Use the same 24 RoboCasa and nine real-robot tasks, policy, and evaluation counts. Report success, human hours, GPU-hours, energy use, and safety interruptions.</p>
+<p>**Closed-loop versus open-loop comparison.** Compare DreamGen's text-conditioned videos with action-conditioned world models, generating
+<code>K=1,4,8,16</code> -step rollouts from the same distribution of failure states, then testing both MPC and offline augmentation. Quantitatively distinguish whether open-loop generation mainly benefits augmentation while action-conditioned models support planning.</p>
+<p>**Mixture ratios and curricula.** Run a two-dimensional grid over real:synthetic ratios
+<code>{1:0, 3:1, 1:1, 1:3, 0:1}</code>
+and quality-filtering thresholds; compare fixed mixing, synthetic-then-real, and real-then-synthetic training. The current single 1:1 setting cannot explain DP's negative transfer.</p>
+</section>
+<section class="subsection" aria-labelledby="新兴方向-title"><h3 id="新兴方向-title">Emerging directions</h3>
+<p>**Generation driven by active failure collection.** First execute the policy on real hardware and collect near-failures, then condition a world model to generate local counterfactual repairs. Compare with an equal amount of random-prompt generation, measuring rare-failure coverage, recovery success, and GPU-hours per newly successful behavior.</p>
+<p>**Multimodal physics supervision.** Add force, touch, depth, or joint-state conditioning to the video generator and compare head-to-head with RGB-only DreamGen on folding, wiping, and hammering. Report visual PA, maximum contact-force error, action-replay deviation, and real-robot success to test whether visually plausible physics corresponds to correct contact dynamics.</p>
+</section>
+</section>
+<section class="card" aria-labelledby="十八近期工作雷达-title"><h2 id="十八近期工作雷达-title">18. Recent-work radar</h2>
+<ul>
+<li><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/file/ec46d737282bb408e642ed883a145c40-Paper-Conference.pdf">Robot-R1（NeurIPS
+2025）</a>: uses verifiable robot-control signals to reinforce embodied reasoning, offering a comparison between scaling reasoning and expanding data alongside DreamGen.</li>
+<li><a href="https://openreview.net/forum?id=hqFNqVQEUd">ERA（ICLR
+2026）</a>: turns a VLM into an embodied agent through RL; examine whether rewards suppress language shortcuts and whether genuine physical interaction is used.</li>
+<li><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/file/ab16cc8f472cf94b282dbff7b99f5f8e-Paper-Datasets_and_Benchmarks_Track.pdf">VIKI-R（NeurIPS
+2025 D&amp;B）</a>: applies hierarchical rewards to multi-agent embodied cooperation, addressing multi-robot credit assignment beyond DreamGen's scope.</li>
+<li><a
+href="https://arxiv.org/abs/2504.16054">π0.5</a>: pursues open-world generalization through heterogeneous multimodal co-training. Its expansion of real and semantic mixed data is a key control for DreamGen's synthetic-video route.</li>
+<li><a href="https://arxiv.org/abs/2506.09985">V-JEPA
+2</a>: uses self-supervised video representations for understanding, prediction, and planning. Comparison with pixel-generating world models can test whether high-fidelity pixels are necessary for policy learning.</li>
+<li><a
+href="https://arxiv.org/abs/2506.21539">WorldVLA</a>: unifies actions and future images in an autoregressive world model, moving closer to an action-conditioned closed loop; image-prediction gains must still be separated from parameter-count increases.</li>
+<li><a href="https://arxiv.org/abs/2508.17424">RDT-2</a>: directly reinforces a generalist robot policy. When combined with DreamGen, gains from synthetic trajectories and RL rewards should be isolated.</li>
+<li><a
+href="https://arxiv.org/abs/2509.09674">SimpleVLA-RL</a>: emphasizes a simplified RL scaling recipe for VLAs, making it useful for compute-matched comparisons of synthetic offline data with online/offline RL.</li>
+</ul>
+</section>
+<section class="card" aria-labelledby="十九结论-title"><h2 id="十九结论-title">19. Conclusion</h2>
+<p>DreamGen's most interesting contribution is not the headline of 22 new behaviors, but its placement of generative world models in the robot stack: offline, at scale, and composable with different action recoverers and policy backbones. With 300 demonstrations per task, RoboCasa mean success rises from 49.59% to 57.61%; GR00T N1 + NT never declines on any of the nine real-robot tasks. Neural trajectories demonstrably contain executable information.</p>
+<p>The conclusion needs boundaries: 81,000 GPU-hours lacks a cost-matched baseline; DP shows −20 pp negative transfer; automatic metrics correlate on only four models; and main results lack significance tests. The most defensible assessment is therefore:<strong>DreamGen establishes the feasibility of trading video-generation compute for broader robot demonstration coverage. It does not establish a cost-optimal, policy-independent, or dynamically reliable general solution.</strong></p>
+<hr />
+<p>Sources were verified through 2026-09-03. Exact numbers come from PMLR / arXiv PDFs actually read; missing items remain marked not reported / not found. The index was updated during this run. The HTML passed the Warm Editorial structural validator with 0 warnings, and responsive rules were checked for horizontal table/chart scrolling. No executable Chromium was found at
+<code>/usr/bin/chromium</code>、<code>chromium-browser</code> or
+<code>/opt/pw-browsers</code> , so Playwright screenshot acceptance checks for light, dark, and mobile views could not honestly be completed. This check is explicitly recorded as<strong>not performed</strong>。</p>
+</section>
+</div>
+</main>
+
+  <footer>Sources: final CoRL 2025 PMLR paper, arXiv:2505.12705v2, official code/project page, and five papers tracing the problem and technical lineage; all links verified on 2026-09-03.</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ Light' : '☾ Dark';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1147 @@
+---
+layout: null
+title: "MeanFlow"
+date: 2026-09-16
+topic: "vlm-vision"
+tags: ["vlm-vision", "flow-matching", "image-generation"]
+excerpt: "One-NFE FID drops from Shortcut's 10.60 to 3.43, but CFG contributes heavily, significance tests are absent, and two internal numerical inconsistencies remain."
+permalink: "/blog/2026/09/16/meanflow/en/"
+blog_post: false
+lang: "en"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_zh: "/blog/2026/09/16/meanflow/"
+sitemap: true
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>MeanFlow: Average-Velocity Reparameterization for One-Step Generation, Evidence, and Failure Boundaries · 2026-09-16</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  :root { --chart-primary:#2a78d6; --chart-primary-soft:#3987e5; --chart-comparison:#eb6834; --chart-comparison-dark:#d95926; }
+  :root[data-theme="dark"] { --chart-primary:#3987e5; --chart-comparison:#eb6834; }
+  blockquote { margin:16px 0; padding:10px 18px; border-left:3px solid var(--chart-primary); color:var(--text-secondary); background:var(--page); }
+  h2 { scroll-margin-top:20px; }
+  h3 { color:var(--text-primary); }
+  table td, table th { vertical-align:top; }
+  table th:not(:first-child), table td:not(:first-child) { font-variant-numeric:tabular-nums; }
+  table td:first-child, table th:first-child { min-width:125px; }
+  strong { color:var(--text-primary); }
+  code { overflow-wrap:anywhere; }
+  pre { max-width:100%; overflow-x:auto; }
+  .card > :last-child { margin-bottom:0; }
+  @media (max-width:640px) { .toolbar { position:sticky; top:8px; z-index:20; } .theme-toggle { box-shadow:0 2px 12px rgba(0,0,0,.12); } pre { font-size:11.5px; } .chart text { font-size:10px; } }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" aria-pressed="false">☾ Dark</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">NEURIPS 2025 ORAL · GENERATIVE MODELS</p>
+    <h1>MeanFlow: Average-Velocity Reparameterization for One-Step Generation, Evidence, and Failure Boundaries</h1>
+    <p class="subtitle">Average-velocity identity × JVP bootstrapping × 1-NFE generation</p>
+    <div class="meta" aria-label="Report metadata">
+      <span class="chip source">NeurIPS 2025 · arXiv:2505.13447v1</span>
+      <span class="chip">2026-09-16</span>
+      <span class="chip">Flow Matching · One-step Generation</span>
+    </div>
+    <p class="lede">One-NFE FID drops from Shortcut's 10.60 to 3.43, but CFG contributes heavily, significance tests are absent, and two internal numerical inconsistencies remain.</p>
+  </header>
+
+  <main>
+<section class="card" aria-label="Report section 0">
+<p><strong>Field:</strong> Generative Models (Diffusion / Flow Matching / One-Step Generation)　<strong>Core paper:</strong> <em>Mean Flows for One-step Generative Modeling</em>，NeurIPS 2025 Main Conference，Oral。<br />
+<strong>Evidence conventions:</strong> Original values are explicitly stated in text/appendices; recomputations use only arithmetic on identified tables; unreported values are never invented. PDF pages follow file pagination. Links/page status checked 2026-09-16.</p>
+</section>
+<section class="card" aria-label="Report section 1">
+<h2 id="先读结论它真正解决了什么">0. Main finding: what does it actually solve?</h2>
+<p>MeanFlow matters for separating one-step generation from teacher–student distillation, explicit curricula, and multistage optimization. It directly learns the average velocity over any interval <code>[r,t]</code> , <code>u(z_t,r,t)</code>and uses <code>u = v − (t−r) d u/dt</code> to turn an indirectly supervised average into a computable bootstrap target. Trained from scratch on ImageNet 256×256, MF-XL/2 reaches 1-NFE FID <strong>3.43</strong>(Table 2, p.9), versus the equally 1-NFE, 676M-parameter Shortcut-XL/2 at <strong>10.60</strong>for the proposed method—an absolute reduction of <strong>7.17</strong>and relative reduction of <strong>67.64%</strong>(recomputed here). One step is not free: training still uses large-scale ImageNet, a fixed VAE, CFG, and JVP, without seed variance/significance tests. On CIFAR-10, MeanFlow FID <strong>2.92</strong> is worse than iCT's <strong>2.83</strong>(Table 3, p.9).</p>
+</section>
+<section class="card" aria-label="Report section 2">
+<h2 id="链接验证表">1. Link verification table</h2>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Item</th>
+<th scope="col">Conference / official page</th>
+<th scope="col">arXiv version and date</th>
+<th scope="col">Code</th>
+<th scope="col">Data / weights</th>
+<th scope="col">Project page / videos</th>
+<th scope="col">Verification result</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>MeanFlow (core)</strong></td>
+<td><a href="https://papers.neurips.cc/paper_files/paper/2025/vol38-main-conference">NeurIPS 2025 proceedings index</a>; listed in Main Conference Track, with Oral designation</td>
+<td><a href="https://arxiv.org/abs/2505.13447">arXiv:2505.13447v1</a>，2025-05-19</td>
+<td><a href="https://github.com/Gsunshine/meanflow">Official JAX implementation</a>, MIT license; CIFAR PyTorch added later</td>
+<td>Users supply ImageNet; repository links MF-B/4 checkpoint and FID statistics; main-table XL weights not found</td>
+<td><a href="https://huggingface.co/papers/2505.13447">Hugging Face Daily Papers</a>; separate project page/official video not found</td>
+<td>All accessible; code page states TPU testing</td>
+</tr>
+<tr class="even">
+<td>Flow Matching</td>
+<td>No separate conference page listed</td>
+<td><a href="https://arxiv.org/abs/2210.02747">arXiv:2210.02747v2</a>，2023-02-08</td>
+<td>Accessibility of the paper's implementation link was not used as reproduction evidence</td>
+<td>Public datasets; weights unverified</td>
+<td>Separate project page/video not found</td>
+<td>Paper PDF read</td>
+</tr>
+<tr class="odd">
+<td>Improved Techniques for Training Consistency Models（iCT）</td>
+<td>ICLR 2024</td>
+<td><a href="https://arxiv.org/abs/2310.14189">arXiv:2310.14189v1</a>，2023-10-22</td>
+<td>Official repository not confirmed in this check</td>
+<td>Public datasets; weights unverified</td>
+<td>Separate project page/video not found</td>
+<td>Paper PDF read</td>
+</tr>
+<tr class="even">
+<td>Shortcut Models</td>
+<td>ICLR 2025</td>
+<td><a href="https://arxiv.org/abs/2410.12557">arXiv:2410.12557v3</a>，2025-06-23</td>
+<td>Official repository not confirmed in this check</td>
+<td>Public datasets; weights unverified</td>
+<td>Separate project page/video not found</td>
+<td>Paper PDF read</td>
+</tr>
+<tr class="odd">
+<td>Inductive Moment Matching（IMM）</td>
+<td>ICML 2025</td>
+<td><a href="https://arxiv.org/abs/2503.07565">arXiv:2503.07565v7</a>，2025-05-14</td>
+<td>Official repository not confirmed in this check</td>
+<td>Public datasets; weights unverified</td>
+<td>Separate project page/video not found</td>
+<td>Paper PDF read</td>
+</tr>
+<tr class="even">
+<td>Improved Mean Flows（iMF）</td>
+<td>ICLR 2026</td>
+<td><a href="https://arxiv.org/abs/2512.02012">arXiv:2512.02012v2</a>，2026-05-09</td>
+<td>Code entry linked from MeanFlow repository updates</td>
+<td>Public datasets; weights not individually verified</td>
+<td>Separate video not found</td>
+<td>Paper PDF read</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Link boundaries.</strong> Papers with Code did not provide a stable readable paper page, so it served only as a cross-search entry, not quantitative evidence. Semantic Scholar, Hugging Face, arXiv, OpenReview/proceedings supported discovery/identity checks. All experimental numbers come from read PDFs.</p>
+</section>
+<section class="card" aria-label="Report section 3">
+<h2 id="候选池与随机选择">2. Candidate pool and random selection</h2>
+<p>The run falls on Wednesday, rotating to generative models. First checked <code>ml-report-index.md</code>and excluded recently covered LongLive (streaming long video), DreamGen (robot trajectories from video world models), Ambient Creativity (diffusion memorization control), and adjacent topics. Candidates came from NeurIPS/ICLR proceedings, OpenReview, arXiv, and Hugging Face Daily Papers, with Semantic Scholar/Papers with Code checking names/versions. The 24-paper pool is within 24 months, prioritizing recent 12-month main-conference papers/high-quality preprints.</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 30%" />
+<col style="width: 23%" />
+<col style="width: 23%" />
+<col style="width: 23%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">Number</th>
+<th scope="col">Candidate paper</th>
+<th scope="col">Entry</th>
+<th scope="col">Relation to this topic</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td>Improved Mean Flows for One-step Generative Modeling</td>
+<td>ICLR 2026 / arXiv</td>
+<td>Direct MeanFlow follow-up</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td>SoFlow</td>
+<td>arXiv 2025</td>
+<td>One-step flow improvements</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td>Pixel MeanFlow</td>
+<td>arXiv 2026</td>
+<td>One-step pixel-space generation</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td>PixelGen</td>
+<td>arXiv 2026</td>
+<td>Pixel-level generation</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td>W‑Flow</td>
+<td>arXiv 2026</td>
+<td>Flow reparameterization</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td>Modular MeanFlow</td>
+<td>arXiv 2025</td>
+<td>Modular MeanFlow</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td>Contrastive Flow Matching</td>
+<td>arXiv 2025</td>
+<td>Flow training objectives</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;"><strong>8</strong></td>
+<td><strong>Mean Flows for One-step Generative Modeling</strong></td>
+<td><strong>NeurIPS 2025 Oral / arXiv</strong></td>
+<td><strong>Selected this round</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td>Diffuse and Disperse</td>
+<td>arXiv 2025</td>
+<td>Diffusion trajectory design</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td>Fair Benchmarking of Emerging One-Step Generative Models</td>
+<td>arXiv 2026</td>
+<td>One-step model evaluation</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td>SubFlow</td>
+<td>arXiv 2026</td>
+<td>Subinterval flow</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">12</td>
+<td>APEX</td>
+<td>OpenReview</td>
+<td>Efficient generation</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td>Building Flow Uniqueness</td>
+<td>OpenReview</td>
+<td>Flow identifiability</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td>TwinFlow</td>
+<td>OpenReview</td>
+<td>Dual-flow modeling</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td>Decoupled MeanFlow</td>
+<td>ICLR 2026 proceedings</td>
+<td>Decoupled MeanFlow objectives</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">16</td>
+<td>Understanding and Improving MeanFlow</td>
+<td>ICLR 2026 proceedings</td>
+<td>Mechanistic analysis</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td>On the Design of One-step Diffusion via Shortcutting Paths</td>
+<td>OpenReview</td>
+<td>shortcut path</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td>Understand Before You Generate: ST‑AR</td>
+<td>arXiv 2025</td>
+<td>Autoregressive image generation</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">19</td>
+<td>Towards Better and Faster AR Image Generation via Entropy</td>
+<td>arXiv 2025</td>
+<td>Efficient autoregression</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">20</td>
+<td>Mage‑Flow</td>
+<td>arXiv 2026</td>
+<td>Flow generation</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">21</td>
+<td>World‑In‑World</td>
+<td>OpenReview</td>
+<td>World models</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">22</td>
+<td>Are We Ready for RL in Text-to-3D?</td>
+<td>arXiv 2025</td>
+<td>3D / RL generation</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">23</td>
+<td>Watermarking Autoregressive Image Generation</td>
+<td>arXiv 2025</td>
+<td>Generation provenance</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">24</td>
+<td>ARRA</td>
+<td>arXiv 2025</td>
+<td>Autoregressive generation</td>
+</tr>
+</tbody>
+</table></div>
+<p>After fixing <code>N=24</code> , the system command <code>shuf -i 1-24 -n 1</code>returned <strong>8</strong>selected MeanFlow. Paper, appendices, formal status, code, and main results were sufficient, so the severe-information-shortage condition did not apply;<strong>zero redraws</strong>. Selection was not based on popularity or author preference, and fame does not relax subsequent evidence standards.</p>
+</section>
+<section class="card" aria-label="Report section 4">
+<h2 id="motivation一步生成真正卡在哪里">3. Motivation: where one-step generation gets stuck</h2>
+<p>Flow Matching learns instantaneous velocity <code>v(z_t,t)</code>. Moving from noise <code>z_1</code> to data <code>z_0</code>normally requires numerical ODE integration. One Euler step uses only <code>z_0≈z_1−v(z_1,1)</code>, collapsing a curved trajectory to an endpoint tangent with potentially large error. Shortcut's compute-matched DiT-B comparison is clear: on ImageNet 256, ordinary flow matching has one-step FID <strong>324.8</strong>versus Shortcut's <strong>40.3</strong>; at 128 steps these become <strong>17.3</strong> with <strong>15.5</strong>(Shortcut Table 1, p.8). The network can generate, but its training object mismatches the finite-interval displacement required at inference.</p>
+<p>Three remedies have costs. Distillation requires a pretrained teacher and extra stages. Consistency training enforces agreement across noise levels, with stability depending on curricula, weights, and discretization. Shortcut conditions on step size to cover multiple integration intervals but remains affected by noise–data coupling. MeanFlow asks: if a jump requires the <code>z_t</code> to <code>z_r</code> interval's<strong>average velocity</strong>, why not learn it directly?</p>
+<p>The quantitative opportunity is large: MF-XL/2 reaches 1-NFE FID <strong>3.43</strong>versus equally sized Shortcut-XL/2 at <strong>10.60</strong>(MeanFlow Table 2, p.9). Yet multistep SiT+REPA reaches <strong>1.42</strong>, leaving a <strong>2.01</strong> absolute FID gap. MeanFlow does not end multistep generation; it changes the learned object under a one-evaluation budget.</p>
+</section>
+<section class="card" aria-label="Report section 5">
+<h2 id="故事线核心假设与权衡">4. Narrative, core assumptions, and tradeoffs</h2>
+<p>Four steps define the method: define interval-average velocity as exact integrated displacement; derive its identity with instantaneous velocity; treat the right side as a stop-gradient target and compute trajectory derivatives by JVP; incorporate CFG into training so inference still calls the network once.</p>
+<p>Three assumptions matter.<strong>Representability:</strong> one conditioned network fits many <code>[r,t]</code> intervals;<strong>Bootstrap stability:</strong> stop-gradient prevents collapse even when targets contain current-network derivatives;<strong>Distribution coverage:</strong> sampled intervals, CFG weights, and latent data cover the important inference region <code>r=0,t=1</code> . Benefits are no teacher, pretraining, or explicit curriculum; costs are a more complex objective, JVP, and strong sensitivity to time sampling/CFG.</p>
+</section>
+<section class="card" aria-label="Report section 6">
+<h2 id="方程级形式化">5. Equation-level formalization</h2>
+<h3 id="从概率路径到瞬时速度">5.1 From probability paths to instantaneous velocity</h3>
+<p>Take data <code>x~p_data</code> and noise <code>ε~N(0,I)</code>to construct a linear or general probability path</p>
+<p><code>z_t = a_t x + b_t ε</code>，　<code>t∈[0,1]</code>。</p>
+<p>The conditional velocity is its derivative <code>v_t(x,ε)=d z_t/dt</code>; marginal velocity is the conditional expectation given <code>z_t</code> :</p>
+<p><code>v(z_t,t)=E[v_t(x,ε) | z_t]</code>。</p>
+<p>This defines the ODE <code>d z_t/dt = v(z_t,t)</code>(Eqs.1–2, pp.2–3). Standard Flow Matching regresses <code>v</code>but sampling still integrates from 1 to 0.</p>
+<h3 id="平均速度是有限位移的正确对象">5.2 Average velocity is the correct finite-displacement object</h3>
+<p>For any <code>0≤r≤t≤1</code>, define</p>
+<p><code>u(z_t,r,t) = 1/(t-r) ∫_r^t v(z_τ,τ)dτ</code>。</p>
+<p>Then exact displacement satisfies</p>
+<p><code>z_r = z_t − (t−r) u(z_t,r,t)</code>。</p>
+<p>In particular, if <code>r=0,t=1</code>, predicting the entire interval's average velocity gives <code>z_0=z_1−u(z_1,0,1)</code>in one step (Eqs.3,12, pp.3,5). This is not approximate Euler: with perfectly correct <code>u</code> , the finite-interval update is exact integration by definition.</p>
+<h3 id="meanflow-恒等式">5.3 MeanFlow identity</h3>
+<p>Let <code>Δ=t−r</code>. Taking the total derivative of <code>Δu=∫_r^t v dτ</code> versus <code>t</code> gives</p>
+<p><code>u(z_t,r,t) = v(z_t,t) − (t−r) d u(z_t,r,t)/dt</code>。</p>
+<p>Since <code>u</code> depends on state <code>z_t</code> and explicit time <code>t</code>, the total derivative expands as</p>
+<p><code>d u/dt = (∂u/∂z_t)·v(z_t,t) + ∂u/∂t</code>，</p>
+<p>This is a JVP of network <code>u_θ(z_t,r,t)</code> along direction <code>(v,0,1)</code> (Eqs.6,8, pp.4–5).<code>r</code> is held fixed during differentiation, so the middle component must be zero. Using the incorrect direction <code>(v,0,0)</code>、<code>(v,1,0)</code> or <code>(v,1,1)</code>degrades FID from <strong>61.06</strong> to <strong>268.06 / 329.22 / 137.96</strong>(Table 1b, p.7). JVP semantics are the method itself, not a minor implementation detail.</p>
+<h3 id="自举目标与停止梯度">5.4 Bootstrap targets and stop-gradient</h3>
+<p>The target is</p>
+<p><code>u_tgt = sg[v − (t−r) JVP(u_θ; (v,0,1))]</code>，</p>
+<p><code>L = E[w · ||u_θ(z_t,r,t) − u_tgt||²]</code>。</p>
+<p><code>sg</code> denotes stop-gradient, preventing degenerate solutions from moving predictions and targets together. Eqs.9–11 also apply adaptive power weighting to error magnitude (pp.5–6). Training does not always sample <code>r&lt;t</code>: Table 1a shows that when the fraction of <code>r≠t</code> is <strong>0%</strong>，FID <strong>328.91</strong>; increasing it to <strong>25%</strong> and for <strong>61.06</strong>，<strong>50%</strong> and for <strong>63.14</strong>，<strong>100%</strong> and for <strong>67.32</strong>(p.7). Retaining some <code>r=t</code> instantaneous-velocity tasks anchors the bootstrap system.</p>
+<h3 id="训练与一步采样伪代码">5.5 Training and one-step sampling pseudocode</h3>
+<pre class="text"><code>repeat:
+    x ~ p_data, ε ~ N(0, I)
+    sample t and r ≤ t; construct z_t = a_t x + b_t ε
+    compute analytic conditional velocity v_t(x, ε)
+    predict u = u_θ(z_t, r, t, class)
+    compute J = JVP[u_θ] along tangent (v_t, 0, 1)
+    target = stopgrad(v_t - (t-r) * J)
+    update θ on adaptive_weight(u,target) * ||u-target||²
+
+sampling (1-NFE):
+    z_1 ~ N(0, I)
+    z_0 = z_1 - u_θ(z_1, 0, 1, class; CFG folded into target)
+    image = VAE_decode(z_0)</code></pre>
+<p>One NFE counts one main-network call, not one arithmetic operation for the whole system: noise sampling and VAE decoding remain, with JVP during training.</p>
+</section>
+<section class="card" aria-label="Report section 7">
+<h2 id="关键机制与工程细节">6. Key mechanisms and engineering details</h2>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Module</th>
+<th scope="col">Paper implementation</th>
+<th scope="col">Why it matters</th>
+<th scope="col">Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Interval conditioning</td>
+<td>Input <code>(t,r)</code>; ablations also test <code>(t,t−r)</code> and alternatives</td>
+<td>The network must know the integration interval</td>
+<td><code>(t,r)</code> 61.75，<code>(t,t−r)</code> 61.06; all three inputs together 63.98; Table 1c, p.7</td>
+</tr>
+<tr class="even">
+<td>Time sampling</td>
+<td>Log-normal; best main ablation <code>(-0.4,1.0)</code></td>
+<td>Training density determines interval coverage</td>
+<td>Uniform 65.90, best 61.06; Table 1d, p.7</td>
+</tr>
+<tr class="odd">
+<td>Adaptive weighting</td>
+<td>Error exponent <code>p</code>; main setting p=1</td>
+<td>Reduce scale imbalance</td>
+<td>p=0/0.5/1/1.5/2 gives 79.75/63.98/61.06/66.57/69.19; Table 1e, p.7</td>
+</tr>
+<tr class="even">
+<td>CFG in the target</td>
+<td>Construct a guided target field during training</td>
+<td>Preserve 1-NFE inference</td>
+<td>ω=1→61.06, 2→20.15, 3→15.53, 5→20.75; Table 1f, p.7</td>
+</tr>
+<tr class="odd">
+<td>JVP</td>
+<td>Tangent vector <code>(v,0,1)</code></td>
+<td>Compute a total rather than partial derivative</td>
+<td>Wrong directions worsen FID by at least 76.90; Table 1b, p.7</td>
+</tr>
+<tr class="even">
+<td>Latent training</td>
+<td>Fixed VAE; latent 32×32×4</td>
+<td>Reduce backbone training cost</td>
+<td>Experimental setup, p.7</td>
+</tr>
+<tr class="odd">
+<td>Optimizer</td>
+<td>Adam，β=(0.9,0.95)，LR 1e−4，batch 256，EMA .9999</td>
+<td>Basic configuration for reproducing ImageNet results</td>
+<td>Table 4, p.14</td>
+</tr>
+<tr class="even">
+<td>CIFAR configuration</td>
+<td>LR .0006，batch 1024，dropout .2，EMA .99995，800K iter + 10K warmup</td>
+<td>Shows CIFAR is not a direct scaling of the ImageNet recipe</td>
+<td>Appendix C, p.14</td>
+</tr>
+</tbody>
+</table></div>
+<p>The appendix reports TPU v4-8 step wall time rising from <strong>0.045 s</strong> without JVP to <strong>0.052 s</strong>, approximately <strong>16%</strong>relative overhead (Appendix B.4, p.16). This supports manageable JVP training cost, not GPU extrapolation: the official main implementation was tested on TPUs, with no GPU-kernel, peak-memory, or end-to-end energy results.</p>
+</section>
+<section class="card" aria-label="Report section 8">
+<h2 id="数据集基准与指标">7. Datasets, benchmarks, and metrics</h2>
+<p><strong>ImageNet 256×256。</strong> Class-conditional generation uses a fixed VAE to encode images into 32×32×4 latents; primary evaluation is 50K-sample FID. Lower is better, but FID compares feature means/covariances and alone cannot establish semantic faithfulness, absence of diversity collapse, or individual-image quality. Main results emphasize 1 NFE; 2-NFE results use a different budget and cannot be mixed into equal-budget rankings.</p>
+<p><strong>CIFAR‑10。</strong> A roughly 55M-parameter U-Net reports unconditional FID, testing whether the method extends beyond latent ImageNet DiTs. MeanFlow's 2.92 beats most consistency/moment-matching comparisons but not iCT's 2.83 (Table 3, p.9).</p>
+<p><strong>NFE。</strong> NFE counts backbone calls and is fairer than sampling steps, but per-call FLOPs, VAEs, and CFG implementations may differ. Table 4 provides some FLOPs without matching all baselines by actual latency or energy.</p>
+</section>
+<section class="card" aria-label="Report section 9">
+<h2 id="主结果数据矩阵">8. Main-results matrices</h2>
+<h3 id="imagenet-2561nfe-等预算核心矩阵">8.1 ImageNet 256: core 1-NFE comparison</h3>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">Parameters</th>
+<th scope="col">Training approach</th>
+<th scope="col" style="text-align: right;">NFE</th>
+<th scope="col" style="text-align: right;">FID↓</th>
+<th scope="col" style="text-align: right;">Gap to MF-XL/2</th>
+<th scope="col">Source</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>iCT‑XL/2</td>
+<td style="text-align: right;">675M</td>
+<td>Consistency from scratch</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">34.24</td>
+<td style="text-align: right;">+30.81</td>
+<td>Table 2, p.9</td>
+</tr>
+<tr class="even">
+<td>Shortcut‑XL/2</td>
+<td style="text-align: right;">675M</td>
+<td>Step-conditioned flow from scratch</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">10.60</td>
+<td style="text-align: right;">+7.17</td>
+<td>Table 2, p.9</td>
+</tr>
+<tr class="odd">
+<td>MF‑B/2</td>
+<td style="text-align: right;">131M</td>
+<td>MeanFlow from scratch</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">6.17</td>
+<td style="text-align: right;">+2.74</td>
+<td>Table 2, p.9</td>
+</tr>
+<tr class="even">
+<td>MF‑M/2</td>
+<td style="text-align: right;">308M</td>
+<td>MeanFlow from scratch</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">5.01</td>
+<td style="text-align: right;">+1.58</td>
+<td>Table 2, p.9</td>
+</tr>
+<tr class="odd">
+<td>MF‑L/2</td>
+<td style="text-align: right;">459M</td>
+<td>MeanFlow from scratch</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">3.84</td>
+<td style="text-align: right;">+0.41</td>
+<td>Table 2, p.9</td>
+</tr>
+<tr class="even">
+<td><strong>MF‑XL/2</strong></td>
+<td style="text-align: right;"><strong>676M</strong></td>
+<td><strong>MeanFlow from scratch</strong></td>
+<td style="text-align: right;"><strong>1</strong></td>
+<td style="text-align: right;"><strong>3.43</strong></td>
+<td style="text-align: right;"><strong>0</strong></td>
+<td>Table 2, p.9</td>
+</tr>
+</tbody>
+</table></div>
+<p>Against the strongest comparable Shortcut, absolute reduction is <code>10.60−3.43=7.17</code>and relative reduction <code>7.17/10.60=67.64%</code>(recomputed). Scaling 131M→676M reduces FID 6.17→3.43, improving 2.74 absolute/44.41% relative. Gains are substantial but nonlinear: L→XL adds only 0.41.</p>
+<h3 id="更宽方法谱系不可混淆-nfe">8.2 Broader method families: do not conflate NFE</h3>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Family</th>
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">NFE</th>
+<th scope="col" style="text-align: right;">FID↓</th>
+<th scope="col">Directly fair against 1 NFE?</th>
+<th scope="col">Source</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>One / few steps</td>
+<td>MF‑XL/2</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">3.43</td>
+<td>Reference point</td>
+<td>Table 2, p.9</td>
+</tr>
+<tr class="even">
+<td>One / few steps</td>
+<td>IMM</td>
+<td style="text-align: right;">2（1×2）</td>
+<td style="text-align: right;">7.77</td>
+<td>No: higher NFE and still worse</td>
+<td>Table 2, p.9</td>
+</tr>
+<tr class="odd">
+<td>One / few steps</td>
+<td>MF‑XL/2</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">2.93</td>
+<td>No: measures its own compute scaling</td>
+<td>Table 2, p.9</td>
+</tr>
+<tr class="even">
+<td>One / few steps</td>
+<td>MF‑XL/2+</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">2.20</td>
+<td>No: extra training/configuration</td>
+<td>Table 2, p.9</td>
+</tr>
+<tr class="odd">
+<td>GAN</td>
+<td>BigGAN</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">6.95</td>
+<td>Different model paradigm</td>
+<td>Table 2, p.9</td>
+</tr>
+<tr class="even">
+<td>GAN</td>
+<td>GigaGAN</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">3.45</td>
+<td>Different paradigm; MF leads by only 0.02</td>
+<td>Table 2, p.9</td>
+</tr>
+<tr class="odd">
+<td>GAN</td>
+<td>StyleGAN‑XL</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">2.30</td>
+<td>Different model paradigm</td>
+<td>Table 2, p.9</td>
+</tr>
+<tr class="even">
+<td>AR</td>
+<td>VQGAN</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">26.52</td>
+<td>Sequence length not converted to NFE</td>
+<td>Table 2, p.9</td>
+</tr>
+<tr class="odd">
+<td>AR</td>
+<td>MaskGIT</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">6.18</td>
+<td>Iterative token decoding</td>
+<td>Table 2, p.9</td>
+</tr>
+<tr class="even">
+<td>AR</td>
+<td>VAR‑d30</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">1.92</td>
+<td>Different compute accounting</td>
+<td>Table 2, p.9</td>
+</tr>
+<tr class="odd">
+<td>AR</td>
+<td>MAR‑H</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">1.55</td>
+<td>Different compute accounting</td>
+<td>Table 2, p.9</td>
+</tr>
+<tr class="even">
+<td>Diffusion / flow</td>
+<td>ADM</td>
+<td style="text-align: right;">Multiple steps</td>
+<td style="text-align: right;">10.94</td>
+<td>No</td>
+<td>Table 2, p.9</td>
+</tr>
+<tr class="odd">
+<td>Diffusion / flow</td>
+<td>LDM</td>
+<td style="text-align: right;">Multiple steps</td>
+<td style="text-align: right;">3.60</td>
+<td>No</td>
+<td>Table 2, p.9</td>
+</tr>
+<tr class="even">
+<td>Diffusion / flow</td>
+<td>SimDiff</td>
+<td style="text-align: right;">Multiple steps</td>
+<td style="text-align: right;">2.77</td>
+<td>No</td>
+<td>Table 2, p.9</td>
+</tr>
+<tr class="odd">
+<td>Diffusion / flow</td>
+<td>DiT</td>
+<td style="text-align: right;">Multiple steps</td>
+<td style="text-align: right;">2.27</td>
+<td>No</td>
+<td>Table 2, p.9</td>
+</tr>
+<tr class="even">
+<td>Diffusion / flow</td>
+<td>SiT</td>
+<td style="text-align: right;">Multiple steps</td>
+<td style="text-align: right;">2.06</td>
+<td>No; text separately states 2.15</td>
+<td>Table 2, p.9; text p.8</td>
+</tr>
+<tr class="odd">
+<td>Diffusion / flow</td>
+<td>SiT+REPA</td>
+<td style="text-align: right;">Multiple steps</td>
+<td style="text-align: right;">1.42</td>
+<td>No</td>
+<td>Table 2, p.9</td>
+</tr>
+</tbody>
+</table></div>
+<p>This table deliberately avoids inventing five benchmarks×six methods: the core paper has only ImageNet and CIFAR, with differing training data, architectures, and NFEs across papers. It establishes a substantial FID advance under one evaluation, not dominance across all paradigms, latency, and quality dimensions.</p>
+<h3 id="cifar10-外部有效性">8.3 CIFAR-10 external validity</h3>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">Parameter scale</th>
+<th scope="col" style="text-align: right;">FID↓</th>
+<th scope="col" style="text-align: right;">MeanFlow difference</th>
+<th scope="col">Source</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>iCT</strong></td>
+<td style="text-align: right;">About 55M</td>
+<td style="text-align: right;"><strong>2.83</strong></td>
+<td style="text-align: right;">MeanFlow +0.09 (worse)</td>
+<td>Table 3, p.9</td>
+</tr>
+<tr class="even">
+<td>ECT</td>
+<td style="text-align: right;">About 55M</td>
+<td style="text-align: right;">3.60</td>
+<td style="text-align: right;">MeanFlow −0.68</td>
+<td>Table 3, p.9</td>
+</tr>
+<tr class="odd">
+<td>sCT</td>
+<td style="text-align: right;">About 55M</td>
+<td style="text-align: right;">2.97</td>
+<td style="text-align: right;">MeanFlow −0.05</td>
+<td>Table 3, p.9</td>
+</tr>
+<tr class="even">
+<td>IMM</td>
+<td style="text-align: right;">About 55M</td>
+<td style="text-align: right;">3.20</td>
+<td style="text-align: right;">MeanFlow −0.28</td>
+<td>Table 3, p.9</td>
+</tr>
+<tr class="odd">
+<td>MeanFlow</td>
+<td style="text-align: right;">About 55M</td>
+<td style="text-align: right;">2.92</td>
+<td style="text-align: right;">0</td>
+<td>Table 3, p.9</td>
+</tr>
+</tbody>
+</table></div>
+<p>The large ImageNet lead does not reproduce proportionally on CIFAR. Against iCT, MeanFlow's FID is 0.09 higher, a relative difference of <strong>3.18%</strong>(recomputed). Without variance, it is unknown whether this exceeds training randomness.</p>
+</section>
+
+<figure class="figure" aria-labelledby="figure-fid-title">
+  <p class="fig-title" id="figure-fid-title">ImageNet 256: from-scratch, 1-NFE FID</p>
+  <p class="fig-sub">One y-axis, lower is better; MeanFlow variants blue, earlier one-step baselines orange.</p>
+  <div class="legend"><span><span class="swatch" style="background:#2a78d6"></span>MeanFlow</span><span><span class="swatch" style="background:#eb6834"></span>One-step baseline</span></div>
+  <svg class="chart" viewBox="0 0 900 340" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>ImageNet 256 one-step FID: MeanFlow versus iCT and Shortcut</title>
+    <desc>iCT 34.24, Shortcut 10.60; MeanFlow B/M/L/XL 6.17/5.01/3.84/3.43.</desc>
+    <line x1="72" y1="285.0" x2="866" y2="285.0" stroke="var(--grid)"/><text x="58" y="290.0" text-anchor="end" font-size="12">0</text><line x1="72" y1="221.1" x2="866" y2="221.1" stroke="var(--grid)"/><text x="58" y="226.1" text-anchor="end" font-size="12">10</text><line x1="72" y1="157.2" x2="866" y2="157.2" stroke="var(--grid)"/><text x="58" y="162.2" text-anchor="end" font-size="12">20</text><line x1="72" y1="93.3" x2="866" y2="93.3" stroke="var(--grid)"/><text x="58" y="98.3" text-anchor="end" font-size="12">30</text><line x1="72" y1="55.0" x2="866" y2="55.0" stroke="var(--grid)"/><text x="58" y="60.0" text-anchor="end" font-size="12">36</text><line x1="72" y1="55" x2="72" y2="285" stroke="var(--grid)"/><rect x="118" y="66.2" width="66" height="218.8" rx="5" fill="#eb6834" tabindex="0" data-tip="iCT · FID 34.24" aria-label="iCT FID 34.24"/><text x="151" y="310" text-anchor="middle" font-size="12">iCT</text><text x="151" y="58.2" text-anchor="middle" font-size="12">34.24</text><rect x="241" y="217.3" width="66" height="67.7" rx="5" fill="#d95926" tabindex="0" data-tip="Shortcut · FID 10.60" aria-label="Shortcut FID 10.60"/><text x="274" y="310" text-anchor="middle" font-size="12">Shortcut</text><text x="274" y="209.3" text-anchor="middle" font-size="12">10.60</text><rect x="364" y="245.6" width="66" height="39.4" rx="5" fill="#3987e5" tabindex="0" data-tip="MF-B/2 · FID 6.17" aria-label="MF-B/2 FID 6.17"/><text x="397" y="310" text-anchor="middle" font-size="12">MF-B/2</text><text x="397" y="237.6" text-anchor="middle" font-size="12">6.17</text><rect x="487" y="253.0" width="66" height="32.0" rx="5" fill="#3987e5" tabindex="0" data-tip="MF-M/2 · FID 5.01" aria-label="MF-M/2 FID 5.01"/><text x="520" y="310" text-anchor="middle" font-size="12">MF-M/2</text><text x="520" y="245.0" text-anchor="middle" font-size="12">5.01</text><rect x="610" y="260.5" width="66" height="24.5" rx="5" fill="#2a78d6" tabindex="0" data-tip="MF-L/2 · FID 3.84" aria-label="MF-L/2 FID 3.84"/><text x="643" y="310" text-anchor="middle" font-size="12">MF-L/2</text><text x="643" y="252.5" text-anchor="middle" font-size="12">3.84</text><rect x="733" y="263.1" width="66" height="21.9" rx="5" fill="#2a78d6" tabindex="0" data-tip="MF-XL/2 · FID 3.43" aria-label="MF-XL/2 FID 3.43"/><text x="766" y="310" text-anchor="middle" font-size="12">MF-XL/2</text><text x="766" y="255.1" text-anchor="middle" font-size="12">3.43</text>
+  </svg>
+  <figcaption>Source: core Table 2 (p.9). Hover or keyboard-focus for exact values; error bars unreported.</figcaption>
+</figure>
+<section class="card" aria-label="Report section 10">
+<h2 id="逐层消融从必要条件到锦上添花">9. Layered ablations: necessary mechanisms versus refinements</h2>
+<p><strong>Layer one: task definition.</strong> Without nonzero-interval samples (<code>r≠t=0%</code>), FID is 328.91; 25% reduces it to 61.06, but 100% regresses to 67.32 (Table 1a, p.7). Average-velocity supervision is essential, yet pure average-velocity training is suboptimal; instantaneous samples may anchor learning.</p>
+<p><strong>Layer two: derivative semantics.</strong> Correct <code>(v,0,1)</code> gives 61.06; three wrong JVP directions degrade catastrophically (Table 1b, p.7). This is the strongest mechanistic ablation, distinguishing the correct identity from arbitrary derivative regularization.</p>
+<p><strong>Layer three: conditioning parameterization.</strong> <code>(t,t−r)</code> slightly outperforms <code>(t,r)</code>, 61.06 versus 61.75, only 0.69 apart; all three inputs yield 63.98 (Table 1c, p.7). More conditioning is not monotonically better; redundancy may complicate learning.</p>
+<p><strong>Layer four: sampling distribution.</strong> Uniform gives 65.90; four log-normal settings span 61.06–64.72 (Table 1d, p.7). The best <code>(-0.4,1.0)</code> improves by 4.84 over uniform, supporting a material role for time density, but finer grids/cross-model checks are absent.</p>
+<p><strong>Layer five: loss weighting.</strong> <code>p=1</code> is best at 61.06;<code>p=0</code> gives 79.75 and<code>p=2</code> 69.19 (Table 1e, p.7). The relationship is U-shaped, not simply better with more focus on difficult examples.</p>
+<p><strong>Layer six: CFG.</strong> In short-training B/4, ω=1→3 reduces FID 61.06→15.53; ω=5 rebounds to 20.75 (Table 1f, p.7). With modified CFG at fixed effective <code>ω'=2</code> , κ=0 gives 20.15, κ=0.9 gives 18.63, and κ=0.95 gives 19.17 (Table 5, p.15). CFG contributes heavily with a clear favorable region.</p>
+</section>
+<section class="card" aria-label="Report section 11">
+<h2 id="超参敏感性与相变">10. Hyperparameter sensitivity and transitions</h2>
+<p>No continuous phase diagram is given, but discrete grids show three transition-like behaviors.</p>
+<ol type="1">
+<li><strong>Interval supervision switch:</strong> <code>r≠t</code> moving from 0% to 25% reduces FID 328.91→61.06, an absolute 267.85 gain. This is a structural shift from learning instantaneous fields to finite displacements, not a minor adjustment.</li>
+<li><strong>JVP semantics:</strong> changing only tangent components can move FID 61.06→329.22, showing the parameterization does not automatically absorb incorrect derivatives.</li>
+<li><strong>Guidance strength:</strong> ω=1→3 improves rapidly, then 3→5 worsens; κ is also U-shaped near 0.9. Guidance strengthens class signals but excess can sacrifice coverage/stability.</li>
+</ol>
+<p>The paper does not jointly sweep learning rate, batch, EMA, width, and time sampling, report failure rates, or establish stable hyperparameter regions across seeds/datasets/GPU backends. Transition describes observed discrete points, not rigorously estimated critical values.</p>
+</section>
+<section class="card" aria-label="Report section 12">
+<h2 id="统计显著性与可重复性审计">11. Statistical significance and repeatability audit</h2>
+<p><strong>not reported by the paper</strong> multi-seed ImageNet means, standard deviations, CIs, or significance tests; CIFAR Table 3 also gives single values. A 7.17-FID gap is unlikely to be only noise, but 0.02 versus GigaGAN and 0.09 versus CIFAR iCT cannot establish robust wins/losses.</p>
+<p>Reproducibility lies between public code and out-of-box main-SOTA reproduction. The repository provides JAX/TPU code, preprocessing, MF-B/4 checkpoint, and FID statistics, expecting checkpoint FID <strong>11.4</strong>. Yet complete training resources, main weights, and seed logs for Table 2's MF-XL/2 FID 3.43 were not fully available in verified pages. Parameter counts also conflict: M/2 is <strong>308M</strong>in Table 2 but <strong>497.8M</strong>in Table 4 (pp.9,14), directly affecting scaling curves and reproduction budgets.</p>
+<p>Another inconsistency is SiT: the text says <strong>2.15</strong>while Table 2 says <strong>2.06</strong>(pp.8–9). This does not change MeanFlow's one-NFE conclusion, but baseline numbers need checking against original sources.</p>
+</section>
+<section class="card" aria-label="Report section 13">
+<h2 id="相关工作链问题来源技术来源与设计传递">12. Related-work chain: problem origins, technical sources, and design transfer</h2>
+<h3 id="flow-matching解决如何直接学连续流遗留仍需积分">12.1 Flow Matching: directly learning continuous flows, while still requiring integration</h3>
+<p>Flow Matching constructs regressable velocities from conditional probability paths, avoiding expensive likelihood ODEs. On CIFAR-10, FM+OT FID is <strong>6.35 / NFE 142</strong>versus DDPM <strong>7.48 / 274</strong>; on ImageNet-64 the respective values are <strong>14.45 / 138</strong> with <strong>17.36 / 264</strong>(Flow Matching Table 1, p.7). It stabilizes continuous-flow training but leaves numerical integration at inference. MeanFlow retains probability paths and velocity regression, changing the learned object from instantaneous <code>v</code> to interval-average <code>u</code>. The inherited design uses conditional paths for simulation-free training signals; what changes is which field is learned.</p>
+<h3 id="ict解决无需教师的一致性训练遗留课程与权重依赖">12.2 iCT: teacher-free consistency training, with curriculum/weight dependence remaining</h3>
+<p>Improved consistency training reaches CIFAR-10 one/two-step FID <strong>2.51 / 2.24</strong>and ImageNet-64 <strong>3.25 / 2.77</strong>(iCT Tables 2–3, p.8). It proves few-step generation without distillation, but still depends on discretization/curricula. MeanFlow replaces explicit curricula with continuous intervals <code>[r,t]</code> and identity-based bootstrapping. Both seek global consistency across noise levels; MeanFlow expresses it through average-velocity calculus rather than directly equating predictions across times.</p>
+<h3 id="shortcut-models解决一个模型覆盖多个步长遗留coupling-与一步质量">12.3 Shortcut Models: one model across step sizes, with coupling/one-step quality gaps</h3>
+<p>Shortcut conditions on step size and trains with bootstrap shortcuts. At matched DiT-B compute, one-step FID improves from ordinary flow's 324.8 to 40.3; four-step from 108.2 to 28.3 (Table 1, p.8); the large model reaches 10.60 at one step. Noise-to-data maps remain coupling-dependent (limitations, p.10). MeanFlow's <code>[r,t]</code> conditioning shares this origin, but connects short/long intervals through an integral-average identity rather than directly composing short predictions. The inherited step-size condition gains an analytic, verifiable velocity meaning.</p>
+<h3 id="imm解决以矩匹配传播分布遗留多粒子与额外-nfe">12.4 IMM: propagating distributions by moment matching, with particle/extra-NFE costs</h3>
+<p>Inductive moment matching moves generated distributions toward targets, reaching ImageNet 256 eight-step FID <strong>1.99</strong>，CIFAR‑10 2-step <strong>1.98</strong>; MeanFlow Table 2 cites its one-step setting at <strong>2 NFE、FID 7.77</strong>. This is another route beyond classical teacher distillation, but requires moment estimation and particle configurations. MeanFlow reduces supervision to a single-trajectory velocity/JVP identity, replacing particle-moment propagation with analytic derivatives while retaining the idea of global maps from locally estimable quantities.</p>
+<h3 id="improved-mean-flows解释-meanflow-的后续缺口">12.5 Improved Mean Flows: identifying gaps in original MeanFlow</h3>
+<p>iMF examines network-derivative-dependent targets, fixed training CFG, and architectures not optimized for one-step objectives. On ImageNet 256, it improves B/2 from original FID <strong>6.17</strong> to a v-loss auxiliary head at <strong>5.68</strong>, flexible Ω at <strong>4.57</strong>、in-context <strong>4.09</strong>, advanced blocks at <strong>3.82</strong>, and 640 epochs at <strong>3.39</strong>(iMF Table 1, p.6). XL improves from 676M/3.43 to 610M/ <strong>1.72</strong>(Table 2, p.7). MeanFlow's equation is a useful foundation, not a final recipe. The direct transfer retains average-velocity semantics while decoupling targets and strengthening conditioning.</p>
+<h3 id="非线性技术演进树">12.6 Nonlinear technical evolution tree</h3>
+<pre class="text"><code>Probability paths / continuous flows
+├─ Flow Matching: instantaneous velocity v ───────────┐
+│                                                    │ still requires multistep ODE integration
+│                                                    ▼
+│     consistency route ─ iCT ── teacher-free, curriculum/discretization-dependent
+│              └────────────────┐
+│                               ├─ global one-step mapping
+│     step-size route ─ Shortcut┘      │
+│       (cross-step bootstrapping, coupling-dependent) │
+│                                      ▼
+│                         MeanFlow: interval-average velocity u
+│                         ├─ identity u=v−Δ·du/dt
+│                         ├─ JVP (v,0,1)
+│                         └─ CFG in targets → 1 NFE
+│                                      │
+│                                      ├─ iMF: decoupled targets/flexible Ω/new blocks
+│                                      ├─ Pixel MeanFlow: pixel space
+│                                      └─ Decoupled/Modular branches
+└─ moment route ─ IMM: recursive distribution moments ─┘</code></pre>
+<p><strong>Drivers and turning points.</strong> The first shift moves from better integration to changing the learned finite-step object; the second moves from teacher distillation to self-consistent, self-supervised global maps. MeanFlow specifically gives step-size conditioning exact average-velocity semantics. iMF shows the next phase is separating target coupling, guidance, and architecture rather than merely proving one-step feasibility.</p>
+<h3 id="跨论文对标">12.7 Cross-paper comparison</h3>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Learned object</th>
+<th scope="col">Teacher required</th>
+<th scope="col">Source of global training consistency</th>
+<th scope="col">Inference-budget highlight</th>
+<th scope="col">Main remaining gap</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Flow Matching</td>
+<td>Instantaneous velocity <code>v</code></td>
+<td>No</td>
+<td>Probability-path regression</td>
+<td>High quality, multiple steps</td>
+<td>ODE integration</td>
+</tr>
+<tr class="even">
+<td>iCT</td>
+<td>consistency function</td>
+<td>No</td>
+<td>Cross-noise consistency + curriculum</td>
+<td>1–2 step</td>
+<td>Curriculum / weight sensitivity</td>
+</tr>
+<tr class="odd">
+<td>Shortcut</td>
+<td>Step-conditioned velocity</td>
+<td>No</td>
+<td>Bootstrap long steps from short ones</td>
+<td>1-step 10.60</td>
+<td>Coupling, one-step quality</td>
+</tr>
+<tr class="even">
+<td>IMM</td>
+<td>Distribution-moment map</td>
+<td>No</td>
+<td>inductive moment matching</td>
+<td>High quality in few steps</td>
+<td>Particle and NFE costs</td>
+</tr>
+<tr class="odd">
+<td><strong>MeanFlow</strong></td>
+<td><strong>Interval-average velocity <code>u</code></strong></td>
+<td><strong>No</strong></td>
+<td><strong>Analytic identity + JVP</strong></td>
+<td><strong>1‑NFE 3.43</strong></td>
+<td>CFG dependence, target coupling, no variance</td>
+</tr>
+<tr class="even">
+<td>iMF</td>
+<td>Improved average-velocity system</td>
+<td>No</td>
+<td>Decoupled targets + stronger conditioning/architecture</td>
+<td>1‑NFE 1.72</td>
+<td>Broader fair latency evaluation still needed</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section class="card" aria-label="Report section 14">
+<h2 id="真正贡献可复用设计与迁移潜力">13. Genuine contributions, reusable design, and transfer potential</h2>
+<p><strong>Contribution one: reparameterizing the learned object.</strong> Rather than adding a loss, it identifies interval-average velocity as the natural one-step prediction target, independently reusable beyond particular DiT blocks.</p>
+<p><strong>Contribution two: a computable self-consistency identity.</strong> <code>u=v−Δ du/dt</code> An integral definition becomes a locally trainable relation, with JVP making total derivatives affordable. Catastrophic wrong-direction ablations in Table 1b provide strong mechanistic evidence.</p>
+<p><strong>Contribution three: treating guidance as a target field.</strong> Traditional conditional/unconditional double forwards would violate strict 1 NFE. Folding CFG into training preserves one call, a reusable design for any claimed one-step conditional generator.</p>
+<p>Direct transfers include video, audio, 3D, and molecular flows: continuous paths, conditional velocities, and model JVPs permit interval-average fields. High-dimensional temporal curvature, CFG, memory, and JVP cost may become harder. In inverse problems, treat <code>[r,t]</code> as a variable solving interval so one network chooses one or few steps by observation difficulty, but this needs calibrated error estimators beyond FID.</p>
+</section>
+<section class="card" aria-label="Report section 15">
+<h2 id="论文自述限制">14. Limitations acknowledged by the paper</h2>
+<p>The paper has no separate systematic Limitations section. The following are explicit or directly locatable text/appendix boundaries, not independent criticisms presented as author statements.</p>
+<ol type="1">
+<li><strong>JVP training cost.</strong> Appendix B.4 (p.16) reports 0.045→0.052 s/iteration, about +16%. The authors consider it manageable, but measure only TPU v4-8.</li>
+<li><strong>CFG recipes can improve.</strong> Appendix B.3 (p.15) introduces modified CFG and an optimal κ region, acknowledging the original fixed guidance target is not final.</li>
+<li><strong>One step still trails the strongest multistep models.</strong> The discussion (pp.8–9) claims narrowing, not eliminating, the gap; Table 2's 3.43 versus SiT+REPA 1.42 makes this clear.</li>
+</ol>
+</section>
+<section class="card" aria-label="Report section 16">
+<h2 id="独立批判每条都是因为-x所以-y">15. Independent critique: because X, therefore Y</h2>
+<ol type="1">
+<li><strong>[Statistics]</strong> Because ImageNet/CIFAR main tables lack multiple seeds, standard deviations, or CIs, the 7.17-FID advantage is directionally persuasive, but 0.02 versus GigaGAN and 0.09 versus iCT cannot be called significant.</li>
+<li><strong>[Attribution]</strong> Because changing B/4 CFG ω from 1 to 3 alone reduces FID 61.06→15.53 (Table 1f, p.7), far more than most structural refinements, final 3.43 cannot be attributed solely to the average-velocity identity. Strong baselines need matched CFG training.</li>
+<li><strong>[External validity]</strong> Because CIFAR-10 MeanFlow 2.92 trails iCT 2.83 (Table 3, p.9), latent ImageNet DiT superiority does not establish universal cross-dataset gains.</li>
+<li><strong>[Fairness]</strong> Because Table 2 mixes GANs, autoregressive models, multistep diffusion, and 1-NFE flows without matched latency, FLOPs, VAEs, or energy, overall SOTA can only describe tabulated FID ranking, not best system throughput.</li>
+<li><strong>[Reproducibility]</strong> Because MF-M/2 is 308M in Table 2 but 497.8M in Table 4 (pp.9,14), scaling and training budgets cannot be reproduced unambiguously; the authors should correct this.</li>
+<li><strong>[Baseline audit]</strong> Because SiT FID is 2.15 in the text and 2.06 in Table 2 (pp.8–9), at least one comparison has a transcription/version error. Differences near 0.1 require original-paper/protocol checks.</li>
+<li><strong>[Mechanism]</strong> Because <code>r≠t=0%</code> at 328.91 versus correct JVP at 61.06 establishes the need for average-velocity tasks and total derivatives. Yet no compute-matched derivative-regularization control without the MeanFlow identity separates analytic structure from extra supervision/compute completely.</li>
+<li><strong>[Deployment]</strong> Because +16% JVP overhead was measured only on TPU v4-8 and main code targets TPUs, negligible GPU cost is unproven. GPU peak memory, compilation stability, and throughput remain gaps.</li>
+</ol>
+</section>
+<section class="card" aria-label="Report section 17">
+<h2 id="开放挑战可操作的-head-to-head-实验">16. Open challenges: actionable head-to-head experiments</h2>
+<h3 id="理论">Theory</h3>
+<ul>
+<li><strong>Average-field identifiability.</strong> Fix architecture/data; compare the MeanFlow identity, arbitrary JVP regularization, and directly integrated pseudo-labels. Measure <code>u</code> interval-closure error, endpoint error, and FID, and prove when bootstrap fixed points are unique.</li>
+<li><strong>Error-propagation bounds.</strong> On 2D/low-dimensional distributions with analytic flows, compare one-step MeanFlow, Shortcut, and Euler/RK. Sweep curvature/Lipschitz constants and test whether average-velocity regression error linearly controls endpoint error.</li>
+<li><strong>Coupling sensitivity.</strong> On identical data, compare independent, OT, and learned couplings at fixed NFE/parameters/FLOPs. Measure FID, precision/recall, and pairing stability to test whether MeanFlow mitigates Shortcut's coupling dependence.</li>
+</ul>
+<h3 id="工程与应用">Engineering and applications</h3>
+<ul>
+<li><strong>Wall-clock-matched controls.</strong> On one H100 cluster, compare MeanFlow, Shortcut, iCT, and iMF with equal training hours. Report throughput, peak memory, energy, failure restarts, and FID rather than only epochs.</li>
+<li><strong>End-to-end serving comparison.</strong> At batch 1/8/64, measure p50/p95 latent encoding, 1-NFE backbone, and VAE decoding latency against two/four-step models. If VAE dominates, reducing four backbone steps to one may yield overstated system gains.</li>
+<li><strong>Causal CFG ablation.</strong> Give MeanFlow and all one-step baselines identical guidance training/effective ω; grid-sweep ω/κ. Report no-CFG and best-CFG leaderboards separately to isolate identity and guidance gains.</li>
+</ul>
+<h3 id="新兴方向">Emerging directions</h3>
+<ul>
+<li><strong>Video average velocity.</strong> Compare MeanFlow/Shortcut on one video DiT at fixed frames, resolution, and training FLOPs. Beyond FVD, report identity/motion drift by temporal position to test whether interval averaging blurs long-horizon action phases.</li>
+<li><strong>Text-to-3D / molecule generation.</strong> Compare instantaneous and average fields on hard-constrained flows using validity, property distributions, deduplication, and sampling latency. Test whether one-step jumps cross feasible manifolds.</li>
+<li><strong>Adaptive one/few-step routing.</strong> Train an interval-error predictor to assign 1 NFE to easy samples and 2–4 to hard ones. Compare fixed 1/2/4 NFE at equal average compute using FID, worst-quantile quality, and calibration.</li>
+</ul>
+</section>
+<section class="card" aria-label="Report section 18">
+<h2 id="近期工作雷达">17. Recent-work radar</h2>
+<ol type="1">
+<li><a href="https://arxiv.org/abs/2512.02012">Improved Mean Flows</a>: the most direct follow-up identifies target coupling, fixed guidance, and architecture as bottlenecks. XL 1-NFE FID 1.72 makes MeanFlow a foundation rather than an endpoint.</li>
+<li><a href="https://arxiv.org/abs/2601.22158">Pixel MeanFlow</a>: moves average-velocity generation from latents to pixels; evaluate end-to-end latency and quality without VAE error, not FID alone.</li>
+<li><a href="https://arxiv.org/abs/2508.17426">Modular MeanFlow</a>: separates MeanFlow training components, useful for testing independently transferable modules in video/audio/3D.</li>
+<li><a href="https://arxiv.org/abs/2506.05350">Contrastive Flow Matching</a>: improves flow matching through representations/contrastive objectives, orthogonal to interval targets and potentially complementary, but extra negative-sample compute must be controlled.</li>
+<li><a href="https://arxiv.org/abs/2603.14186">Fair Benchmarking of Emerging One-Step Generative Models</a>: aligns parameters, training volume, and evaluation protocols beyond 1 NFE, directly addressing fairness concerns.</li>
+<li><a href="https://openreview.net/group?id=ICLR.cc/2026/Conference">Decoupled MeanFlow（ICLR 2026 proceedings）</a>: focuses on bootstrap-target coupling. Locate the formal entry by title in conference lists; this report cites no unverified numbers.</li>
+</ol>
+</section>
+<section class="card" aria-label="Report section 19">
+<h2 id="复现蓝图与最终判断">18. Reproduction blueprint and final assessment</h2>
+<p>A minimal credible reproduction has three layers. Verify the official MF-B/4 checkpoint's claimed FID 11.4 and hash the FID statistics. Train B/4 per Table 4 and reproduce three key Table 1 comparisons:<code>r≠t=0/25%</code>, correct/incorrect JVP, and ω=1/3. Then scale to B/2 or XL/2 with at least three seeds. Always report wall-clock training, JVP share, peak memory, and end-to-end generation latency.</p>
+<p>MeanFlow offers a simple transferable idea: learn average velocity for one-step generation, using a calculus identity to make it trainable. ImageNet results surpass prior from-scratch one-step quality, but contributions of the equation, CFG, scale, and cross-dataset robustness remain incompletely separated. Research should reuse average-quantity reparameterization, correct JVP, and training-time guidance; engineering should verify GPU costs and multi-seed stability before promising FID 3.43.</p>
+<hr />
+<p><strong>Sources and audit footnote.</strong> The core and five related PDFs were read page by page; numbers cite tables/pages. Unlisted exact values were not guessed from plots. HTML uses inline CSS/JS, light/dark themes, and responsive tables; charts use only Table 2's reported 1-NFE values.<code>ml-report-index.md</code> This entry was appended after generation. A local Playwright Chromium probe found the package installed, but <code>/usr/bin/chromium</code>、<code>/opt/pw-browsers</code> and recorded browser paths had no executable. The no-playwright-install constraint was respected, preventing real light/dark/mobile screenshots. Alternative checks included Warm Editorial validation (0 warnings), placeholder/structure scans, table scrolling, mobile queries, theme variables, and tooltip keyboard focus; these are not claimed as screenshot validation.</p>
+</section>
+</main>
+
+  <footer>Core sources: NeurIPS proceedings, arXiv v1, official code; lineage readings: Flow Matching, iCT, Shortcut, IMM, iMF. Generated 2026-09-16.</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ Light' : '☾ Dark';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

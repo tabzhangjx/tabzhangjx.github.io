@@ -1,0 +1,1476 @@
+---
+layout: null
+title: "PemNN"
+date: 2026-09-13
+topic: "ai4science"
+tags: ["ai4science", "biophysics", "physics-informed-learning"]
+excerpt: "WLC 物理坐标 × 双支路融合 × 小样本单分子筛选 约三十条训练曲线时，PemNN 达到 79.61±5.24%，较最强基线高 11.35 pp；但物理贡献与额外 extension 输入仍未分离。"
+permalink: "/blog/2026/09/13/pemnn/"
+blog_post: true
+lang: "zh-CN"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_en: "/blog/2026/09/13/pemnn/en/"
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>PemNN：用聚合物物理增强单分子力谱分类 · 2026-09-13</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ML / AI DAILY DEEP PAPER · ICML 2025</p>
+    <h1>PemNN：用聚合物物理增强单分子力谱分类</h1>
+    <p class="subtitle">WLC 物理坐标 × 双支路融合 × 小样本单分子筛选</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">ICML 2025 · PMLR 267</span>
+      <span class="chip">2026-09-13</span>
+      <span class="chip">AI4Science / 单分子生物物理</span>
+    </div>
+    <p class="lede">约三十条训练曲线时，PemNN 达到 79.61±5.24%，较最强基线高 11.35 pp；但物理贡献与额外 extension 输入仍未分离。</p>
+  </header>
+
+  <main>
+<section class="card" aria-labelledby="0-链接验证表"><h2 id="0-链接验证表">0. 链接验证表</h2>
+<p>以下 URL 均在本次报告制作时实际访问。核心论文在 PMLR
+页面可直接取得正式 PDF；OpenReview
+页面存在但自动访问遇到验证页，因此只确认 PMLR 页面给出的链接，不把
+OpenReview 元数据作为定量依据。精确标题检索未找到核心论文的
+arXiv、Hugging Face Daily Papers、Papers with Code 或 Semantic Scholar
+独立条目；ACL Anthology 与本主题不对应。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">会议 / 出版页</th>
+<th scope="col">arXiv（版本与日期）</th>
+<th scope="col">代码</th>
+<th scope="col">数据 / 权重</th>
+<th scope="col">项目页 / 视频</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>PemNN（核心）</strong></td>
+<td><a href="https://proceedings.mlr.press/v267/hua25c.html">ICML 2025 /
+PMLR 267</a>；<a
+href="https://raw.githubusercontent.com/mlresearch/v267/main/assets/hua25c/hua25c.pdf">正式
+PDF</a>；<a
+href="https://openreview.net/forum?id=TamwbDvbdX">OpenReview</a></td>
+<td><strong>未找到</strong>（截至 2026-09-13）</td>
+<td><a
+href="https://github.com/SalapakaLab-SIMBioSys/SMFS-Identification">官方
+GitHub</a></td>
+<td>同一仓库公开四类实验/仿真数据；仅找到 Titin 的两个 Keras
+checkpoint，未找到四蛋白完整权重</td>
+<td>独立项目页、视频：<strong>未找到</strong></td>
+</tr>
+<tr class="even">
+<td>Waite 等：few-shot AFM</td>
+<td><a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC9868661/">Patterns
+2023 / PMC 全文</a>；<a
+href="https://doi.org/10.1016/j.patter.2022.100672">DOI</a></td>
+<td><strong>未找到可确认的对应记录</strong></td>
+<td>代码随 <a
+href="https://doi.org/10.5281/zenodo.7301801">Zenodo</a></td>
+<td>Zenodo 公开曲线、标注和代码</td>
+<td>视频：未找到</td>
+</tr>
+<tr class="odd">
+<td>Dudko–Hummer–Szabo 力谱理论</td>
+<td><a href="https://www.pnas.org/doi/10.1073/pnas.0806085105">PNAS
+2008</a>；<a
+href="https://pubmed.ncbi.nlm.nih.gov/18815375/">PubMed</a></td>
+<td>未找到</td>
+<td>未公开 / 不适用</td>
+<td>未公开 / 不适用</td>
+<td>未找到</td>
+</tr>
+<tr class="even">
+<td>Dingeldein 等：SMFS 的 SBI</td>
+<td><a href="https://doi.org/10.1088/2632-2153/acc8b8">MLST 2023
+DOI</a></td>
+<td><a
+href="https://arxiv.org/abs/2209.10392">arXiv:2209.10392v2，2022-11-14</a></td>
+<td><a href="https://github.com/covinolab/SBIsmfs">SBIsmfs</a></td>
+<td>代码仓库含模拟与推断流程；预训练权重未找到</td>
+<td><a href="https://simulation-based-inference.org/">SBI
+资源页</a>；视频未找到</td>
+</tr>
+<tr class="odd">
+<td>InceptionTime</td>
+<td><a href="https://doi.org/10.1007/s10618-020-00710-y">Data Mining and
+Knowledge Discovery 2020</a></td>
+<td><a
+href="https://arxiv.org/abs/1909.04939">arXiv:1909.04939v3，2020-12-05</a></td>
+<td><a href="https://github.com/hfawaz/InceptionTime">官方
+GitHub</a></td>
+<td>UCR 等公开基准由仓库脚本获取；本论文专用权重未找到</td>
+<td>视频未找到</td>
+</tr>
+<tr class="even">
+<td>FUSION</td>
+<td><a href="https://pubs.acs.org/doi/10.1021/acs.nanolett.3c03026">Nano
+Letters 2023</a>；<a
+href="https://pubmed.ncbi.nlm.nih.gov/37948615/">PubMed</a></td>
+<td>未找到</td>
+<td>未找到</td>
+<td>数据 / 权重未找到</td>
+<td>视频未找到</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="1-选题审计候选池排重与随机选择"><h2 id="1-选题审计候选池排重与随机选择">1.
+选题审计：候选池、排重与随机选择</h2>
+<p>运行日对应“AI4Science 与跨界”。索引排重排除了最近十四天已深度覆盖的
+Foundation Molecular
+Grammar（分子生成）、TIMING（科学/医疗时序解释）与坐标鲁棒回归等主题。本轮以
+<a href="https://proceedings.mlr.press/v267/">ICML 2025 正式
+proceedings</a> 为主源，并由其 OpenReview 链接、arXiv
+精确标题检索及聚合站检索交叉核验；这样候选的 venue
+层级一致，随机数不会暗中混入“主会对预印本”的质量偏置。</p>
+<p>候选池共二十九篇，均为 ICML 2025
+主会论文，因而核心候选均在二十四个月时限内：</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">#</th>
+<th scope="col">候选论文</th>
+<th scope="col">子领域</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td>From Mechanistic Interpretability to Mechanistic Biology</td>
+<td>蛋白语言模型解释</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td>Training Flexible Models of Genetic Variant Effects</td>
+<td>基因组</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td>Raptor: Scalable Train-Free Embeddings for 3D Medical Volumes</td>
+<td>医学影像</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td>Visual and Domain Knowledge for Professional-level Graph-of-Thought
+Medical Reasoning</td>
+<td>医疗推理</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td>LDMol</td>
+<td>文本到分子扩散</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td>Hierarchical Graph Tokenization for Molecule-Language Alignment</td>
+<td>分子—语言</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td>Scalable Non-Equivariant 3D Molecule Generation via Rotational
+Alignment</td>
+<td>三维分子</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;"><strong>8</strong></td>
+<td><strong>A Physics-Augmented Deep Learning Framework for Classifying
+Single Molecule Force Spectroscopy Data</strong></td>
+<td><strong>单分子生物物理</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td>Geometric Representation Condition Improves Equivariant Molecule
+Generation</td>
+<td>分子几何</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td>Gradient Guided Bayesian Flow Networks for Molecule
+Optimization</td>
+<td>分子优化</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td>Compositional Flows for 3D Molecule and Synthesis Pathway
+Co-design</td>
+<td>分子与合成</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">12</td>
+<td>CombiMOTS</td>
+<td>双靶点药物设计</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td>Elucidating the Design Space of Multimodal Protein Language
+Models</td>
+<td>蛋白语言模型</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td>PPDiff</td>
+<td>蛋白复合物设计</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td>Flexibility-conditioned Protein Structure Design with Flow
+Matching</td>
+<td>蛋白结构</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">16</td>
+<td>Fast and Low-Cost Genomic Foundation Models via Outlier Removal</td>
+<td>基因组基础模型</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td>SPACE</td>
+<td>DNA 基础模型</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td>Near-optimal Sketchy Natural Gradients for PINNs</td>
+<td>PINN 优化</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">19</td>
+<td>Adaptive Flow Matching for Resolving Small-Scale Physics</td>
+<td>物理模拟</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">20</td>
+<td>Calibrated Physics-Informed Uncertainty Quantification</td>
+<td>物理不确定性</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">21</td>
+<td>DISCO</td>
+<td>多物理算子学习</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">22</td>
+<td>Physics-Informed Weakly Supervised Learning for Interatomic
+Potentials</td>
+<td>原子间势</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">23</td>
+<td>A Generalizable Physics-Enhanced State Space Model</td>
+<td>动力学预测</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">24</td>
+<td>Holistic Physics Solver</td>
+<td>PDE 求解</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">25</td>
+<td>OmniArch</td>
+<td>科学计算基础模型</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">26</td>
+<td>Dictionary Learning from Microscopy Foundation Models</td>
+<td>自动生物发现</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">27</td>
+<td>Adapting While Learning: Grounding LLMs for Scientific Problems</td>
+<td>科学 Agent</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">28</td>
+<td>SCENT</td>
+<td>连续科学时空数据</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">29</td>
+<td>LLM-SRBench</td>
+<td>科学方程发现</td>
+</tr>
+</tbody>
+</table></div>
+<p>按要求在系统 shell 执行 <code>shuf -i 1-29 -n 1</code>，输出
+<strong>8</strong>；第八篇即
+PemNN。正式论文、附录、代码、数据均足以支撑方法与定量审计，故<strong>重抽次数为零</strong>。Hugging
+Face、Papers with Code、Semantic Scholar 与 ACL Anthology
+的精确标题检索没有返回可确认的核心论文条目，这些“未找到”不是“论文不存在”的证明，只代表本轮检索无法核实。</p>
+</section><section class="card" aria-labelledby="2-motivation真正昂贵的不是预测而是获得可信标签"><h2 id="2-motivation真正昂贵的不是预测而是获得可信标签">2.
+Motivation：真正昂贵的不是预测，而是获得可信标签</h2>
+<p>单分子力谱（SMFS）以探针拉伸蛋白，记录力随 extension
+变化的轨迹。科学目标常是估计单个蛋白域的解折叠力，但一次试验可能没有抓到分子、抓到一个分子，或同时抓到多个分子；后两者的轨迹形态会混杂。论文把这一步改写为三分类：<code>no molecule / single molecule / multiple molecules</code>。传统流程靠专家逐条看曲线，核心论文称分析时间可从“一天”降到“一小时以内”（核心论文，第
+1 页摘要与第 8
+页结论）；这个说法没有独立计时表、样本量或硬件区间，因此只能视为工作流量级陈述，不能当作严格加速比。</p>
+<p>痛点有三层。第一，标注少。四个实验蛋白的数据量按类别分别是 Titin
+<code>[181,164,191]</code>、细菌 Utrophin
+<code>[181,181,178]</code>、昆虫 Utrophin
+<code>[175,166,200]</code>、Dystrophin
+<code>[191,185,177]</code>；每种蛋白跨五至十一个实验日、三至四种拉伸速度（核心论文，表
+1，第 6
+页）。默认低数据设置只使用约三十条训练曲线，论文报告四蛋白平均准确率
+<code>79.6±5.2%</code>（核心论文，第 1、7 页，图
+6）。第二，曲线长度不一，实验轨迹从 <code>736</code> 到
+<code>9974</code> 点不等，而网络需要统一输入（核心论文，表 1，第 6
+页）。第三，纯数据模型可能把仪器噪声、速度或某天的漂移学成捷径；但手写物理模型又不够表达真实蛋白的异质性。PemNN
+的下注是：不要求物理模型独自做判别，而是把物理变换作为一个可学习支路的输入。</p>
+<p>这个问题的量化基线来自 Waite 等的 DDRs 数据：Triplet 网络总体准确率
+<code>66.70%</code>，三个类别分别为
+<code>73.30/63.30/63.30%</code>，总体 F1 为
+<code>66.70%</code>（核心论文复现表 3，第 19 页；原工作见 <a
+href="https://pmc.ncbi.nlm.nih.gov/articles/PMC9868661/">Patterns
+全文</a>）。核心论文没有把 DDRs 用于 PemNN，因为该数据缺少
+extension，无法计算 WLC
+轮廓长度；这恰好说明方法不是仅靠力向量即可落地的即插即用分类器。</p>
+</section><section class="card" aria-labelledby="3-论文故事线假设与权衡"><h2 id="3-论文故事线假设与权衡">3. 论文故事线、假设与权衡</h2>
+<p>论文的故事线很清晰：先构造物理 Monte Carlo
+引擎，生成四个蛋白、每个蛋白六百条三分类曲线；再让网络同时看原始力和 WLC
+反演的轮廓长度；最后用模拟数据做结构选择，并在真实实验上验证少样本和“纯模拟预训练”两种用法（核心论文，第
+4–8 页；附录 A–E，第 13–24 页）。</p>
+<p>它隐含四个假设。</p>
+<ol type="1">
+<li><strong>低维物理坐标更可分。</strong>
+如果单分子解折叠事件在轮廓长度空间中比原始力空间更稳定，那么把
+<code>Lc</code> 显式输入可降低样本复杂度。</li>
+<li><strong>物理模型可以不精确但方向正确。</strong> WLC、FJC、FRC
+三种链模型在实验与模拟上的准确率相差不超过约三个百分点（核心论文，附录
+E.1，第 19–20 页，图
+10）；作者据此主张精确模型不是成败关键。由于论文只给曲线，没有逐项矩阵或置信区间，这里不能判断三个百分点是否统计等价。</li>
+<li><strong>仿真能提供有用的表征初始化。</strong>
+仅在对应模拟数据上预训练、完全不看实验标签时，四蛋白平均准确率为
+<code>72.0±5.9%</code>、平均 ROC-AUC 为 <code>0.88</code>（核心论文，第
+7 页与附录 E.4，第 23–24 页）。这证明“非零迁移”，不等于完成
+sim-to-real。</li>
+<li><strong>早期融合比晚期决策融合更容易学习互补关系。</strong>
+Early-Conv 在关键差异图中最佳；只把两个支路的最终 softmax
+做晚融合更弱（核心论文，附录 E.1，第 19–20 页，图 9）。</li>
+</ol>
+<p>权衡也同样明确：加入物理支路会引入
+<code>kBT</code>、固定持久长度、轮廓长度阈值和 extension
+质量等依赖；模拟器需要蛋白的能垒与解折叠参数。换来的好处是低数据区显著更稳，以及可把最终筛选后的解折叠力分布与物理常识对照。</p>
+</section><section class="card" aria-labelledby="4-方程级形式化与流程"><h2 id="4-方程级形式化与流程">4. 方程级形式化与流程</h2>
+<p>给定第 <code>i</code> 条轨迹的 extension
+<code>X^(i)=(x_1,…,x_T)</code>、force <code>F^(i)=(f_1,…,f_T)</code>
+与标签 <code>y^(i)∈{0,1,2}</code>，分类器输出
+<code>p_θ(y|X,F)</code>，训练目标是标准类别交叉熵：</p>
+<pre class="text"><code>L_CE(θ) = -(1/N) Σ_i Σ_{c=0}^2 1[y^(i)=c] log p_θ(c | X^(i),F^(i)).</code></pre>
+<p>这是核心论文式（1），第 3 页。真正的物理增强发生在输入变换。WLC
+模型把每个正的 <code>(x,f)</code> 对映射到轮廓长度 <code>Lc</code>：</p>
+<pre class="text"><code>f = (k_B T / L_p) · [ 1/{4(1-x/L_c)^2} - 1/4 + x/L_c ].</code></pre>
+<p>这是核心论文式（2），第 4 页。作者固定
+<code>L_p=300 pm</code>，逐点数值求解
+<code>L_c</code>，保留满足物理约束且 <code>L_c≤1000 nm</code> 的点，再把
+force 与 contour-length 两条序列分别采样到四百点（核心论文，第 4–5
+页；附录 D，第 18 页）。注意：<code>Lc</code> 不是只由 <code>F</code>
+决定，它由 <code>(X,F)</code> 共同得到；如果通用基线只看
+<code>F</code>，那么 PemNN 同时获得了额外传感变量和物理坐标变换。</p>
+<p>默认网络可以写成：</p>
+<pre class="text"><code>h_F  = Branch_F(Resample400(Normalize(F)))
+L_c  = SolveWLC(X,F; L_p, L_c,max)
+h_L  = Branch_L(Resample400(Normalize(L_c)))
+h     = Fuse_early(h_F,h_L)
+p     = Softmax(Head(h))</code></pre>
+<p>两个支路先各过一维卷积、批归一化和 ReLU；Early-Conv
+随后拼接特征，再过两个卷积块与全局平均池化。另一条实现分支在每路使用隐藏维度八、dropout
+<code>0.8</code> 的 LSTM 后拼接（核心论文，第 5 页与附录 D，第 18
+页）。完整训练/部署流程如下：</p>
+<pre class="text"><code>                  ┌────────── Monte Carlo simulator ──────────┐
+蛋白物理参数 ────&gt;│ WLC/FJC/FRC + DHS off-rate + 随机解折叠   │──&gt; 模拟三类轨迹
+                  └────────────────────────────────────────────┘          │
+真实 AFM: (X,F) ───────────────────────────────────────────────────────────┤
+                                                                          v
+                ┌──────────── force branch ─────────────┐       监督交叉熵
+(X,F) ─────────&gt;│ F → 归一化/400 点 → Conv/LSTM         │──┐       │
+                └───────────────────────────────────────┘  ├─融合─&gt;三分类
+                ┌──────────── physics branch ───────────┐  │
+                │ (X,F)→WLC 反演 Lc→过滤/400点→Conv/LSTM│──┘
+                └───────────────────────────────────────┘
+                                     │
+                                     └─ single 类轨迹 → 解折叠力分布</code></pre>
+<p>模拟器的关键不是画出“像真的”曲线，而是把链伸长、cantilever
+平衡、Dudko–Hummer–Szabo（DHS）力依赖脱离率和随机解折叠串起来。附录算法
+1 每个时间步增加 base extension，求力平衡，计算 DHS off-rate
+与事件概率，再随机决定 domain unfolding 或 molecule
+detachment（核心论文，附录 A，第 13–14 页）。表 2 给出的 Titin、细菌
+Utrophin、Dystrophin、昆虫 Utrophin 的 <code>ln k0</code> 分别为
+<code>-9.21/-6.50/-4.50/-2.50</code>，<code>Δx‡</code> 为
+<code>0.40/0.85/0.60/0.41 nm</code>，<code>ΔG‡</code> 为
+<code>20/14.5/11.5/9.8 kBT</code>（核心论文，表 2，第 15
+页）。这些数直接决定仿真域，因而也是迁移误差的来源。</p>
+</section><section class="card" aria-labelledby="5-关键机制与工程细节"><h2 id="5-关键机制与工程细节">5. 关键机制与工程细节</h2>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">部件</th>
+<th scope="col">论文实现</th>
+<th scope="col">科学作用</th>
+<th scope="col">工程风险 / 复现备注</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Force 支路</td>
+<td>force 归一化并重采样至 400 点</td>
+<td>保留仪器观测的形态</td>
+<td>不等长轨迹的重采样可能抹去窄峰；论文未给插值核消融</td>
+</tr>
+<tr class="even">
+<td>Physics 支路</td>
+<td>WLC 逐点反演
+<code>Lc</code>；<code>Lp=300 pm</code>；<code>Lc≤1000 nm</code></td>
+<td>把伸长—受力关系投影到聚合物坐标</td>
+<td>需要 extension；阈值和固定 <code>Lp</code>
+带来模型偏差（核心论文，附录 D，第 18 页）</td>
+</tr>
+<tr class="odd">
+<td>卷积骨干</td>
+<td>filter <code>128/256/128</code>，kernel <code>8/5/3</code></td>
+<td>多尺度局部模式</td>
+<td>参数量、FLOPs、推理延迟均未报告（核心论文，附录 D，第 18 页）</td>
+</tr>
+<tr class="even">
+<td>LSTM 变体</td>
+<td>每支路 hidden <code>8</code>，dropout <code>0.8</code></td>
+<td>建模顺序依赖</td>
+<td>高 dropout 与 tiny hidden 的敏感性未报告（同上）</td>
+</tr>
+<tr class="odd">
+<td>优化</td>
+<td>Adam，lr <code>0.001</code>，β₁ <code>0.9</code>，β₂
+<code>0.999</code>，ε <code>1e-8</code>；batch <code>16</code>；200
+epochs</td>
+<td>统一训练协议</td>
+<td>baseline 与 PemNN 未做等预算调参；best checkpoint 监控训练
+loss（同上）</td>
+</tr>
+<tr class="even">
+<td>选模</td>
+<td><code>validation_split=0.001</code>，checkpoint 监控
+<code>loss</code></td>
+<td>实现上近似以训练损失选 epoch</td>
+<td>公开 API 中 split 的 seed 参数被注释；示例脚本另行设
+seed，路径不一致（官方仓库代码审计，commit <code>7875181</code>）</td>
+</tr>
+<tr class="odd">
+<td>硬件</td>
+<td>Apple M1 Pro，10-core CPU / 16-core GPU</td>
+<td>表明可在消费硬件训练</td>
+<td>没有 wall-clock、能耗、方差或并行设置（核心论文，附录 D，第 18
+页）</td>
+</tr>
+</tbody>
+</table></div>
+<p>公开仓库可复现到什么程度？数据目录约含四种实验/模拟数据，且提供训练调用脚本；<code>CallScripts/ML_models/Titin</code>
+下可见两个约 <code>8.39 MB</code> 的 Keras
+checkpoint，但未找到四种蛋白的完整权重集合。本报告读取的最新仓库提交为
+<code>7875181</code>（2025-06-05）。因此“数据与代码公开”成立，“全部报告结果可直接用预训练权重复核”不成立。</p>
+</section><section class="card" aria-labelledby="6-数据集划分指标"><h2 id="6-数据集划分指标">6. 数据集、划分、指标</h2>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">数据集</th>
+<th scope="col" style="text-align: right;">三类曲线数 <code>[无/单/多]</code></th>
+<th scope="col" style="text-align: right;">原始长度</th>
+<th scope="col" style="text-align: right;">天数</th>
+<th scope="col">拉伸速度 nm/s</th>
+<th scope="col">用途</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DDRs</td>
+<td style="text-align: right;"><code>[102,102,136]</code></td>
+<td style="text-align: right;">400</td>
+<td style="text-align: right;">1</td>
+<td class="num">2000</td>
+<td>仅通用 baseline；缺 extension，PemNN 不适用</td>
+</tr>
+<tr class="even">
+<td>Titin I27O</td>
+<td style="text-align: right;"><code>[181,164,191]</code></td>
+<td style="text-align: right;">736–4859</td>
+<td style="text-align: right;">5</td>
+<td class="num">500/1000/2000</td>
+<td>实验验证</td>
+</tr>
+<tr class="odd">
+<td>Bact UtrN-R3</td>
+<td style="text-align: right;"><code>[181,181,178]</code></td>
+<td style="text-align: right;">957–9974</td>
+<td style="text-align: right;">10</td>
+<td class="num">500/1000/2000/5000</td>
+<td>实验验证</td>
+</tr>
+<tr class="even">
+<td>Insect UtrN-R3</td>
+<td style="text-align: right;"><code>[175,166,200]</code></td>
+<td style="text-align: right;">1777–8890</td>
+<td style="text-align: right;">11</td>
+<td class="num">500/1000/2000</td>
+<td>实验验证</td>
+</tr>
+<tr class="odd">
+<td>DysN-R3</td>
+<td style="text-align: right;"><code>[191,185,177]</code></td>
+<td style="text-align: right;">1659–4814</td>
+<td style="text-align: right;">6</td>
+<td class="num">500/1000/2000</td>
+<td>实验验证</td>
+</tr>
+</tbody>
+</table></div>
+<p>来源均为核心论文表 1，第 6
+页。另有四个模拟数据集，每个六百条、三类均衡，用于结构比较与预训练（核心论文，第
+6
+页）。默认实验采用分层随机划分并重复五次；低数据试验固定百分之八十为测试集，再逐步增加训练子集（核心论文，第
+6–7 页与附录 E.2，第 21
+页）。论文没有报告按实验日留一、按拉伸速度留一或跨蛋白留一的结果。</p>
+<p>主指标是 accuracy；类别层面还给
+ROC-AUC。科学下游用“single”预测筛出轨迹，然后比较解折叠力分布的 mode 与
+IQR。Accuracy 在三类大致平衡的表 1 数据中可读，但部署时 single
+可能是稀有事件，故还需要 precision、recall、PR-AUC
+与每百条漏检数。论文给出某阈值规则可达平均 precision
+<code>0.93</code>，却没有给对应 recall（核心论文，附录 E.4，第 24 页，式
+19 后正文）。</p>
+</section><section class="card" aria-labelledby="7-主结果完整矩阵复算与边界"><h2 id="7-主结果完整矩阵复算与边界">7. 主结果：完整矩阵、复算与边界</h2>
+<h3 id="71-实验数据不同标注预算六方法--四设置">7.1
+实验数据不同标注预算：六方法 × 四设置</h3>
+<p>这是论文唯一同时给出六方法逐项均值与标准差的主矩阵。括号为五次运行标准差，accuracy
+越高越好；粗体为逐列最高。表头的 <code>5/80</code>
+表示固定八成测试、只用约百分之五训练，而后续 <code>40/60</code>
+等是常规互补划分，二者不是连续且同定义的比例轴（核心论文，表 4，第 21
+页）。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">5/80</th>
+<th scope="col" style="text-align: right;">40/60</th>
+<th scope="col" style="text-align: right;">60/40</th>
+<th scope="col" style="text-align: right;">80/20</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>PemNN</strong></td>
+<td style="text-align: right;"><strong>79.61 (5.24)</strong></td>
+<td style="text-align: right;"><strong>86.82 (4.86)</strong></td>
+<td style="text-align: right;"><strong>88.50 (5.09)</strong></td>
+<td style="text-align: right;"><strong>88.54 (5.68)</strong></td>
+</tr>
+<tr class="even">
+<td>LSTMFCN</td>
+<td style="text-align: right;">68.26 (12.12)</td>
+<td style="text-align: right;">85.12 (7.49)</td>
+<td style="text-align: right;">85.51 (6.87)</td>
+<td style="text-align: right;">87.66 (7.66)</td>
+</tr>
+<tr class="odd">
+<td>ResNet</td>
+<td style="text-align: right;">37.47 (6.33)</td>
+<td style="text-align: right;">81.01 (9.13)</td>
+<td style="text-align: right;">84.62 (7.13)</td>
+<td style="text-align: right;">84.47 (9.26)</td>
+</tr>
+<tr class="even">
+<td>FCN</td>
+<td style="text-align: right;">35.88 (7.37)</td>
+<td style="text-align: right;">75.50 (8.92)</td>
+<td style="text-align: right;">75.48 (13.15)</td>
+<td style="text-align: right;">79.43 (10.18)</td>
+</tr>
+<tr class="odd">
+<td>Triplet</td>
+<td style="text-align: right;">55.58 (10.17)</td>
+<td style="text-align: right;">66.78 (12.06)</td>
+<td style="text-align: right;">69.15 (12.26)</td>
+<td style="text-align: right;">66.92 (11.45)</td>
+</tr>
+<tr class="even">
+<td>InceptionTime</td>
+<td style="text-align: right;">35.32 (3.97)</td>
+<td style="text-align: right;">80.78 (12.78)</td>
+<td style="text-align: right;">81.35 (9.07)</td>
+<td style="text-align: right;">84.76 (11.58)</td>
+</tr>
+</tbody>
+</table></div>
+<p>来源：核心论文表 4，第 21 页。相对逐列最强非 PemNN
+方法，本报告复算如下：</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">设置</th>
+<th scope="col" style="text-align: right;">最强竞品</th>
+<th scope="col" style="text-align: right;">PemNN</th>
+<th scope="col" style="text-align: right;">绝对提升</th>
+<th scope="col" style="text-align: right;">相对提升</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td class="num">5/80</td>
+<td style="text-align: right;">68.26</td>
+<td style="text-align: right;">79.61</td>
+<td style="text-align: right;"><strong>+11.35 pp</strong></td>
+<td style="text-align: right;"><strong>+16.63%</strong></td>
+</tr>
+<tr class="even">
+<td class="num">40/60</td>
+<td style="text-align: right;">85.12</td>
+<td style="text-align: right;">86.82</td>
+<td style="text-align: right;"><strong>+1.70 pp</strong></td>
+<td style="text-align: right;"><strong>+2.00%</strong></td>
+</tr>
+<tr class="odd">
+<td class="num">60/40</td>
+<td style="text-align: right;">85.51</td>
+<td style="text-align: right;">88.50</td>
+<td style="text-align: right;"><strong>+2.99 pp</strong></td>
+<td style="text-align: right;"><strong>+3.50%</strong></td>
+</tr>
+<tr class="even">
+<td class="num">80/20</td>
+<td style="text-align: right;">87.66</td>
+<td style="text-align: right;">88.54</td>
+<td style="text-align: right;"><strong>+0.88 pp</strong></td>
+<td style="text-align: right;"><strong>+1.00%</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>复算公式是 <code>(PemNN−竞品)/竞品</code>；原数来自表
+4。四列简单平均为 PemNN <code>85.87%</code>、LSTMFCN
+<code>81.64%</code>，差
+<code>4.23 pp</code>。但四列共享数据且训练规模不同，简单平均不是独立样本上的总体效应量。</p>
+<p>这组结果最值得看的不是“全部第一”，而是增益随标注量快速收缩：约三十条训练曲线时为
+<code>11.35 pp</code>，充分标注时只剩
+<code>0.88 pp</code>。它更支持“物理坐标降低低数据样本复杂度”，不支持“在所有预算下都有很大上限优势”。</p>
+<h3 id="72-ddrspemnn-不适用时的-baseline-矩阵">7.2 DDRs：PemNN
+不适用时的 baseline 矩阵</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">Overall accuracy</th>
+<th scope="col" style="text-align: right;">No molecule</th>
+<th scope="col" style="text-align: right;">Single</th>
+<th scope="col" style="text-align: right;">Multiple</th>
+<th scope="col" style="text-align: right;">F1</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Triplet</td>
+<td style="text-align: right;">66.70</td>
+<td style="text-align: right;">73.30</td>
+<td style="text-align: right;">63.30</td>
+<td style="text-align: right;">63.30</td>
+<td style="text-align: right;">66.70</td>
+</tr>
+<tr class="even">
+<td>FCN</td>
+<td style="text-align: right;">77.10 (5.15)</td>
+<td style="text-align: right;">81.22 (4.96)</td>
+<td style="text-align: right;">77.49 (13.59)</td>
+<td style="text-align: right;">73.48 (10.06)</td>
+<td style="text-align: right;">77.30 (5.32)</td>
+</tr>
+<tr class="odd">
+<td>ResNet</td>
+<td style="text-align: right;">79.03 (4.84)</td>
+<td style="text-align: right;">81.90 (10.52)</td>
+<td style="text-align: right;">83.97 (4.74)</td>
+<td style="text-align: right;">70.92 (7.44)</td>
+<td style="text-align: right;">79.02 (4.88)</td>
+</tr>
+<tr class="even">
+<td>LSTMFCN</td>
+<td style="text-align: right;">75.81 (3.42)</td>
+<td style="text-align: right;">70.91 (2.49)</td>
+<td style="text-align: right;"><strong>88.24 (4.16)</strong></td>
+<td style="text-align: right;">71.30 (9.02)</td>
+<td style="text-align: right;">76.17 (3.32)</td>
+</tr>
+<tr class="odd">
+<td><strong>InceptionTime</strong></td>
+<td style="text-align: right;"><strong>85.48 (1.14)</strong></td>
+<td style="text-align: right;"><strong>97.14 (2.61)</strong></td>
+<td style="text-align: right;">84.00 (8.94)</td>
+<td style="text-align: right;"><strong>72.50 (12.96)</strong></td>
+<td style="text-align: right;"><strong>85.26 (1.02)</strong></td>
+</tr>
+<tr class="even">
+<td>PemNN</td>
+<td style="text-align: right;">不适用</td>
+<td style="text-align: right;">不适用</td>
+<td style="text-align: right;">不适用</td>
+<td style="text-align: right;">不适用</td>
+<td style="text-align: right;">不适用</td>
+</tr>
+</tbody>
+</table></div>
+<p>来源：核心论文表 3，第 19 页。这里不能补出 PemNN：DDRs 没有
+extension。矩阵说明通用 InceptionTime
+在可用信息相同时很强，也提醒部署方先审计采集格式。</p>
+<h3 id="73-科学下游筛选后解折叠力是否更像物理">7.3
+科学下游：筛选后解折叠力是否更“像物理”</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">蛋白</th>
+<th scope="col" style="text-align: right;">Raw mode (IQR) pN</th>
+<th scope="col" style="text-align: right;">Heuristic mode (IQR) pN</th>
+<th scope="col" style="text-align: right;">PemNN mode (IQR) pN</th>
+<th scope="col" style="text-align: right;">IQR 相对 Raw 缩减</th>
+<th scope="col" style="text-align: right;">IQR 相对 Heuristic 缩减</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Titin</td>
+<td style="text-align: right;">192.21 (234.52)</td>
+<td style="text-align: right;">217.41 (270.46)</td>
+<td style="text-align: right;">206.68 (52.63)</td>
+<td style="text-align: right;"><strong>77.56%</strong></td>
+<td style="text-align: right;"><strong>80.54%</strong></td>
+</tr>
+<tr class="even">
+<td>Bact UtrN</td>
+<td style="text-align: right;">60.50 (63.22)</td>
+<td style="text-align: right;">72.84 (66.55)</td>
+<td style="text-align: right;">70.40 (36.97)</td>
+<td style="text-align: right;"><strong>41.52%</strong></td>
+<td style="text-align: right;"><strong>44.45%</strong></td>
+</tr>
+<tr class="odd">
+<td>Insect UtrN</td>
+<td style="text-align: right;">81.41 (85.29)</td>
+<td style="text-align: right;">90.58 (80.57)</td>
+<td style="text-align: right;">84.66 (39.98)</td>
+<td style="text-align: right;"><strong>53.12%</strong></td>
+<td style="text-align: right;"><strong>50.38%</strong></td>
+</tr>
+<tr class="even">
+<td>DysN</td>
+<td style="text-align: right;">63.76 (53.18)</td>
+<td style="text-align: right;">74.38 (53.10)</td>
+<td style="text-align: right;">72.54 (26.79)</td>
+<td style="text-align: right;"><strong>49.62%</strong></td>
+<td style="text-align: right;"><strong>49.55%</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>前三列来自核心论文表 5，第 21 页；后两列为本报告按
+<code>(baseline IQR−PemNN IQR)/baseline IQR</code> 复算。四种蛋白的 IQR
+都明显收窄，这是比 mode
+接近更强的证据。但“更窄”不自动等于“更真”：筛选器也可能过度删除真实异质构象。</p>
+<p>正文称 PemNN 与 heuristic 的 mode 差“不超过 10 pN”，但表 5 的 Titin
+是 <code>|206.68−217.41|=10.73 pN</code>；其余三种为
+<code>2.44/5.92/1.84 pN</code>。因此表格事实与文字概括存在轻微不一致。Titin
+的文献期望区间为 <code>204±26 pN</code>，Raw、Heuristic、PemNN 三个 mode
+都在该范围内（核心论文，第 7 页）；主要增量来自 IQR，而不是把 mode
+从错误位置纠正到正确位置。</p>
+<h3 id="74-sim-to-real纯模拟训练与实验训练的类别-auc">7.4
+sim-to-real：纯模拟训练与实验训练的类别 AUC</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">蛋白</th>
+<th scope="col" style="text-align: right;">模拟训练：No / Single / Multiple</th>
+<th scope="col" style="text-align: right;">实验训练：No / Single / Multiple</th>
+<th scope="col" style="text-align: right;">Single 类绝对差</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Titin</td>
+<td style="text-align: right;">.98 / .86 / .90</td>
+<td style="text-align: right;">1.00 / .95 / .96</td>
+<td style="text-align: right;">+.09</td>
+</tr>
+<tr class="even">
+<td>Insect UtrN</td>
+<td style="text-align: right;">.92 / .61 / .75</td>
+<td style="text-align: right;">.99 / .81 / .84</td>
+<td style="text-align: right;"><strong>+.20</strong></td>
+</tr>
+<tr class="odd">
+<td>Bact UtrN</td>
+<td style="text-align: right;">.97 / .67 / .82</td>
+<td style="text-align: right;">1.00 / .92 / .93</td>
+<td style="text-align: right;"><strong>+.25</strong></td>
+</tr>
+<tr class="even">
+<td>DysN</td>
+<td style="text-align: right;">.97 / .61 / .77</td>
+<td style="text-align: right;">1.00 / .88 / .90</td>
+<td style="text-align: right;"><strong>+.27</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>来源：核心论文表 7，第 24 页。十二个类别 AUC 的简单平均从模拟训练
+<code>0.819</code> 提至实验训练 <code>0.932</code>，本报告复算差
+<code>0.113</code>。最难且最科学相关的 Single 类在三个异质蛋白上仍差
+<code>0.20–0.27</code>；因此 <code>72.0±5.9%</code>
+的纯模拟准确率应理解为一个有用冷启动，而不是可替代专家标签的终点。</p>
+<p>论文还比较了模拟与实验筛选后的 mode/IQR：Titin
+<code>216.35(50.17)</code> 对 <code>217.75(36.17)</code>，Bact
+<code>81.58(64.07)</code> 对 <code>85.38(22.28)</code>，Insect
+<code>89.45(70.86)</code> 对 <code>96.65(40.20)</code>，Dys
+<code>91.25(65.64)</code> 对 <code>79.75(25.09)</code>（核心论文表 6，第
+23 页）。四组 mode 大致接近，但模拟训练的 IQR
+每组更宽，继续表明分类边界未完全跨域。</p>
+</section><figure class="figure" aria-labelledby="budget-chart-title">
+<p class="fig-title" id="budget-chart-title">物理支路的优势集中在极低标注预算</p>
+<p class="fig-sub">纵轴为实验数据平均准确率（%）；蓝色为每列最强非 PemNN 方法，橙色为 PemNN。比例定义以论文表 4 为准。</p>
+<div class="legend"><span><span class="swatch" style="background:#2a78d6"></span>最强非 PemNN</span><span><span class="swatch" style="background:#eb6834"></span>PemNN</span></div>
+<svg class="chart" viewBox="0 0 860 380" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>PemNN 与逐列最强竞品在四个训练测试设置上的准确率</title>
+<desc>最低数据设置差十一点三五个百分点，最高训练比例设置只差零点八八个百分点。</desc>
+<line x1="70" y1="315" x2="820" y2="315" stroke="var(--grid)"/>
+<line x1="70" y1="50" x2="70" y2="315" stroke="var(--grid)"/>
+<line x1="70" y1="182.5" x2="820" y2="182.5" stroke="var(--grid)" stroke-dasharray="4 5"/>
+<line x1="70" y1="50" x2="820" y2="50" stroke="var(--grid)" stroke-dasharray="4 5"/>
+<text x="58" y="319" text-anchor="end" font-size="12">0</text>
+<text x="58" y="186.5" text-anchor="end" font-size="12">50</text>
+<text x="58" y="54" text-anchor="end" font-size="12">100%</text>
+<rect x="130" y="134.1" width="42" height="180.9" rx="5" fill="#2a78d6" tabindex="0" data-tip="5/80 · 最强非 PemNN: 68.26%"/><rect x="182" y="104.0" width="42" height="211.0" rx="5" fill="#eb6834" tabindex="0" data-tip="5/80 · PemNN: 79.61%"/><text x="177" y="344" text-anchor="middle" font-size="13">5/80</text><rect x="310" y="89.4" width="42" height="225.6" rx="5" fill="#2a78d6" tabindex="0" data-tip="40/60 · 最强非 PemNN: 85.12%"/><rect x="362" y="84.9" width="42" height="230.1" rx="5" fill="#eb6834" tabindex="0" data-tip="40/60 · PemNN: 86.82%"/><text x="357" y="344" text-anchor="middle" font-size="13">40/60</text><rect x="490" y="88.4" width="42" height="226.6" rx="5" fill="#2a78d6" tabindex="0" data-tip="60/40 · 最强非 PemNN: 85.51%"/><rect x="542" y="80.5" width="42" height="234.5" rx="5" fill="#eb6834" tabindex="0" data-tip="60/40 · PemNN: 88.50%"/><text x="537" y="344" text-anchor="middle" font-size="13">60/40</text><rect x="670" y="82.7" width="42" height="232.3" rx="5" fill="#2a78d6" tabindex="0" data-tip="80/20 · 最强非 PemNN: 87.66%"/><rect x="722" y="80.4" width="42" height="234.6" rx="5" fill="#eb6834" tabindex="0" data-tip="80/20 · PemNN: 88.54%"/><text x="717" y="344" text-anchor="middle" font-size="13">80/20</text>
+</svg>
+<figcaption>来源：核心论文表 4，正式版第 21 页；下方表格给出均值、标准差、绝对 pp 与相对提升。悬停或键盘聚焦柱形可查看数值。</figcaption>
+</figure><section class="card" aria-labelledby="8-逐层消融"><h2 id="8-逐层消融">8. 逐层消融</h2>
+<p>论文的消融分成三层，但只有部分精确数字。</p>
+<p><strong>支路层。</strong> 论文把双支路 PemNN 与只使用 force、只使用
+physics 输入，以及让 baseline 接收 physics 输入的变体比较。图 5a
+报告四个模拟数据集平均 accuracy 为 <code>98.9±1.9%</code>；相对最佳
+baseline，Titin 的最大差约十五个百分点、Insect UtrN
+的最小差约六个百分点（核心论文，第 6 页，图 5a
+正文）。图中没有逐数据集×逐方法数表，所以不能构造五基准×六方法的完整模拟矩阵。</p>
+<p><strong>融合层。</strong> Early-Conv、Early-LSTM
+及晚期融合被比较；Early-Conv 排名最佳，双 LSTM 变体的平均 rank 为
+<code>2.4167</code>（核心论文，附录 E.1，第 19–20 页，图
+9）。论文没有给每种融合的准确率均值、标准差或 pairwise p
+值，所以只能说“排序支持早融合”，不能量化每个部件贡献。</p>
+<p><strong>物理模型层。</strong> WLC、FJC、FRC
+在模拟与实验曲线上相差不超过约三个百分点（核心论文，附录 E.1，第 19–20
+页，图
+10）。这提示“合适的物理坐标族”可能比“唯一正确的链模型”重要；但无等价性检验，不能声称三者等价。</p>
+<p>缺少的关键消融是：<code>F-only</code>、<code>F+raw X</code>、<code>F+shuffled Lc</code>、<code>F+learned monotonic transform(X,F)</code>、<code>F+WLC Lc</code>
+五路 head-to-head。因为当前 physics 分支引入了基线没有的
+<code>X</code>，所以现有消融无法回答增益来自额外观测、非线性变换，还是物理正确性。</p>
+</section><section class="card" aria-labelledby="9-超参敏感性与相变"><h2 id="9-超参敏感性与相变">9. 超参敏感性与“相变”</h2>
+<p>轮廓长度阈值从 <code>1,000</code> 到 <code>1,024,000 nm</code>
+按四倍递增，并加入“不过滤”。<code>1,000–64,000 nm</code>
+区间接近满分；到 <code>1,024,000 nm</code> 时 PemNN 仍至少领先 baseline
+七个百分点；完全取消阈值时差距约二十五个百分点（核心论文，第 6 页，图
+5b）。这不是数学相变证明，但呈现了明显机制：阈值放宽后 physics
+支路纳入大量非物理解，通用模型退化更快，而双支路仍能依赖 force
+支路兜底。</p>
+<p>持久长度 <code>Lp</code> 在 <code>0.3–30,000 pm</code>
+上按对数尺度扫描。<code>30–30,000 pm</code> 区间双方接近满分；在
+<code>0.3 pm</code> 和 <code>3 pm</code> 的极端失配下，PemNN
+分别至少领先约三和十个百分点（核心论文，第 6 页，图
+5c）。这支持“支路冗余带来容错”，而非“WLC 参数必须准确”。</p>
+<p>论文没有报告学习率、batch、dropout、LSTM hidden
+size、重采样长度、训练 epoch
+或模拟量的敏感性；也没有性能—算力曲线。因此能推出 physics
+输入对两个物理参数较鲁棒，不能推出整体训练配方稳健，更不能推出其他仪器或蛋白无需调参。</p>
+</section><section class="card" aria-labelledby="10-统计显著性与不确定性"><h2 id="10-统计显著性与不确定性">10. 统计显著性与不确定性</h2>
+<p>论文以 Friedman 检验后接 Wilcoxon signed-rank 与 Holm 校正，并在
+critical-difference 图中给 PemNN 平均 rank
+<code>1.4167</code>，称其显著优于五个 baseline（核心论文，第 6 页，图
+4）。这是合理的多数据集比较框架；但论文没有报告 Friedman
+统计量、自由度、原始/校正 p
+值、效应量或置信区间。只有八个任务（四模拟加四实验）的 rank
+统计也容易受任务相关性影响。</p>
+<p>表 4 给五次运行的标准差，却没有说明同一 split
+还是每次重采样，也没有给 paired seed 结果。<code>5/80</code> 下 PemNN
+的标准差 <code>5.24</code> 小于 LSTMFCN 的
+<code>12.12</code>（核心论文表 4，第 21
+页），说明低数据时不仅均值更高且波动更小；但没有每次成绩，无法做配对检验或计算可信区间。表
+5 的 mode/IQR 是分布描述，不是分类性能的显著性检验。</p>
+<p>结论边界因此是：<strong>“均值与 rank 证据一致地支持
+PemNN”成立；“优势在每个新实验域都有统计保证”不成立。</strong></p>
+</section><section class="card" aria-labelledby="11-真正贡献可复用设计与迁移潜力"><h2 id="11-真正贡献可复用设计与迁移潜力">11.
+真正贡献、可复用设计与迁移潜力</h2>
+<p>真正贡献不是发明
+WLC，也不是发明双支路，而是把三件事闭环：可生成标签的物理模拟器、物理坐标与原始观测的容错融合、以及以解折叠力分布验证科学下游。对
+AI4Science 最可复用的设计是“<strong>可错的 physics branch + 可兜底的
+data
+branch</strong>”：不要强迫网络满足一个可能失配的方程，而是让方程产生另一种表示，再由融合层决定信任度。</p>
+<p>第二个可复用点是把 sim-to-real
+拆成两个部署档位：零实验标签时用模拟预训练得到 <code>72.0±5.9%</code>
+的冷启动；有少量标签时用约三十条曲线把平均准确率推到
+<code>79.6±5.2%</code>（核心论文，第 1、7 页）。这比笼统地说“synthetic
+data works”更有决策价值。</p>
+<p>第三个可复用点是用物理下游量做外部检查。IQR 相对 raw 缩减
+<code>41.52%–77.56%</code>（本报告据表 5
+复算），说明分类器确实改变了科学统计量；然而这种检查必须同时看
+mode、IQR、已知区间和独立实验，避免把“分布更窄”误当成“更准确”。</p>
+<p>迁移到其他领域时，可考虑：质谱中的同位素/碎裂规则支路，电化学中的等效电路参数支路，医学波形中的生理方程支路，遥感中的辐射传输坐标支路。必要条件是能从原始观测稳定计算物理表征，并设置
+raw branch
+防止模型失配；如果物理表征使用了额外传感器，比较基线必须获得同等信息。</p>
+</section><section class="card" aria-labelledby="12-相关工作链问题从哪里来设计如何传递"><h2 id="12-相关工作链问题从哪里来设计如何传递">12.
+相关工作链：问题从哪里来，设计如何传递</h2>
+<h3 id="121-dudkohummerszabo把受力下的逃逸率写进模拟器">12.1
+Dudko–Hummer–Szabo：把受力下的逃逸率写进模拟器</h3>
+<p><strong>解决什么。</strong> DHS
+理论把外力作用下的能垒越迁与断裂/解折叠速率连接，使动态力谱可以反演本征速率、能垒位置与高度（<a
+href="https://www.pnas.org/doi/10.1073/pnas.0806085105">PNAS
+2008</a>）。 <strong>遗留缺口。</strong>
+它解释单事件动力学，不直接判断一条复杂 AFM
+轨迹含零、单还是多个分子；真实仪器还有
+cantilever、噪声与异质路径。<br />
+<strong>核心如何回应。</strong> PemNN 的 Monte Carlo 引擎在每个
+extension 步用 DHS off-rate
+采样解折叠/脱离事件，再产生三类带标签曲线（核心论文附录 A，第 13–15
+页）。<br />
+<strong>设计如何传递。</strong>
+传递的不是一个固定分类阈值，而是可生成数据的机制模型：动力学理论成为训练分布的生成器。</p>
+<h3 id="122-waite-等把人工看曲线改成-few-shot-分类">12.2 Waite
+等：把人工看曲线改成 few-shot 分类</h3>
+<p><strong>解决什么。</strong> Waite 等把 AFM
+曲线字符化为三分类，用少样本 Triplet 学习，公开 DDRs
+数据与标注；核心论文复现的总体 accuracy 为
+<code>66.70%</code>（核心论文表 3，第 19 页；<a
+href="https://pmc.ncbi.nlm.nih.gov/articles/PMC9868661/">Patterns
+2023</a>）。 <strong>遗留缺口。</strong> 数据只有 force
+序列、单日单速度，且学习器没有显式聚合物物理；少样本性能仍有限。<br />
+<strong>核心如何回应。</strong> PemNN
+收集四蛋白、多日、多速度数据，并增加 WLC 支路和模拟预训练。<br />
+<strong>设计如何传递。</strong> 三分类任务定义、公开数据和 Triplet
+baseline
+被保留；“few-shot”从纯表征学习转向“物理坐标降低样本复杂度”。</p>
+<h3 id="123-inceptiontime强通用时序骨干成为压力测试">12.3
+InceptionTime：强通用时序骨干成为压力测试</h3>
+<p><strong>解决什么。</strong> InceptionTime 以多尺度卷积和 ensemble
+兼顾时序分类准确性与可扩展性；原论文举例，HIVE-COTE 在
+<code>N=1500,T=46</code> 上超过八天，而 InceptionTime
+约一小时，并可在十三小时处理八百万条序列（<a
+href="https://arxiv.org/abs/1909.04939">arXiv:1909.04939v3</a>，摘要）。
+<strong>遗留缺口。</strong> 它不利用 SMFS 的 extension—force
+关系，也不提供 sim-to-real 接口。<br />
+<strong>核心如何回应。</strong> PemNN
+让通用卷积负责观测形态，让物理支路提供任务特定坐标；DDRs 上
+InceptionTime 仍以 <code>85.48±1.14%</code> 第一，说明通用骨干不是弱
+strawman（核心论文表 3，第 19 页）。<br />
+<strong>设计如何传递。</strong>
+多尺度局部卷积成为每条支路的基础元件，但不再独自承担物理不变量学习。</p>
+<h3 id="124-dingeldein-等从分类走向模拟器后验">12.4 Dingeldein
+等：从分类走向模拟器后验</h3>
+<p><strong>解决什么。</strong> Simulation-based inference
+把机制模型编码进
+simulator，用神经密度估计对隐藏分子参数做后验推断，绕开非 Markov
+轨迹的不可解 likelihood（<a
+href="https://arxiv.org/abs/2209.10392">arXiv:2209.10392v2</a>）。
+<strong>遗留缺口。</strong>
+目标是参数推断而非零/单/多分子筛选；模拟器偏差仍会进入 posterior。<br />
+<strong>核心如何回应。</strong> PemNN 选择更直接的分类目标，并用 raw
+branch 减少对模拟器完全正确的依赖。<br />
+<strong>设计如何传递。</strong> “物理模拟器 + 神经网络”的范式保留，但从
+amortized posterior 变成 synthetic pretraining 与显式 physics
+feature。</p>
+<h3 id="125-fusion把人类留在罕见路径发现的闭环里">12.5
+FUSION：把人类留在罕见路径发现的闭环里</h3>
+<p><strong>解决什么。</strong> FUSION
+将轨迹编码为图像，通过模型与专家迭代标注来自动识别单分子路径，并可发现初始标签中没有的路径（<a
+href="https://pubs.acs.org/doi/10.1021/acs.nanolett.3c03026">Nano
+Letters 2023</a>）。 <strong>遗留缺口。</strong>
+人在环降低冷启动风险，但扩展到多蛋白仍需要专家迭代，物理坐标未显式进入分类器。<br />
+<strong>核心如何回应。</strong> PemNN 用仿真生成三类标签，并以 WLC
+支路减少少样本负担。<br />
+<strong>设计如何传递。</strong> 两者形成互补：PemNN
+提供物理冷启动，FUSION
+提供发现新路径后的人工纠偏；最有潜力的系统应把二者串联，而不是二选一。</p>
+<h3 id="126-非线性技术演进树">12.6 非线性技术演进树</h3>
+<pre class="text"><code>                         ┌─ WLC/FJC/FRC：链弹性坐标 ───────────┐
+SMFS 物理 ─ DHS 动力学 ─┤                                     ├─&gt; 物理 Monte Carlo 标签
+                         └─ cantilever / loading protocol ─────┘           │
+                                                                            ├─&gt; PemNN
+时序学习 ─ FCN/ResNet ─ InceptionTime ───────── raw-force branch ───────────┤
+    │                                                                       │
+    └─ metric few-shot ─ Waite/Triplet ─ 三分类任务与公开 benchmark ────────┘
+
+机制生成 ─ simulation-based inference ─ 参数 posterior
+       ╲                                      ╱
+        ╲──────────── sim-to-real 校准空白 ───╱
+                         │
+人在环发现 ─────────── FUSION ──&gt; 未知路径 / 异常类 ──&gt; 下一代开放集 PemNN</code></pre>
+<p>演进动力有三个转折：从手工阈值转到少样本分类；从纯数据序列转到显式物理坐标；从“模拟器必须拟合真实世界”转到“模拟器提供可错但有用的辅助视角”。下一个转折应是把
+simulator discrepancy、实验日漂移和未知类别一起建模。</p>
+<h3 id="127-跨论文对标">12.7 跨论文对标</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">目标</th>
+<th scope="col">物理进入位置</th>
+<th scope="col">标签需求</th>
+<th scope="col">不确定性</th>
+<th scope="col">开放集能力</th>
+<th scope="col">PemNN 吸收 / 未吸收</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DHS</td>
+<td>动力学解释</td>
+<td>解析 off-rate</td>
+<td>不需要分类标签</td>
+<td>参数拟合不确定性</td>
+<td>否</td>
+<td>吸收进模拟器；未传播参数不确定性</td>
+</tr>
+<tr class="even">
+<td>Waite/Triplet</td>
+<td>三类筛选</td>
+<td>无</td>
+<td>少量实验标签</td>
+<td>多次运行</td>
+<td>否</td>
+<td>吸收任务定义；扩为多蛋白/多速度</td>
+</tr>
+<tr class="odd">
+<td>InceptionTime</td>
+<td>通用时序分类</td>
+<td>无</td>
+<td>监督标签</td>
+<td>ensemble</td>
+<td>否</td>
+<td>作为强 baseline；未采用 ensemble 校准</td>
+</tr>
+<tr class="even">
+<td>SBI-smFS</td>
+<td>隐参数推断</td>
+<td>simulator + posterior</td>
+<td>模拟数据与观测</td>
+<td><strong>显式 posterior</strong></td>
+<td>非分类</td>
+<td>吸收 simulator 思路；未吸收后验校准</td>
+</tr>
+<tr class="odd">
+<td>FUSION</td>
+<td>路径识别与发现</td>
+<td>隐式专家知识</td>
+<td>人在环</td>
+<td>迭代审阅</td>
+<td><strong>部分支持</strong></td>
+<td>未吸收未知路径发现</td>
+</tr>
+<tr class="even">
+<td><strong>PemNN</strong></td>
+<td>零/单/多分类</td>
+<td>simulator + WLC feature</td>
+<td>模拟或少量实验标签</td>
+<td>run std / ROC</td>
+<td>否</td>
+<td>双支路容错，但域外与未知类仍空缺</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="13-论文自述限制"><h2 id="13-论文自述限制">13. 论文自述限制</h2>
+<ol type="1">
+<li><strong>模拟参数难获得。</strong> 作者明确指出 Monte Carlo
+引擎需要能量景观参数，而这些参数并非所有蛋白都可得；未来需要在多拉伸速度与恒力实验上更完整地约束模拟器（核心论文，Limitations，第
+25 页）。</li>
+<li><strong>同质域假设。</strong>
+当前分类把同一蛋白/设置的训练与测试曲线视为同域；作者把异质域与 domain
+adaptation 列为未来方向（核心论文，Limitations，第 25 页）。</li>
+<li><strong>sim-to-real 对异质蛋白不足。</strong> 附录指出 Utrophin 与
+Dystrophin 的构象/实验域异质性更强，实验标签让 Single 类 AUC 至少增加
+<code>0.20</code>（核心论文，附录 E.4，第 24 页，表
+7）。这不是独立新增限制，但给第二点提供了定量证据。</li>
+</ol>
+</section><section class="card" aria-labelledby="14-独立批判因为-x所以-y"><h2 id="14-独立批判因为-x所以-y">14. 独立批判：因为 X，所以 Y</h2>
+<ol type="1">
+<li><strong>[因果归因]</strong> 因为 physics 支路的 <code>Lc</code> 由
+<code>(X,F)</code> 共同计算，而通用 baseline 默认只接收
+<code>F</code>，所以 PemNN 的 <code>+11.35 pp</code>
+低数据优势不能唯一归因于“物理”；它也可能来自额外 extension
+通道。必须加入 <code>F+raw X</code> 与 <code>F+shuffled Lc</code>
+对照。</li>
+<li><strong>[数据泄漏 / 外推]</strong>
+因为实验数据跨五至十一个日期、三至四种速度，却只报告曲线级分层随机划分（核心论文表
+1，第 6
+页），所以同一天的仪器漂移、同一速度的形态可能同时进入训练和测试；随机
+split 可能高估跨日部署性能。</li>
+<li><strong>[模型选择]</strong> 因为附录称 best model 按最低 training
+loss 选择，代码 checkpoint 也监控 <code>loss</code>，且 API 使用
+<code>validation_split=0.001</code>（核心论文附录 D，第 18
+页；官方代码），所以两百 epoch
+结果可能偏向训练集最优，而非泛化最优。</li>
+<li><strong>[复现性]</strong> 因为公开 API 的
+<code>train_test_split</code> 中 <code>random_state</code>
+被注释，而示例训练脚本另行固定 seed，所以 API
+用户与论文脚本的划分协议不同；即使同一数据和超参，也不能保证复现表 4
+的五次均值。</li>
+<li><strong>[统计]</strong> 因为论文宣称 Holm 校正后显著，却没有报告 p
+值、统计量或效应量，且 rank 只来自四模拟与四实验任务（核心论文图 4，第 6
+页），所以读者无法审计显著性是否由相关任务重复计数驱动。</li>
+<li><strong>[sim-to-real]</strong> 因为十二个类别 AUC 的均值从模拟训练
+<code>0.819</code> 到实验训练 <code>0.932</code>，且三个异质蛋白 Single
+类差 <code>0.20–0.27</code>（本报告据表 7
+复算），所以模拟器适合冷启动但尚不足以取代实验标签；“无需专家输入”应限定在平均
+accuracy <code>72.0±5.9%</code> 的档位。</li>
+<li><strong>[部署指标]</strong> 因为阈值 <code>α=10</code>
+时论文只给平均 precision <code>0.93</code>、未给 recall（核心论文式 19
+后，第 24
+页），所以无法计算每百条真实单分子曲线会漏掉多少；对稀有事件筛选，accuracy
+与 precision 不能单独决定可用性。</li>
+<li><strong>[科学有效性]</strong> 因为表 5 的主要改善是 IQR 收窄，而三个
+Titin mode 都落在 <code>204±26 pN</code>
+期望区间，所以模型可能是在提高纯度，也可能丢弃了真实异质路径；没有独立金标准或盲审，不能把窄分布等同于更真实。</li>
+<li><strong>[基线公平性]</strong> 因为 baseline 基本沿用 sktime
+配方、统一两百 epoch，但 PemNN 的结构和输入专为 SMFS
+设计，论文未报告等预算超参搜索，所以“架构优于五个
+baseline”混合了任务先验与调参投入差异。</li>
+<li><strong>[内部一致性]</strong> 因为正文称 mode 差不超过
+<code>10 pN</code>，表 5 的 Titin 差却是
+<code>10.73 pN</code>，所以叙述存在舍入越界；虽然不推翻总体结论，却说明科学量化应以表格为准。</li>
+</ol>
+</section><section class="card" aria-labelledby="15-开放挑战可直接执行的-head-to-head-实验"><h2 id="15-开放挑战可直接执行的-head-to-head-实验">15.
+开放挑战：可直接执行的 head-to-head 实验</h2>
+<h3 id="理论">理论</h3>
+<ol type="1">
+<li><strong>信息增益还是物理归纳偏置？</strong> 在完全相同
+backbone、参数量和训练预算下比较
+<code>F</code>、<code>F+X</code>、<code>F+Lc</code>、<code>F+随机置换Lc</code>、<code>F+可学习单调变换(X,F)</code>；用按日留一准确率、Single
+PR-AUC 与校准误差判断。若
+<code>F+X≈F+Lc</code>，贡献是额外信息；若只有真实 <code>Lc</code>
+稳定领先，才支持物理坐标解释。</li>
+<li><strong>模拟参数不确定性如何传播？</strong> 比较固定 DHS/WLC
+参数、从先验采样的 domain randomization、SBI
+后验采样三种预训练；在四蛋白上报告 sim-only AUC
+与加入五、十五、三十条实验标签后的学习曲线。目标是检验后验覆盖能否缩小表
+7 的 <code>0.113</code> 平均 AUC 差。</li>
+<li><strong>双支路何时会负迁移？</strong> 人为把 <code>Lp</code>、能垒和
+cantilever stiffness 从真实值偏移多个数量级，对比 hard-physics、gated
+fusion、uncertainty-weighted fusion；定位 physics branch
+从帮助到伤害的临界域，而不是只看图 5 的两个参数。</li>
+</ol>
+<h3 id="工程与应用">工程与应用</h3>
+<ol type="1">
+<li><strong>真实部署划分。</strong> 对每个蛋白做
+leave-one-day-out、leave-one-speed-out、leave-one-instrument-out，与论文随机
+split 同预算比较；同时报告 wall-clock、人工复核分钟数、每百条漏检 single
+数和 p95 延迟。这个实验能直接检验“一天到一小时以内”是否端到端成立。</li>
+<li><strong>公平 baseline。</strong> 给 InceptionTime、LSTMFCN 与
+Transformer 同样的 <code>(F,X)</code>
+两通道、相同超参搜索次数和参数/FLOPs上限，与 PemNN head-to-head；若
+PemNN 仍领先，才可排除输入与预算不公平。</li>
+<li><strong>未知类别与主动复核。</strong>
+加入粘附伪影、部分折叠、断裂和新蛋白作为 unknown，比较 closed-set
+softmax、energy-based OOD、deep ensemble 与 FUSION 式人在环；指标用
+risk–coverage、unknown AUROC 和专家复核量。</li>
+<li><strong>完整复现包。</strong> 冻结数据 split manifest、全部四蛋白
+checkpoint、容器与随机种子；由独立团队在 Linux GPU 和 Apple Silicon
+上复现表 4。成功标准不是单次相近，而是均值落入原报一个标准差内。</li>
+</ol>
+<h3 id="新兴方向">新兴方向</h3>
+<ol type="1">
+<li><strong>物理基础模型预训练。</strong>
+比较“每蛋白单独模拟器预训练”与“跨蛋白 masked modeling + physics
+tokens”，再对未见蛋白做五样本适配；检验共享链物理能否转化为跨蛋白
+foundation representation。</li>
+<li><strong>分类与参数后验联合。</strong> 把三分类头与 SBI
+后验头联合训练，比较仅分类、仅参数推断、联合多任务；除 accuracy 外评
+posterior coverage 与解折叠力 credible interval，避免只有点预测。</li>
+<li><strong>闭环实验设计。</strong>
+用不确定性主动选择下一条要人工标注或下一种拉伸速度，和随机标注、entropy
+sampling、纯 FUSION 人在环比较；横轴用专家分钟数，纵轴用 leave-day-out
+Single PR-AUC，评价真正的数据效率。</li>
+</ol>
+</section><section class="card" aria-labelledby="16-近期工作雷达"><h2 id="16-近期工作雷达">16. 近期工作雷达</h2>
+<ol type="1">
+<li><a
+href="https://www.nature.com/articles/s41467-026-70421-3">Synthetic
+data-driven deep learning for label-free autonomous atomic force
+microscopy</a>（Nature Communications 2026）：用合成 AFM
+数据支持无标签、自治成像工作流，代表从“离线筛曲线”走向“模型控制下一次测量”；应重点看跨样品泛化是否比
+PemNN 的同蛋白随机划分更严格。</li>
+<li><a href="https://arxiv.org/abs/2606.09541">Automating the Expert
+Eye: A System-Agnostic Deep Learning Framework for Rare Event Discovery
+in Imbalanced Force
+Spectroscopy</a>（arXiv:2606.09541，2026-06-08）：在目标事件占
+`13/970=1.34%` 时报告 accuracy `0.9196`、recall
+<code>0.9231</code>，并可丢弃八百八十条非目标轨迹（论文摘要/结果）；它正面处理了
+PemNN 平衡三分类没有覆盖的稀有事件部署。</li>
+<li><a href="https://doi.org/10.1002/jmr.70042">Atomic Force Microscopy
+Based Single Molecule Recognition: Deciphering Biological Interactions
+at the Nanoscale</a>（Journal of Molecular Recognition
+2026）：从探针功能化、力谱到识别任务梳理误差来源，适合作为判断“分类更准是否等于生物结论更准”的实验背景。</li>
+<li><a
+href="https://pmc.ncbi.nlm.nih.gov/articles/PMC12256878/">Automated
+atomic force microscopy analysis using convolutional neural
+networks</a>（2025）：把 CNN 用于 AFM
+分析自动化，体现通用视觉/信号骨干仍是强路线；与 PemNN
+对比时应统一输入传感量，而不是只比较模型名字。</li>
+<li><a
+href="https://www.frontiersin.org/journals/physics/articles/10.3389/fphy.2024.1347648/full">Machine
+learning approaches for improving atomic force microscopy
+instrumentation and data analytics</a>（Frontiers in Physics
+2024）：覆盖仪器控制、图像和力曲线分析，强调真正收益来自采集—分析闭环；PemNN
+目前只完成闭环中的离线过滤段。</li>
+<li><a href="https://www.mdpi.com/2076-3417/14/6/2376">Deep Learning
+Regressors of Surface Properties from Atomic Force
+Microscopy</a>（Applied Sciences 2024）：把 AFM
+从分类推进到连续表面属性回归；对 PemNN
+的启发是将解折叠参数与类别联合预测，而不是只输出 hard label。</li>
+<li><a href="https://arxiv.org/abs/2409.11438">Machine Learning for
+Analyzing AFM Images Generated from Polymer
+Blends</a>（arXiv:2409.11438v2，2024-09-20）：在一百四十四张图像上比较频域特征与
+ResNet，提醒 AI4Science 中手工变换有时比大 backbone 更数据高效；这与
+PemNN 的物理坐标支路形成方法论呼应（该文摘要与版本记录）。</li>
+</ol>
+</section><section class="card" aria-labelledby="17-结论与证据边界"><h2 id="17-结论与证据边界">17. 结论与证据边界</h2>
+<p>PemNN 最扎实的发现是低标签区的样本效率：表 4 中约三十条训练曲线时为
+<code>79.61±5.24%</code>，较最强 LSTMFCN 高
+<code>11.35 pp</code>；当训练比例到八成，差距缩为
+<code>0.88 pp</code>。这使它值得被理解为一个“物理先验在少样本时最值钱”的案例，而非新的通用时序
+SOTA。</p>
+<p>最关键的未闭环问题是归因与域外性。Physics branch 同时带入
+extension，随机曲线 split 又没有隔离实验日和速度；sim-only 的 Single AUC
+在三个异质蛋白上仍落后实验训练
+<code>0.20–0.27</code>。所以当前证据足以支持“物理双视角是有效工程设计”，不足以支持“WLC
+物理本身导致增益”或“可无专家部署”。</p>
+<p><strong>报告脚注。</strong> 候选池、随机命令、URL 核验、正式 PDF
+与公开代码均在本轮实际检查；精确数字只来自已读论文表/正文或标明的算术复算。<code>ml-report-index.md</code>
+已追加本报告条目。HTML 由 Warm Editorial
+模板生成，包含浅/深主题与移动端响应规则，并通过模板静态验证器（零警告）；当前环境有
+Playwright 包，但
+<code>/usr/bin/chromium</code>、<code>/usr/bin/chromium-browser</code>
+与 <code>/opt/pw-browsers</code> 均无可执行
+Chromium，故<strong>无法完成真实浏览器的浅色、深色和移动端截图检查</strong>，不以静态校验冒充该项。</p>
+</section>
+  </main>
+
+  <footer>核心来源：PMLR 正式论文、官方代码与公开数据；技术链深读 DHS、few-shot AFM、InceptionTime、SBI-smFS 与 FUSION。生成于 2026-09-13。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

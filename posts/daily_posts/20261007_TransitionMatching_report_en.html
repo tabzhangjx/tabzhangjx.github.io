@@ -1,0 +1,1127 @@
+---
+layout: null
+title: "Transition Matching"
+date: 2026-10-07
+topic: "vlm-vision"
+tags: ["vlm-vision", "flow-matching", "image-generation"]
+excerpt: "DTM preserves conditional-distribution width through stochastic finite-step transitions, reducing H100 sampling from 10.8 to 1.6 seconds in a matched 1.7B comparison. Head computation, statistical intervals, and reproducibility remain key gaps."
+permalink: "/blog/2026/10/07/transitionmatching/en/"
+blog_post: false
+lang: "en"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_zh: "/blog/2026/10/07/transitionmatching/"
+sitemap: true
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Transition Matching · 2026-10-07</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #246fca;
+    --chart-comparison: #c95224;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" aria-pressed="false">☾ Dark</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">NEURIPS 2025 · GENERATIVE MODELS</p>
+    <h1>Transition Matching</h1>
+    <p class="subtitle">Turning Infinitesimal Flows into Learnable Probabilistic Jumps</p>
+    <div class="meta" aria-label="Report metadata">
+      <span class="chip source">NeurIPS 2025 Main</span>
+      <span class="chip">2026-10-07</span>
+      <span class="chip">Flow Matching · Continuous AR</span>
+    </div>
+    <p class="lede">DTM preserves conditional-distribution width through stochastic finite-step transitions, reducing H100 sampling from 10.8 to 1.6 seconds in a matched 1.7B comparison. Head computation, statistical intervals, and reproducibility remain key gaps.</p>
+  </header>
+
+  <main>
+<figure class="figure" aria-labelledby="speed-chart-title">
+<p class="fig-title" id="speed-chart-title">Single-image sampling latency: DTM versus Flow Matching</p>
+<p class="fig-sub">Same 1.7B DiT on one H100; DTM reduces 10.8 seconds to 1.6 seconds (6.75×).</p>
+<div class="legend" aria-label="Legend"><span><span class="swatch" style="background:var(--chart-primary)"></span>Flow Matching</span><span><span class="swatch" style="background:var(--chart-comparison)"></span>DTM</span></div>
+<svg class="chart" viewBox="0 0 900 360" role="img" xmlns="http://www.w3.org/2000/svg"><title>Single-H100 sampling latency comparison</title><desc>Flow Matching: 10.8 seconds; DTM: 1.6 seconds. Vertical axis: seconds, lower is better.</desc>
+<line x1="110" y1="300" x2="840" y2="300" stroke="var(--grid)"/><line x1="110" y1="45" x2="110" y2="300" stroke="var(--grid)"/>
+<g font-size="13"><text x="70" y="305">0</text><text x="70" y="220">4</text><text x="70" y="135">8</text><text x="63" y="52">12 s</text></g>
+<rect x="230" y="70.5" width="170" height="229.5" rx="8" fill="var(--chart-primary)" tabindex="0" data-tip="Flow Matching: 10.8 seconds"/><rect x="540" y="266" width="170" height="34" rx="8" fill="var(--chart-comparison)" tabindex="0" data-tip="DTM: 1.6 seconds"/>
+<text x="315" y="326" text-anchor="middle">Flow Matching</text><text x="625" y="326" text-anchor="middle">DTM</text><text x="315" y="60" text-anchor="middle">10.8 s</text><text x="625" y="255" text-anchor="middle">1.6 s</text></svg>
+<figcaption>Source: core paper, Table 3. Main-table NFE* counts only the backbone; this chart uses measured end-to-end seconds.</figcaption></figure>
+<section class="card" aria-labelledby="0-链接验证表"><h2 id="0-链接验证表">0. Link verification table</h2>
+<p>All URLs below were visited on 2026-10-07. OpenReview triggered browser verification, but its paper ID and PDF endpoint agree with the author's NeurIPS 2025 listing. The core manuscript currently has only arXiv v1.</p>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Resource</th>
+<th scope="col">Verification result</th>
+<th scope="col">Date / version</th>
+<th scope="col">Address</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>NeurIPS / OpenReview</td>
+<td>Reachable, verification page triggered; ID <code>An0ePypuOJ</code></td>
+<td>NeurIPS 2025 Main</td>
+<td><a href="https://openreview.net/forum?id=An0ePypuOJ">https://openreview.net/forum?id=An0ePypuOJ</a></td>
+</tr>
+<tr class="even">
+<td>arXiv abstract</td>
+<td>Verified</td>
+<td>v1，2025-06-30</td>
+<td><a href="https://arxiv.org/abs/2506.23589">https://arxiv.org/abs/2506.23589</a></td>
+</tr>
+<tr class="odd">
+<td>arXiv HTML full text</td>
+<td>Verified; tables and equations readable individually</td>
+<td>v1</td>
+<td><a href="https://arxiv.org/html/2506.23589v1">https://arxiv.org/html/2506.23589v1</a></td>
+</tr>
+<tr class="even">
+<td>Author's project index</td>
+<td>Verified; explicitly lists NeurIPS 2025</td>
+<td>Accessed 2026-10-07</td>
+<td><a href="https://neta93.github.io/">https://neta93.github.io/</a></td>
+</tr>
+<tr class="odd">
+<td>Code</td>
+<td><strong>Not public / no official repository for the core paper found</strong></td>
+<td>As of the access date</td>
+<td>The paper HTML provides training pseudocode, not a runnable implementation</td>
+</tr>
+<tr class="even">
+<td>Data</td>
+<td>350 million licensed Shutterstock image–text pairs,<strong>not publicly downloadable</strong></td>
+<td>Paper §4, text preceding the table</td>
+<td>Near line 278 of the paper HTML</td>
+</tr>
+<tr class="odd">
+<td>Weights</td>
+<td><strong>Not public / not found</strong></td>
+<td>As of the access date</td>
+<td>—</td>
+</tr>
+<tr class="even">
+<td>Project page</td>
+<td><strong>No standalone project page found</strong></td>
+<td>As of the access date</td>
+<td>Author's homepage provides only the paper and slides</td>
+</tr>
+<tr class="odd">
+<td>Slides / video</td>
+<td>Slides public; no core-paper video found</td>
+<td>Accessed 2026-10-07</td>
+<td><a href="https://neta93.github.io/">https://neta93.github.io/</a></td>
+</tr>
+<tr class="even">
+<td>Flow Matching</td>
+<td>Verified</td>
+<td>arXiv:2210.02747</td>
+<td><a href="https://arxiv.org/abs/2210.02747">https://arxiv.org/abs/2210.02747</a></td>
+</tr>
+<tr class="odd">
+<td>Fluid</td>
+<td>Verified</td>
+<td>arXiv:2410.13863，2024-10-17</td>
+<td><a href="https://arxiv.org/abs/2410.13863">https://arxiv.org/abs/2410.13863</a></td>
+</tr>
+<tr class="even">
+<td>Generator Matching</td>
+<td>Verified</td>
+<td>arXiv:2410.20587，2024-10-27</td>
+<td><a href="https://arxiv.org/abs/2410.20587">https://arxiv.org/abs/2410.20587</a></td>
+</tr>
+<tr class="odd">
+<td>Exploring TM</td>
+<td>Verified</td>
+<td>arXiv:2512.12465，2025-12-13</td>
+<td><a href="https://arxiv.org/abs/2512.12465">https://arxiv.org/abs/2512.12465</a></td>
+</tr>
+<tr class="even">
+<td>Demystifying TM</td>
+<td>Verified; official AISTATS 2026 code accessible</td>
+<td>arXiv:2510.17991</td>
+<td><a href="https://arxiv.org/abs/2510.17991">https://arxiv.org/abs/2510.17991</a></td>
+</tr>
+<tr class="odd">
+<td>TMD</td>
+<td>Verified; NVIDIA project page accessible</td>
+<td>arXiv:2601.09881</td>
+<td><a href="https://arxiv.org/abs/2601.09881">https://arxiv.org/abs/2601.09881</a></td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section class="card" aria-labelledby="1-候选池排重与随机抽取"><h2 id="1-候选池排重与随机抽取">1. Candidate pool, deduplication, and random selection</h2>
+<p>The preceding 14 days' index already covers DFM, MeanFlow, AIM-CoT, PointMapPolicy, and related topics. Among them, <strong>DFM（2026-09-30）</strong> is closest to this week's direction, so this selection avoids progressive multiscale flow matching and turns to discrete probabilistic transitions and continuous autoregression. ACL Anthology yielded no suitable generative-vision candidates; candidates were primarily cross-verified through arXiv, NeurIPS/OpenReview, ICML/ICLR pages, and author/code pages. Papers with Code and Hugging Face Daily Papers served only as leads, not numerical sources.</p>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">#</th>
+<th scope="col">Candidate paper</th>
+<th scope="col">Year / source</th>
+<th scope="col">Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td>Transition Matching: Scalable and Flexible Generative Modeling</td>
+<td>NeurIPS 2025 / arXiv:2506.23589</td>
+<td><strong>Selected on second draw; adopted</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td>Diff2Flow: Training Flow Matching Models via Diffusion Model Alignment</td>
+<td>arXiv:2506.02221</td>
+<td>Parameter-efficient transfer</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td>Vid2World: Crafting Video Diffusion Models to Interactive World Models</td>
+<td>arXiv:2505.14357</td>
+<td>World models</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td>Mean Flows for One-step Generative Modeling</td>
+<td>NeurIPS 2025 Oral</td>
+<td>Covered in the preceding 14 days; excluded</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td>Improving Progressive Generation with Decomposable Flow Matching</td>
+<td>NeurIPS 2025</td>
+<td>Covered in the preceding 14 days; excluded</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td>Inductive Moment Matching</td>
+<td>ICML 2025</td>
+<td>Alternative probability paths</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td>Does Generation Require Memorization?</td>
+<td>ICML 2025</td>
+<td>Recently covered; excluded</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">8</td>
+<td>Shortcut Models for Fast Generative Modeling</td>
+<td>ICLR 2025</td>
+<td>Fast generation</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td>Self-Forcing</td>
+<td>NeurIPS 2025</td>
+<td>Autoregressive video</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td>LongLive</td>
+<td>ICLR 2026</td>
+<td>Recently covered; excluded</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td>SANA-Sprint</td>
+<td>arXiv 2025</td>
+<td>One-step distillation</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">12</td>
+<td>REPA-E</td>
+<td>arXiv 2025</td>
+<td>End-to-end latent tuning</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td>Transition Matching Distillation</td>
+<td>arXiv 2026</td>
+<td>Video distillation</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td>Co-generation of Layout and Shape via Autoregressive 3D Diffusion</td>
+<td>arXiv:2604.16552</td>
+<td>3D scenes</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td>GaussianGPT</td>
+<td>arXiv:2603.26661</td>
+<td>Autoregressive 3D Gaussians</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">16</td>
+<td>NitroFusion</td>
+<td>arXiv 2025</td>
+<td>Single-step adversarial distillation</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td>Score Identity Distillation</td>
+<td>ICML 2024 / arXiv:2404.04057</td>
+<td><strong>First draw; older than 24 months, redrawn</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td>FlowChef</td>
+<td>ICML 2025</td>
+<td>Controllable generation</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">19</td>
+<td>Video Generation Models as World Models</td>
+<td>arXiv:2603.28489</td>
+<td>Survey candidate</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">20</td>
+<td>EA-WM</td>
+<td>arXiv:2605.06192</td>
+<td>Event-aware world models</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">21</td>
+<td>d1: Scaling Reasoning in Diffusion LLMs</td>
+<td>arXiv 2025</td>
+<td>Discrete diffusion language models</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">22</td>
+<td>LLaDA</td>
+<td>arXiv 2025</td>
+<td>Diffusion language models</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">23</td>
+<td>Dream 7B</td>
+<td>arXiv 2025</td>
+<td>Diffusion language models</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">24</td>
+<td>Autoregressive Image Generation Guided by Chains of Thought</td>
+<td>ICLR 2025</td>
+<td>Image autoregression</td>
+</tr>
+</tbody>
+</table></div>
+<p>Actually executed <code>shuf -i 1-24 -n 1</code>: the first result was 17. Since 2024-04-05 was more than 24 months before the run date, the rules required another draw; the second result was 1. Popularity, authors, and result magnitude did not affect the draw.</p>
+</section>
+<section class="card" aria-labelledby="2-motivation真正卡住的是每一步只能做一件简单的事"><h2 id="2-motivation真正卡住的是每一步只能做一件简单的事">2. Motivation: Each Step Can Do Only Something Simple</h2>
+<p>Diffusion and flow matching both divide the complex noise-to-data mapping into many nearly infinitesimal local updates. This simplifies local conditional distributions and stabilizes training, but repeatedly invokes an expensive backbone during sampling. The core paper controls for the same 1.7B DiT, 350 million licensed image–text pairs, and 500,000 training steps. Standard FM at its best-quality setting needs 128 large-backbone forward passes, taking on one H100 <strong>10.8 seconds</strong>; DTM uses 16 backbone passes plus internal solving in a small head, taking <strong>1.6 seconds</strong>, a <strong>6.75×</strong> speedup and latency reduction of <strong>85.19%</strong>(Table 3, §4.2).</p>
+<p>A second bottleneck is discretization and causal ordering in visual autoregression. Fluid reports reconstruction PSNR of <strong>31.5</strong>for continuous tokens versus <strong>26.6</strong>for discrete tokens; its 10.5B random-order continuous AR achieves COCO-30K FID of <strong>6.16</strong>、GenEval <strong>0.69</strong>(Fluid Figure 4, abstract, and §5). Raster-order causal models cannot revisit and rearrange global composition, while masked AR supports bidirectionality but does not naturally fit language models' causal architecture. TM therefore asks:<strong>Can continuous states and expressive generative kernels be retained while expressing generation as finitely many trainable probabilistic transitions, each potentially stochastic, nondeterministic, or fully causal?</strong></p>
+<p>The tradeoff is explicit: if each transition kernel is a small generative model, each large step requires internal integration; ARTM/FHTM also generate tokens individually, requiring <code>transition_steps × image_tokens</code> backbone passes. The paper therefore offers three routes rather than a universal algorithm: DTM prioritizes speed; ARTM/FHTM prioritize causal unification.</p>
+</section>
+<section class="card" aria-labelledby="3-论文故事线与假设"><h2 id="3-论文故事线与假设">3. Narrative and hypotheses</h2>
+<p>The argument has four steps.</p>
+<ol type="1">
+<li><strong>Replace vector fields with transition kernels.</strong> Given source distribution <code>p0</code> and data distribution <code>pT</code>, learn <code>pθ(x_{t+1}|x_t)</code>so that starting from <code>X0~p0</code> and sampling sequentially T times yields <code>XT~pT</code>(Equation 1).</li>
+<li><strong>Use a supervising process q to provide adjacent-state pairs.</strong> It requires only <code>q0=p0</code>; the process may be discontinuous, stochastic, or cross-resolution, offering more freedom than fixed SDE/ODE paths (Equations 2–5).</li>
+<li><strong>Replace intractable transition kernels with latent-variable posteriors.</strong> Introduce <code>Y</code>through the law of total probability: first sample from the model <code>Y~pθ(Y|Xt)</code>, then update using the known <code>q(x_{t+1}|x_t,Y)</code> (Equations 6–7).</li>
+<li><strong>Instantiate three kernels.</strong> DTM predicts the global difference <code>Y=XT−X0</code>; ARTM predicts the next state token by token; FHTM conditions on the full history, producing a fully causal visual generator.</li>
+</ol>
+<p>The central hypothesis is that at finite step sizes,<code>q(Y|Xt)</code> retains multimodality erased by FM's conditional mean; even a small head generating token-independent differences can compensate with a few outer steps. Theorem 1 only proves convergence of DTM to Euler FM as step size vanishes, not finite-step superiority. The claim that stochastic kernels outperform deterministic means rests mainly on experiments and subsequent theory.</p>
+</section>
+<section class="card" aria-labelledby="4-方程级形式化与伪代码"><h2 id="4-方程级形式化与伪代码">4. Equations and pseudocode</h2>
+<h3 id="41-一般-tm-目标">4.1 General TM objective</h3>
+<p>The supervising process is defined by data-sample endpoints:</p>
+<p><code>q(x0,…,xT)=q(x0,…,x_{T−1}|xT) pT(xT),  q0=p0</code>。</p>
+<p>The ideal objective directly matches conditional transitions:</p>
+<p><code>L(θ)=E_{t,Xt} D(q_{t+1|t}(·|Xt), pθ_{t+1|t}(·|Xt))</code>。</p>
+<p>When the distance <code>D</code> has a single-sample empirical form <code>D̂</code> , regression can use <code>(Xt,X_{t+1})~q</code> :</p>
+<p><code>L(θ)=E_{t,Xt,X_{t+1}} D̂(X_{t+1},pθ_{t+1|t}(·|Xt))</code>(Equations 4–5).</p>
+<p>Introducing latent variables further gives <code>Y</code>：</p>
+<p><code>q(x_{t+1}|x_t)=∫q(x_{t+1}|x_t,y)q(y|x_t)dy</code>，</p>
+<p>and requires training only <code>pθ(Y|Xt)≈q(Y|Xt)</code>. At sampling time, first generate <code>Y</code> and then apply an explicit update (Equations 6–7). Process design, kernel parameterization, and the within-kernel generative model become independently replaceable interfaces.</p>
+<h3 id="42-dtm随机差分而非条件均值">4.2 DTM: Stochastic differences rather than conditional means</h3>
+<p>Along the Cond-OT linear process:</p>
+<p><code>Xt=(1−t/T)X0+(t/T)XT,  X0~N(0,I)</code>, define <code>Y=XT−X0</code>。</p>
+<p>Then:<code>X_{t+1}=Xt+Y/T</code>. Instead of outputting a single velocity, a conditional flow head samples from <code>pθ(Y|t,Xt)</code> . Its conditional mean satisfies</p>
+<p><code>E[Y|Xt=x]=E[XT−X0|Xt=x]=u_t(x)</code>, exactly FM's marginal velocity (Equation 14). FM is thus DTM's infinitesimal deterministic limit, while finite-step DTM preserves conditional-distribution width.</p>
+<h3 id="43-artm-与-fhtm">4.3 ARTM and FHTM</h3>
+<p>ARTM uses an independent linear process with independent noise at each discrete time, <code>X_{0,t}</code>, while retaining the ordinary linear process's marginals:</p>
+<p><code>Xt=(1−t/T)X_{0,t}+(t/T)XT</code>(Equation 15).</p>
+<p>The next state is then factorized by the chain rule:</p>
+<p><code>q(X_{t+1}|Xt)=∏_i q(X_{t+1}^i|Xt,X_{t+1}^{&lt;i})</code>。</p>
+<p>FHTM further expands conditioning to the entire history <code>X0,…,Xt</code>, allowing a standard causal Transformer backbone. Each generated token requires a causal forward pass, however, sacrificing DTM's parallel speed.</p>
+<h3 id="44-伪代码">4.4 Pseudocode</h3>
+<pre class="text"><code>Training:
+  repeat
+    Sample t ~ Uniform{0,…,T−1} and data XT ~ pT
+    Sample (Xt, Y) | XT from supervising process q
+    Update θ using empirical flow-matching loss D̂(Y, pθ(Y|t,Xt))
+
+Sampling:
+  X0 ~ p0
+  for t = 0,…,T−1:
+    Y ~ pθ(Y|t,Xt)              # Internal ODE in the small flow head
+    X_{t+1} ~ q(·|Xt,Y)          # Xt + Y/T for DTM
+  return XT</code></pre>
+</section>
+<section class="card" aria-labelledby="5-机制与工程细节"><h2 id="5-机制与工程细节">5. Mechanisms and engineering details</h2>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Component</th>
+<th scope="col">Paper configuration</th>
+<th scope="col">Role</th>
+<th scope="col">Cost / risk</th>
+<th scope="col">Source</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Backbone</td>
+<td>24 blocks、hidden 2048、16 heads、1.7B DiT</td>
+<td>Processes global image and text conditioning</td>
+<td>About 84 ms per call on H100</td>
+<td>Appendix A.1, Table 9</td>
+</tr>
+<tr class="even">
+<td>Flow head</td>
+<td>6-layer MLP, hidden size 1024, about 40M parameters (roughly 2% of the backbone)</td>
+<td>Generates differences / tokens inside each outer transition</td>
+<td>About 3.5 ms per call; excluded from main-table NFE*</td>
+<td>Appendix A.1, Figure 5, Table 9</td>
+</tr>
+<tr class="odd">
+<td>Latent</td>
+<td>SDXL-VAE，32×32×4；patch 2×2×4</td>
+<td>Continuous image tokens</td>
+<td>VAE ceiling not isolated</td>
+<td>§4</td>
+</tr>
+<tr class="even">
+<td>Text encoding</td>
+<td>Flan-UL2；cross-attention</td>
+<td>Text conditioning</td>
+<td>Not fully aligned with the open-model ecosystem</td>
+<td>§4</td>
+</tr>
+<tr class="odd">
+<td>Training data</td>
+<td>350M licensed Shutterstock image-caption pairs</td>
+<td>Large-scale controlled training</td>
+<td>Data unavailable for download; high replication barrier</td>
+<td>§4</td>
+</tr>
+<tr class="even">
+<td>Optimization</td>
+<td>500K steps，batch 2048，lr 1e−4，warmup 2K</td>
+<td>Fixed settings for fair comparison</td>
+<td>Single seed / variance not reported</td>
+<td>Appendix A.1</td>
+</tr>
+<tr class="odd">
+<td>CFG</td>
+<td>Text dropout 0.15; sampling scale 6.5 applied to head velocity</td>
+<td>Improves alignment</td>
+<td>Appendix includes CFG sensitivity, but main tables omit a no-CFG control</td>
+<td>Appendices A.1/A.9</td>
+</tr>
+<tr class="even">
+<td>DTM</td>
+<td>32 TM steps; main-table head NFE 64</td>
+<td>Parallel difference kernel</td>
+<td>NFE* counts only the backbone</td>
+<td>Tables 1/2/7</td>
+</tr>
+<tr class="odd">
+<td>ARTM/FHTM</td>
+<td>T=2 or 3; activation caching</td>
+<td>Causal continuous tokens</td>
+<td>No acceleration; cost is T×256 backbone passes</td>
+<td>§4.2</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section class="card" aria-labelledby="6-数据集基准与指标"><h2 id="6-数据集基准与指标">6. Datasets, benchmarks, and metrics</h2>
+<p>Training uses 350 million licensed Shutterstock image–text pairs at 256×256, with captions of 1–128 CLIP tokens. Evaluation is a multimetric matrix over three prompt/compositionality benchmarks—PartiPrompts, MS-COCO, and GenEval—not five independent datasets. The paper reports no FID, leaving distribution coverage/diversity mainly to preference rewards and quality scorers, and preventing direct comparison with Fluid's COCO FID of 6.16.</p>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Benchmark / metric</th>
+<th scope="col">What it measures</th>
+<th scope="col">Direction</th>
+<th scope="col">Key limitation</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>PartiPrompts</td>
+<td>Complex text prompts</td>
+<td>Higher is better</td>
+<td>1,632 prompts; automatic metrics may favor common aesthetics</td>
+</tr>
+<tr class="even">
+<td>MS-COCO</td>
+<td>General caption-to-image generation</td>
+<td>Higher is better</td>
+<td>Main results do not report FID</td>
+</tr>
+<tr class="odd">
+<td>GenEval Overall</td>
+<td>Object-level compositional compliance</td>
+<td>Higher is better</td>
+<td>Detector-dependent; does not capture overall image quality</td>
+</tr>
+<tr class="even">
+<td>CLIPScore</td>
+<td>Semantic alignment</td>
+<td>Higher is better</td>
+<td>Limited sensitivity to layout and counting</td>
+</tr>
+<tr class="odd">
+<td>PickScore / ImageReward / UnifiedReward</td>
+<td>Preference proxy</td>
+<td>Higher is better</td>
+<td>Learned judges with correlated errors</td>
+</tr>
+<tr class="even">
+<td>Aesthetic / DeQA</td>
+<td>Aesthetics / quality</td>
+<td>Higher is better</td>
+<td>Cannot replace blind human evaluation</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section class="card" aria-labelledby="7-完整主结果数据矩阵"><h2 id="7-完整主结果数据矩阵">7. Complete main-results matrices</h2>
+<h3 id="71-partiprompts六指标--六方法论文表-1">7.1 PartiPrompts: Six metrics × six methods (Table 1)</h3>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">Backbone NFE*</th>
+<th scope="col" style="text-align: right;">CLIP</th>
+<th scope="col" style="text-align: right;">Pick</th>
+<th scope="col" style="text-align: right;">ImageReward</th>
+<th scope="col" style="text-align: right;">UnifiedReward</th>
+<th scope="col" style="text-align: right;">Aesthetic</th>
+<th scope="col" style="text-align: right;">DeQA</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>MAR-discrete</td>
+<td style="text-align: right;">256</td>
+<td style="text-align: right;">26.7632</td>
+<td style="text-align: right;">20.6900</td>
+<td style="text-align: right;">0.1397</td>
+<td style="text-align: right;">4.3133</td>
+<td style="text-align: right;">5.1502</td>
+<td style="text-align: right;">2.4846</td>
+</tr>
+<tr class="even">
+<td>MAR</td>
+<td style="text-align: right;">256</td>
+<td style="text-align: right;">26.9800</td>
+<td style="text-align: right;">20.7300</td>
+<td style="text-align: right;">0.3250</td>
+<td style="text-align: right;">4.2590</td>
+<td style="text-align: right;">4.9540</td>
+<td style="text-align: right;">2.3610</td>
+</tr>
+<tr class="odd">
+<td>MAR-Fluid</td>
+<td style="text-align: right;">256</td>
+<td style="text-align: right;">25.9763</td>
+<td style="text-align: right;">20.5148</td>
+<td style="text-align: right;">0.0684</td>
+<td style="text-align: right;">3.8172</td>
+<td style="text-align: right;">4.7422</td>
+<td style="text-align: right;">2.3593</td>
+</tr>
+<tr class="even">
+<td>FM</td>
+<td style="text-align: right;">256</td>
+<td style="text-align: right;">25.9700</td>
+<td style="text-align: right;">21.0400</td>
+<td style="text-align: right;">0.2330</td>
+<td style="text-align: right;">4.7840</td>
+<td style="text-align: right;">5.2910</td>
+<td style="text-align: right;">2.5460</td>
+</tr>
+<tr class="odd">
+<td><strong>DTM</strong></td>
+<td style="text-align: right;"><strong>32</strong></td>
+<td style="text-align: right;">26.8400</td>
+<td style="text-align: right;"><strong>21.1800</strong></td>
+<td style="text-align: right;"><strong>0.5320</strong></td>
+<td style="text-align: right;"><strong>5.1230</strong></td>
+<td style="text-align: right;"><strong>5.4210</strong></td>
+<td style="text-align: right;"><strong>2.6460</strong></td>
+</tr>
+<tr class="even">
+<td>ARTM-3</td>
+<td style="text-align: right;">3×256</td>
+<td style="text-align: right;"><strong>27.0200</strong></td>
+<td style="text-align: right;">20.8700</td>
+<td style="text-align: right;">0.3750</td>
+<td style="text-align: right;">4.7690</td>
+<td style="text-align: right;">5.2110</td>
+<td style="text-align: right;">2.5280</td>
+</tr>
+</tbody>
+</table></div>
+<p>DTM versus FM: CLIP <strong>+0.87（+3.35%）</strong>、Pick <strong>+0.14（+0.67%）</strong>、ImageReward <strong>+0.299（+128.33%）</strong>、UnifiedReward <strong>+0.339（+7.09%）</strong>、Aesthetic <strong>+0.130（+2.46%）</strong>、DeQA <strong>+0.100（+3.93%）</strong>. It wins on 5/6 metrics; ARTM-3, not DTM, has the best CLIP at 27.02. All values come from Table 1; standard deviations are absent.</p>
+<h3 id="72-ms-coco六指标--六方法论文表-7">7.2 MS-COCO: Six metrics × six methods (Table 7)</h3>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">Backbone NFE*</th>
+<th scope="col" style="text-align: right;">CLIP</th>
+<th scope="col" style="text-align: right;">Pick</th>
+<th scope="col" style="text-align: right;">ImageReward</th>
+<th scope="col" style="text-align: right;">UnifiedReward</th>
+<th scope="col" style="text-align: right;">Aesthetic</th>
+<th scope="col" style="text-align: right;">DeQA</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>MAR-discrete</td>
+<td style="text-align: right;">256</td>
+<td style="text-align: right;"><strong>26.5723</strong></td>
+<td style="text-align: right;">20.6255</td>
+<td style="text-align: right;">0.0085</td>
+<td style="text-align: right;">4.1381</td>
+<td style="text-align: right;">5.2673</td>
+<td style="text-align: right;">2.4132</td>
+</tr>
+<tr class="even">
+<td>MAR</td>
+<td style="text-align: right;">256</td>
+<td style="text-align: right;">26.1200</td>
+<td style="text-align: right;">20.6600</td>
+<td style="text-align: right;">0.1650</td>
+<td style="text-align: right;">4.6150</td>
+<td style="text-align: right;">5.0580</td>
+<td style="text-align: right;">2.3420</td>
+</tr>
+<tr class="odd">
+<td>MAR-Fluid</td>
+<td style="text-align: right;">256</td>
+<td style="text-align: right;">25.4637</td>
+<td style="text-align: right;">20.4549</td>
+<td style="text-align: right;">−0.1094</td>
+<td style="text-align: right;">3.9407</td>
+<td style="text-align: right;">4.8603</td>
+<td style="text-align: right;">2.3822</td>
+</tr>
+<tr class="even">
+<td>FM</td>
+<td style="text-align: right;">256</td>
+<td style="text-align: right;">25.7800</td>
+<td style="text-align: right;">21.1100</td>
+<td style="text-align: right;">0.0880</td>
+<td style="text-align: right;">5.0030</td>
+<td style="text-align: right;">5.4500</td>
+<td style="text-align: right;">2.4660</td>
+</tr>
+<tr class="odd">
+<td><strong>DTM</strong></td>
+<td style="text-align: right;"><strong>32</strong></td>
+<td style="text-align: right;">26.1600</td>
+<td style="text-align: right;"><strong>21.1900</strong></td>
+<td style="text-align: right;">0.2240</td>
+<td style="text-align: right;">5.3780</td>
+<td style="text-align: right;"><strong>5.5460</strong></td>
+<td style="text-align: right;"><strong>2.5820</strong></td>
+</tr>
+<tr class="even">
+<td><strong>FHTM-3 (LLM)</strong></td>
+<td style="text-align: right;">3×256</td>
+<td style="text-align: right;">26.1400</td>
+<td style="text-align: right;">21.0800</td>
+<td style="text-align: right;"><strong>0.2430</strong></td>
+<td style="text-align: right;"><strong>5.5100</strong></td>
+<td style="text-align: right;">5.5260</td>
+<td style="text-align: right;">2.5070</td>
+</tr>
+</tbody>
+</table></div>
+<p>DTM versus FM: CLIP <strong>+0.38（+1.47%）</strong>、Pick <strong>+0.08（+0.38%）</strong>、ImageReward <strong>+0.136（+154.55%）</strong>、UnifiedReward <strong>+0.375（+7.50%）</strong>、Aesthetic <strong>+0.096（+1.76%）</strong>、DeQA <strong>+0.116（+4.70%）</strong>. DTM is not best in every column: MAR-discrete leads CLIP, and FHTM-3 LLM leads ImageReward/UnifiedReward. Source: Table 7.</p>
+<h3 id="73-geneval组合性结果论文表-2">7.3 GenEval: Compositionality (Table 2)</h3>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">Overall</th>
+<th scope="col" style="text-align: right;">Single</th>
+<th scope="col" style="text-align: right;">Two objects</th>
+<th scope="col" style="text-align: right;">Counting</th>
+<th scope="col" style="text-align: right;">Colors</th>
+<th scope="col" style="text-align: right;">Position</th>
+<th scope="col" style="text-align: right;">Color attribute</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>MAR-discrete</td>
+<td style="text-align: right;">0.4438</td>
+<td style="text-align: right;">0.8625</td>
+<td style="text-align: right;">0.4343</td>
+<td style="text-align: right;">0.3670</td>
+<td style="text-align: right;">0.6595</td>
+<td style="text-align: right;">0.13</td>
+<td style="text-align: right;">0.29</td>
+</tr>
+<tr class="even">
+<td>MAR</td>
+<td style="text-align: right;">0.5200</td>
+<td style="text-align: right;"><strong>0.9800</strong></td>
+<td style="text-align: right;">0.5600</td>
+<td style="text-align: right;">0.4300</td>
+<td style="text-align: right;">0.7300</td>
+<td style="text-align: right;">0.11</td>
+<td style="text-align: right;">0.38</td>
+</tr>
+<tr class="odd">
+<td>MAR-Fluid</td>
+<td style="text-align: right;">0.4438</td>
+<td style="text-align: right;">0.9000</td>
+<td style="text-align: right;">0.3333</td>
+<td style="text-align: right;">0.3670</td>
+<td style="text-align: right;">0.7553</td>
+<td style="text-align: right;">0.12</td>
+<td style="text-align: right;">0.28</td>
+</tr>
+<tr class="even">
+<td>FM</td>
+<td style="text-align: right;">0.4700</td>
+<td style="text-align: right;">0.9100</td>
+<td style="text-align: right;">0.5200</td>
+<td style="text-align: right;">0.2700</td>
+<td style="text-align: right;">0.7100</td>
+<td style="text-align: right;">0.12</td>
+<td style="text-align: right;">0.34</td>
+</tr>
+<tr class="odd">
+<td><strong>DTM</strong></td>
+<td style="text-align: right;"><strong>0.5400</strong></td>
+<td style="text-align: right;">0.9300</td>
+<td style="text-align: right;"><strong>0.5800</strong></td>
+<td style="text-align: right;">0.3500</td>
+<td style="text-align: right;"><strong>0.7900</strong></td>
+<td style="text-align: right;"><strong>0.20</strong></td>
+<td style="text-align: right;"><strong>0.46</strong></td>
+</tr>
+<tr class="even">
+<td>FHTM-3</td>
+<td style="text-align: right;">0.5200</td>
+<td style="text-align: right;"><strong>0.9800</strong></td>
+<td style="text-align: right;">0.5400</td>
+<td style="text-align: right;"><strong>0.4400</strong></td>
+<td style="text-align: right;">0.7400</td>
+<td style="text-align: right;">0.16</td>
+<td style="text-align: right;">0.34</td>
+</tr>
+</tbody>
+</table></div>
+<p>DTM Overall exceeds FM by <strong>0.07 (+7 pp on a 0–1 scale, +14.89% relative)</strong>, but Counting is lower by <strong>0.08（−29.63%）</strong>. Broadly improved compositionality is therefore too strong: DTM improves two-object, color, position, and color-attribute results, while counting remains a weakness.</p>
+</section>
+<section class="card" aria-labelledby="8-逐层消融与归因"><h2 id="8-逐层消融与归因">8. Layer-by-Layer Ablations and Attribution</h2>
+<h3 id="81-速度质量相变表-8--9">8.1 Speed–quality transitions (Tables 8 / 9)</h3>
+<p>More TM steps are not always better for DTM. At head NFE=4, CLIPScore for 1, 2, 4, 8, and 16 TM steps is <strong>17.9、21.1、25.4、26.7、26.8</strong>, followed at 32/64/128 steps by <strong>26.7/26.5/26.5</strong>; it saturates at 16 steps. PickScore likewise reaches about 21.1 around 16 steps. Increasing head NFE from 1 to 4 produces the largest jump, with minimal gains thereafter. The practical sweet spot is <strong>16 outer steps × 4 head NFE</strong>, rather than the main tables' 32×64.</p>
+<p>The H100 timing table gives approximately <strong>84 ms/step</strong>for the backbone and <strong>3.5 ms/step</strong>for the head. A rough decomposition of 16×4 is <code>16×84 + 16×4×3.5 = 1568 ms</code>, consistent with Table 3's 1.6 s; 128-step FM takes about 10.8 s. Head cost is not negligible even at the sweet spot—approximately 224 ms, or 14.3%—but remains far below backbone cost.</p>
+<h3 id="82-监督过程同边际不同条件正则性">8.2 Supervising processes: Same marginals, different conditional regularity</h3>
+<p>ARTM/FHTM degrade when using DTM's shared-X0 linear path, because the near-deterministic linear relationship between Xt and X_{t+1} permits a training shortcut that fails at inference (Appendix A.4, Figure 9). The independent linear process resamples <code>X_{0,t}</code>at each t, preserving marginals while widening conditional support and markedly improving the 100K-step training curve. Figure 9 lacks a complete numerical table, so no pp gain can be invented. Conditional coupling is established as a key variable, not a cross-dataset statistical effect size.</p>
+<h3 id="83-核表达力patch-更大只帮助低步数">8.3 Kernel expressiveness: Larger patches help only at low step counts</h3>
+<p>DTM defaults to independent head tokens corresponding to 2×2×4 latent patches. Increasing patches to 2×8×4 helps at 1–4 TM steps, but the difference vanishes at larger counts (Figure 10). This matches Theorem 1's limiting intuition: small steps approach local deterministic flows, reducing the need for joint cross-token kernels. Figure 10 lacks a complete numeric matrix, preventing quantification of the larger-patch gain.</p>
+<h3 id="84-scheduler表-10">8.4 Scheduler (Table 10)</h3>
+<p>For ARTM-3/DiT, MS-COCO CLIP/Pick changes from uniform <strong>25.9914/20.8412</strong> to exponential <strong>26.07/20.92</strong>; PartiPrompts changes from <strong>26.8494/20.8204</strong> to <strong>27.02/20.87</strong>. FHTM-3/DiT also improves slightly on COCO, but FHTM-3/LLM's Parti CLIP falls from <strong>26.9945 to 26.95</strong>. Scheduler effects are therefore around 0.05–0.17 without a consistent directional advantage.</p>
+</section>
+<section class="card" aria-labelledby="9-超参敏感性相变与统计显著性"><h2 id="9-超参敏感性相变与统计显著性">9. Sensitivity, transitions, and significance</h2>
+<p>Two clear transitions appear. First, increasing DTM from 2 to 4 TM steps at head NFE=4 raises CLIP from 21.1 to 25.4, a gain of <strong>4.3</strong>; 8 to 16 adds only <strong>0.1</strong>, with no improvement beyond 16. Second, at 16 TM steps, increasing head NFE from 1 to 2 raises CLIP from 23.2 to 26.4, a gain of <strong>3.2</strong>; 2 to 4 adds only <strong>0.4</strong>. The bottleneck first concerns within-kernel generation accuracy, then outer-backbone approximation; both saturate quickly.</p>
+<p>The appendix includes CFG-scale sensitivity plots, but the HTML provides no complete machine-readable values; main results fix scale=6.5. Training reports one configuration and one curve, with<strong>no multiple random seeds, standard deviations, confidence intervals, or significance tests</strong>. DTM generally leads FM in the reported run, but MS-COCO Pick +0.08 or Aesthetic +0.096 cannot be called statistically significant.</p>
+</section>
+<section class="card" aria-labelledby="10-真正贡献可复用设计与迁移潜力"><h2 id="10-真正贡献可复用设计与迁移潜力">10. Actual contributions, reusable designs, and transfer potential</h2>
+<p>The contribution is separating generation into three interfaces: supervising process q, latent-variable parameterization Y, and within-kernel generative model B|A. Diffusion, flow, and continuous AR become configurations of one training template, exposing previously coupled design freedoms.</p>
+<p>The most reusable engineering design is a large backbone extracting semantics and a small head solving local stochastic kernels. When backbone latency dominates, more numerical solving can be assigned to a head with 2% of the parameters, exchanging cheap NFEs for expensive ones. This may transfer to video, 3D, molecules, or audio, but the head's local-independence assumption must be revalidated.</p>
+<p>FHTM's potential lies in a unified multimodal causal model: text prefixes and continuous image tokens can share standard LLM attention, training, and caching. Current evidence only shows that a 1.7B LLM architecture performs competitively on several automatic image metrics; it does not test language understanding, image QA, or interleaved generation. Seamless multimodal integration remains an architectural compatibility claim, not a demonstrated capability.</p>
+</section>
+<section class="card" aria-labelledby="11-论文自述限制"><h2 id="11-论文自述限制">11. Limitations acknowledged by the paper</h2>
+<ol type="1">
+<li><strong>Speed limitations (§4.2, §5)</strong>: ARTM/FHTM do not accelerate sampling; backbone passes equal transition steps times image-token count, which in Tables 1/7 is <code>2×256</code> or <code>3×256</code>. Causal unification and sampling efficiency are separate routes.</li>
+<li><strong>Kernel independence (§2.2, §4.2)</strong>: DTM's head generates difference tokens independently, limiting joint expressiveness; larger patches help only at low TM step counts.</li>
+<li><strong>Future work (§5)</strong>: the authors explicitly leave schedulers, distillation, and integrating FHTM into multimodal systems to future work. Neither distillation nor a truly unified text–image model is completed here.</li>
+</ol>
+</section>
+<section class="card" aria-labelledby="12-独立批判证据--推论"><h2 id="12-独立批判证据--推论">12. Independent critique (evidence → implications)</h2>
+<ol type="1">
+<li><strong>[Measurement scope]</strong> The main-table <code>NFE*</code> counts only the 1.7B backbone and excludes 64 evaluations of the 40M head inside each DTM step. Thus, 32 versus 256 NFE does not imply 8× less total computation. Table 3's 10.8 s→1.6 s (6.75×) is a more credible systems metric.</li>
+<li><strong>[Efficiency attribution]</strong> Table 8 shows near-saturation at 16×4, whereas the main tables use 32×64. Main quality and speed results therefore use different sampling configurations; not all main-table quality scores can be attributed to the 1.6 s setting.</li>
+<li><strong>[Statistics]</strong> No main table reports seed counts, standard deviations, or CIs, and MS-COCO Pick improves by only 0.08 (0.38%). Such small differences may fall within training or sampling variation and cannot establish a stable advantage.</li>
+<li><strong>[Data reproducibility]</strong> Training relies on 350 million unavailable licensed Shutterstock pairs, and no code or weights were found. Fairness from fixed data, architecture, and optimization is therefore internally controlled but externally unverifiable.</li>
+<li><strong>[Metric coverage]</strong> The paper omits FID, precision/recall, blind human evaluation, and copying rates; its six Parti/COCO metrics are mostly learned rewards. The evidence supports improved proxy preferences, not comprehensive gains in coverage, originality, or human preference.</li>
+<li><strong>[Compositionality boundaries]</strong> DTM's GenEval Overall exceeds FM by 7 pp, but Counting from 0.27 to 0.35 remains below FHTM-3's 0.44, and single-object performance trails MAR's 0.98. Claims of improved compositionality should be restricted to subcategories such as two objects, color, and position.</li>
+<li><strong>[Theory–practice gap]</strong> Theorem 1 proves convergence to Euler FM only when <code>T→∞</code> , while practical gains occur at finite T. It explains why the methods eventually coincide, not why finite steps are better. Subsequent AISTATS 2026 work adds KL advantages under Gaussian and locally unimodal Gaussian-mixture conditions.</li>
+<li><strong>[Unified-model narrative]</strong> FHTM-3 LLM merely switches 2D positional encoding to 1D and uses a text prefix, without evaluating language generation or interleaved sequences. Experiments support architectural portability, not completed unification of text and image generation.</li>
+</ol>
+</section>
+<section class="card" aria-labelledby="13-相关工作链问题来源--技术来源--回应"><h2 id="13-相关工作链问题来源--技术来源--回应">13. Related-Work Lineage: Problem → Technical Source → Response</h2>
+<h3 id="131-flow-matchinglipman-et-al-2022">13.1 Flow Matching（Lipman et al., 2022）</h3>
+<p><strong>Problem addressed</strong>: regresses vector fields along conditional probability paths, avoiding simulation-based training and using Cond-OT for straighter, faster paths.<strong>Remaining gap</strong>: inference still solves a deterministic ODE through many expensive backbone calls; large finite steps collapse conditional multimodality into a mean.<strong>How the core paper responds</strong>: DTM does not merely regress <code>E[Y|Xt]</code>, but samples the full <code>p(Y|Xt)</code>。<strong>Transferred design</strong>: retains Cond-OT linear paths, the velocity identity, and flow-matching heads, but uses flow matching as a within-kernel generator rather than the overall objective.</p>
+<h3 id="132-marautoregressive-image-generation-without-vqli-et-al-2024">13.2 MAR：Autoregressive Image Generation without VQ（Li et al., 2024）</h3>
+<p><strong>Problem addressed</strong>: models continuous tokens with a small diffusion loss, avoiding VQ information loss.<strong>Remaining gap</strong>: ordering and attention in single-round masked/raster AR constrain global composition, while within-token diffusion remains expensive.<strong>How the core paper responds</strong>: ARTM embeds autoregressive token generation within multiple outer Markov transitions; FHTM additionally retains the full history.<strong>Transferred design</strong>: directly inherits and extends the 1.7B backbone plus 6-layer small head, continuous latents, and per-token flow.</p>
+<h3 id="133-fluidfan-et-al-2024">13.3 Fluid（Fan et al., 2024）</h3>
+<p><strong>Problem addressed</strong>: systematically compares discrete/continuous tokens and raster/random order, showing stronger visual quality and GenEval from continuous random-order generation; 10.5B achieves COCO FID 6.16 and GenEval 0.69.<strong>Remaining gap</strong>: strong models rely on bidirectional masked attention, which does not naturally unify with causal LLMs.<strong>How the core paper responds</strong>: FHTM combines full history with causal attention, allowing a 1.7B LLM architecture to approach or exceed DiT on the authors' metrics.<strong>Transferred design</strong>: continuous tokens, random/causal order, and head NFE become comparison axes for TM.</p>
+<h3 id="134-generator-matchingholderrieth-et-al-2025">13.4 Generator Matching（Holderrieth et al., 2025）</h3>
+<p><strong>Problem addressed</strong>: unifies continuous and discrete generation through general Markov generators, including jump processes.<strong>Remaining gap</strong>: still starts from continuous-time infinitesimal generators, leaving implementations and model classes abstract.<strong>How the core paper responds</strong>: TM works directly with discrete-time transition kernels and trains on adjacent-state pairs, assigning expressiveness to the model inside each finite step.<strong>Transferred design</strong>: retains arbitrary supervising processes and modality-agnostic unification, while replacing the generator with a kernel as the modeling object.</p>
+<h3 id="135-后续demystifying-tmaistats-2026">13.5 Follow-up: Demystifying TM (AISTATS 2026)</h3>
+<p><strong>Problem addressed</strong>: supplies finite-step theory missing from the original: for unimodal Gaussians, TM has lower KL at any finite step count because stochastic difference updates preserve covariance; advantages persist in local GMM regions with separated modes and nonzero variance.<strong>Remaining gap</strong>: conclusions rely on controlled distributional approximations and do not directly establish global optimality for large image models.<strong>Transferred design</strong>: advances the expressive-stochastic-kernel explanation from empirical attribution to covariance preservation, and releases image/video code.</p>
+</section>
+<section class="card" aria-labelledby="14-技术演进树"><h2 id="14-技术演进树">14. Technical Evolution Tree</h2>
+<pre class="text"><code>Continuous-time paths
+├─ Diffusion: stochastic microsteps + high NFE
+├─ Flow Matching: deterministic vector fields + ODE
+│  ├─ Cond-OT: straighter paths
+│  └─ Generator Matching: arbitrary continuous-time Markov generators
+└─ Transition Matching: finite discrete steps + learnable probability kernels
+   ├─ DTM: global stochastic differences → few expensive backbone calls + many cheap head calls
+   │  └─ Demystifying TM: finite-step KL / covariance explanation
+   ├─ ARTM: next-state autoregression over continuous tokens
+   └─ FHTM: full-history causal Transformer
+      └─ Goal: unified causal text–image model
+
+Another technical lineage
+VQ autoregression → MAR continuous tokens → Fluid random-order scaling
+                         └────────────→ ARTM / FHTM</code></pre>
+<p>Three shifts drive this evolution: from simulating SDEs to directly regressing vector fields; from discrete VQ tokens to small generative heads for continuous tokens; and from deterministic updates to conditional distributions at every step. TM's key insight is that finite-step conditional distributions should retain variance, rather than merely using more complex paths.</p>
+</section>
+<section class="card" aria-labelledby="15-跨论文对标"><h2 id="15-跨论文对标">15. Cross-Paper Comparison</h2>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Time formulation</th>
+<th scope="col">State</th>
+<th scope="col">Per-step object</th>
+<th scope="col">Causality</th>
+<th scope="col">Main strengths</th>
+<th scope="col">Main gap</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Flow Matching</td>
+<td>Continuous</td>
+<td>Continuous</td>
+<td>Deterministic velocity</td>
+<td>Noncausal</td>
+<td>Simple training, mature ODE tools</td>
+<td>Conditional means at finite steps</td>
+</tr>
+<tr class="even">
+<td>Generator Matching</td>
+<td>Continuous</td>
+<td>Arbitrary</td>
+<td>generator</td>
+<td>Extensible</td>
+<td>Unified theory, supports jumps</td>
+<td>Abstract engineering; still a differential object</td>
+</tr>
+<tr class="odd">
+<td>MAR</td>
+<td>Single-stage AR</td>
+<td>Continuous tokens</td>
+<td>Within-token diffusion</td>
+<td>masked</td>
+<td>No VQ loss</td>
+<td>Ordering and global consistency</td>
+</tr>
+<tr class="even">
+<td>Fluid</td>
+<td>Multistage masked AR</td>
+<td>Continuous tokens</td>
+<td>Token distribution</td>
+<td>Bidirectional</td>
+<td>Strong scaling to 10.5B</td>
+<td>Difficult to combine with causal LLMs</td>
+</tr>
+<tr class="odd">
+<td>DTM</td>
+<td>Discrete T steps</td>
+<td>Continuous</td>
+<td>Stochastic difference kernel</td>
+<td>Parallel</td>
+<td>1.6 s; beats FM on 5/6 Parti metrics</td>
+<td>Head cost accounting; no open implementation</td>
+</tr>
+<tr class="even">
+<td>FHTM</td>
+<td>Discrete T steps</td>
+<td>Continuous tokens</td>
+<td>Full-history AR kernel</td>
+<td>Fully causal</td>
+<td>Compatible with LLM architectures</td>
+<td>3×256 backbone passes; no acceleration</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section class="card" aria-labelledby="16-开放挑战必须可-head-to-head-验证"><h2 id="16-开放挑战必须可-head-to-head-验证">16. Open Challenges Requiring Head-to-Head Tests</h2>
+<h3 id="理论">Theory</h3>
+<ol type="1">
+<li><strong>Finite-step non-Gaussian bounds</strong>: with the same 1.7B backbone and data, compare DTM and FM at 2/4/8/16 steps on empirical KL surrogates, covariance spectra, and mode coverage. Preregister the prediction that DTM's advantage grows with mode separation, connecting AISTATS 2026 theory to real latents.</li>
+<li><strong>Kernel-independence error</strong>: compare per-token, 2×2, 2×8, and full-image low-rank-coupled heads under fixed total FLOPs. Measure FID, precision/recall, and GenEval to separate larger joint kernels from merely more parameters.</li>
+</ol>
+<h3 id="工程应用">Engineering applications</h3>
+<ol start="3" type="1">
+<li><strong>Unified cost accounting</strong>: on H100/B200, report end-to-end latency, energy, peak memory, and all backbone/head NFEs for FM, DTM, MeanFlow, and Shortcut. Rank Pareto frontiers at matched CLIP/Pick scores.</li>
+<li><strong>Reproducible fairness</strong>: retrain FM/DTM/MAR on a public DataComp-1B subset with at least 3 seeds, releasing weights and logs. Test whether +0.08 Pick exceeds the 95% CI.</li>
+<li><strong>Video transfer</strong>: fix Wan2.1 1.3B and training-frame counts, comparing DTM, TMD, and ordinary flow distillation on VBench, FVD, temporal LPIPS, and real-time FPS. Check whether stochastic kernels improve long-term mode collapse.</li>
+</ol>
+<h3 id="新兴方向">Emerging directions</h3>
+<ol start="6" type="1">
+<li><strong>True multimodal unification</strong>: compare FHTM with a same-size causal VLM on interleaved text–image generation, captioning, VQA, and image continuation, sharing tokenizer and parameter budgets. Test whether compatibility becomes bidirectional capability rather than image generation alone.</li>
+<li><strong>Safety and memorization</strong>: with matched training data, compare FM/DTM on membership inference, nearest-neighbor copying, and NSFW-prompt compliance. Stochastic large steps may improve coverage or make training examples easier to recover; this is currently unknown.</li>
+</ol>
+</section>
+<section class="card" aria-labelledby="17-近期工作追踪"><h2 id="17-近期工作追踪">17. Recent Work to Track</h2>
+<ol type="1">
+<li><strong>Exploring the Design Space of Transition Matching</strong>(2025-12-13): trains 56 models at 1.7B and performs 549 evaluations to search heads, time weighting, and samplers, expanding the original's limited design points into an engineering map.<a href="https://arxiv.org/abs/2512.12465">https://arxiv.org/abs/2512.12465</a></li>
+<li><strong>Demystifying Transition Matching</strong>(AISTATS 2026): establishes conditions for finite-step TM superiority over FM on Gaussian/locally unimodal Gaussian mixtures, with official image/video code; the most direct mechanistic follow-up.<a href="https://arxiv.org/abs/2510.17991">https://arxiv.org/abs/2510.17991</a></li>
+<li><strong>Transition Matching Distillation for Fast Video Generation</strong>(2026-01-14): splits each outer transition into a backbone and flow head and distills Wan2.1 1.3B/14B, extending TM from training to pretrained video-model compression.<a href="https://arxiv.org/abs/2601.09881">https://arxiv.org/abs/2601.09881</a></li>
+<li><strong>Diff2Flow</strong>(2025-06-02): converts diffusion priors into flow matching through time and interpolation alignment for parameter-efficient fine-tuning. Its migration of existing diffusion assets complements TM's redefinition of finite-step kernels.<a href="https://arxiv.org/abs/2506.02221">https://arxiv.org/abs/2506.02221</a></li>
+<li><strong>Vid2World</strong>(2025-05-20): causalizes pretrained video diffusion models and adds action guidance, an important comparison for TM in interactive world models.<a href="https://arxiv.org/abs/2505.14357">https://arxiv.org/abs/2505.14357</a></li>
+<li><strong>Co-generation of Layout and Shape via Autoregressive 3D Diffusion</strong>(2026-04-17): jointly generates layouts and object latents using 3D-ARD+ over 230,000 indoor scenes, illustrating the related outer-AR/inner-diffusion design in 3D.<a href="https://arxiv.org/abs/2604.16552">https://arxiv.org/abs/2604.16552</a></li>
+<li><strong>GaussianGPT</strong>(2026-03-27): quantizes Gaussian primitives with VQ for pure autoregression, providing a discrete 3D counterpart to TM's continuous states.<a href="https://arxiv.org/abs/2603.26661">https://arxiv.org/abs/2603.26661</a></li>
+</ol>
+</section>
+<section class="card" aria-labelledby="18-结论"><h2 id="18-结论">18. Conclusion</h2>
+<p>Transition Matching's central insight is:<strong>When sampling must use finite steps, the appropriate object may be an entire conditional transition distribution rather than a mean velocity.</strong> In the authors' controlled 1.7B comparison, DTM improves 5/6 PartiPrompts metrics over FM and GenEval Overall from 0.47 to 0.54, while H100 latency drops from 10.8 s to 1.6 s. This establishes stochastic finite-step kernels as a strong design space, not universal SOTA: training data and code are unavailable; FID, blind human evaluation, and multiple seeds are missing; main-table NFE* excludes the head; and FHTM's multimodal unification remains evaluated only through image-generation metrics.</p>
+<hr />
+<p><strong>Source note</strong>: core numbers come from arXiv v1 Tables 1, 2, 3, 7, 8, 9, 10 and §4/Appendix A.1. Derived values use the original table entries. Missing standard deviations, confidence intervals, FID, human preferences, and code availability are explicitly identified rather than invented. The index <code>ml-report-index.md</code> was updated in this run.</p>
+</section>
+  </main>
+
+  <footer><p>Core sources: arXiv:2506.23589v1 and NeurIPS 2025 OpenReview; generated on 2026-10-07.</p><p><strong>Presentation validation note:</strong>The Warm Editorial structural validator passed with 0 errors and 0 warnings. Theme switching, horizontal table scrolling, print rules, and reduced-motion support were statically checked. This runtime has no launchable Chromium under <code>/usr/bin/chromium</code> or <code>/opt/pw-browsers</code> , so Playwright could not perform screenshot-level checks for light, dark, or mobile views; these were not falsely reported as passed.</p></footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ Light' : '☾ Dark';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

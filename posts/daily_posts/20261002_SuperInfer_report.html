@@ -1,0 +1,1188 @@
+---
+layout: null
+title: "SuperInfer"
+date: 2026-10-02
+topic: "llm-systems"
+tags: ["llm-systems", "kv-cache", "llm-serving"]
+excerpt: "把“换出 KV”从内存补丁变成 SLO 调度原语 DuplexKV 将 16 GB 双向 KV 迁移从 1556.15 ms 压至 46.80 ms；在 GH200 高负载下，SuperInfer 的 TTFT SLO 达标率最高提高 74.7 个百分点，但硬件外推、Pie 对比与统计区间仍缺失。"
+permalink: "/blog/2026/10/02/superinfer/"
+blog_post: true
+lang: "zh-CN"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_en: "/blog/2026/10/02/superinfer/en/"
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>SuperInfer 深度研究报告 · 2026-10-02</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  main { display: grid; gap: 22px; min-width: 0; }
+  .card.level2 { margin: 0; min-width: 0; }
+  .subsection { margin-top: 24px; }
+  .subsection h3 { margin-top: 0; }
+  blockquote { margin: 14px 0; padding: 10px 14px; border-left: 4px solid var(--chart-primary); background: var(--surface-2); color: var(--text-secondary); }
+  pre { overflow-x: auto; padding: 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); font-size: 12.5px; line-height: 1.55; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  p code, li code, td code { padding: .08em .3em; border-radius: 4px; background: var(--surface-2); }
+  ol, ul { padding-left: 1.35em; }
+  li + li { margin-top: .38em; }
+  .table-scroll { margin: 15px 0 22px; }
+  table { min-width: 720px; }
+  .figure { margin: 0; min-width: 0; max-width: 100%; }
+  p, li, td, th, a { overflow-wrap: anywhere; }
+  math[display="block"] { display: block; max-width: 100%; margin: 14px 0; padding: 10px 12px; overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+  .chart rect { outline: none; }
+  .chart rect:focus { stroke: var(--text-primary); stroke-width: 2; }
+  @media (max-width: 640px) {
+    .toolbar { position: static; justify-content: flex-end; margin-bottom: 10px; }
+    .hero { margin-top: 0; }
+    .chart { width: 760px; max-width: none; }
+    .figure { overflow-x: auto; }
+  }
+
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">MLSys 2026 · LLM Serving · KV Cache</p>
+    <h1>SuperInfer</h1>
+    <p class="subtitle">把“换出 KV”从内存补丁变成 SLO 调度原语</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">arXiv:2601.20309v2</span>
+      <span class="chip">2026-10-02</span>
+      <span class="chip">RotaSched · VLT/LVF · DuplexKV</span>
+    </div>
+    <p class="lede">DuplexKV 将 16 GB 双向 KV 迁移从 1556.15 ms 压至 46.80 ms；在 GH200 高负载下，SuperInfer 的 TTFT SLO 达标率最高提高 74.7 个百分点，但硬件外推、Pie 对比与统计区间仍缺失。</p>
+  </header>
+
+  <main>
+
+<blockquote>
+<p>一句话核心定位：SuperInfer 面向 NVIDIA GH200 这类 CPU–GPU 紧耦合
+Superchip，把请求在 HBM 与 DRAM 间的 KV
+迁移改写为由延迟欠账驱动的主动轮转；其真正贡献不是“更多主存”，而是让调度目标、数据布局和全双工传输在同一条服务关键路径上闭环。</p>
+</blockquote>
+<p><strong>报告日期：</strong> 2026-10-02　<strong>领域：</strong>
+效率与系统（LLM serving、KV
+cache、SLO、Superchip）　<strong>核心论文：</strong> Jiahuan Yu、Mingtao
+Hu、Zichao Lin、Minjia Zhang，MLSys 2026。</p>
+<section id="链接验证表" class="card level2">
+<h2>0. 链接验证表</h2>
+<p>所有链接均在本次报告生成时实际访问。会议正式页与 PDF
+优先于聚合站；“未公开/未找到”表示在论文、arXiv、官方仓库与作者项目页中均未发现，而不是断言不存在。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">会议 / 正式页</th>
+<th scope="col">arXiv（版本、日期）</th>
+<th scope="col">代码</th>
+<th scope="col">数据 / 权重</th>
+<th scope="col">项目页 / 视频</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>SuperInfer</strong></td>
+<td><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/07fd64f9316f40193c6a4d87d8afa011-Abstract-Conference.html">MLSys
+2026 正式页</a>；<a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/file/07fd64f9316f40193c6a4d87d8afa011-Paper-Conference.pdf">正式
+PDF</a></td>
+<td><a
+href="https://arxiv.org/abs/2601.20309">2601.20309v2</a>，2026-05-18；v1
+为 2026-01-28</td>
+<td><a
+href="https://github.com/Supercomputing-System-AI-Lab/SuperInfer">官方仓库</a>，Apache-2.0，含
+AE 驱动</td>
+<td>使用 ShareGPT、LMSYS-Chat-1M 与公开模型；无新数据集/权重</td>
+<td><a
+href="https://supercomputing-system-ai-lab.github.io/projects/superinfer/">项目页</a>；<a
+href="https://mlsys.org/media/mlsys-2026/Slides/3809.pdf">MLSys
+幻灯片</a>；视频未找到</td>
+</tr>
+<tr class="even">
+<td>PagedAttention / vLLM</td>
+<td>SOSP 2023；<a
+href="https://arxiv.org/abs/2309.06180">论文页</a></td>
+<td><a
+href="https://arxiv.org/abs/2309.06180">2309.06180v1</a>，2023-09-12</td>
+<td><a href="https://github.com/vllm-project/vllm">vLLM</a></td>
+<td>无专有数据/权重</td>
+<td><a href="https://vllm.ai/">项目页</a>；视频未核验</td>
+</tr>
+<tr class="odd">
+<td>Sarathi-Serve</td>
+<td><a
+href="https://www.usenix.org/conference/osdi24/presentation/agrawal">OSDI
+2024 正式页</a>，pp.117–134</td>
+<td><a href="https://arxiv.org/abs/2403.02310">2403.02310</a></td>
+<td><a
+href="https://github.com/microsoft/sarathi-serve">官方仓库</a></td>
+<td>公开模型与请求轨迹；无新权重</td>
+<td>正式页含 slides / video</td>
+</tr>
+<tr class="even">
+<td>Pie</td>
+<td>arXiv；会议未找到</td>
+<td><a
+href="https://arxiv.org/abs/2411.09317">2411.09317v1</a>，2024-11-14</td>
+<td>未找到</td>
+<td>无新数据/权重</td>
+<td>未找到</td>
+</tr>
+<tr class="odd">
+<td>NEO</td>
+<td>arXiv；会议未找到</td>
+<td><a
+href="https://arxiv.org/abs/2411.01142">2411.01142v1</a>，2024-11-02</td>
+<td>未找到</td>
+<td>无新数据/权重</td>
+<td>未找到</td>
+</tr>
+<tr class="even">
+<td>LTR</td>
+<td><a
+href="https://papers.nips.cc/paper_files/paper/2024/hash/6c8985579293e0209bdaa4f21bb1d237-Abstract-Conference.html">NeurIPS
+2024 Main</a></td>
+<td><a href="https://arxiv.org/abs/2408.15792">2408.15792</a></td>
+<td><a href="https://github.com/hao-ai-lab/vllm-ltr">官方仓库</a></td>
+<td>排序模型训练数据随代码说明；无通用权重承诺</td>
+<td><a
+href="https://haoailab.com/blogs/vllm-ltr/">项目说明</a>；视频未找到</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="候选池排重与随机选择" class="card level2">
+<h2>1. 候选池、排重与随机选择</h2>
+<p>本日 <code>date +%u</code> 为
+<strong>5</strong>，按轮转进入“效率与系统”。先检查
+<code>ml-report-index.md</code>：近 14 天已覆盖 Ada-KV（KV
+预算分配）、Seesaw（动态重分片）、DFM（生成）、PointMapPolicy（具身）等；因此排除这些论文及其同题复写。候选均来自实际访问的
+<a href="https://proceedings.mlsys.org/paper_files/paper/2026">MLSys
+2026 正式论文列表</a>，列表当日显示 135 篇。以下 24 篇满足“最近 12
+个月、主会、效率/系统相关、未在近 14 天深读”的条件：</p>
+<ol type="1">
+<li>ProfInfer；2. SpecDiff-2；3. <strong>SuperInfer</strong>；4.
+HELIOS；5. FlashInfer-Bench；6. CRAFT；7. Stream2LLM；8. PRISM；9.
+Efficient Long-Context Training by Core Attention Disaggregation；10.
+Demystifying the Mixture of Experts Serving Tax；11. SkipKV；12.
+BatchLLM；13. Accelerating Large-Scale Reasoning Model Inference with
+Sparse Self-Speculative Decoding；14. FaaScale；15. OPKV；16.
+TeleRAG；17. MorphServe；18. MoEBlaze；19. FlexiCache；20. Optimizing
+Deployment Configurations for LLM Inference；21. SHIP；22.
+FlashAttention-4；23. ContextPilot；24. PLA-Serve。</li>
+</ol>
+<p>执行 <code>shuf -i 1-24 -n 1</code> 得到 <strong>3</strong>，对应
+SuperInfer。无需重抽：正式论文 19 页、完整实现、项目页、Table 1、主结果
+Figure 16、组件消融 Figure 17、三组超参曲线 Figure 18–21
+均可读，资料充足。随机规则只决定核心论文；相关工作按“问题来源 /
+技术来源链”选择，不参与抽签。</p>
+</section>
+<section id="motivation为什么有-900-gbs仍然服务不快" class="card level2">
+<h2>2. Motivation：为什么“有 900 GB/s”仍然服务不快</h2>
+<p>LLM
+在线推理的瓶颈不是单一算子，而是一个随请求生命期变化的资源耦合：每个请求的
+KV cache 随生成长度线性增长，HBM 容量固定；高到达率下，新请求卡在
+waiting queue，旧请求占着 HBM，又不能无限扩大 batch。TTFT
+关心“何时开始出第一个 token”，TBT 关心“相邻 token
+是否持续可见”，两者对暂停的敏感度并不对称。</p>
+<p>论文先用静态策略暴露矛盾（§3.1，Figure 1，正式 PDF
+pp.3–4）：Waiting-First 优先新请求，TTFT
+变好但生成中的请求长时间暂停，TBT 恶化；Swapped-First
+优先恢复已换出请求，TBT 得到保护，却退化为接近 FCFS，swap space
+也未被充分利用。也就是说，<strong>“换谁”本身就是 SLO
+决策</strong>，而不是 OOM 后的被动清理。</p>
+<p>第二个痛点是带宽。传统 PCIe Gen5 x16 单向带宽约 32–64 GB/s；论文
+Figure 2 显示，只有把模拟 swap bandwidth 推到 PCIe 上限以上，P99 TTFT 与
+P99 TBT 才继续明显下降（§3.2，PDF p.4）。低带宽造成两层 HOL
+blocking：D2H 太慢，waiting backlog 清不掉；H2D 太慢，rotary/swapped
+请求又在恢复队列排队。</p>
+<p>第三个痛点最反直觉：GH200 的 NVLink-C2C 理论双向总带宽达 900
+GB/s，但直接移植 vLLM 的小块拷贝只测到约 <strong>10
+GB/s</strong>，低于可实现带宽的 <strong>5%</strong>（Figure 4–5，PDF
+p.4）。论文进一步测得 Grace DRAM 是现实上限：并发 D2H/H2D 约
+<strong>200+200 GB/s</strong>，而非链接标称的 450+450 GB/s，因为单 NUMA
+节点 DRAM 带宽为 <strong>384 GB/s</strong>
+且总体呈半双工约束。因而问题不是“买了快链路就完成”，而是 PagedAttention
+的碎片化布局、过小 copy、串行方向和数据竞争共同把硬件能力锁住。</p>
+<p>量化证据由三条链闭合：硬件标称 900 GB/s → DRAM 实测约 384 GB/s 总预算
+→ 现有栈约 10 GB/s。SuperInfer 的目标不是宣称越过物理极限，而是把软件从
+10 GB/s 拉近 192+192 GB/s 的并发可实现上界，同时把这项吞吐能力交给 SLO
+调度器使用。</p>
+</section>
+<section id="论文故事线假设与权衡" class="card level2">
+<h2>3. 论文故事线、假设与权衡</h2>
+<p>故事线分两半。<strong>RotaSched</strong>
+解决“谁应该运行”，把请求状态从 waiting / running 扩展为 waiting /
+running / rotary；rotary 表示请求暂时停止、KV 已在 CPU
+DRAM、等待下一次轮转。<strong>DuplexKV</strong>
+解决“轮转能否足够快”，通过 eager block rotation、block-first
+layout、批量传输 kernel 和跨迭代流水线把换入换出藏在模型执行后面（Figure
+6、15，PDF pp.5、9）。</p>
+<p>这套设计建立在四个假设上：</p>
+<ol type="1">
+<li>GH200/同类 Superchip 具有远高于 PCIe 的 CPU–GPU
+互连和足够大的主存；论文在单个 GH200 上分配 <strong>400 GB</strong>
+Grace DRAM 给 KV，保留 <strong>80 GB</strong> 给 OS/runtime（§5.2，PDF
+p.9）。</li>
+<li>调度 + 传输能被模型执行覆盖。论文汇总主实验的平均时延为调度
+<strong>7.63 ms</strong>、KV 传输 <strong>15.8 ms</strong>、模型执行
+<strong>69.82 ms</strong>；仅 <strong>0.021%</strong> engine iteration
+出现未完全覆盖导致的 stall（§5.3.4，PDF pp.11–12）。</li>
+<li>服务目标可用固定 TTFT/TBT SLO 表达。主实验设 TTFT <strong>5
+s</strong>、TBT <strong>100
+ms</strong>，而不是按用户、请求类型或价格等级动态变化（§5.2，PDF
+p.9）。</li>
+<li>KV 迁移是无损的：不裁剪
+token、不压缩精度，因此模型输出质量保持不变；代价是仍要支付全量字节移动和
+GH200 特定工程复杂度。</li>
+</ol>
+<p>核心权衡很清楚：主动抢占可清 waiting
+backlog，却可能伤害正在生成请求的 TBT；更大的 transfer budget
+能压低两类尾延迟，却要求更强传输引擎；更积极保护 rotary
+请求会牺牲新请求。论文没有消除 Pareto
+前沿，而是用可解释参数把位置暴露出来。</p>
+</section>
+<section id="方程级形式化与伪代码" class="card level2">
+<h2>4. 方程级形式化与伪代码</h2>
+<section id="virtual-lag-time" class="subsection level3">
+<h3>4.1 Virtual Lag Time</h3>
+<p>RotaSched 用 Virtual Lag
+Time（VLT）把三种状态放到同一优先级轴上。根据 §4.2.2、Equation（PDF
+p.6）：</p>
+[ _i =
+<math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">{</mo><mtable><mtr><mtd columnalign="left" style="text-align: left"><mi>α</mi><mspace width="0.167em"></mspace><mrow><mi mathvariant="normal">R</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">L</mi><mi mathvariant="normal">U</mi></mrow><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>t</mi><mrow><mi>n</mi><mi>o</mi><mi>w</mi></mrow></msub><mo>−</mo><msub><mi>t</mi><mrow><mi>l</mi><mi>a</mi><mi>s</mi><mi>t</mi></mrow></msub><mo>−</mo><msub><mi>β</mi><mi>B</mi></msub><msub><mi>S</mi><mi>B</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>,</mo></mtd><mtd columnalign="left" style="text-align: left"><mi>i</mi><mo>∈</mo><mi>r</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>r</mi><mi>y</mi></mtd></mtr><mtr><mtd columnalign="left" style="text-align: left"><mrow><mi mathvariant="normal">R</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">L</mi><mi mathvariant="normal">U</mi></mrow><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>t</mi><mrow><mi>n</mi><mi>o</mi><mi>w</mi></mrow></msub><mo>−</mo><msub><mi>t</mi><mrow><mi>a</mi><mi>r</mi><mi>r</mi></mrow></msub><mo>−</mo><msub><mi>β</mi><mi>F</mi></msub><msub><mi>S</mi><mi>F</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>,</mo></mtd><mtd columnalign="left" style="text-align: left"><mi>i</mi><mo>∈</mo><mi>w</mi><mi>a</mi><mi>i</mi><mi>t</mi><mi>i</mi><mi>n</mi><mi>g</mi></mtd></mtr><mtr><mtd columnalign="left" style="text-align: left"><mo>−</mo><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>t</mi><mrow><mi>n</mi><mi>o</mi><mi>w</mi></mrow></msub><mo>−</mo><msub><mi>t</mi><mrow><mi>r</mi><mi>u</mi><mi>n</mi></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>,</mo></mtd><mtd columnalign="left" style="text-align: left"><mi>i</mi><mo>∈</mo><mi>r</mi><mi>u</mi><mi>n</mi><mi>n</mi><mi>i</mi><mi>n</mi><mi>g</mi></mtd></mtr></mtable></mrow><annotation encoding="application/x-tex">\begin{cases}
+\alpha\,\mathrm{ReLU}(t_{now}-t_{last}-\beta_B S_B), &amp; i\in rotary\\
+\mathrm{ReLU}(t_{now}-t_{arr}-\beta_F S_F), &amp; i\in waiting\\
+-(t_{now}-t_{run}), &amp; i\in running
+\end{cases}</annotation></semantics></math>
+<p>]</p>
+<p>论文把 (S_B) 定义为 TBT SLO、(S_F) 定义为 TTFT SLO；(t_{last}) 是最近
+token 时间，(t_{arr}) 是到达时间，(t_{run}) 是本次进入 running
+的时间。正 VLT 表示“已经落后”，负 VLT 表示“已得到较多执行”；() 控制 TBT
+相对 TTFT 的敏感度，(_B,_F) 是容忍区间。</p>
+</section>
+<section id="largest-vlt-first" class="subsection level3">
+<h3>4.2 Largest-VLT-First</h3>
+<pre class="text"><code>每个 engine iteration：
+  若 HBM 足以容纳所有请求：回退 FCFS
+  否则：
+    1. 为 waiting / rotary / running 请求计算 VLT
+    2. 按 VLT 降序排序为 L
+    3. 从 L 头部选择 waiting/rotary，请求块数不超过 B_HBM + B_xfer
+    4. 若空间不足，从 L 尾部抢占 VLT 最小的 running 请求
+    5. DuplexKV 并发执行换入与 eager 换出；下一迭代使用准备好的 batch</code></pre>
+<p>该流程来自 §4.2.3 与 Figure 10（PDF p.6）。(B_{xfer})
+不是抽象超参：它是每轮允许轮转的 KV block
+数，直接把可用带宽转换为“每轮可偿还多少 SLO
+欠账”。这也是论文最可迁移的设计观：<strong>系统容量应进入调度约束，而不是藏在事后
+backpressure 中。</strong></p>
+</section>
+<section id="duplexkv-的数据竞争规避" class="subsection level3">
+<h3>4.3 DuplexKV 的数据竞争规避</h3>
+<p>如果同一请求正在 H2D 恢复，同时 D2H 又写回更新过的
+KV，朴素全双工会发生覆盖竞态。DuplexKV 不等到抢占才整体换出，而是在
+block 写满后立即把 immutable block eager-copy 到 DRAM 并标为
+synced；抢占时 synced HBM block 可直接丢弃，只有未同步尾块需要处理。配合
+block-first layout，把跨层、跨头散落的小 segment 合并为约 <strong>4
+MB</strong> 传输单元，再把同方向 copy 合并进大 kernel（§4.3、Figure
+11–14，PDF pp.7–8）。</p>
+</section>
+</section>
+<section id="关键机制与工程细节" class="card level2">
+<h2>5. 关键机制与工程细节</h2>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">机制</th>
+<th scope="col">解决的问题</th>
+<th scope="col">关键实现</th>
+<th scope="col">明确代价 / 边界</th>
+<th scope="col">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>rotary 状态</td>
+<td>被动抢占只在 OOM 时发生</td>
+<td>KV 驻留 Grace DRAM，请求暂停但保留进度</td>
+<td>需要大主存与高带宽 C2C</td>
+<td>§4.2.1，pp.5–6</td>
+</tr>
+<tr class="even">
+<td>VLT + LVF</td>
+<td>TTFT/TBT 无统一紧迫度</td>
+<td>三状态分段函数，按 VLT 降序；尾部 running 被抢占</td>
+<td>依赖固定 SLO 与手工 (,)</td>
+<td>§4.2.2–4.2.3，p.6</td>
+</tr>
+<tr class="odd">
+<td>eager block rotation</td>
+<td>H2D/D2H 并发数据竞争</td>
+<td>写满 block 后后台同步，抢占只处理未同步尾部</td>
+<td>增加持续后台流量与状态管理</td>
+<td>§4.3.2，pp.7–8</td>
+</tr>
+<tr class="even">
+<td>block-first layout</td>
+<td>Paged KV 产生大量 64 KB segment</td>
+<td>合并为约 4 MB segment</td>
+<td>布局转换增加实现侵入性</td>
+<td>§4.3.1，Figure 13</td>
+</tr>
+<tr class="odd">
+<td>merged transfer kernels</td>
+<td>每 segment launch 开销高</td>
+<td>每方向批量 kernel</td>
+<td>仅合并仍受方向串行约束</td>
+<td>Table 1，p.11</td>
+</tr>
+<tr class="even">
+<td>cross-iteration pipeline</td>
+<td>传输/调度阻塞 GPU</td>
+<td>iteration t 执行 t−1 batch，同时准备 t+1</td>
+<td>假设 compute 足以覆盖 7.63/15.8 ms</td>
+<td>Figure 15，§5.3.4</td>
+</tr>
+<tr class="odd">
+<td>vLLM fork + AE harness</td>
+<td>可复现实验</td>
+<td>vLLM 0.6.6.post1；Python/C++；CLI 暴露 swap budget</td>
+<td>官方 README 仅验证单 GH200，其他卡未测</td>
+<td>代码 README；§5.1</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="数据集模型指标与实验设计" class="card level2">
+<h2>6. 数据集、模型、指标与实验设计</h2>
+<p>实验在 NVIDIA GH200 NVL2 上完成；每个 Superchip 有 <strong>144 GB HBM
++ 480 GB DRAM</strong>，用 <code>numactl</code> 固定同 NUMA
+内存（§5.1，PDF p.8）。模型覆盖 Dense 与
+MoE：LLaMA-3-8B、Qwen2.5-32B、Mixtral-8x7B。请求来自 ShareGPT 与
+LMSYS-Chat-1M，到达间隔按 Poisson
+分布采样；这能模拟随机到达，但不等于真实生产的
+burst、时段相关性或多租户优先级。</p>
+<p>主要指标为 SLO attainment rate：满足 TTFT 或 TBT
+阈值的请求占比。它优于只报均值，因为系统目标是尾部体验；但单独用“达标率”会把
+5.01 s 与 50 s
+都计为失败，也会隐藏阈值内部的分布。因此论文同时在敏感性图中给 P99
+TTFT/P99 TBT，并另报 throughput。</p>
+<p>基线共六类：vLLM 0.6.6.post1（V1 engine）、TensorRT-LLM
+1.1.0、LightLLM Past-Future scheduler、LTR、NEO、SuperInfer。全部启用
+PagedAttention 与 chunked prefill。Pie、HeteGen、Select-N
+因当时无公开代码被排除，FlexGen 因缺少 PagedAttention/chunked prefill
+被排除，InfiniGen 等有损近似方案也未纳入（§5.2，PDF
+p.9）。这种选择保持实现可跑，却使“最相关的 GH200 competitor Pie”没有
+head-to-head。</p>
+</section>
+<section id="主结果矩阵能精确读出的数字与不能精确读出的数字"
+class="card level2">
+<h2>7. 主结果矩阵：能精确读出的数字与不能精确读出的数字</h2>
+<section id="六工作负载-六方法" class="subsection level3">
+<h3>7.1 六工作负载 × 六方法</h3>
+<p>Figure 16（PDF p.10）确实覆盖 <strong>3 模型 × 2 数据集 × 6
+方法</strong>，横轴为多档 RPS，上下两行分别是 TTFT/TBT
+attainment。论文只提供曲线，没有逐点表格或附录
+CSV；因此不能诚实重建“五基准×六方法”的精确数值矩阵，也不能从小图像素制造两位小数。本报告保留矩阵结构并标注可推出的结论：</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">工作负载</th>
+<th scope="col">方法列</th>
+<th scope="col">TTFT 结论</th>
+<th scope="col">TBT 结论</th>
+<th scope="col">精确数值状态</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>ShareGPT × Qwen2.5-32B</td>
+<td>vLLM / TensorRT-LLM / LTR / LightLLM / NEO / SuperInfer</td>
+<td>高负载下 SuperInfer 曲线最高；最大提升计入全文“至多 +74.7 pp”</td>
+<td>SuperInfer 与较强基线相当，明显高于只顾 TTFT 的 LTR</td>
+<td>Figure 16 未给逐点表，<strong>不可精确抄录</strong></td>
+</tr>
+<tr class="even">
+<td>LMSYS × Qwen2.5-32B</td>
+<td>同上</td>
+<td>SuperInfer 在高 RPS 保持近高位</td>
+<td>TBT 与 vLLM/LightLLM 接近</td>
+<td>同上</td>
+</tr>
+<tr class="odd">
+<td>ShareGPT × LLaMA-3-8B</td>
+<td>同上</td>
+<td>随 RPS 增长下降较慢</td>
+<td>保持可比或更高</td>
+<td>同上</td>
+</tr>
+<tr class="even">
+<td>LMSYS × LLaMA-3-8B</td>
+<td>同上</td>
+<td>高 RPS 优势明显</td>
+<td>与 vLLM/LightLLM 可比</td>
+<td>同上</td>
+</tr>
+<tr class="odd">
+<td>ShareGPT × Mixtral-8x7B</td>
+<td>NEO 不支持；其余五法</td>
+<td>高负载优势明显</td>
+<td>维持可比</td>
+<td>同上</td>
+</tr>
+<tr class="even">
+<td>LMSYS × Mixtral-8x7B</td>
+<td>NEO 不支持；其余五法</td>
+<td>高负载优势明显</td>
+<td>维持可比</td>
+<td>同上</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>唯一由摘要与正文明确给出的主结果幅度是：<strong>TTFT SLO attainment
+rate 最高提高 74.7 个百分点</strong>（不是相对 74.7%）；throughput
+在高请求率下最高提高
+<strong>29.2%</strong>，整体“可比或略高”（Abstract、§5.3.6，PDF
+pp.1、12）。作者没有给均值、标准差、置信区间或每个 workload
+的精确峰值所在 RPS，因此不能判断 74.7 pp
+是稳定收益还是某个压力拐点上的单点最大值。</p>
+</section>
+<section id="可审计的-duplexkv-主表" class="subsection level3">
+<h3>7.2 可审计的 DuplexKV 主表</h3>
+<p>Table 1（PDF p.11）双向传输 Qwen2.5-32B 的 <strong>16 GB
+KV</strong>（每方向 8 GB / 32768 tokens），给出了精确数字：</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<colgroup>
+<col style="width: 11%" />
+<col style="width: 15%" />
+<col style="width: 15%" />
+<col style="width: 11%" />
+<col style="width: 15%" />
+<col style="width: 15%" />
+<col style="width: 15%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">传输引擎</th>
+<th scope="col" style="text-align: right;">D2H GB/s</th>
+<th scope="col" style="text-align: right;">H2D GB/s</th>
+<th scope="col">模式</th>
+<th scope="col" style="text-align: right;">E2E ms ↓</th>
+<th scope="col" style="text-align: right;">相对 Naive 加速</th>
+<th scope="col" style="text-align: right;">距 Ideal</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Naive（64 KB segment）</td>
+<td style="text-align: right;">10.75</td>
+<td style="text-align: right;">9.86</td>
+<td>单向串行</td>
+<td style="text-align: right;">1556.15</td>
+<td style="text-align: right;">1.00×</td>
+<td style="text-align: right;">37.35× 慢</td>
+</tr>
+<tr class="even">
+<td>MS（4 MB merged segment）</td>
+<td style="text-align: right;">80.05</td>
+<td style="text-align: right;">133.51</td>
+<td>单向串行</td>
+<td style="text-align: right;">159.87</td>
+<td style="text-align: right;">9.73×</td>
+<td style="text-align: right;">3.84× 慢</td>
+</tr>
+<tr class="odd">
+<td>MS + MK（合并 kernel）</td>
+<td style="text-align: right;">238.95</td>
+<td style="text-align: right;">269.69</td>
+<td>单向串行</td>
+<td style="text-align: right;">63.14</td>
+<td style="text-align: right;">24.65×</td>
+<td style="text-align: right;">1.52× 慢</td>
+</tr>
+<tr class="even">
+<td><strong>DuplexKV</strong></td>
+<td style="text-align: right;"><strong>180.99</strong></td>
+<td style="text-align: right;"><strong>179.37</strong></td>
+<td><strong>双向并发</strong></td>
+<td style="text-align: right;"><strong>46.80</strong></td>
+<td style="text-align: right;"><strong>33.25×</strong></td>
+<td style="text-align: right;"><strong>1.12× 慢</strong></td>
+</tr>
+<tr class="odd">
+<td>Ideal（DRAM 半双工 384 GB/s）</td>
+<td style="text-align: right;">192.00</td>
+<td style="text-align: right;">192.00</td>
+<td>双向并发</td>
+<td style="text-align: right;">41.66</td>
+<td style="text-align: right;">37.35×</td>
+<td style="text-align: right;">1.00×</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>计算说明：相对 Naive 加速 = 1556.15 / E2E；距 Ideal = E2E /
+41.66。由此 DuplexKV 的 E2E 较 Naive 减少
+<strong>96.99%</strong>，且每方向带宽达到理想 192 GB/s 的 <strong>94.27%
+/ 93.42%</strong>。这比“900 GB/s
+链路”更重要：论文没有假装达到标称值，而是明确以 Grace DRAM 的 192+192
+GB/s 并发上限作为工程基准。</p>
+</section>
+</section>
+<section id="逐层消融超参敏感性与相变" class="card level2">
+<h2>8. 逐层消融、超参敏感性与相变</h2>
+<section id="组件消融" class="subsection level3">
+<h3>8.1 组件消融</h3>
+<p>Figure 17（PDF p.10）比较 vLLM、仅 RotaSched + 低传输预算
+L（(B_{xfer}=300)）、仅 RotaSched + 强行高预算
+H（(B_{xfer}=2400)）、完整 SuperInfer。能稳健推出三点：</p>
+<ol type="1">
+<li>RotaSched(L) 已提高 TTFT attainment，说明调度本身有效；</li>
+<li>在低效 transfer engine 上强行把预算提到 2400，会因传输不能被 compute
+覆盖而显著伤害 TBT；</li>
+<li>完整 SuperInfer 才能同时用大预算和保持 TBT，证明 RotaSched 与
+DuplexKV 是乘法关系，不是两个独立小优化。</li>
+</ol>
+<p>Figure 17 仍未印出精确表格，故不填造数值。Table 1 则把 DuplexKV
+内部按 Naive → MS → MS+MK → full duplex 分层，表明最大跃迁来自大 segment
+与 merged kernel，eager full-duplex 再把 63.14 ms 降到 46.80 ms（绝对
+<strong>16.34 ms</strong>，相对
+<strong>25.88%</strong>）。这提醒读者：论文的“核心新颖性”与“最大性能来源”并不完全同一件事。</p>
+</section>
+<section id="ttfttbt-的明确-pareto" class="subsection level3">
+<h3>8.2 ()：TTFT/TBT 的明确 Pareto</h3>
+<p>Figure 18（PDF p.10）固定 (_B=_F=0)，扫 ({1,2,3,4,5,10,50,100})。()
+越大，rotary 请求越快获得优先级，TBT attainment 上升，但 waiting
+请求被延后，TTFT attainment 下降。作者建议 TTFT 敏感场景用 ()，称 ()
+为平衡点；再增大只有递减的 TBT 收益，却显著损伤 TTFT。主实验因此选
+3。</p>
+</section>
+<section id="f_b阈值相变" class="subsection level3">
+<h3>8.3 (_F)、(_B)：阈值相变</h3>
+<p>Figure 19 固定 (,_B=0)，当 (_F) 时 P99 TTFT 急剧上升而 TBT
+改善很小：waiting 请求的 VLT
+被容忍窗口压住，直到过晚才获得优先级。Figure 20 固定 (,_F=0)，更大的
+(_B) 会延后 rotary 请求恢复、恶化 P99 TBT；作者建议 (_B&lt;0) 获得更好的
+TBT tail，代价是 TTFT tail 上升（§5.3.2，PDF
+pp.10–11）。这不是平滑调参，而是存在清晰的 SLO 相变区。</p>
+</section>
+<section id="b_xfer硬件能力被显式写入调度" class="subsection level3">
+<h3>8.4 (B_{xfer})：硬件能力被显式写入调度</h3>
+<p>Figure 21 扫 (B_{xfer}{300,600,1200,2400,4800})，更大预算显著降低 P99
+TTFT 与 TBT（§5.3.4，PDF p.11）；但曲线未给点值。预算越大，单轮可清理
+backlog 越多，也越依赖 DuplexKV。与 Figure 17
+合看，结论不是“预算越大越好”，而是“只有传输引擎能覆盖预算时，预算增大才有正收益”。</p>
+</section>
+</section>
+<section id="统计显著性与可复现性" class="card level2">
+<h2>9. 统计显著性与可复现性</h2>
+<p>论文<strong>未报告</strong>多随机种子、重复次数、误差条、置信区间或假设检验；Figure
+16–23 均为单条系统曲线。因此可以说在给定 GH200、Poisson 到达、固定
+SLO、固定软件版本下观测到大幅差异，不能推出跨机器、跨时段稳定的总体效应。系统实验的主要随机性来自请求采样、Poisson
+到达和运行时噪声，恰好需要重复试验；“最大 +74.7 pp”尤其应配 bootstrap
+请求级置信区间。</p>
+<p>可复现性比许多系统论文更好：官方仓库保留 vLLM fork、C++ swap
+thread、LVF scheduler、AsyncEngine 服务器、load generator 与
+<code>AE_AIO_0309_v1.py</code>，并列出 CUDA 12.4 与单 GH200 配置。仓库
+README 同时明确“其他 Ampere/Hopper
+卡应可工作但未测试”，这不是跨硬件保证。当前仓库 3930 commits
+的大部分来自 vLLM 历史；复现时应锁定分支/commit，而不能把 commit
+总数误当项目成熟度。</p>
+</section>
+<section id="技术来源链解决什么遗留缺口superinfer-如何回应"
+class="card level2">
+<h2>10. 技术来源链：解决什么—遗留缺口—SuperInfer 如何回应</h2>
+<section id="pagedattention-vllm从碎片浪费到块式-kv" class="subsection level3">
+<h3>10.1 PagedAttention / vLLM：从碎片浪费到块式 KV</h3>
+<p>PagedAttention 把 OS 虚拟内存思想带入 KV
+管理，使内存浪费接近零并支持跨请求共享；SOSP 2023
+报告在同等延迟下吞吐提高
+<strong>2–4×</strong>。遗留缺口是块式布局优化了容量，却把每个请求的 KV
+散成大量小 segment；这恰好让 CPU–GPU 批量传输效率很差。SuperInfer 不否定
+paging，而是在 block table 之上加 block-first 传输布局和 merged
+kernel。设计传递关系是：<strong>逻辑分页保留，物理搬运重排</strong>。</p>
+</section>
+<section id="sarathi-serve从-prefill-抢占-decode-到-stall-free-batching"
+class="subsection level3">
+<h3>10.2 Sarathi-Serve：从 prefill 抢占 decode 到 stall-free
+batching</h3>
+<p>Sarathi-Serve 用 chunked prefill 与 stall-free schedule 消除长
+prefill 对 decode 的干扰；OSDI 2024 报告 Mistral-7B 单 A100 capacity
+<strong>2.6×</strong>、Yi-34B 双 A100 <strong>3.7×</strong>、Falcon-180B
+pipeline parallel <strong>5.6×</strong>。遗留缺口是它假设请求 KV
+都能留在 GPU：当 HBM 被长请求占满，chunked prefill
+仍没有位置接纳新请求。SuperInfer 保留 chunked prefill，并用主动轮转腾出
+HBM。设计传递关系是：<strong>先让 iteration 可组合，再让 residency
+可轮转</strong>。</p>
+</section>
+<section id="ltr从-fcfs-到预测式-sjf" class="subsection level3">
+<h3>10.3 LTR：从 FCFS 到预测式 SJF</h3>
+<p>LTR 发现精确预测输出长度很难，但相对排序可学；NeurIPS 2024 报告
+chatbot latency 最多降低 <strong>2.8×</strong>、synthetic data
+throughput 提高 <strong>6.5×</strong>。遗留缺口有两层：需要离线训练
+ranker，且无论队列顺序多聪明，HBM 容量耗尽时仍无法运行。SuperInfer
+用在线可观测的“已等待多久 / 最近 token 多久”替代长度预测，并允许把
+running 请求真正换出。设计传递关系是：<strong>从预测工作量转向直接度量
+SLO 欠账</strong>。</p>
+</section>
+<section id="neo从纯搬运到-cpugpu-协同计算" class="subsection level3">
+<h3>10.4 NEO：从纯搬运到 CPU–GPU 协同计算</h3>
+<p>NEO 将一部分 attention 计算和 KV 一起卸载到 CPU，用非对称流水和
+load-aware scheduling 增大 batch；论文摘要报告 T4/A10G/H100
+吞吐最高分别提高 <strong>7.5× / 26% / 14%</strong>，更强 CPU 上 A10G
+最高 <strong>79.3%</strong>。遗留缺口是 CPU
+进入计算关键路径，硬件不平衡与模型支持更复杂；SuperInfer 的 NEO
+基线也不支持 Mixtral-8x7B。SuperInfer 选择“CPU 只做大容量 KV
+tier”，保持计算在 Hopper
+上。设计传递关系是：<strong>保留异构流水，但缩小 CPU
+职责以降低模型耦合</strong>。</p>
+</section>
+<section id="piesuperchip-上性能透明的内存池" class="subsection level3">
+<h3>10.5 Pie：Superchip 上性能透明的内存池</h3>
+<p>Pie 最接近 SuperInfer：在 GH200 上利用可预测访问与并发
+swapping，摘要报告较 vLLM 吞吐最高 <strong>1.9×</strong>、延迟
+<strong>2×</strong>、同性能 GPU 内存减少 <strong>1.67×</strong>，较
+FlexGen 吞吐 <strong>9.4×</strong>。遗留缺口是 Pie 以 capacity /
+performance transparency 为主，没有把 TTFT 与 TBT
+紧迫度写进调度，也没有针对高负载的主动轮转。SuperInfer 把 Pie 的“CPU
+memory pool”提升为 SLO 可控 execution tier。关键缺憾是论文没有与 Pie
+做实测 head-to-head，理由是当时无公开代码（§5.2）。</p>
+<pre class="text"><code>                         ┌─ Sarathi-Serve：chunked prefill / stall-free batch
+PagedAttention：块式 KV ─┤
+                         └─ LTR / LightLLM：队列排序与未来内存预测
+                                  │
+NEO：CPU 参与 attention ───────────┼──&gt; SuperInfer：VLT/LVF 主动轮转
+                                  │             + DuplexKV 全双工迁移
+Pie：GH200 CPU memory pool ────────┘
+                                  │
+                                  └─ 新转折：硬件可实现带宽成为调度预算 B_xfer</code></pre>
+<p>演进动力不是单线“更快 kernel”，而是三次边界迁移：先从算子走向 KV
+内存管理，再从平均吞吐走向 TTFT/TBT SLO，最后从 PCIe 离散设备走向
+CPU–GPU 一体化内存层级。SuperInfer
+的转折在于把互连能力变成可调度资源，而不是后端实现细节。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">主要目标</th>
+<th scope="col">请求 residency</th>
+<th scope="col">调度信号</th>
+<th scope="col">数据是否有损</th>
+<th scope="col">硬件前提</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>vLLM</td>
+<td>KV 利用率 / 吞吐</td>
+<td>GPU HBM</td>
+<td>FCFS / continuous batching</td>
+<td>无损</td>
+<td>通用 GPU</td>
+</tr>
+<tr class="even">
+<td>Sarathi-Serve</td>
+<td>prefill/decode 干扰</td>
+<td>GPU HBM</td>
+<td>iteration 组合</td>
+<td>无损</td>
+<td>通用 GPU</td>
+</tr>
+<tr class="odd">
+<td>LTR</td>
+<td>HOL 排序</td>
+<td>GPU HBM</td>
+<td>预测输出长度排名</td>
+<td>无损</td>
+<td>需 ranker</td>
+</tr>
+<tr class="even">
+<td>NEO</td>
+<td>扩 batch / 异构利用</td>
+<td>GPU + CPU</td>
+<td>load-aware</td>
+<td>无损</td>
+<td>CPU 参与 attention</td>
+</tr>
+<tr class="odd">
+<td>Pie</td>
+<td>性能透明扩容</td>
+<td>HBM + DRAM</td>
+<td>adaptive expansion</td>
+<td>无损</td>
+<td>GH200 类 Superchip</td>
+</tr>
+<tr class="even">
+<td><strong>SuperInfer</strong></td>
+<td>TTFT/TBT 达标率</td>
+<td>running / rotary / waiting</td>
+<td>VLT + LVF</td>
+<td>无损</td>
+<td>高带宽 C2C + 大 DRAM</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</section>
+<section id="真正贡献可复用设计与迁移潜力" class="card level2">
+<h2>11. 真正贡献、可复用设计与迁移潜力</h2>
+<p>真正贡献有三层。第一，<strong>调度抽象</strong>：rotary state 与 VLT
+把运行进度、首次响应和连续响应统一成“欠账”；这个抽象可迁移到 SSD KV
+tier、远端 KV pool、prefill/decode
+分离集群。第二，<strong>布局—协议共设计</strong>：eager 同步把 mutable
+尾块和 immutable 完整块分开，从协议层消除 full-duplex
+race；这个思路适用于 activation offload、checkpoint streaming、embedding
+cache。第三，<strong>物理上界意识</strong>：论文用 192+192 GB/s DRAM
+上限而非 900 GB/s 宣传值做理想基线，是值得复用的系统评测规范。</p>
+<p>迁移不是零成本。AMD MI300A 也是紧耦合
+CPU–GPU，但缓存一致性、NUMA、copy engine 与内存带宽结构不同，需重测
+segment size 和并发方向；PCIe GPU 无法直接复用大 (B_{xfer})，只能借用
+VLT 调度而非 DuplexKV 吞吐；disaggregated serving 可把 rotary
+变成跨节点状态，但网络 RTT 和可靠性会进入 VLT。若结合有损 KV
+压缩，调度目标还要增加质量损失预算，不能只看时间。</p>
+</section>
+<section id="论文自述边界与独立批判" class="card level2">
+<h2>12. 论文自述边界与独立批判</h2>
+<section id="论文自述-可直接定位的边界" class="subsection level3">
+<h3>12.1 论文自述 / 可直接定位的边界</h3>
+<ol type="1">
+<li><strong>参数不能由 workload 自动预测。</strong> §5.3.2（PDF
+p.11）明确说只给定性行为，(,_B,_F) 应按应用定制，论文不尝试根据在线
+query distribution 建立关联或预测。</li>
+<li><strong>低负载时收益消失。</strong> Introduction（PDF
+p.2）说明内存充足时 SuperInfer 与 baseline 匹配；其价值来自高压下的
+SLO-aware memory management，不是普遍降低每 token kernel latency。</li>
+<li><strong>代码验证范围是单 GH200。</strong> 官方 README 写明 AE
+配置为单 GH200（144 GB HBM、480 GB DRAM），其他 Ampere/Hopper
+“应可工作但未测试”；论文虽给 TP=2，但仍是同类 GH200/NVLink 环境。</li>
+</ol>
+</section>
+<section id="独立批判每点均为因为-x所以-y" class="subsection level3">
+<h3>12.2 独立批判（每点均为“因为 X，所以 Y”）</h3>
+<ol type="1">
+<li><strong>[外部有效性]</strong> 因为全部主实验只在 GH200 NVL2、固定
+400 GB offload pool 上完成，所以不能把 74.7 pp 推广到 PCIe、MI300A、CXL
+memory 或云上异构实例；这些平台的 (B_{xfer}) 可行域不同。</li>
+<li><strong>[基线公平性]</strong> 因为最相关的 Pie
+被以“无公开代码”排除，而 SuperInfer正是在 GH200 CPU-memory pooling
+上扩展 SLO
+调度，所以现有证据只能证明优于已实现基线集合，不能证明优于当时最接近的
+Superchip 方案。</li>
+<li><strong>[统计可靠性]</strong> 因为 Figure 16–23
+没有重复次数、误差条、置信区间或显著性检验，所以最大 +74.7 pp
+可能放大压力拐点与运行噪声；至少应对请求级达标率做 bootstrap，并对多次
+trace replay 报区间。</li>
+<li><strong>[阈值依赖]</strong> 因为主实验固定 TTFT=5 s、TBT=100 ms，而
+(,_B=0,_F=0.5)
+的优劣直接由阈值决定，所以“平衡”不是系统固有性质；若交互式语音要求
+TBT&lt;50 ms，排序与相变位置可能重排。</li>
+<li><strong>[工作负载真实性]</strong> 因为 ShareGPT/LMSYS 请求被 Poisson
+到达驱动，而真实服务有
+burst、昼夜、优先级、相似前缀与重试相关性，所以不能推出对 production
+burst 的恢复时间；应增加 self-exciting arrival 与 trace-driven
+replay。</li>
+<li><strong>[贡献归因]</strong> 因为 Table 1 中仅把 64 KB segment 合到 4
+MB 已将 E2E 从 1556.15 ms 降到 159.87 ms（9.73×），而 full DuplexKV 从
+63.14 ms 再降到 46.80
+ms（1.35×），所以性能最大来源是布局与批量化，不应把全部收益叙述为全双工或调度创新。</li>
+<li><strong>[成本与能效]</strong> 因为论文只报 SLO、吞吐和时延，没有
+GH200 成本、CPU/DRAM 功耗、每百万 token 能耗或与双 H100 的
+TCO，所以不能判断“大 DRAM Superchip + 400 GB KV pool”是否比更多普通 GPU
+更经济。</li>
+<li><strong>[多租户公平]</strong> 因为 LVF 总是优先最大欠账，且论文未报
+per-tenant slowdown、starvation 或 Jain
+fairness，所以高优先级/长生成/频繁恢复的组合可能产生策略性占用；需要把租户权重与最大连续轮转次数显式纳入。</li>
+</ol>
+</section>
+</section>
+<section id="开放挑战可操作的-head-to-head-实验空白" class="card level2">
+<h2>13. 开放挑战：可操作的 head-to-head 实验空白</h2>
+<section id="理论" class="subsection level3">
+<h3>理论</h3>
+<ul>
+<li><strong>VLT vs. deadline/queueing optimum：</strong> 在相同到达
+trace、相同 HBM/DRAM 与传输预算下，对比
+LVF、EDF、Whittle-index、SRPT-with-estimation；报告两类 SLO
+violation、worst-case starvation 与 competitive
+ratio。空白在于现有论文只给经验曲线，没有说明分段 VLT
+何时近似最优。</li>
+<li><strong>固定参数 vs. 在线控制：</strong> 用同一 workload 在
+stationary Poisson、Markov burst、自激 Hawkes 三种到达下，对比固定
+(,)、bandit controller、MPC；预注册目标为 TTFT/TBT violation
+加权和与参数切换开销。</li>
+<li><strong>无损 offload vs. 有损 compression：</strong> 在相同 HBM+DRAM
+byte budget 下比较 SuperInfer、KV quantization/eviction、二者组合；除
+SLO 外加入
+perplexity、任务准确率与输出完全一致率，构建质量—容量—尾延迟三目标前沿。</li>
+</ul>
+</section>
+<section id="工程应用" class="subsection level3">
+<h3>工程应用</h3>
+<ul>
+<li><strong>SuperInfer vs. Pie：</strong> 在同一 GH200、同一 vLLM
+commit、同一 400 GB host pool 上跑 ShareGPT/LMSYS trace；必须报 TTFT/TBT
+CDF、吞吐、C2C/DRAM 带宽、CPU 利用、功耗与 30
+次重复。这是最关键缺失对比。</li>
+<li><strong>GH200 vs. MI300A vs. PCIe H200：</strong>
+固定模型与请求轨迹，分别调优 segment size /
+(B_{xfer})，比较收益相对各平台物理上界的比例，而非绝对 GB/s。</li>
+<li><strong>单租户 vs. 8 租户：</strong> 给每租户不同 TTFT/TBT SLO
+和权重，对比 LVF 与 weighted-LVF；报告 per-tenant attainment、P99
+slowdown 与 starvation count，验证轮转是否可用于生产 QoS。</li>
+</ul>
+</section>
+<section id="新兴方向" class="subsection level3">
+<h3>新兴方向</h3>
+<ul>
+<li><strong>reasoning model 长 CoT：</strong> 在 DeepSeek/Qwen reasoning
+workload 上比较 SuperInfer、SkipKV、两者组合；固定答案准确率与最大输出
+token，检验“搬全量 KV”与“抑制冗余生成”是互补还是互相干扰。</li>
+<li><strong>prefill/decode disaggregation：</strong> 把 rotary tier 放在
+decode pool、远端 KV server 或 CXL memory，比较本地
+GH200；报告网络拥塞下恢复 latency 与 failure recovery，检验 VLT
+能否跨节点使用。</li>
+<li><strong>代理与多轮共享上下文：</strong> 与 ContextPilot/prefix
+caching head-to-head，固定相同上下文复用率；比较“避免重新
+prefill”与“主动轮转”在长会话中的边际收益及缓存污染。</li>
+</ul>
+</section>
+</section>
+<section id="近期工作雷达" class="card level2">
+<h2>14. 近期工作雷达</h2>
+<p>以下均来自实际访问的 MLSys 2026
+正式页，作为后续跟踪而非本报告的深读对象：</p>
+<ol type="1">
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/ae8b0b5838ba510daff1198474e7b984-Abstract-Conference.html">FlashAttention-4</a>：针对
+Blackwell 的非对称硬件扩展重做 pipeline，在 B200 上相对 cuDNN 9.13 最高
+<strong>1.3×</strong>、达 <strong>1613 TFLOPs/s / 71%
+utilization</strong>；它优化单算子，与 SuperInfer 的 residency/SLO
+层互补。</li>
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/b0131b6ee02a00b03fc3320176fec8f5-Abstract-Conference.html">ContextPilot</a>：用
+context index、对齐和去重让长上下文 prefill 最多加速
+<strong>3×</strong>且保持推理质量；值得与 rotary/offload 组合评测。</li>
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/8144a9d62e506af0fcdeac0e456b2710-Abstract-Conference.html">MorphServe</a>：运行时交换量化层并动态改
+KV 容量，平均 SLO violation 降 <strong>92.45%</strong>、P95 TTFT 改善
+<strong>2.2–3.9×</strong>；但引入质量维度，比较时必须等质量。</li>
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/45c1f6a8cbf2da59ebf2c802b4f742cd-Abstract-Conference.html">SkipKV</a>：句级去重与
+steering 同时减少存储和生成，最高吞吐 <strong>1.7×</strong>、序列
+<strong>1.6×</strong> 更短；它改变模型轨迹，不是 SuperInfer
+的无损替代。</li>
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/5b7ae1758452854dee4e962207d38304-Abstract-Conference.html">BatchLLM</a>：全局前缀共享与
+throughput-oriented token batching 在离线大批量任务上较 vLLM/SGLang
+<strong>1.3–10.8×</strong>；它提醒 SLO 在线结论不能直接外推到 batch
+serving。</li>
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/97dc07f1253ab33ee514f395a82fa7cc-Abstract-Conference.html">Optimizing
+Deployment Configurations for LLM Inference</a>：基于 Meta
+近十亿月活的数百万配置搜索经验，强调 phase-specific
+parallelism、异构硬件和 MoE 架构效应；适合把 SuperInfer
+放进更大的部署搜索空间，而非孤立调参。</li>
+</ol>
+</section>
+<section id="结论" class="card level2">
+<h2>15. 结论</h2>
+<p>SuperInfer 最值得读的不是“最高 +74.7
+pp”本身，而是它展示了一条严谨的系统共设计路径：先找出标称 C2C
+与软件实效的两个数量级落差，再用数据布局把 16 GB 双向 KV 迁移从
+<strong>1556.15 ms</strong> 压到 <strong>46.80
+ms</strong>，最后把这项带宽能力通过 VLT/LVF 转换成 TTFT/TBT
+的主动轮转。它的证据足以支持“在 GH200、固定 SLO、高负载下显著缓解 HOL
+blocking”，却不足以支持“普适最优 LLM serving”：最相关 Pie
+未实测、主图没有数值表、没有统计区间、硬件与 workload
+外推都很窄。对实践者，最可复用的判断是：<strong>只有当传输近物理上界且能被计算覆盖时，主动轮转才是调度；否则只是把
+HOL blocking 从 waiting queue 搬到 swap queue。</strong></p>
+<hr />
+<p><strong>索引更新说明：</strong> 已将本报告追加到
+<code>ml-report-index.md</code>；核心条目记录日期、领域、标题、venue
+与一句话结论。</p>
+</section>
+
+<figure class="figure" aria-labelledby="transfer-chart-title">
+      <p class="fig-title" id="transfer-chart-title">16 GB KV 双向迁移：端到端时间（ms，越低越好）</p>
+      <p class="fig-sub">DuplexKV 由 Naive 的 1556.15 ms 降至 46.80 ms，距离 41.66 ms 理想上界仅 1.12×。</p>
+      <div class="legend" aria-label="图例">
+        <span><span class="swatch" style="background:var(--chart-primary)"></span>Duplex / Ideal</span>
+        <span><span class="swatch" style="background:var(--chart-comparison)"></span>串行或分步优化</span>
+      </div>
+      <svg class="chart" viewBox="0 0 900 355" role="img" xmlns="http://www.w3.org/2000/svg">
+        <title>SuperInfer Table 1 的双向 KV 迁移端到端时间</title>
+        <desc>Naive 1556.15 毫秒，MS 159.87 毫秒，MS 加 MK 63.14 毫秒，DuplexKV 46.80 毫秒，理想值 41.66 毫秒。</desc>
+        <line x1="76" x2="850" y1="305.0" y2="305.0" stroke="var(--border)" stroke-width="1" /><text x="64" y="309.0" text-anchor="end" font-size="12">0</text><line x1="76" x2="850" y1="242.5" y2="242.5" stroke="var(--border)" stroke-width="1" /><text x="64" y="246.5" text-anchor="end" font-size="12">400</text><line x1="76" x2="850" y1="180.0" y2="180.0" stroke="var(--border)" stroke-width="1" /><text x="64" y="184.0" text-anchor="end" font-size="12">800</text><line x1="76" x2="850" y1="117.5" y2="117.5" stroke="var(--border)" stroke-width="1" /><text x="64" y="121.5" text-anchor="end" font-size="12">1200</text><line x1="76" x2="850" y1="55.0" y2="55.0" stroke="var(--border)" stroke-width="1" /><text x="64" y="59.0" text-anchor="end" font-size="12">1600</text><rect x="105" y="61.9" width="72" height="243.1" rx="6" fill="var(--chart-comparison)" opacity="0.84" tabindex="0" data-tip="Naive: 1556.15 ms" /><rect x="250" y="280.0" width="72" height="25.0" rx="6" fill="var(--chart-comparison)" opacity="0.84" tabindex="0" data-tip="MS: 159.87 ms" /><rect x="395" y="295.1" width="72" height="9.9" rx="6" fill="var(--chart-comparison)" opacity="0.84" tabindex="0" data-tip="MS+MK: 63.14 ms" /><rect x="540" y="297.7" width="72" height="7.3" rx="6" fill="var(--chart-primary)" opacity="1" tabindex="0" data-tip="DuplexKV: 46.80 ms" /><rect x="685" y="298.5" width="72" height="6.5" rx="6" fill="var(--chart-primary)" opacity="1" tabindex="0" data-tip="Ideal: 41.66 ms" /><text x="141" y="52.9" text-anchor="middle" font-size="11">1556.15</text><text x="286" y="271.0" text-anchor="middle" font-size="11">159.87</text><text x="431" y="286.1" text-anchor="middle" font-size="11">63.14</text><text x="576" y="288.7" text-anchor="middle" font-size="11">46.80</text><text x="721" y="289.5" text-anchor="middle" font-size="11">41.66</text><text x="141" y="331" text-anchor="middle" font-size="12">Naive</text><text x="286" y="331" text-anchor="middle" font-size="12">MS</text><text x="431" y="331" text-anchor="middle" font-size="12">MS+MK</text><text x="576" y="331" text-anchor="middle" font-size="12">DuplexKV</text><text x="721" y="331" text-anchor="middle" font-size="12">Ideal</text>
+      </svg>
+      <figcaption>数据源：SuperInfer 正式论文 Table 1（PDF p.11）。悬停或键盘聚焦柱体可查看精确值；正文表格提供同一组数据。</figcaption>
+    </figure>
+  </main>
+
+  <footer>基于 MLSys 2026 正式论文、arXiv v2、官方代码与项目页，以及五篇技术来源链全文/正式页；生成于 2026-10-02。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

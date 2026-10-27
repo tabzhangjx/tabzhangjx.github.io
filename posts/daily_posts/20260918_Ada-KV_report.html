@@ -1,0 +1,988 @@
+---
+layout: null
+title: "Ada-KV"
+date: 2026-09-18
+topic: "llm-systems"
+tags: ["llm-systems", "kv-cache", "long-context"]
+excerpt: "全局 Top‑B 分配 × 逐头 eviction × variable‑length KV layout B=512 的 unknown-query LongBench 平均 +1.62 pp，但系统证据、统计区间与 safeguard 配置一致性仍不足。"
+permalink: "/blog/2026/09/18/ada-kv/"
+blog_post: true
+lang: "zh-CN"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_en: "/blog/2026/09/18/ada-kv/en/"
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Ada‑KV：把 KV 预算从平均主义改成逐头竞价 · 2026-09-18</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  :root { --chart-primary:#2a78d6; --chart-primary-soft:#3987e5; --chart-comparison:#eb6834; --chart-comparison-dark:#d95926; }
+  :root[data-theme="dark"] { --chart-primary:#3987e5; --chart-comparison:#d95926; }
+  blockquote { margin:16px 0; padding:10px 18px; border-left:3px solid var(--chart-primary); color:var(--text-secondary); background:var(--page); }
+  h2 { scroll-margin-top:20px; }
+  h3 { color:var(--text-primary); }
+  table td, table th { vertical-align:top; }
+  table th:not(:first-child), table td:not(:first-child) { font-variant-numeric:tabular-nums; }
+  table td:first-child, table th:first-child { min-width:135px; }
+  strong { color:var(--text-primary); }
+  code { overflow-wrap:anywhere; }
+  .math.display { display:block; max-width:100%; margin:12px 0; padding:12px 16px; overflow-x:auto; border:1px solid var(--border); border-radius:8px; background:var(--page); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .card > :last-child { margin-bottom:0; }
+  @media (max-width:640px) { .toolbar { position:sticky; top:8px; z-index:20; } .theme-toggle { box-shadow:0 2px 12px rgba(0,0,0,.12); } pre { font-size:11.5px; } .chart text { font-size:10px; } }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">NEURIPS 2025 · EFFICIENCY &amp; SYSTEMS</p>
+    <h1>Ada‑KV：把 KV 预算从平均主义改成逐头竞价</h1>
+    <p class="subtitle">全局 Top‑B 分配 × 逐头 eviction × variable‑length KV layout</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">NeurIPS 2025 · arXiv:2407.11550v5</span>
+      <span class="chip">2026-09-18</span>
+      <span class="chip">KV Cache · Long-context Inference</span>
+    </div>
+    <p class="lede">B=512 的 unknown-query LongBench 平均 +1.62 pp，但系统证据、统计区间与 safeguard 配置一致性仍不足。</p>
+  </header>
+
+  <main>
+<section class="card" aria-label="报告章节 0">
+<p><strong>日期：</strong> 2026-09-18<br />
+<strong>轮转领域：</strong> 效率与系统（长上下文推理 / KV cache 压缩）<br />
+<strong>核心论文：</strong> Yuan Feng, Junlin Lv, Yukun Cao, Xike Xie, S. Kevin Zhou. <em>Ada-KV: Optimizing KV Cache Eviction by Adaptive Budget Allocation for Efficient LLM Inference</em>. NeurIPS 2025.<br />
+<strong>一句话核心定位：</strong> Ada-KV 不重新发明“删哪些 token”，而是先把一个 layer 的总 KV 预算在 attention heads 之间重新分配：让注意力尖锐的头少拿、分散的头多拿，再把 SnapKV/Pyramid 的逐头 Top-k 原样接上。</p>
+<blockquote>
+<p><strong>审计结论先行。</strong> 这是一篇“很小、很可复用”的系统算法论文：在 Llama-3.1-8B、LongBench、question-agnostic、每头平均预算 512 时，Ada-SnapKV 的 16 任务平均分从 SnapKV 的 31.20 提到 32.82，即 <strong>+1.62 pp / +5.19% 相对提升</strong>，且 16 个数据集里 14 个上升；但它不是“无损压缩定理”，因为理论只最小化一个使用全局常数的 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>L</mi><mn>1</mn></msub><annotation encoding="application/x-tex">L_1</annotation></semantics></math> 上界，正文也承认更低上界不保证更低真实 eviction loss。更关键的是，论文的 safeguard 公式、附录文字和公开 README 默认值存在方向/数值不一致，部署前必须先澄清。</p>
+</blockquote>
+</section>
+<section class="card" aria-label="报告章节 1">
+<h2 id="链接验证表">0. 链接验证表</h2>
+<p>以下链接均在 2026-09-18 实际访问。OpenReview 页面可确认 NeurIPS 2025 归属；数字以 arXiv v5 PDF/HTML 为准。未找到并不等于作者从未发布，而是本次核验未发现可验证入口。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">对象</th>
+<th scope="col">会议 / 官方页</th>
+<th scope="col">arXiv 版本与日期</th>
+<th scope="col">代码</th>
+<th scope="col">数据 / 权重</th>
+<th scope="col">项目页 / 视频</th>
+<th scope="col">核验结论</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Ada-KV</strong></td>
+<td><a href="https://openreview.net/forum?id=tcisuhGsQZ&amp;noteId=h5uXrbHpKf">NeurIPS 2025 OpenReview</a></td>
+<td><a href="https://arxiv.org/html/2407.11550v5">arXiv:2407.11550v5</a>，2025-10-16；<a href="https://arxiv.org/pdf/2407.11550">PDF</a></td>
+<td><a href="https://github.com/FFY0/AdaKV">FFY0/AdaKV</a></td>
+<td>作者未发布新训练集或模型权重；复用 LongBench/Ruler 与 Llama/Mistral</td>
+<td>独立项目页、正式视频未找到；<a href="https://huggingface.co/papers/2407.11550">HF Papers 条目</a></td>
+<td>论文、代码可访问；README 默认参数与论文不完全一致</td>
+</tr>
+<tr class="even">
+<td><strong>SnapKV</strong></td>
+<td>NeurIPS 2024；正式页本轮未单列</td>
+<td><a href="https://arxiv.org/abs/2404.14469">arXiv:2404.14469</a></td>
+<td>论文链接到官方实现；本轮未重复审计 commit</td>
+<td>无新权重</td>
+<td>未找到独立视频</td>
+<td>Ada-KV 的 token 选择底座之一</td>
+</tr>
+<tr class="odd">
+<td><strong>PyramidInfer</strong></td>
+<td><a href="https://aclanthology.org/2024.findings-acl.195/">ACL Anthology, Findings ACL 2024</a></td>
+<td><a href="https://arxiv.org/html/2405.12532v2">arXiv:2405.12532v2</a></td>
+<td><a href="https://github.com/mutonix/pyramidinfer">mutonix/pyramidinfer</a></td>
+<td>无新权重</td>
+<td>未找到正式视频</td>
+<td>提供 layer-wise 金字塔预算，Ada-KV 再补 head-wise 分配</td>
+</tr>
+<tr class="even">
+<td><strong>DuoAttention</strong></td>
+<td><a href="https://proceedings.iclr.cc/paper_files/paper/2025/hash/5c1ddd2e59df46fd2aa85c833b1b36ed-Abstract-Conference.html">ICLR 2025 Proceedings</a></td>
+<td><a href="https://arxiv.org/abs/2410.10819">arXiv:2410.10819</a></td>
+<td><a href="https://github.com/mit-han-lab/duo-attention">mit-han-lab/duo-attention</a></td>
+<td>需 profiling，不发布基础模型权重</td>
+<td><a href="https://hanlab.mit.edu/projects/duo-attention">项目页含 demo/slides/poster</a></td>
+<td>训练/优化式二类 head 划分，与 Ada-KV 的在线连续预算形成对照</td>
+</tr>
+<tr class="odd">
+<td><strong>HeadKV</strong></td>
+<td><a href="https://proceedings.iclr.cc/paper_files/paper/2025/hash/f649556471416b35e60ae0de7c1e3619-Abstract-Conference.html">ICLR 2025 Proceedings</a></td>
+<td><a href="https://arxiv.org/html/2410.19258v4">arXiv:2410.19258v4</a></td>
+<td><a href="https://github.com/FYYFU/HeadKV/">FYYFU/HeadKV</a></td>
+<td>仓库含论文所用 data/config；无基础模型权重</td>
+<td>独立视频未找到</td>
+<td>用检索—推理样例离线估计 head importance，承接 Ada-KV 的分配思想</td>
+</tr>
+<tr class="even">
+<td><strong>KV-Compress</strong></td>
+<td>arXiv 系统实现论文</td>
+<td><a href="https://arxiv.org/abs/2410.00161">arXiv:2410.00161</a></td>
+<td><a href="https://github.com/IsaacRe/vllm-kvcompress">IsaacRe/vllm-kvcompress</a></td>
+<td>无新权重</td>
+<td>未找到正式视频</td>
+<td>把 variable head budget 落到 PagedAttention 物理块，弥补 Ada-KV 部署证据缺口</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section class="card" aria-label="报告章节 2">
+<h2 id="候选池排重与随机选择">1. 候选池、排重与随机选择</h2>
+<p>索引排除了最近 14 天已覆盖的系统方向，尤其是 2026-09-04 的 <strong>Lumos</strong>（训练性能建模）与 2026-09-11 的 <strong>ScaleSearch</strong>（NVFP4 scale 搜索）；更早的 QServe、DuoAttention虽已出现，但不在 14 天硬排重窗口内，本轮仍避免再次把它们设为核心。检索入口覆盖 arXiv、OpenReview、NeurIPS/ICLR/MLSys/ACL 等官方 proceedings、Hugging Face Daily Papers、Papers with Code 与 Semantic Scholar；其中 Papers with Code 与 Semantic Scholar 对核心题名未返回稳定可用的直达记录，所以不把其聚合页当证据源。</p>
+<p>抽样前冻结的 24 篇候选如下：</p>
+<ol type="1">
+<li>VeriCache: Turning Lossy KV Cache into Lossless LLM Inference（arXiv 2026）</li>
+<li>Lynx: Progressive Speculative Quantization for Accelerating KV Transfer in Long-Context Inference（arXiv 2026）</li>
+<li>SmartGen: Efficient LLM Serving via Selective KV Cache Transfer（arXiv 2026）</li>
+<li>Pallas: Proactive KV Cache Migration for AI-RAN（arXiv 2026）</li>
+<li>SwiftCache: Efficient LLM Serving for Multi-turn Conversations with Heterogeneous KV Cache Sharing（arXiv 2026）</li>
+<li>Joint Encoding of KV-Cache Blocks for Scalable LLM Serving（arXiv 2026）</li>
+<li>Robust KV Cache Management for LLM Serving under Output Token Length Uncertainty（arXiv 2026）</li>
+<li>Kara: Efficient Reasoning LLM Serving via Sliding-Window KV Cache Compression（arXiv 2026）</li>
+<li>KVComp: A High-Performance, LLM-Aware, Lossy Compression Framework for KV Cache（arXiv 2025）</li>
+<li>LMCache: An Efficient KV Cache Layer for Enterprise-Scale LLM Inference（arXiv 2025）</li>
+<li>Oaken: Fast and Efficient LLM Serving with Online-Offline Hybrid KV Cache Quantization（arXiv 2025）</li>
+<li><strong>Ada-KV: Optimizing KV Cache Eviction by Adaptive Budget Allocation for Efficient LLM Inference（NeurIPS 2025）</strong></li>
+<li>R-KV: Redundancy-aware KV Cache Compression for Reasoning Models（NeurIPS 2025）</li>
+<li>FlashInfer: Efficient and Customizable Attention Engine for LLM Inference Serving（MLSys 2025）</li>
+<li>NanoFlow: Towards Optimal Large Language Model Serving Throughput（OSDI 2025）</li>
+<li>LoongServe: Efficiently Serving Long-context LLMs with Elastic Sequence Parallelism（SOSP 2025）</li>
+<li>CacheBlend: Fast LLM Serving for RAG with Cached Knowledge Fusion（EuroSys 2025）</li>
+<li>BlendServe: Optimizing Offline Inference with Resource-aware Batching（MLSys 2025）</li>
+<li>ShadowKV: KV Cache in Shadows for High-Throughput Long-Context Inference（ICML 2025）</li>
+<li>MiniKV: Pushing the Limits of 2-Bit KV Cache via Compression and System Co-design（ICLR 2025）</li>
+<li>KIVI: A Tuning-Free Asymmetric 2-bit Quantization for KV Cache（ICML 2024）</li>
+<li>Mooncake: A KVCache-centric Disaggregated Architecture for LLM Serving（FAST 2025）</li>
+<li>CacheGen: KV Cache Compression and Streaming for Fast LLM Serving（SIGCOMM 2024）</li>
+<li>vAttention: Dynamic Memory Management for Serving LLMs without PagedAttention（ASPLOS 2025）</li>
+</ol>
+<p>随后执行原生命令 <code>shuf -i 1-24 -n 1</code>，输出 <strong>12</strong>。Ada-KV 的正式版本为 NeurIPS 2025，资料完整且不超过 24 个月，因此 <strong>重抽次数为 0</strong>。</p>
+</section>
+<section class="card" aria-label="报告章节 3">
+<h2 id="motivation真正浪费的可能不是-token而是平均分预算">2. Motivation：真正浪费的可能不是 token，而是“平均分预算”</h2>
+<p>长上下文推理的 KV cache 随序列长度线性增长。论文用一个直观但极端的例子建立问题规模：8B 模型处理单条 2M-token 序列时 KV cache 可达 <strong>256 GB</strong>（正文 p.2，第 61 行附近）。这个数字不能直接外推到所有 GQA/量化实现，但说明单卡 HBM 很快成为上限。现有 eviction 方法把每个 head 的预算设为 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>/</mi><mi>h</mi></mrow><annotation encoding="application/x-tex">B/h</annotation></semantics></math>，再在每个 head 内保留注意力权重最高的 token；问题是 attention concentration 并不均匀。</p>
+<p>Figure 1 的 toy/example 显示：把同一 layer 的预算从 uniform 改成跨 head 竞争后，聚合保留注意力质量从 <strong>2.26 提到 2.48</strong>，绝对 +0.22、相对 <strong>+9.73%</strong>（正文 p.2，Figure 1）。直觉是：一个 head 的 top 5% 已覆盖几乎全部 attention mass，再给它 token 是浪费；另一个分散 head 可能需要更大比例。Ada-KV 的切入点因此不是预测未来 query，也不是训练新压缩器，而是把已有 score 的预算分配层补齐。</p>
+<p>这个动机有两个隐藏前提。第一，观察窗口中估计出的 head concentration 对未来生成足够稳定；第二，保留 attention mass 是 output fidelity 的合适代理。前者由 SnapKV 的 observation-window 假设继承，后者通过一个上界而非等价关系支持。因此，论文故事线更准确地写成：<strong>在既有 Top-k 选择器成立时，head-wise global Top-B 是比 head-wise local Top-k 更合理的预算器</strong>，而不是“从理论上解决 KV 压缩”。</p>
+</section>
+<section class="card" aria-label="报告章节 4">
+<h2 id="方法从局部-top-k-到一层内的全局-top-b">3. 方法：从局部 Top-k 到一层内的全局 Top-B</h2>
+<h3 id="形式化">3.1 形式化</h3>
+<p>对第 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>i</mi><annotation encoding="application/x-tex">i</annotation></semantics></math> 个 attention head，当前 query 的输出为</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>y</mi><mo>=</mo><munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>h</mi></munderover><msub><mi>A</mi><mi>i</mi></msub><msub><mi>V</mi><mi>i</mi></msub><msubsup><mi>W</mi><mi>i</mi><mi>O</mi></msubsup><mo>,</mo><mspace width="2.0em"></mspace><msub><mi>A</mi><mi>i</mi></msub><mo>=</mo><mo>softmax</mo><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>q</mi><mi>i</mi></msub><msubsup><mi>K</mi><mi>i</mi><mi>⊤</mi></msubsup><mo stretchy="true" form="postfix">)</mo></mrow><mi>.</mi></mrow><annotation encoding="application/x-tex">
+y=\sum_{i=1}^{h} A_iV_iW_i^O,\qquad A_i=\operatorname{softmax}(q_iK_i^\top).
+</annotation></semantics></math></p>
+<p>保留掩码 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>ℐ</mi><mi>i</mi></msub><mo>∈</mo><mo stretchy="false" form="prefix">{</mo><mn>0</mn><mo>,</mo><mn>1</mn><msup><mo stretchy="false" form="postfix">}</mo><mi>n</mi></msup></mrow><annotation encoding="application/x-tex">\mathcal I_i\in\{0,1\}^{n}</annotation></semantics></math> 后，将被删位置置为 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo>−</mo><mi>∞</mi></mrow><annotation encoding="application/x-tex">-\infty</annotation></semantics></math> 再 softmax，得到 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mover><mi>A</mi><mo accent="true">̂</mo></mover><mi>i</mi></msub><annotation encoding="application/x-tex">\hat A_i</annotation></semantics></math> 与 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mover><mi>y</mi><mo accent="true">̂</mo></mover><annotation encoding="application/x-tex">\hat y</annotation></semantics></math>。论文定义真实 eviction loss 为</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>ℒ</mi><mrow><mi mathvariant="normal">e</mi><mi mathvariant="normal">v</mi><mi mathvariant="normal">i</mi><mi mathvariant="normal">c</mi><mi mathvariant="normal">t</mi></mrow></msub><mo>=</mo><mo stretchy="false" form="prefix">∥</mo><mi>y</mi><mo>−</mo><mover><mi>y</mi><mo accent="true">̂</mo></mover><msub><mo stretchy="false" form="postfix">∥</mo><mn>1</mn></msub><mi>.</mi></mrow><annotation encoding="application/x-tex">
+\mathcal L_{\mathrm{evict}}=\lVert y-\hat y\rVert_1.
+</annotation></semantics></math></p>
+<p>令 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mo>=</mo><msub><mo>max</mo><mi>i</mi></msub><mo stretchy="false" form="prefix">∥</mo><msub><mi>V</mi><mi>i</mi></msub><msubsup><mi>W</mi><mi>i</mi><mi>O</mi></msubsup><msub><mo stretchy="false" form="postfix">∥</mo><mi>∞</mi></msub></mrow><annotation encoding="application/x-tex">C=\max_i\lVert V_iW_i^O\rVert_\infty</annotation></semantics></math>，论文 Theorem 3.1 推导</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>ℒ</mi><mrow><mi mathvariant="normal">e</mi><mi mathvariant="normal">v</mi><mi mathvariant="normal">i</mi><mi mathvariant="normal">c</mi><mi mathvariant="normal">t</mi></mrow></msub><mo>≤</mo><mi>ϵ</mi><mo>=</mo><mn>2</mn><mi>h</mi><mi>C</mi><mo>−</mo><mn>2</mn><mi>C</mi><munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>h</mi></munderover><munderover><mo>∑</mo><mrow><mi>j</mi><mo>=</mo><mn>1</mn></mrow><mi>n</mi></munderover><msubsup><mi>ℐ</mi><mi>i</mi><mi>j</mi></msubsup><msubsup><mi>A</mi><mi>i</mi><mi>j</mi></msubsup><mi>.</mi></mrow><annotation encoding="application/x-tex">
+\mathcal L_{\mathrm{evict}}\le \epsilon
+=2hC-2C\sum_{i=1}^{h}\sum_{j=1}^{n}\mathcal I_i^jA_i^j.
+</annotation></semantics></math></p>
+<p>给定每头预算 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>B</mi><mi>i</mi></msub><annotation encoding="application/x-tex">B_i</annotation></semantics></math>，最小化该上界等价于每头保留 top-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>B</mi><mi>i</mi></msub><annotation encoding="application/x-tex">B_i</annotation></semantics></math> attention weight；但若只约束总预算 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mo>∑</mo><mi>i</mi></msub><msub><mi>B</mi><mi>i</mi></msub><mo>=</mo><mi>B</mi></mrow><annotation encoding="application/x-tex">\sum_iB_i=B</annotation></semantics></math>，则最优分配是把一层所有 heads 的权重拼起来，取全局 top-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>B</mi><annotation encoding="application/x-tex">B</annotation></semantics></math>，每个 head 被选中的个数就是 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msubsup><mi>B</mi><mi>i</mi><mo>*</mo></msubsup><annotation encoding="application/x-tex">B_i^*</annotation></semantics></math>。Theorem 3.3 证明它在这个上界下不劣于任意分配，包括 uniform <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>/</mi><mi>h</mi></mrow><annotation encoding="application/x-tex">B/h</annotation></semantics></math>（正文 pp.3–4，Eq. 7–8；完整推导 Appendix A.8–A.10）。</p>
+<p>这里要严格区分三个“最优”：它对 <strong>观察到的 attention weights</strong>、在 <strong>单层</strong>、针对 <strong>这个上界</strong> 是全局最优；它不是对未来 token、跨层总内存、真实端到端任务分数的全局最优。</p>
+<h3 id="算法流程">3.2 算法流程</h3>
+<pre class="text"><code>输入：一层总预算 B，观察窗口 Xwin，历史 K/V，heads=1..h
+1. 对每个 head 计算 observation-window 到历史 cache 的注意力分数；
+2. max-pool(kernel=7) 后在窗口维求平均，得到每个历史 token 的 score；
+3. 从 B 中先扣除 winsize × h（窗口 token 全保留）；
+4. 拼接所有 heads 的 score，在整层上取 global Top-B；
+5. 统计每个 head 入选数量 fi，令自适应预算 Bi*=fi；
+6. safeguard：Bi ← α·Bi* + (1−α)·(B/h)；论文实验 α=0.2；
+7. 在每个 head 内按 Bi 再执行 SnapKV/Pyramid 的 Top-k；
+8. 拼回观察窗口，写入 flattened variable-length KV layout；
+9. 通过 flash_attn_varlen_func 解码，GQA 内以 query heads 的平均 score 选共享 KV。</code></pre>
+<h3 id="关键机制与工程细节">3.3 关键机制与工程细节</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">组件</th>
+<th scope="col">具体设计</th>
+<th scope="col">解决的问题</th>
+<th scope="col">代价 / 风险</th>
+<th scope="col">证据</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Global Top-B allocator</td>
+<td>单层内拼接所有 head score，按入选频数定预算</td>
+<td>uniform budget 浪费</td>
+<td>多一次跨 head 排序/选择；只在层内</td>
+<td>Algorithm 1，正文 p.4</td>
+</tr>
+<tr class="even">
+<td>Observation window</td>
+<td>最近 32 tokens；max-pool kernel=7</td>
+<td>用少量 query 估计未来重要性</td>
+<td>问题未知时 score 仍可能漂移</td>
+<td>Sec.4.1，正文 p.6</td>
+</tr>
+<tr class="odd">
+<td>Safeguard</td>
+<td><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi><msubsup><mi>B</mi><mi>i</mi><mo>*</mo></msubsup><mo>+</mo><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo>−</mo><mi>α</mi><mo stretchy="true" form="postfix">)</mo></mrow><mi>B</mi><mi>/</mi><mi>h</mi></mrow><annotation encoding="application/x-tex">\alpha B_i^*+(1-\alpha)B/h</annotation></semantics></math></td>
+<td>避免 sparse head 被分到过小预算</td>
+<td>α 语义/实现口径有冲突</td>
+<td>Algorithm 2 与 Appendix A.3</td>
+</tr>
+<tr class="even">
+<td>Flattened layout</td>
+<td>一层所有 head 的 variable-length cache 拼成扁平 tensor</td>
+<td>避免 padding 到最长 head</td>
+<td>自定义 CUDA 更新与元数据</td>
+<td>Sec.3.5，正文 p.5；仓库 <code>csrc</code></td>
+</tr>
+<tr class="odd">
+<td>Varlen FlashAttention</td>
+<td><code>flash_attn_varlen_func</code></td>
+<td>对不同 head 长度做高效 attention</td>
+<td>未给服务级吞吐/P99</td>
+<td>Sec.3.5、Figure 6</td>
+</tr>
+<tr class="even">
+<td>GQA compatibility</td>
+<td>同组 query heads 的 attention score 取均值，避免复制共享 KV</td>
+<td>修复 SnapKV/Pyramid naive GQA 复制</td>
+<td>平均会抹平组内异质性</td>
+<td>Sec.3.5；声称 Llama-3.1-8B 再省 4×</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section class="card" aria-label="报告章节 5">
+<h2 id="数据集评测与可比性">4. 数据集、评测与可比性</h2>
+<p><strong>Ruler</strong> 含 13 个 16K 长序列任务，覆盖 Single/Multi-key NIAH、Multi-value、Multi-query、变量跟踪、词频抽取及 single/multi-hop QA。论文选择 16K 是因为官方评测中 Mistral-7B-Instruct-v0.2 与 Llama-3.1-8B-Instruct 的 full-cache 最大有效长度为 16K（正文 p.6）。这适合测“是否忘掉关键针”，但不能代表 128K–2M 的调度、碎片和长生成压力。</p>
+<p><strong>LongBench</strong> 含 16 个数据集，论文按六域汇总：single-doc QA、multi-doc QA、summarization、few-shot、synthetic、code；平均输入长度 <strong>6,711</strong>（Appendix A.7，p.17）。各数据集指标不同，最终 average 是异质指标的算术平均，因此 pp 只代表该汇总尺度，不等价于统一概率意义上的准确率。</p>
+<p><strong>两种场景</strong>：question-aware 在压缩前已看到 context+question；question-agnostic 只压 context，之后才输入 question，更接近 prompt cache 多查询复用和多轮对话。后者是本论文最有价值的评测扩展，因为基于 query 的 eviction 会在问题未知时失去目标。</p>
+<p><strong>模型与设置</strong>：Llama-3.1-8B-Instruct、Mistral-7B-Instruct-v0.2，另在 Llama-3.1-70B 上给出域级表；压缩发生在各层 prefill 后；预算比例为原 cache 的 20/40/60/80%，或固定每头平均 128/256/512/1024/2048；window=32，pool=7，论文 α=0.2（Sec.4.1，p.6）。</p>
+</section>
+<section class="card" aria-label="报告章节 6">
+<h2 id="主结果质量提升真实但全面领先需要降调">5. 主结果：质量提升真实，但“全面领先”需要降调</h2>
+<h3 id="六域-三预算完整矩阵">5.1 六域 × 三预算完整矩阵</h3>
+<p>下表逐项抄录论文 <strong>Table 1（p.7）</strong>，Llama-3.1-8B、LongBench、question-agnostic。粗体表示同预算 SnapKV/Ada-SnapKV 两者较高；括号是本报告复算的 Ada−base 绝对 pp。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 6%" />
+<col style="width: 9%" />
+<col style="width: 9%" />
+<col style="width: 9%" />
+<col style="width: 9%" />
+<col style="width: 9%" />
+<col style="width: 9%" />
+<col style="width: 9%" />
+<col style="width: 9%" />
+<col style="width: 9%" />
+<col style="width: 9%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">任务域</th>
+<th scope="col" style="text-align: right;">Full</th>
+<th scope="col" style="text-align: right;">10% Snap</th>
+<th scope="col" style="text-align: right;">10% Ada</th>
+<th scope="col" style="text-align: right;">Δ</th>
+<th scope="col" style="text-align: right;">20% Snap</th>
+<th scope="col" style="text-align: right;">20% Ada</th>
+<th scope="col" style="text-align: right;">Δ</th>
+<th scope="col" style="text-align: right;">40% Snap</th>
+<th scope="col" style="text-align: right;">40% Ada</th>
+<th scope="col" style="text-align: right;">Δ</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Single-Doc QA</td>
+<td style="text-align: right;">43.10</td>
+<td style="text-align: right;">23.38</td>
+<td style="text-align: right;"><strong>23.97</strong></td>
+<td style="text-align: right;">+0.59</td>
+<td style="text-align: right;">28.78</td>
+<td style="text-align: right;"><strong>31.39</strong></td>
+<td style="text-align: right;">+2.61</td>
+<td style="text-align: right;">35.27</td>
+<td style="text-align: right;"><strong>36.63</strong></td>
+<td style="text-align: right;">+1.36</td>
+</tr>
+<tr class="even">
+<td>Multi-Doc QA</td>
+<td style="text-align: right;">46.49</td>
+<td style="text-align: right;">26.61</td>
+<td style="text-align: right;"><strong>29.06</strong></td>
+<td style="text-align: right;">+2.45</td>
+<td style="text-align: right;">33.51</td>
+<td style="text-align: right;"><strong>34.90</strong></td>
+<td style="text-align: right;">+1.39</td>
+<td style="text-align: right;">40.50</td>
+<td style="text-align: right;"><strong>41.36</strong></td>
+<td style="text-align: right;">+0.86</td>
+</tr>
+<tr class="odd">
+<td>Summarization</td>
+<td style="text-align: right;">28.97</td>
+<td style="text-align: right;">21.98</td>
+<td style="text-align: right;"><strong>22.43</strong></td>
+<td style="text-align: right;">+0.45</td>
+<td style="text-align: right;">23.82</td>
+<td style="text-align: right;"><strong>24.29</strong></td>
+<td style="text-align: right;">+0.47</td>
+<td style="text-align: right;">26.11</td>
+<td style="text-align: right;"><strong>26.66</strong></td>
+<td style="text-align: right;">+0.55</td>
+</tr>
+<tr class="even">
+<td>Few-shot</td>
+<td style="text-align: right;">69.45</td>
+<td style="text-align: right;">57.89</td>
+<td style="text-align: right;"><strong>60.40</strong></td>
+<td style="text-align: right;">+2.51</td>
+<td style="text-align: right;">61.95</td>
+<td style="text-align: right;"><strong>63.70</strong></td>
+<td style="text-align: right;">+1.75</td>
+<td style="text-align: right;">65.10</td>
+<td style="text-align: right;"><strong>66.43</strong></td>
+<td style="text-align: right;">+1.33</td>
+</tr>
+<tr class="odd">
+<td>Synthetic</td>
+<td style="text-align: right;">53.73</td>
+<td style="text-align: right;"><strong>36.50</strong></td>
+<td style="text-align: right;">34.88</td>
+<td style="text-align: right;">−1.62</td>
+<td style="text-align: right;">48.19</td>
+<td style="text-align: right;"><strong>50.39</strong></td>
+<td style="text-align: right;">+2.20</td>
+<td style="text-align: right;"><strong>53.17</strong></td>
+<td style="text-align: right;">53.00</td>
+<td style="text-align: right;">−0.17</td>
+</tr>
+<tr class="even">
+<td>Code</td>
+<td style="text-align: right;">57.86</td>
+<td style="text-align: right;">59.72</td>
+<td style="text-align: right;"><strong>60.91</strong></td>
+<td style="text-align: right;">+1.19</td>
+<td style="text-align: right;">60.05</td>
+<td style="text-align: right;"><strong>61.14</strong></td>
+<td style="text-align: right;">+1.09</td>
+<td style="text-align: right;"><strong>60.49</strong></td>
+<td style="text-align: right;">60.30</td>
+<td style="text-align: right;">−0.19</td>
+</tr>
+<tr class="odd">
+<td><strong>平均</strong></td>
+<td style="text-align: right;">49.20</td>
+<td style="text-align: right;">36.38</td>
+<td style="text-align: right;"><strong>37.45</strong></td>
+<td style="text-align: right;"><strong>+1.07</strong></td>
+<td style="text-align: right;">41.29</td>
+<td style="text-align: right;"><strong>42.87</strong></td>
+<td style="text-align: right;"><strong>+1.58</strong></td>
+<td style="text-align: right;">45.52</td>
+<td style="text-align: right;"><strong>46.24</strong></td>
+<td style="text-align: right;"><strong>+0.72</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>20% budget 的平均相对提升为 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mrow><mo stretchy="true" form="prefix">(</mo><mn>42.87</mn><mo>−</mo><mn>41.29</mn><mo stretchy="true" form="postfix">)</mo></mrow><mi>/</mi><mn>41.29</mn><mo>=</mo><mn>3.83</mn><mi>%</mi></mrow><annotation encoding="application/x-tex">(42.87-41.29)/41.29=3.83\%</annotation></semantics></math>。但 18 个域×预算配对中并非全胜：本表可见 3 个负向格；论文也准确报告 15/18 上升（正文 p.8）。因此贡献是更好的平均 Pareto，不是单调支配。</p>
+<h3 id="五预算-五方法question-aware-与-unknown-query-的差距">5.2 五预算 × 五方法：question-aware 与 unknown-query 的差距</h3>
+<p>下表来自 Appendix <strong>Table 5（p.19）</strong> 与 <strong>Table 7（p.20）</strong>；均为 Llama-3.1-8B 的 16 个 LongBench 数据集平均。<code>SLM</code> 是 StreamingLLM。每格均为论文原报，未补造标准差。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<colgroup>
+<col style="width: 11%" />
+<col style="width: 15%" />
+<col style="width: 15%" />
+<col style="width: 15%" />
+<col style="width: 15%" />
+<col style="width: 15%" />
+<col style="width: 11%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">场景 / 每头平均预算</th>
+<th scope="col" style="text-align: right;">SLM</th>
+<th scope="col" style="text-align: right;">Pyramid</th>
+<th scope="col" style="text-align: right;">SnapKV</th>
+<th scope="col" style="text-align: right;">Ada-Pyramid</th>
+<th scope="col" style="text-align: right;">Ada-SnapKV</th>
+<th scope="col">最优及相对 base 提升</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>aware / 128</td>
+<td style="text-align: right;">38.43</td>
+<td style="text-align: right;">41.78</td>
+<td style="text-align: right;">42.03</td>
+<td style="text-align: right;"><strong>42.96</strong></td>
+<td style="text-align: right;">42.81</td>
+<td>Ada-Pyr vs Pyr +1.18 pp / +2.82%</td>
+</tr>
+<tr class="even">
+<td>aware / 256</td>
+<td style="text-align: right;">39.76</td>
+<td style="text-align: right;">44.47</td>
+<td style="text-align: right;">44.48</td>
+<td style="text-align: right;">45.23</td>
+<td style="text-align: right;"><strong>45.44</strong></td>
+<td>Ada-Snap vs Snap +0.96 / +2.16%</td>
+</tr>
+<tr class="odd">
+<td>aware / 512</td>
+<td style="text-align: right;">41.37</td>
+<td style="text-align: right;">46.59</td>
+<td style="text-align: right;">46.76</td>
+<td style="text-align: right;">46.98</td>
+<td style="text-align: right;"><strong>47.15</strong></td>
+<td>+0.39 / +0.83%</td>
+</tr>
+<tr class="even">
+<td>aware / 1024</td>
+<td style="text-align: right;">42.58</td>
+<td style="text-align: right;">47.70</td>
+<td style="text-align: right;">47.84</td>
+<td style="text-align: right;">48.00</td>
+<td style="text-align: right;"><strong>48.16</strong></td>
+<td>+0.32 / +0.67%</td>
+</tr>
+<tr class="odd">
+<td>aware / 2048</td>
+<td style="text-align: right;">44.58</td>
+<td style="text-align: right;">48.84</td>
+<td style="text-align: right;">49.09</td>
+<td style="text-align: right;">49.05</td>
+<td style="text-align: right;"><strong>49.15</strong></td>
+<td>+0.06 / +0.12%</td>
+</tr>
+<tr class="even">
+<td>agnostic / 128</td>
+<td style="text-align: right;">23.49</td>
+<td style="text-align: right;">26.35</td>
+<td style="text-align: right;">26.26</td>
+<td style="text-align: right;"><strong>27.45</strong></td>
+<td style="text-align: right;">27.06</td>
+<td>Ada-Pyr +1.10 / +4.17%</td>
+</tr>
+<tr class="odd">
+<td>agnostic / 256</td>
+<td style="text-align: right;">25.35</td>
+<td style="text-align: right;">28.27</td>
+<td style="text-align: right;">28.18</td>
+<td style="text-align: right;"><strong>29.55</strong></td>
+<td style="text-align: right;">29.41</td>
+<td>+1.28 / +4.53%</td>
+</tr>
+<tr class="even">
+<td>agnostic / 512</td>
+<td style="text-align: right;">27.66</td>
+<td style="text-align: right;">31.56</td>
+<td style="text-align: right;">31.20</td>
+<td style="text-align: right;">32.71</td>
+<td style="text-align: right;"><strong>32.82</strong></td>
+<td>Ada-Snap +1.62 / +5.19%</td>
+</tr>
+<tr class="odd">
+<td>agnostic / 1024</td>
+<td style="text-align: right;">30.68</td>
+<td style="text-align: right;">36.49</td>
+<td style="text-align: right;">37.56</td>
+<td style="text-align: right;">37.98</td>
+<td style="text-align: right;"><strong>37.99</strong></td>
+<td>+0.43 / +1.14%</td>
+</tr>
+</tbody>
+</table></div>
+<p>趋势很清楚：预算越宽、问题越早可见，reallocation 的边际价值越小。aware/2048 只有 +0.06 pp，几乎可视为饱和；agnostic/512 则是最有说服力的中等预算点。进一步逐格审计 Table 7 的 B=512，Ada-SnapKV 相对 SnapKV <strong>14/16 上升、2/16 下降</strong>，平均 +1.62；最大的清晰增益之一是 TREC <strong>35.00→43.00（+8.00 pp，+22.86%）</strong>，而 LCC <strong>66.79→66.12（−0.67）</strong>。平均值没有抹掉失败样本，但论文正文没有突出这些负向任务。</p>
+<h3 id="b-与后续方法">5.3 70B 与后续方法</h3>
+<p>Llama-3.1-70B、question-agnostic、20% budget 时，Ada-SnapKV 平均 <strong>44.95→46.08（+1.13 pp，+2.51%）</strong>；40% 时 <strong>48.91→49.64（+0.73 pp，+1.49%）</strong>（Table 2，p.9）。然而 Code 在 40% 下由 <strong>51.90 降到 49.23（−2.67 pp，−5.14%）</strong>，说明“规模更大仍有收益”不等于各域稳健。</p>
+<p>更新版论文还在 Table 3（p.9）汇总 follow-up：20% cache 时 CriticalKV 42.99→43.77（+0.78），DefensiveKV 43.78→46.68（+2.90）；40% 时分别 +0.71 与 +1.45。这里的数据是论文引用后续方法的二次汇总，不是 Ada-KV 原始实验的同步公平重跑；可证明分配器可移植，不能证明在统一系统栈中优于所有新方法。</p>
+</section>
+
+<figure class="figure" aria-labelledby="figure-budget-title">
+  <p class="fig-title" id="figure-budget-title">同一 B=512 总预算：allocation 本身带来 1.15–1.62 pp</p>
+  <p class="fig-sub">Llama‑3.1‑8B、LongBench、question‑agnostic；单 Y 轴截取 30–33.5 以突出同预算差异。</p>
+  <div class="legend"><span><span class="swatch" style="background:#2a78d6"></span>Ada allocator</span><span><span class="swatch" style="background:#eb6834"></span>uniform baseline</span></div>
+  <svg class="chart" viewBox="0 0 900 330" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>Ada-KV 在每头平均预算 512 时的 LongBench 平均分对比</title>
+    <desc>Pyramid 31.56，Ada-Pyramid 32.71，SnapKV 31.20，Ada-SnapKV 32.82；均为 question-agnostic。</desc>
+    <line x1="82" y1="275.0" x2="840" y2="275.0" stroke="var(--grid)"/><text x="67" y="280.0" text-anchor="end" font-size="12">30</text><line x1="82" y1="216.4" x2="840" y2="216.4" stroke="var(--grid)"/><text x="67" y="221.4" text-anchor="end" font-size="12">31</text><line x1="82" y1="157.9" x2="840" y2="157.9" stroke="var(--grid)"/><text x="67" y="162.9" text-anchor="end" font-size="12">32</text><line x1="82" y1="99.3" x2="840" y2="99.3" stroke="var(--grid)"/><text x="67" y="104.3" text-anchor="end" font-size="12">33</text><line x1="82" y1="70" x2="82" y2="275" stroke="var(--grid)"/><rect x="155" y="183.6" width="92" height="91.4" rx="6" fill="#eb6834" tabindex="0" data-tip="Pyramid · LongBench 平均 31.56" aria-label="Pyramid LongBench 平均 31.56"/><text x="201" y="301" text-anchor="middle" font-size="12">Pyramid</text><text x="201" y="174.6" text-anchor="middle" font-size="13">31.56</text><rect x="325" y="116.3" width="92" height="158.7" rx="6" fill="#2a78d6" tabindex="0" data-tip="Ada-Pyramid · LongBench 平均 32.71" aria-label="Ada-Pyramid LongBench 平均 32.71"/><text x="371" y="301" text-anchor="middle" font-size="12">Ada-Pyramid</text><text x="371" y="107.3" text-anchor="middle" font-size="13">32.71</text><rect x="495" y="204.7" width="92" height="70.3" rx="6" fill="#d95926" tabindex="0" data-tip="SnapKV · LongBench 平均 31.20" aria-label="SnapKV LongBench 平均 31.20"/><text x="541" y="301" text-anchor="middle" font-size="12">SnapKV</text><text x="541" y="195.7" text-anchor="middle" font-size="13">31.20</text><rect x="665" y="109.8" width="92" height="165.2" rx="6" fill="#3987e5" tabindex="0" data-tip="Ada-SnapKV · LongBench 平均 32.82" aria-label="Ada-SnapKV LongBench 平均 32.82"/><text x="711" y="301" text-anchor="middle" font-size="12">Ada-SnapKV</text><text x="711" y="100.8" text-anchor="middle" font-size="13">32.82</text>
+  </svg>
+  <figcaption>来源：核心论文 Appendix Table 7（PDF p.20）；悬停或键盘聚焦柱形查看精确值。论文未报告误差条。</figcaption>
+</figure>
+<section class="card" aria-label="报告章节 7">
+<h2 id="消融敏感性相变与统计">6. 消融、敏感性、相变与统计</h2>
+<h3 id="逐层消融">6.1 逐层消融</h3>
+<p>论文没有传统的“去掉 global allocation / 去掉 safeguard / 去掉 flattened kernel / 去掉 GQA 修复”四因素消融表。能辨识出的层次只有：</p>
+<ol type="1">
+<li><strong>算法层</strong>：SnapKV→Ada-SnapKV、Pyramid→Ada-Pyramid，隔离了 allocation 的平均收益；</li>
+<li><strong>模型规模层</strong>：8B 主表与 70B Table 2，显示收益可迁移但非全域正向；</li>
+<li><strong>场景层</strong>：aware→agnostic，显示 unknown query 时收益扩大；</li>
+<li><strong>工程层</strong>：Figure 6 对 Full/Snap/Ada-Snap 的 peak memory 与 ms/token 画曲线，但论文未报告可复制的数值表、误差条、batch size、并发度或 request trace，所以不能计算端到端吞吐提升。</li>
+</ol>
+<p>由于缺少 factorial ablation，不能定量回答：收益有多少来自 GQA 去复制、有多少来自 head reallocation、有多少来自 custom flattened layout。特别是正文说所有方法都加了 GQA compatibility，这提升了公平性，却也使与原始 SnapKV/Pyramid 公布实现的系统数字不可直接对照。</p>
+<h3 id="α-敏感性与小预算相变">6.2 α 敏感性与“小预算相变”</h3>
+<p>Appendix Table 4（p.15）只在 Mistral-7B、LongBench、question-aware 测 α∈{0,0.2,0.5}：</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">α</th>
+<th scope="col" style="text-align: right;">B=128</th>
+<th scope="col" style="text-align: right;">B=256</th>
+<th scope="col" style="text-align: right;">B=512</th>
+<th scope="col" style="text-align: right;">B=1024</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">0</td>
+<td style="text-align: right;"><strong>35.69</strong></td>
+<td style="text-align: right;"><strong>38.90</strong></td>
+<td style="text-align: right;">40.53</td>
+<td style="text-align: right;">41.44</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">0.2</td>
+<td style="text-align: right;">35.48</td>
+<td style="text-align: right;">38.61</td>
+<td style="text-align: right;">40.58</td>
+<td style="text-align: right;">41.61</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">0.5</td>
+<td style="text-align: right;">35.20</td>
+<td style="text-align: right;">38.46</td>
+<td style="text-align: right;"><strong>40.66</strong></td>
+<td style="text-align: right;"><strong>41.62</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>从数值看，低预算下 α=0 最好，高预算下 α=0.5 略好，最大差 0.49 pp；因此 α 的敏感性小于主任务/预算变化。但算法公式是 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi><msubsup><mi>B</mi><mi>i</mi><mo>*</mo></msubsup><mo>+</mo><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo>−</mo><mi>α</mi><mo stretchy="true" form="postfix">)</mo></mrow><mi>B</mi><mi>/</mi><mi>h</mi></mrow><annotation encoding="application/x-tex">\alpha B_i^*+(1-\alpha)B/h</annotation></semantics></math>，按公式 <strong>α 越小越接近 uniform、越不激进</strong>；附录文字却写“smaller α allows more aggressive allocation”，方向相反。公开 README 的 <code>floor_alpha</code> 默认又是 <strong>0.5</strong>，而正文说所有实验固定 <strong>0.2</strong>。这不是文字小瑕疵：若复现者按“越小越激进”调参，会得到相反操作。</p>
+<p>从结果矩阵还可观察到一个经验相变：aware 场景从 128 到 2048，Ada-Snap 增益从 +0.78 缩到 +0.06；agnostic 则在 512 达 +1.62、到 1024 缩到 +0.43。论文没有拟合 breakpoint，也没有更多预算点，因此只能称“边际收益在中低预算最大”的经验模式，不能声称存在严格相变。</p>
+<h3 id="统计显著性">6.3 统计显著性</h3>
+<p><strong>论文未报告</strong>随机种子、标准差、置信区间、显著性检验或 bootstrap。LongBench 多数设置是确定性解码，但 GPU kernel、样本选择和模型实现仍可能引入变异；更重要的是 0.06–0.39 pp 的小差异缺少不确定性范围。因此我们可以确信大幅任务级变化（如 TREC +8.00 pp）值得复核，却不能把 aware/2048 的 +0.06 pp 解释为稳定真实提升。</p>
+</section>
+<section class="card" aria-label="报告章节 8">
+<h2 id="相关工作问题来源缺口回应设计传递">7. 相关工作：问题来源—缺口—回应—设计传递</h2>
+<h3 id="snapkv">7.1 SnapKV</h3>
+<p><strong>解决什么：</strong> 从 prompt 末端 observation window 推断未来生成会持续关注的 token，并逐 head 聚类/Top-k；原论文报告 16K 输入下最高 3.6× generation speed、8.2× memory efficiency。<strong>遗留缺口：</strong> 每个 head 固定相同 token 数，忽视 concentration 异质性。<strong>Ada-KV 如何回应：</strong> 保留 SnapKV 的分数、window 与 pooling，只把预算从 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>B</mi><mi>/</mi><mi>h</mi></mrow><annotation encoding="application/x-tex">B/h</annotation></semantics></math> 换成 global Top-B 计数。<strong>设计如何传递：</strong> Ada-KV 的 Algorithm 2 几乎是 SnapKV 前插一个 allocator，因此复用性高，也完整继承 observation-window 稳定性假设。</p>
+<h3 id="pyramidinfer-pyramidkv">7.2 PyramidInfer / PyramidKV</h3>
+<p><strong>解决什么：</strong> 发现浅层更需要长 cache、深层可更激进压缩，建立 layer-wise 金字塔预算；ACL 论文报告相对 Accelerate 2.2× throughput 与超过 54% KV memory reduction。<strong>遗留缺口：</strong> layer 内仍 uniform per head，层间分得再聪明，层内仍可能浪费。<strong>Ada-KV 如何回应：</strong> 在每个 layer 已确定的总预算内二次分配给 heads。<strong>设计如何传递：</strong> 形成“layer allocator × head allocator × token selector”的可组合三层结构；但跨层联合最优尚未求解。</p>
+<h3 id="duoattention">7.3 DuoAttention</h3>
+<p><strong>解决什么：</strong> 通过优化/合成数据把 heads 分成少数 retrieval heads 与多数 streaming heads，后者只保留 sink+recent；ICLR 摘要报告 MHA memory 最高 2.55×、decode 2.18×，GQA 分别 1.67×/1.50×。<strong>遗留缺口：</strong> 二元 head 类型和离线 profiling 可能不适应 prompt/task，且训练/优化成本不为零。<strong>Ada-KV 如何回应：</strong> 每个输入、每层产生连续预算，无需训练。<strong>设计如何传递：</strong> 两者共享“heads 功能不均匀”这一核心观察；DuoAttention 把它离散成类型，Ada-KV 把它连续化为 token 数。</p>
+<h3 id="headkv">7.4 HeadKV</h3>
+<p><strong>解决什么：</strong> 用检索—推理样例估计 head importance，再做全局 head-level allocation；论文称只保留 1.5% KV 时仍达 full-cache contextual QA 的 97%。<strong>遗留缺口：</strong> importance 依赖离线样例与任务代理，遇到分布漂移可能错配。<strong>Ada-KV 如何回应：</strong> 不需要离线 profile，直接用当前 context 的 attention concentration。<strong>设计如何传递：</strong> HeadKV 的公开仓库明确建立在 Ada-KV/PyramidKV 上，说明 Ada-KV 的最大价值可能是“分配接口”而非某个具体 score。</p>
+<h3 id="kv-compress">7.5 KV-Compress</h3>
+<p><strong>解决什么：</strong> 指出 variable compression rates 如果落不到 PagedAttention 的整块释放，就只有理论压缩率；通过连续 KV block eviction 与 vLLM 集成，报告最高 5.18× throughput。<strong>遗留缺口：</strong> block 粒度会限制细粒度最优，且工作负载结果不能直接等同于 Ada-KV。<strong>Ada-KV 如何回应：</strong> flattened varlen layout 能运行不等长 heads，但没有完成 PagedAttention 服务栈评测。<strong>设计如何传递：</strong> 把 Ada-KV 的“逻辑预算”推进成“物理可回收内存”，是从算法到生产的关键下一步。</p>
+<h3 id="非线性技术演进树">非线性技术演进树</h3>
+<pre class="text"><code>Full KV cache
+├─ 结构固定、保留局部
+│  └─ StreamingLLM：attention sink + recent window
+├─ 按 token 重要性 eviction
+│  ├─ H2O：累计 heavy hitter
+│  └─ SnapKV：observation-window score
+│     ├─ PyramidInfer：先做 layer-wise budget
+│     │  └─ Ada-Pyramid：再做 head-wise budget
+│     └─ Ada-SnapKV：global Top-B → per-head counts
+│        ├─ CriticalKV：attention + value/output perturbation
+│        ├─ DefensiveKV：风险/脆弱性保护
+│        └─ KVzip：用 context reconstruction 做 query-agnostic score
+├─ 按 head 功能 profile
+│  ├─ DuoAttention：retrieval vs streaming（二类）
+│  └─ HeadKV：retrieval-reasoning importance（连续）
+└─ 系统物理化
+   ├─ Ada-KV flattened varlen + custom CUDA
+   └─ KV-Compress：PagedAttention block 回收 + vLLM throughput</code></pre>
+<p><strong>演进动力与转折：</strong> 第一阶段只问“哪些 token 不重要”；第二阶段发现 budget 本身是多维资源分配问题（layer/head/token）；第三阶段把 query-aware 的即时分数转向 multi-query 可复用的 query-agnostic score；真正的系统转折则是承认“逻辑上删掉”不等于“物理内存已释放”，必须与 block allocator、kernel 和 scheduler 协同。</p>
+<h3 id="跨论文对标">跨论文对标</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">预算粒度</th>
+<th scope="col">score 来源</th>
+<th scope="col">query-agnostic</th>
+<th scope="col">训练/profile</th>
+<th scope="col">物理部署证据</th>
+<th scope="col">主要未解问题</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>SnapKV</td>
+<td>token/head 内 uniform</td>
+<td>观察窗口 attention</td>
+<td>弱</td>
+<td>无</td>
+<td>HF 实现、单机指标</td>
+<td>head 间浪费</td>
+</tr>
+<tr class="even">
+<td>PyramidInfer</td>
+<td>layer + token</td>
+<td>attention + 预设 layer 衰减</td>
+<td>弱</td>
+<td>需 layer 超参</td>
+<td>吞吐/内存</td>
+<td>layer 内 uniform</td>
+</tr>
+<tr class="odd">
+<td><strong>Ada-KV</strong></td>
+<td><strong>layer 内 head + token</strong></td>
+<td>当前 context attention</td>
+<td>有专门评测</td>
+<td>无训练</td>
+<td>varlen CUDA 曲线；无服务 SLO</td>
+<td>跨层、碎片、真实负载</td>
+</tr>
+<tr class="even">
+<td>DuoAttention</td>
+<td>head 二类</td>
+<td>合成数据优化</td>
+<td>相对稳定</td>
+<td>有 profiling</td>
+<td>kernel 与长上下文</td>
+<td>类型过粗/迁移</td>
+</tr>
+<tr class="odd">
+<td>HeadKV-R2</td>
+<td>head + token</td>
+<td>检索—推理样例</td>
+<td>profile 后可复用</td>
+<td>有离线样例</td>
+<td>benchmark 为主</td>
+<td>profile 漂移</td>
+</tr>
+<tr class="even">
+<td>KV-Compress</td>
+<td>block/head</td>
+<td>eviction score + block 粒度</td>
+<td>依 score</td>
+<td>无必需训练</td>
+<td>vLLM 吞吐最高 5.18×</td>
+<td>粗粒度近似</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section class="card" aria-label="报告章节 9">
+<h2 id="真正贡献可复用设计与迁移潜力">8. 真正贡献、可复用设计与迁移潜力</h2>
+<ol type="1">
+<li><strong>真正贡献是 decomposition。</strong> 把 KV 压缩拆成“总预算—层预算—头预算—头内 token 选择”，并证明在其上界下 global Top-B 给出单层最优 head budget。这个接口比 Ada-SnapKV 的单一分数更可复用。</li>
+<li><strong>question-agnostic 评测是方法之外的重要贡献。</strong> prompt cache、多轮对话、RAG prefix reuse 都不能在压缩时偷看未来 query；把 context/question 分开暴露了原 Top-k 方法的脆弱性。</li>
+<li><strong>flattened variable-length layout 是落地所需最小工程。</strong> 如果仍为每个 head padding 到最大长度，算法压缩率无法兑现。custom CUDA + varlen FlashAttention 至少证明“不等长 head 可运行”。</li>
+<li><strong>迁移到 VLM/视频生成有直接路径。</strong> 只要注意力头的 concentration 异质且能获得 score，就能把总 budget 做 global selection；但视觉 token 的局部结构和跨模态 heads 可能要求按 modality/group 加 safeguard。</li>
+<li><strong>可与量化正交组合。</strong> eviction 降 token 数，KV quantization 降每 token 位宽；可形成二维 budget，但需要统一优化 accuracy、dequant cost 与 block packing，而不能简单相乘理论压缩率。</li>
+</ol>
+</section>
+<section class="card" aria-label="报告章节 10">
+<h2 id="限制与独立批判">9. 限制与独立批判</h2>
+<h3 id="论文自述限制-明示未来范围">9.1 论文自述限制 / 明示未来范围</h3>
+<ol type="1">
+<li><strong>正式 Limitations：仅层内分配。</strong> Appendix A.6（p.17）明确说 head-wise allocation 仍局限在 single layer，跨层扩展与理论留待未来。</li>
+<li><strong>量化、稀疏注意力未联合。</strong> Appendix A.1（约 p.14）把 quantization 与 sparse attention 组合列为未来工作；因此不能从本论文推出复合压缩率或联合稳定性。</li>
+<li><strong>更先进 selector 未充分覆盖。</strong> Appendix A.1 说未来可接更先进 cache eviction；v5 的 Table 3 仅汇总少量 follow-up 结果，并非统一重跑。</li>
+</ol>
+<h3 id="独立批判每点均为证据推论">9.2 独立批判（每点均为“证据→推论”）</h3>
+<ol type="1">
+<li><strong>[理论有效性]</strong> 因为 Theorem 3.1 用一个跨所有 heads 的 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mo>=</mo><msub><mo>max</mo><mi>i</mi></msub><mo stretchy="false" form="postfix">∥</mo><msub><mi>V</mi><mi>i</mi></msub><msubsup><mi>W</mi><mi>i</mi><mi>O</mi></msubsup><msub><mo stretchy="false" form="postfix">∥</mo><mi>∞</mi></msub></mrow><annotation encoding="application/x-tex">C=\max_i\|V_iW_i^O\|_\infty</annotation></semantics></math> 把 value/output projection 差异压成全局最坏常数，且正文 p.4 明说 lower upper bound 不严格保证 lower eviction loss，<strong>所以</strong> Ada-KV 的证明只支持 attention-mass surrogate 最优，不能称真实输出扰动或任务质量最优。</li>
+<li><strong>[参数语义/复现]</strong> 因为 Algorithm 2 定义 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>α</mi><msubsup><mi>B</mi><mi>i</mi><mo>*</mo></msubsup><mo>+</mo><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo>−</mo><mi>α</mi><mo stretchy="true" form="postfix">)</mo></mrow><mi>B</mi><mi>/</mi><mi>h</mi></mrow><annotation encoding="application/x-tex">\alpha B_i^*+(1-\alpha)B/h</annotation></semantics></math>，按代数 α 越小越 uniform；Appendix A.3 却写“smaller α more aggressive”，README 默认 <code>floor_alpha=0.5</code> 又不同于正文固定 0.2，<strong>所以</strong> safeguard 的语义和复现实验配置存在可操作冲突，复现者可能朝相反方向调参。</li>
+<li><strong>[系统证据]</strong> 因为 Figure 6 只给单一 B=1024 的 memory/latency 曲线，没有表格数值、batch size、并发、请求分布、TTFT/ITL/P99 或 goodput，<strong>所以</strong>可以说“额外 allocator 没明显拖慢 microbenchmark”，不能说生产服务吞吐已被验证。</li>
+<li><strong>[外部有效性]</strong> 因为主评测仅两个 7–8B GQA dense 模型，额外 70B 只有域级表，且 Ruler 仅 16K、LongBench 平均长度 6,711，<strong>所以</strong>不能外推到 128K–2M、MoE/MLA、新一代 reasoning 长输出或多租户 prefix cache。</li>
+<li><strong>[统计]</strong> 因为全文未报告 seeds、标准差、置信区间或显著性，而 aware/2048 的 Ada-Snap 增益只有 0.06 pp，<strong>所以</strong>小增益可能低于评测噪声；只有较大且跨任务一致的差异值得强结论。</li>
+<li><strong>[平均值掩盖]</strong> 因为 Table 1 有 3/18 配对下降，70B Code 在 40% budget 从 51.90 降到 49.23（−2.67 pp），<strong>所以</strong>“consistent improvement”应解释为平均/多数条件，而非逐任务单调支配；面向 code workload 需要单独 guardrail。</li>
+<li><strong>[内存物理化]</strong> 因为 flattened layout 证明 variable-length head 能计算，却未测试 PagedAttention block fragmentation、continuous batching 与 eviction 后真正可回收页数，而 KV-Compress 正是为这一缺口设计，<strong>所以</strong>逻辑 cache 比例不能直接当作服务可用 HBM 比例。</li>
+<li><strong>[动态生成]</strong> 因为论文统一在每层 prefill 结束后压缩，没有评测长 CoT 解码期间 cache 继续增长、周期性重压缩与 score 漂移，<strong>所以</strong>其结果更适合长 prompt + 较短 answer，不能直接覆盖 reasoning model 的长 generation。</li>
+</ol>
+</section>
+<section class="card" aria-label="报告章节 11">
+<h2 id="开放挑战可执行的-head-to-head-实验空白">10. 开放挑战：可执行的 head-to-head 实验空白</h2>
+<h3 id="理论">理论</h3>
+<ul>
+<li><strong>Attention-only vs value-aware。</strong> 在相同总 budget、相同 varlen kernel 下，比较 Ada-KV global attention mass、CriticalKV 的 value/output perturbation score、以及二者的拉格朗日联合目标；逐层记录真实 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="postfix">∥</mo><mi>y</mi><mo>−</mo><mover><mi>y</mi><mo accent="true">̂</mo></mover><msub><mo stretchy="false" form="postfix">∥</mo><mn>1</mn></msub></mrow><annotation encoding="application/x-tex">\|y-\hat y\|_1</annotation></semantics></math>、上界/真实值比率和最终 task score。这样能检验 bound tightness，而不是只比较平均任务分。</li>
+<li><strong>层内贪心 vs 跨层联合。</strong> 设相同全模型 KV bytes，比较 Ada-KV（每层固定总额）、Pyramid×Ada（预设层预算）、可学习/动态跨层 knapsack；在 8B/70B、16K/128K 上画质量—bytes Pareto，并报告 solver 开销。</li>
+</ul>
+<h3 id="工程应用">工程应用</h3>
+<ul>
+<li><strong>Flattened vs paged physical memory。</strong> 把 Ada-KV 官方 CUDA、NVIDIA kvpress hook、KV-Compress/vLLM 三者放进同一 vLLM 版本，同模型同 workload，测逻辑压缩率、实际 HBM、fragmentation、TTFT、ITL、P50/P99、goodput。关键是固定请求到达轨迹，而不是各报峰值。</li>
+<li><strong>静态 prefill eviction vs 周期重压缩。</strong> 对 32K prompt + 32K CoT，比较只压一次、每 1K token 重压、基于 drift 触发重压；测答案正确率、重压 kernel 开销与 tail latency，从而判断 Ada-KV 是否适合 reasoning serving。</li>
+<li><strong>等质量而非等预算。</strong> 对 SnapKV/Ada-Snap/KVzip/HeadKV，在“LongBench 平均下降≤1 pp”约束下分别寻找最小真实 HBM，再比较吞吐；这比固定 20% budget 更接近容量规划。</li>
+</ul>
+<h3 id="新兴方向">新兴方向</h3>
+<ul>
+<li><strong>跨模态 heads。</strong> 在长视频/文档 VLM 上比较全局跨模态 Top-B、按 modality 分区 Top-B、Ada-KV+modality safeguard；测文本 QA、时间定位、OCR 与视频一致性，避免 global competition 饿死视觉 heads。</li>
+<li><strong>Query-agnostic 多租户缓存。</strong> 同一 64K prefix 后接 100 个异质 queries，对 Ada-KV、KVzip reconstruction、DuoAttention profile 做一次压缩多次复用；报告首问与第 100 问的最坏准确率、cache reuse hit rate、压缩摊销成本。</li>
+</ul>
+</section>
+<section class="card" aria-label="报告章节 12">
+<h2 id="近期值得继续跟踪的-7-篇工作">11. 近期值得继续跟踪的 7 篇工作</h2>
+<ol type="1">
+<li><a href="https://papers.nips.cc/paper_files/paper/2025/hash/f4eaa4b8f2d08edb3f0af990d56134ea-Abstract-Conference.html">KVzip, NeurIPS 2025</a>：用 context reconstruction 形成真正 query-agnostic importance，报告 3–4× memory reduction 与约 2× FlashAttention latency 降低；它是 Ada-KV“未来 query 未知”问题最直接的 head-to-head。</li>
+<li><a href="https://arxiv.org/abs/2502.03805">CriticalKV / Output Perturbation</a>：把 value states 与 output projection 纳入重要性，报告在 Llama 超过 92% heads 降低输出扰动；它直接攻击 Ada-KV 上界过松的问题。</li>
+<li><a href="https://aclanthology.org/2026.findings-acl.1926.pdf">The Sparse Frontier, ACL Findings 2026</a>：系统显示没有一种 sparse attention 策略在任务/阶段上普适最优，并做 isoFLOPS/scaling 分析；提醒不能把单一 LongBench 平均当作部署结论。</li>
+<li><a href="https://arxiv.org/abs/2410.00161">KV-Compress</a>：把 variable per-head rate 对齐 PagedAttention 物理块，vLLM throughput 最高 5.18×；其价值在“把理论压缩变成可回收页”。</li>
+<li><a href="https://arxiv.org/abs/2509.00579">KVComp</a>：算法—系统协同的有损压缩框架，报告平均 47%、最高 83% 更高 memory reduction；适合与 eviction 做等 HBM/等质量比较。</li>
+<li><a href="https://arxiv.org/abs/2508.02401">CompressKV</a>：只用具备语义检索能力的 heads 决定 token 重要性，并做 layer-adaptive allocation；它把“哪些 head 可靠”与“给多少预算”进一步解耦。</li>
+<li><a href="https://arxiv.org/abs/2605.17613">VeriCache</a>：用压缩 KV 起草、full KV 验证，目标是输出逐 token 等价，报告最高 4× throughput；它代表从“接受近似误差”转向“压缩只做 speculative accelerator”的另一条路线。</li>
+</ol>
+</section>
+<section class="card" aria-label="报告章节 13">
+<h2 id="最终判断">12. 最终判断</h2>
+<p>Ada-KV 值得看，不是因为它带来夸张的平均分，而是因为它把 KV cache 压缩的一个隐形自由度——<strong>head budget</strong>——提炼成三行 global selection，并提供了能跑 variable-length heads 的最小系统实现。最可信的结论是：在 query-agnostic、中低预算下，uniform per-head allocation 明显次优；Llama-3.1-8B 的 B=512 LongBench 平均 +1.62 pp、14/16 数据集上升支持这一点。</p>
+<p>但工程采购式结论应更保守：论文没有服务级吞吐/P99、没有统计区间、没有动态长生成，且 α 公式/文字/README 三方不一致。把 Ada-KV 视为一个可插拔 allocator 是合理的；把它直接视为“生产上无损且更快的 KV 压缩系统”则证据不足。</p>
+<hr />
+<p><strong>证据与生成说明。</strong> 所有数值均来自实际读取的 Ada-KV arXiv v5 正文/附录或本报告基于其表格的明确复算；曲线无法精确读取处未补造。HTML 按 Warm Editorial 模板生成，内联 CSS/JS、深浅主题与响应式表格。本机未发现 <code>/usr/bin/chromium</code>、<code>chromium-browser</code> 或 <code>/opt/pw-browsers</code> 下可执行 Chromium，因此按约束未运行 <code>playwright install</code>，也未虚称完成截图检查；改用模板验证器、HTML 结构检查、响应式静态规则与溢出审计。索引条目已同步更新至 <code>ml-report-index.md</code>。</p>
+</section>
+</main>
+
+  <footer>核心来源：NeurIPS OpenReview、arXiv v5 与官方代码；相关链深读 SnapKV、PyramidInfer、DuoAttention、HeadKV 与 KV‑Compress。生成于 2026‑09‑18。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

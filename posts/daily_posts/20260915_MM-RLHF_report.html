@@ -1,0 +1,1102 @@
+---
+layout: null
+title: "MM-RLHF"
+date: 2026-09-15
+topic: "rl-peft"
+tags: ["rl-peft", "multimodal-alignment", "rlhf"]
+excerpt: "人工细粒度偏好 × Critique Reward × 动态 β 的证据审计 Unsafety 40.2→13.9 是强证据；但外部 reward 平均仍低 GPT‑4o 12.25 分，且公开数据规模有三套冲突口径。"
+permalink: "/blog/2026/09/15/mm-rlhf/"
+blog_post: true
+lang: "zh-CN"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_en: "/blog/2026/09/15/mm-rlhf/en/"
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>MM‑RLHF：多模态偏好对齐的完整闭环与证据边界 · 2026-09-15</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  :root { --chart-primary:#2a78d6; --chart-primary-soft:#3987e5; --chart-comparison:#eb6834; --chart-comparison-dark:#d95926; }
+  :root[data-theme="dark"] { --chart-primary:#3987e5; --chart-comparison:#eb6834; }
+  blockquote { margin:16px 0; padding:10px 18px; border-left:3px solid var(--chart-primary); color:var(--text-secondary); background:var(--page); }
+  h2 { scroll-margin-top:20px; }
+  h3 { color:var(--text-primary); }
+  table th:not(:first-child), table td:not(:first-child) { text-align:right; font-variant-numeric:tabular-nums; }
+  table td:first-child, table th:first-child { min-width:150px; }
+  strong { color:var(--text-primary); }
+  .math.display { display:block; max-width:100%; margin:12px 0; padding:12px 16px; overflow-x:auto; border:1px solid var(--border); border-radius:8px; background:var(--page); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .card > :last-child { margin-bottom:0; }
+  @media (max-width:640px) { .toolbar { position:sticky; top:8px; z-index:20; } .theme-toggle { box-shadow:0 2px 12px rgba(0,0,0,.12); } pre { font-size:12px; } .chart text { font-size:10px; } }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ICML 2025 MAIN · VISION &amp; MULTIMODAL</p>
+    <h1>MM‑RLHF：多模态偏好对齐的完整闭环与证据边界</h1>
+    <p class="subtitle">人工细粒度偏好 × Critique Reward × 动态 β 的证据审计</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">PMLR 267:76625–76654</span>
+      <span class="chip">2026-09-15</span>
+      <span class="chip">Multimodal Alignment · Reward Modeling</span>
+    </div>
+    <p class="lede">Unsafety 40.2→13.9 是强证据；但外部 reward 平均仍低 GPT‑4o 12.25 分，且公开数据规模有三套冲突口径。</p>
+  </header>
+
+  <main>
+<section class="card" aria-label="报告章节 0">
+<p><strong>核心论文：</strong> Yi‑Fan Zhang et al. <em>MM‑RLHF: The Next Step Forward in Multimodal LLM Alignment</em>. ICML 2025 Main，PMLR 267:76625–76654。<br />
+<strong>报告日期：</strong> 2026‑09‑15　<strong>领域：</strong> 视觉与多模态　<strong>证据口径：</strong> ICML/PMLR 定稿优先；arXiv 仅有 v1；“本报告复算”与论文原报严格分开。</p>
+</section>
+<section class="card" aria-label="报告章节 1">
+<h2 id="链接验证与版本审计">0. 链接验证与版本审计</h2>
+<p>以下 URL 均于 2026‑09‑15 实际访问。OpenReview 页面触发 Cloudflare 验证，故只能确认 PMLR 所列目标 URL，不能声称读取了审稿内容；CVPR OpenAccess 的三个入口在当前网页解析器中返回内部错误，相关事实改由对应 arXiv/GitHub 交叉核验；“未公开/未找到”表示当日公开入口没有找到。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">会议/正式页</th>
+<th scope="col">arXiv（版本与日期）</th>
+<th scope="col">代码</th>
+<th scope="col">数据/权重</th>
+<th scope="col">项目页/视频</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>MM‑RLHF</strong></td>
+<td><a href="https://proceedings.mlr.press/v267/zhang25cs.html">ICML 2025 / PMLR</a>；<a href="https://raw.githubusercontent.com/mlresearch/v267/main/assets/zhang25cs/zhang25cs.pdf">定稿 PDF</a>；<a href="https://openreview.net/forum?id=ULJ4gJJYFp">OpenReview</a>（页面内容受验证墙阻挡）</td>
+<td><a href="https://arxiv.org/abs/2502.10391v1">2502.10391v1</a>，2025‑02‑14；无后续 arXiv 版本</td>
+<td><a href="https://github.com/Kwai-YuanQi/MM-RLHF">训练代码</a>；<a href="https://github.com/yfzhang114/mmrlhf-eval">评测代码</a></td>
+<td><a href="https://huggingface.co/datasets/yifanzhang114/MM-RLHF">MM‑RLHF 数据</a>；<a href="https://huggingface.co/yifanzhang114/MM-RLHF-Reward-7B-llava-ov-qwen">Reward‑7B</a>；<a href="https://huggingface.co/datasets/yifanzhang114/MM-RLHF-RewardBench">RewardBench</a></td>
+<td><a href="https://mm-rlhf.github.io/">项目页</a>；视频未找到</td>
+</tr>
+<tr class="even">
+<td><strong>DPO</strong></td>
+<td><a href="https://proceedings.neurips.cc/paper_files/paper/2023/hash/a85b405ed65c6477a4fe8302b5e06ce7-Abstract-Conference.html">NeurIPS 2023</a></td>
+<td><a href="https://arxiv.org/abs/2305.18290">2305.18290</a>，2023‑05‑29</td>
+<td><a href="https://github.com/eric-mitchell/direct-preference-optimization">官方代码</a></td>
+<td>论文未发布专属多模态数据/权重</td>
+<td>项目页/视频未找到</td>
+</tr>
+<tr class="odd">
+<td><strong>LLaVA‑RLHF / Fact‑RLHF</strong></td>
+<td>正式会议页未找到</td>
+<td><a href="https://arxiv.org/abs/2309.14525">2309.14525</a>，2023‑09‑25</td>
+<td><a href="https://github.com/llava-rlhf/LLaVA-RLHF">代码</a></td>
+<td>仓库列出模型与数据入口</td>
+<td>项目页/视频未找到</td>
+</tr>
+<tr class="even">
+<td><strong>VLFeedback</strong></td>
+<td><a href="https://aclanthology.org/2024.emnlp-main.358/">EMNLP 2024 Main</a>；<a href="https://aclanthology.org/2024.emnlp-main.358.pdf">PDF</a></td>
+<td><a href="https://arxiv.org/abs/2410.09421">2410.09421</a>，2024‑10‑12</td>
+<td><a href="https://github.com/MMInstruction/VLFeedback">代码</a></td>
+<td><a href="https://huggingface.co/datasets/MMInstruction/VLFeedback">82k AI feedback 数据</a></td>
+<td><a href="https://vlf-silkie.github.io/">项目页</a>；视频未找到</td>
+</tr>
+<tr class="odd">
+<td><strong>LLaVA‑Critic</strong></td>
+<td><a href="https://openaccess.thecvf.com/content/CVPR2025/html/Xiong_LLaVA-Critic_Learning_to_Evaluate_Multimodal_Models_CVPR_2025_paper.html">CVPR 2025</a></td>
+<td><a href="https://arxiv.org/abs/2410.02712">2410.02712</a>，2024‑10‑03</td>
+<td><a href="https://github.com/LLaVA-VL/LLaVA-NeXT">代码</a></td>
+<td>论文页所列模型/数据入口；独立权重页未找到</td>
+<td>项目视频未找到</td>
+</tr>
+<tr class="even">
+<td><strong>RLAIF‑V</strong></td>
+<td><a href="https://openaccess.thecvf.com/content/CVPR2025/papers/Yu_RLAIF-V_Aligning_MLLMs_through_Open-Source_AI_Feedback_for_Super_GPT-4V_Trustworthiness_CVPR_2025_paper.pdf">CVPR 2025 Highlight PDF</a></td>
+<td><a href="https://arxiv.org/abs/2405.17220">2405.17220</a>，2024‑05‑27</td>
+<td><a href="https://github.com/rlhf-v/rlaif-v">代码</a></td>
+<td><a href="https://huggingface.co/openbmb/RLAIF-V-7B">模型权重</a>；仓库含数据入口</td>
+<td>项目页/视频未找到</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="三套公开口径并不一致">三套公开口径并不一致</h3>
+<p>ICML 定稿表 1 给出 <strong>29,997 条查询</strong>，摘要称由此产生 <strong>120k</strong> 比较对；GitHub README 的“Key Components”却写 <strong>20k instructions / 80k pairs</strong>，Hugging Face 数据查看器当日显示训练 split 为约 <strong>16.3k rows</strong>。这三者可能对应定稿全量、清洗后发布集与网页可视 split，但作者没有给出逐阶段 manifest 或哈希映射。因为差异至少为 29,997→20,000（少 9,997，约 33.33%）再到约 16,300（较定稿少约 45.66%，均为本报告按页面数字复算），所以“数据已公开”不能自动推出“120k 训练对可原样重建”。</p>
+</section>
+<section class="card" aria-label="报告章节 2">
+<h2 id="候选池排重与随机选择">1. 候选池、排重与随机选择</h2>
+<p>先检查 <code>ml-report-index.md</code>，并结合最近报告记录排除近 14 天已深读的 AVUT（音视频捷径）、DEFAME（多模态事实核查）、Ambient Creativity（生成记忆）、VIKI‑R（多机器人）和 ThinkSLM（小模型推理评测）等主题。本轮从 <a href="https://proceedings.mlr.press/v267/">ICML 2025 PMLR 论文集</a>、<a href="https://aclanthology.org/events/emnlp-2025/">EMNLP 2025 ACL Anthology</a>、arXiv、OpenReview、Hugging Face Daily Papers、Papers with Code 与 Semantic Scholar 做标题和版本交叉检索；后四者用于发现或核验，正式会议页与论文 PDF 为定量证据源。</p>
+<p>固定候选池 24 篇如下：</p>
+<ol type="1">
+<li>AGAV‑Rater: Adapting Large Multimodal Model for AI‑Generated Audio‑Visual Quality Assessment</li>
+<li>CtrlSynth: Controllable Image Text Synthesis for Data‑Efficient Multimodal Learning</li>
+<li>Sample‑level Early Feature Enhancement for Long‑Tail Visual Recognition</li>
+<li>On Path to Multimodal Generalist: General‑Level and General‑Bench</li>
+<li>Gradient Inversion of Multimodal Models</li>
+<li>Imagine while Reasoning in Space: Multimodal Visualization‑of‑Thought</li>
+<li>AffectGPT: A New Dataset, Model, and Benchmark for Emotion Understanding with Multimodal Large Language Models</li>
+<li>OV‑MER: Towards Open‑Vocabulary Multimodal Emotion Recognition</li>
+<li>Decomposition of Graphic Design with Multimodal Large Language Models</li>
+<li>Graph4MM: Weaving Multimodal Learning with Structural Information</li>
+<li>LMAct: A Benchmark for In‑Context Imitation Learning with Long Multimodal Demonstrations</li>
+<li>SK‑VQA: Synthetic Knowledge Generation at Scale for Training Large Multimodal Models</li>
+<li>A Multimodal Medical Code Tokenizer for Structured Clinical Prediction</li>
+<li><strong>MM‑RLHF: The Next Step Forward in Multimodal LLM Alignment</strong></li>
+<li>TRUST‑VLM: Thorough Red‑Teaming for Uncovering Safety Threats in Vision‑Language Models</li>
+<li>Robust Multimodal Large Language Models Against Modality Conflict</li>
+<li>MME‑CoT: Benchmarking Chain‑of‑Thought in Multimodal Models</li>
+<li>Do Vision‑Language Models Really Understand Visual Language?</li>
+<li>ReFocus: Visual Editing as a Chain of Thought for Structured Image Understanding</li>
+<li>Layer‑wise Alignment for Multimodal Large Language Models</li>
+<li><a href="https://aclanthology.org/2025.emnlp-main.955/">VisiPruner</a></li>
+<li><a href="https://aclanthology.org/2025.emnlp-main.995/">Looking Beyond Text</a></li>
+<li><a href="https://aclanthology.org/2025.emnlp-main.709/">Vision‑Free Retrieval</a></li>
+<li><a href="https://aclanthology.org/2025.emnlp-main.1342/">VLA‑Mark</a></li>
+</ol>
+<p>执行系统命令 <code>shuf -i 1-24 -n 1</code>，结果为 <strong>14</strong>，即 MM‑RLHF。没有重抽：ICML 定稿 30 页、代码/数据/权重/两个 benchmark 均有公开入口，主表、对比和附录足以支持深读。</p>
+</section>
+<section class="card" aria-label="报告章节 3">
+<h2 id="motivation缺的不是又一批偏好对而是跨任务的统一闭环">2. Motivation：缺的不是“又一批偏好对”，而是跨任务的统一闭环</h2>
+<p>多模态后训练长期有三个断点。第一，许多开源 MLLM 停在 SFT；已有偏好优化又集中在物体幻觉或对话，难回答安全、OCR、数学、视频是否共同受益。第二，标量 reward 只说“好/坏”，不给模型或研究者解释何处错；直接用通用 MLLM 当裁判，又要求它同时完成视觉理解、批评和稳定打分。第三，普通 DPO 给每对样本同一个 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>β</mi><annotation encoding="application/x-tex">\beta</annotation></semantics></math>，把“第 1 名对第 4 名”和“第 3 名对第 4 名”视作同强度证据。</p>
+<p>论文用三组量化事实塑造问题。数据端从约 <strong>1,000 万</strong>多模态指令出发，经聚类、去重式采样取 <strong>29,997</strong> 条查询，再由 50+ 标注者、8 位多模态专家监督、历时两个月，形成超过 <strong>120k</strong> 排序比较对（定稿 pp.1–4，表 1）。评测端跨 <strong>10 个维度、27 个 benchmark</strong>（摘要、p.1），不是只看一个 hallucination 分数。结果端，LLaVA‑OV‑7B 的对话维度论文原报提高 <strong>19.5%</strong>，Unsafety 从 <strong>40.2 降到 13.9</strong>，即绝对 −26.3 pp、相对减少 <strong>65.42%</strong>（图 1 与附录表 9；相对值为本报告复算）。</p>
+<p>但动机不等于结论。图 1 同时显示至少两个聚合维度为负：Hal Rate 约 <strong>+0.45%</strong>（方向越低越好，故是轻微恶化）和高分辨率/RealWorld 约 <strong>−1.59%</strong>；因此更准确的问题是：统一偏好流水线能否把强增益扩散到多数维度，同时不牺牲高分辨率与细粒度感知？</p>
+</section>
+<section class="card" aria-label="报告章节 4">
+<h2 id="论文故事线核心假设与权衡">3. 论文故事线、核心假设与权衡</h2>
+<p>故事线有四步。</p>
+<ol type="1">
+<li><strong>覆盖：</strong> 从 10M 源池中按任务类型和视觉聚类重采样，得到长回答、短回答、MCQ、安全与视频五类查询。</li>
+<li><strong>人类判别：</strong> 对每个查询的 3–5 个强模型回答，从 Helpful、Faithful、Ethical 三维打分，再给总体排序和理由；低质量平局由标注者补正例，高质量平局则人工构造含错误负例。</li>
+<li><strong>把解释变成 reward：</strong> 先训练语言头生成 critique，再让评分头在 query、response、critique 上学习成对偏好。</li>
+<li><strong>把 reward 变成更新强度：</strong> 对每个有序回答对计算 reward margin，以有界函数调节 DPO 的 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>β</mi><annotation encoding="application/x-tex">\beta</annotation></semantics></math>，并使用所有不同排名的比较对。</li>
+</ol>
+<p>核心假设与代价如下。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">假设</th>
+<th scope="col">收益</th>
+<th scope="col">代价/不可识别项</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>CLIP 图像簇可代表语义多样性</td>
+<td>在 10M→30k 时保覆盖</td>
+<td>CLIP 偏差进入采样；视频只用首帧，时间语义被忽略（p.4）</td>
+</tr>
+<tr class="even">
+<td>人工简短理由经 GPT‑4o 扩写仍保持原意</td>
+<td>critique 更流畅、易学</td>
+<td>闭源教师风格写入 reward；论文只说用 prompt 约束，没有给扩写忠实度的人评统计（p.5）</td>
+</tr>
+<tr class="odd">
+<td>reward margin 越大，偏好越可信</td>
+<td>强证据获得更强梯度</td>
+<td>margin 可能来自 RM 校准偏差；未做跨任务校准曲线</td>
+</tr>
+<tr class="even">
+<td>所有不同排名对都值得训练</td>
+<td>一条排序产生更多监督</td>
+<td>同一 query 内多对高度相关，“120k pairs”不是 120k 独立样本</td>
+</tr>
+<tr class="odd">
+<td>生成 critique 后评分可提升可解释性</td>
+<td>可审计中间文本</td>
+<td>训练时用真 critique、推理时用自生成 critique，存在暴露偏移</td>
+</tr>
+</tbody>
+</table></div>
+<p>这条故事线最漂亮的地方是“数据—reward—policy”闭环；最危险的地方也正是闭环：同一数据生态既训练 reward，又抽样 RewardBench，再用 reward 调 DPO，若不做外部分布验证，很容易把闭环内部一致性误写成广泛泛化。</p>
+</section>
+<section class="card" aria-label="报告章节 5">
+<h2 id="方程级形式化">4. 方程级形式化</h2>
+<p>给定多模态查询 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>x</mi><annotation encoding="application/x-tex">x</annotation></semantics></math>、偏好回答 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>y</mi><mi>w</mi></msub><annotation encoding="application/x-tex">y_w</annotation></semantics></math> 和非偏好回答 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>y</mi><mi>l</mi></msub><annotation encoding="application/x-tex">y_l</annotation></semantics></math>，标准奖励模型采用 Bradley–Terry 损失：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>ℒ</mi><mtext mathvariant="normal">reward</mtext></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>θ</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mi>𝔼</mi><mrow><mo stretchy="true" form="prefix">[</mo><mo>−</mo><mo>log</mo><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>r</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>y</mi><mi>w</mi></msub><mo>∣</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>−</mo><msub><mi>r</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>y</mi><mi>l</mi></msub><mo>∣</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">]</mo></mrow><mi>.</mi></mrow><annotation encoding="application/x-tex">
+\mathcal L_{\text{reward}}(\theta)=
+\mathbb E[-\log \sigma(r_\theta(y_w\mid x)-r_\theta(y_l\mid x))].
+</annotation></semantics></math></p>
+<p>MM‑RLHF 把 reward 拆成 critique 生成与条件评分。对人工/扩写 critique <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>c</mi><annotation encoding="application/x-tex">c</annotation></semantics></math>，语言头最小化：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>ℒ</mi><mtext mathvariant="normal">critique</mtext></msub><mo>=</mo><mo>−</mo><mi>𝔼</mi><munderover><mo>∑</mo><mrow><mi>t</mi><mo>=</mo><mn>1</mn></mrow><mrow><mo stretchy="false" form="prefix">|</mo><mi>c</mi><mo stretchy="false" form="postfix">|</mo></mrow></munderover><mo>log</mo><msub><mi>π</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>c</mi><mi>t</mi></msub><mo>∣</mo><msub><mi>c</mi><mrow><mo>&lt;</mo><mi>t</mi></mrow></msub><mo>,</mo><mi>x</mi><mo>,</mo><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>,</mo></mrow><annotation encoding="application/x-tex">
+\mathcal L_{\text{critique}}=-\mathbb E\sum_{t=1}^{\lvert c\rvert}
+\log \pi_\theta(c_t\mid c_{&lt;t},x,y),
+</annotation></semantics></math></p>
+<p>评分头则在训练时用 ground‑truth critique 做 teacher forcing：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>ℒ</mi><mtext mathvariant="normal">score</mtext></msub><mo>=</mo><mi>𝔼</mi><mrow><mo stretchy="true" form="prefix">[</mo><mo>−</mo><mo>log</mo><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>r</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><msub><mi>y</mi><mi>w</mi></msub><mo>,</mo><msub><mi>c</mi><mi>w</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>−</mo><msub><mi>r</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><msub><mi>y</mi><mi>l</mi></msub><mo>,</mo><msub><mi>c</mi><mi>l</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">]</mo></mrow><mo>,</mo><mspace width="2.0em"></mspace><msub><mi>ℒ</mi><mtext mathvariant="normal">total</mtext></msub><mo>=</mo><msub><mi>ℒ</mi><mtext mathvariant="normal">critique</mtext></msub><mo>+</mo><msub><mi>ℒ</mi><mtext mathvariant="normal">score</mtext></msub><mi>.</mi></mrow><annotation encoding="application/x-tex">
+\mathcal L_{\text{score}}=
+\mathbb E[-\log\sigma(r_\theta(x,y_w,c_w)-r_\theta(x,y_l,c_l))],
+\qquad
+\mathcal L_{\text{total}}=\mathcal L_{\text{critique}}+\mathcal L_{\text{score}}.
+</annotation></semantics></math></p>
+<p>推理时先生成 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover><mi>c</mi><mo accent="true">̂</mo></mover><mo>∼</mo><msub><mi>π</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mo>⋅</mo><mo>∣</mo><mi>x</mi><mo>,</mo><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">\hat c\sim\pi_\theta(\cdot\mid x,y)</annotation></semantics></math>，再输出 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>r</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><mi>y</mi><mo>,</mo><mover><mi>c</mi><mo accent="true">̂</mo></mover><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">r_\theta(x,y,\hat c)</annotation></semantics></math>。这一步与训练分布不同。定稿表 2 的“inference with GT annotation”把 ACC+ 从 <strong>0.67 提到 0.87</strong>，绝对 +0.20、相对 +29.85%（本报告复算），直接证明 critique 生成而非 scoring head 是当前主要瓶颈。</p>
+<p>标准 DPO 为：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>ℒ</mi><mtext mathvariant="normal">DPO</mtext></msub><mo>=</mo><mo>−</mo><mi>𝔼</mi><mo>log</mo><mi>σ</mi><mrow><mo stretchy="true" form="prefix">[</mo><mi>β</mi><mrow><mo stretchy="true" form="prefix">(</mo><mo>log</mo><mfrac><mrow><msub><mi>π</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>y</mi><mi>w</mi></msub><mo>∣</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><mrow><msub><mi>π</mi><mrow><mi>r</mi><mi>e</mi><mi>f</mi></mrow></msub><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>y</mi><mi>w</mi></msub><mo>∣</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></mfrac><mo>−</mo><mo>log</mo><mfrac><mrow><msub><mi>π</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>y</mi><mi>l</mi></msub><mo>∣</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><mrow><msub><mi>π</mi><mrow><mi>r</mi><mi>e</mi><mi>f</mi></mrow></msub><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>y</mi><mi>l</mi></msub><mo>∣</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></mfrac><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">]</mo></mrow><mi>.</mi></mrow><annotation encoding="application/x-tex">
+\mathcal L_{\text{DPO}}=-\mathbb E\log\sigma\left[
+\beta\left(
+\log\frac{\pi_\theta(y_w\mid x)}{\pi_{ref}(y_w\mid x)}-
+\log\frac{\pi_\theta(y_l\mid x)}{\pi_{ref}(y_l\mid x)}
+\right)\right].
+</annotation></semantics></math></p>
+<p>先计算 margin <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>δ</mi><mo>=</mo><mi>r</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>y</mi><mi>w</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>−</mo><mi>r</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>y</mi><mi>l</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">\delta=r(y_w)-r(y_l)</annotation></semantics></math>，再设：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>β</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>δ</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><msub><mi>β</mi><mrow><mi>o</mi><mi>r</mi><mi>i</mi></mrow></msub><mo minsize="1.2" maxsize="1.2" stretchy="false" form="prefix">[</mo><mn>1</mn><mo>+</mo><mi>w</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo>−</mo><msup><mi>e</mi><mrow><mo>−</mo><mi>k</mi><mi>δ</mi></mrow></msup><mo stretchy="true" form="postfix">)</mo></mrow><mo minsize="1.2" maxsize="1.2" stretchy="false" form="postfix">]</mo><mo>,</mo><mspace width="1.0em"></mspace><mi>β</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>δ</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>∈</mo><mrow><mo stretchy="true" form="prefix">[</mo><msub><mi>β</mi><mrow><mi>o</mi><mi>r</mi><mi>i</mi></mrow></msub><mo>,</mo><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo>+</mo><mi>w</mi><mo stretchy="true" form="postfix">)</mo></mrow><msub><mi>β</mi><mrow><mi>o</mi><mi>r</mi><mi>i</mi></mrow></msub><mo stretchy="true" form="postfix">]</mo></mrow><mi>.</mi></mrow><annotation encoding="application/x-tex">
+\beta(\delta)=\beta_{ori}\bigl[1+w(1-e^{-k\delta})\bigr],
+\quad \beta(\delta)\in[\beta_{ori},(1+w)\beta_{ori}].
+</annotation></semantics></math></p>
+<p>默认 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>β</mi><mrow><mi>o</mi><mi>r</mi><mi>i</mi></mrow></msub><mo>=</mo><mn>0.1</mn><mo>,</mo><mi>w</mi><mo>=</mo><mn>0.5</mn><mo>,</mo><mi>k</mi><mo>=</mo><mn>0.5</mn></mrow><annotation encoding="application/x-tex">\beta_{ori}=0.1,w=0.5,k=0.5</annotation></semantics></math>（附录 F，定稿 pp.28–29）。这里要谨慎：论文称之为“loss weight/update strength”，但 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>β</mi><annotation encoding="application/x-tex">\beta</annotation></semantics></math> 位于 sigmoid 内并同时具有 KL/温度解释，它不是把整个样本损失简单乘权重；只有在局部梯度层面，较大 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>β</mi><annotation encoding="application/x-tex">\beta</annotation></semantics></math> 才通常意味着更陡的成对间隔压力。</p>
+<h3 id="训练流程伪代码">训练流程伪代码</h3>
+<pre class="text"><code>输入：查询 x；同一查询的 3–5 个回答及人类排序；参考策略 π_ref
+1. 枚举所有排名不同的 (y_w, y_l)，不把平局当偏好
+2. 对每个回答生成/读取人类 critique；GPT-4o 只扩写既有理由
+3. 联合训练 critique head 与 score head
+4. 用 Reward-7B 得到 δ = r(y_w)-r(y_l)
+5. 计算 β(δ)，裁在 [β_ori, (1+w)β_ori]
+6. 以动态 β 的 DPO 目标更新 π_θ，并按模型选择 SFT loss 权重
+7. 在对话、感知、OCR、数学、幻觉、视频、多图、高分辨率与安全上评测
+输出：对齐后的 MLLM、可生成 critique 的 reward model、两个 benchmark</code></pre>
+</section>
+<section class="card" aria-label="报告章节 6">
+<h2 id="数据与工程细节">5. 数据与工程细节</h2>
+<h3 id="数据构成">5.1 数据构成</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 28%" />
+<col style="width: 28%" />
+<col style="width: 21%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">类型</th>
+<th scope="col" style="text-align: right;">查询数</th>
+<th scope="col" style="text-align: right;">占 29,997 比例（本报告复算）</th>
+<th scope="col">来源/说明</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Image‑Long</td>
+<td style="text-align: right;">9,575</td>
+<td style="text-align: right;">31.92%</td>
+<td>GPT‑4o 回答长度超过 128 字符的描述/对话</td>
+</tr>
+<tr class="even">
+<td>Image‑Short</td>
+<td style="text-align: right;">12,063</td>
+<td style="text-align: right;">40.21%</td>
+<td>简短视觉问答</td>
+</tr>
+<tr class="odd">
+<td>Image‑MCQ</td>
+<td style="text-align: right;">2,125</td>
+<td style="text-align: right;">7.08%</td>
+<td>数学、OCR、图标、VQA 等</td>
+</tr>
+<tr class="even">
+<td>Safety</td>
+<td style="text-align: right;">1,999</td>
+<td style="text-align: right;">6.66%</td>
+<td>VLGuard 与自建红队/鲁棒内容</td>
+</tr>
+<tr class="odd">
+<td>Video</td>
+<td style="text-align: right;">4,235</td>
+<td style="text-align: right;">14.12%</td>
+<td>主要来自 ShareGPT4Video</td>
+</tr>
+<tr class="even">
+<td><strong>总计</strong></td>
+<td style="text-align: right;"><strong>29,997</strong></td>
+<td style="text-align: right;"><strong>100%</strong></td>
+<td>定稿表 1，PDF p.4</td>
+</tr>
+</tbody>
+</table></div>
+<p>图像原始分布为 Long 12.17%、Short 83.68%、MCQ 4.14%，作者把采样比改为 4:5:1；图像用 CLIP ViT‑B/32 编码，KNN 取 100 个簇，每簇随机采样；视频只取首帧特征（定稿 pp.3–4）。回答来自 Qwen2‑VL‑72B、LLaVA‑OV‑72B、GPT‑4o、Claude‑3.5‑Sonnet，视频还使用 LLaVA‑Video‑72B。</p>
+<h3 id="关键工程设置">5.2 关键工程设置</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">模块</th>
+<th scope="col">设置</th>
+<th scope="col">证据位置</th>
+<th scope="col">影响</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>训练硬件</td>
+<td>32× H800 80GB</td>
+<td>附录 G，PDF p.29</td>
+<td>给出卡型但未给 GPU‑hour、能耗和阶段成本</td>
+</tr>
+<tr class="even">
+<td>全量/消融</td>
+<td>主对比用全数据；消融多用 1/5 数据</td>
+<td>附录 G，p.29</td>
+<td>消融效应不能直接等同全量效应</td>
+</tr>
+<tr class="odd">
+<td>学习率</td>
+<td><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="prefix">{</mo><msup><mn>10</mn><mrow><mo>−</mo><mn>7</mn></mrow></msup><mo>,</mo><mn>5</mn><mo>×</mo><msup><mn>10</mn><mrow><mo>−</mo><mn>7</mn></mrow></msup><mo>,</mo><msup><mn>10</mn><mrow><mo>−</mo><mn>6</mn></mrow></msup><mo>,</mo><mn>5</mn><mo>×</mo><msup><mn>10</mn><mrow><mo>−</mo><mn>6</mn></mrow></msup><mo>,</mo><msup><mn>10</mn><mrow><mo>−</mo><mn>5</mn></mrow></msup><mo stretchy="false" form="postfix">}</mo></mrow><annotation encoding="application/x-tex">\{10^{-7},5\times10^{-7},10^{-6},5\times10^{-6},10^{-5}\}</annotation></semantics></math></td>
+<td>附录 G，p.29</td>
+<td>多方法均 grid search，但每方法搜索成本未报</td>
+</tr>
+<tr class="even">
+<td>SFT loss 权重</td>
+<td><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="prefix">{</mo><mn>0</mn><mo>,</mo><mn>0.1</mn><mo>,</mo><mn>0.25</mn><mo>,</mo><mn>0.5</mn><mo>,</mo><mn>1.0</mn><mo stretchy="false" form="postfix">}</mo></mrow><annotation encoding="application/x-tex">\{0,0.1,0.25,0.5,1.0\}</annotation></semantics></math></td>
+<td>附录 G，p.29</td>
+<td>InternVL‑1B 最优甚至去掉 SFT loss，说明配方依模型而变</td>
+</tr>
+<tr class="odd">
+<td>动态参数</td>
+<td><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>β</mi><mrow><mi>o</mi><mi>r</mi><mi>i</mi></mrow></msub><mo>=</mo><mn>0.1</mn><mo>,</mo><mi>w</mi><mo>=</mo><mi>k</mi><mo>=</mo><mn>0.5</mn></mrow><annotation encoding="application/x-tex">\beta_{ori}=0.1,w=k=0.5</annotation></semantics></math></td>
+<td>附录 F/G，pp.28–29</td>
+<td>只给默认与曲线，缺精确敏感性表</td>
+</tr>
+<tr class="even">
+<td>视觉编码器</td>
+<td>冻结</td>
+<td>附录 G，p.29</td>
+<td>省算力，但限制视觉表征对偏好的适应</td>
+</tr>
+<tr class="odd">
+<td>RewardBench</td>
+<td>每类别随机 10 条，共 170 比较对</td>
+<td>§3.2，p.6</td>
+<td>类别样本小，ACC+ 方差与难度混合明显</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section class="card" aria-label="报告章节 7">
+<h2 id="基准指标与平均数如何读">6. 基准、指标与“平均数”如何读</h2>
+<p>论文把 27 个 benchmark 汇总成 Conversation、Hallucination Score/Rate、General、Chart、OCR、Math、Multi‑Image、Video、RealWorld、Safety 与 Unsafety 等维度。典型 benchmark 包括 LLaVA‑Wild/Wilder、WildVision、MME/MMBench/MMStar/SeedBench/VQAv2/AI2D、ChartQA/DocVQA/InfoVQA/OCRBench/TextVQA/WebSRC、MathVista/MathVerse、POPE/MMHal/Object‑Hallucination、Video‑MME/VideoChatGPT/VideoDC、LLaVA‑Interleave/MMMU‑Pro 与多类安全攻击（附录表 8–9，PDF pp.24–27）。</p>
+<p>RewardBench 有两个指标：ACC 是比较对层面选对优胜回答的比例；ACC+ 要求同一查询下所有回答对排序都正确，所以更严格。Safety 表同时含“越高越好”的安全识别/拒答与“越低越好”的 ASR、Unsafety；若不保留方向，简单平均会制造误导。</p>
+</section>
+<section class="card" aria-label="报告章节 8">
+<h2 id="主结果矩阵一同一数据上的八种偏好优化算法">7. 主结果矩阵一：同一数据上的八种偏好优化算法</h2>
+<p>下表是定稿表 4（PDF p.8），全部方法在 MM‑RLHF 训练集上训练；粗体为列最优。MathVista 中基线在前文附录表使用 60.10，定稿表 4 亦为 60.10。本表足以满足五基准×六方法以上的 head‑to‑head，但论文<strong>没有</strong>给标准差或显著性。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<colgroup>
+<col style="width: 13%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">LLaVA‑Wild ↑</th>
+<th scope="col" style="text-align: right;">OCRBench ↑</th>
+<th scope="col" style="text-align: right;">DocVQA ↑</th>
+<th scope="col" style="text-align: right;">MathVista ↑</th>
+<th scope="col" style="text-align: right;">MMHal ↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>LLaVA‑OV‑7B（未对齐）</td>
+<td style="text-align: right;">90.70</td>
+<td style="text-align: right;">62.30</td>
+<td style="text-align: right;">84.34</td>
+<td style="text-align: right;">60.10</td>
+<td style="text-align: right;">3.22</td>
+</tr>
+<tr class="even">
+<td>DPO</td>
+<td style="text-align: right;">95.20</td>
+<td style="text-align: right;">66.30</td>
+<td style="text-align: right;">85.72</td>
+<td style="text-align: right;">60.90</td>
+<td style="text-align: right;">3.88</td>
+</tr>
+<tr class="odd">
+<td>beta‑DPO</td>
+<td style="text-align: right;">94.40</td>
+<td style="text-align: right;">66.50</td>
+<td style="text-align: right;">85.44</td>
+<td style="text-align: right;">60.00</td>
+<td style="text-align: right;">3.44</td>
+</tr>
+<tr class="even">
+<td>SimPO</td>
+<td style="text-align: right;">93.00</td>
+<td style="text-align: right;">64.50</td>
+<td style="text-align: right;">84.50</td>
+<td style="text-align: right;">59.10</td>
+<td style="text-align: right;">3.30</td>
+</tr>
+<tr class="odd">
+<td>LLaVA‑Critic（三阶段）</td>
+<td style="text-align: right;"><strong>97.90</strong></td>
+<td style="text-align: right;">64.20</td>
+<td style="text-align: right;">84.31</td>
+<td style="text-align: right;">58.74</td>
+<td style="text-align: right;">3.95</td>
+</tr>
+<tr class="even">
+<td>MIA‑DPO</td>
+<td style="text-align: right;">95.00</td>
+<td style="text-align: right;">66.50</td>
+<td style="text-align: right;">85.60</td>
+<td style="text-align: right;">60.00</td>
+<td style="text-align: right;">3.80</td>
+</tr>
+<tr class="odd">
+<td>MPO</td>
+<td style="text-align: right;">95.30</td>
+<td style="text-align: right;">66.20</td>
+<td style="text-align: right;">85.88</td>
+<td style="text-align: right;">61.10</td>
+<td style="text-align: right;">3.72</td>
+</tr>
+<tr class="even">
+<td><strong>MM‑DPO</strong></td>
+<td style="text-align: right;"><strong>97.90</strong></td>
+<td style="text-align: right;"><strong>69.30</strong></td>
+<td style="text-align: right;"><strong>86.11</strong></td>
+<td style="text-align: right;"><strong>61.60</strong></td>
+<td style="text-align: right;"><strong>4.08</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>相对最强非 MM‑DPO 基线，MM‑DPO 在 OCRBench 为 69.30−66.50=<strong>+2.80 pp</strong>（相对 +4.21%），DocVQA 为 86.11−85.88=<strong>+0.23 pp</strong>（+0.27%），MathVista 为 61.60−61.10=<strong>+0.50 pp</strong>（+0.82%），MMHal 为 4.08−3.95=<strong>+0.13</strong>（+3.29%）；LLaVA‑Wild 与 LLaVA‑Critic并列。因为后四项中有三项绝对差不超过 0.5，所以没有方差时只能说“表中最优”，不能说统计显著胜出。</p>
+</section>
+<section class="card" aria-label="报告章节 9">
+<h2 id="主结果矩阵二把数据贡献与算法贡献拆开">8. 主结果矩阵二：把数据贡献与算法贡献拆开</h2>
+<p>定稿表 5（PDF p.9）固定 DPO，只替换偏好数据，因而比图 1 更接近“数据集本身”的对照。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<colgroup>
+<col style="width: 13%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">数据集（统一 DPO）</th>
+<th scope="col" style="text-align: right;">LLaVA‑Wild ↑</th>
+<th scope="col" style="text-align: right;">OCRBench ↑</th>
+<th scope="col" style="text-align: right;">DocVQA ↑</th>
+<th scope="col" style="text-align: right;">MathVista ↑</th>
+<th scope="col" style="text-align: right;">MMHal ↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>No Alignment</td>
+<td style="text-align: right;">90.70</td>
+<td style="text-align: right;">62.30</td>
+<td style="text-align: right;">84.34</td>
+<td style="text-align: right;">60.10</td>
+<td style="text-align: right;">3.22</td>
+</tr>
+<tr class="even">
+<td>LLaVA‑RLHF</td>
+<td style="text-align: right;">94.20</td>
+<td style="text-align: right;">61.10</td>
+<td style="text-align: right;">84.00</td>
+<td style="text-align: right;">58.20</td>
+<td style="text-align: right;">3.38</td>
+</tr>
+<tr class="odd">
+<td>VLFeedback</td>
+<td style="text-align: right;">93.60</td>
+<td style="text-align: right;">64.10</td>
+<td style="text-align: right;">84.72</td>
+<td style="text-align: right;">58.70</td>
+<td style="text-align: right;">3.03</td>
+</tr>
+<tr class="even">
+<td>RLAIF</td>
+<td style="text-align: right;">92.30</td>
+<td style="text-align: right;">64.00</td>
+<td style="text-align: right;">84.44</td>
+<td style="text-align: right;">60.00</td>
+<td style="text-align: right;">3.18</td>
+</tr>
+<tr class="odd">
+<td>LLaVA‑Critic data</td>
+<td style="text-align: right;">94.70</td>
+<td style="text-align: right;">62.50</td>
+<td style="text-align: right;">83.40</td>
+<td style="text-align: right;">59.50</td>
+<td style="text-align: right;">3.44</td>
+</tr>
+<tr class="even">
+<td>MPO‑Data</td>
+<td style="text-align: right;">93.20</td>
+<td style="text-align: right;">60.80</td>
+<td style="text-align: right;">82.30</td>
+<td style="text-align: right;"><strong>63.40</strong></td>
+<td style="text-align: right;">3.48</td>
+</tr>
+<tr class="odd">
+<td><strong>MM‑RLHF</strong></td>
+<td style="text-align: right;"><strong>97.90</strong></td>
+<td style="text-align: right;"><strong>69.30</strong></td>
+<td style="text-align: right;"><strong>86.11</strong></td>
+<td style="text-align: right;">61.60</td>
+<td style="text-align: right;"><strong>4.08</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>MM‑RLHF 在 5 列中赢 4 列；MathVista 反而落后 MPO‑Data <strong>1.80 pp</strong>（相对 −2.84%）。因为 MPO‑Data 更偏数学，说明“高覆盖”并不替代领域密集数据；一个可复用策略是通用偏好池作为底座，再给关键领域做混合采样，而不是期待单一全能数据集统治所有列。</p>
+</section>
+<section class="card" aria-label="报告章节 10">
+<h2 id="reward-模型内部-benchmark-很强外部闭源差距仍大">9. Reward 模型：内部 benchmark 很强，外部闭源差距仍大</h2>
+<h3 id="rewardbench-完整矩阵">9.1 RewardBench 完整矩阵</h3>
+<p>定稿表 2（PDF p.7），每格为 ACC/ACC+：</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<colgroup>
+<col style="width: 11%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">MCQ</th>
+<th scope="col" style="text-align: right;">Long</th>
+<th scope="col" style="text-align: right;">Short</th>
+<th scope="col" style="text-align: right;">Safety</th>
+<th scope="col" style="text-align: right;">Video</th>
+<th scope="col" style="text-align: right;">Overall</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>LLaVA‑OV‑7B</td>
+<td style="text-align: right;">.14/.00</td>
+<td style="text-align: right;">.11/.00</td>
+<td style="text-align: right;">.29/.20</td>
+<td style="text-align: right;">.41/.00</td>
+<td style="text-align: right;">.32/.10</td>
+<td style="text-align: right;">.24/.07</td>
+</tr>
+<tr class="even">
+<td>LLaVA‑Critic pointwise</td>
+<td style="text-align: right;">.38/.10</td>
+<td style="text-align: right;">.49/.20</td>
+<td style="text-align: right;">.38/.20</td>
+<td style="text-align: right;">.62/.17</td>
+<td style="text-align: right;">.40/.20</td>
+<td style="text-align: right;">.45/.17</td>
+</tr>
+<tr class="odd">
+<td>LLaVA‑Critic pairwise</td>
+<td style="text-align: right;">.23/.00</td>
+<td style="text-align: right;">.54/.30</td>
+<td style="text-align: right;">.24/.10</td>
+<td style="text-align: right;">.28/.17</td>
+<td style="text-align: right;">.52/.20</td>
+<td style="text-align: right;">.35/.15</td>
+</tr>
+<tr class="even">
+<td>GPT‑4o</td>
+<td style="text-align: right;">.69/.20</td>
+<td style="text-align: right;">.95/.90</td>
+<td style="text-align: right;">.56/.40</td>
+<td style="text-align: right;"><strong>.72/.33</strong></td>
+<td style="text-align: right;">.80/.60</td>
+<td style="text-align: right;">.74/.50</td>
+</tr>
+<tr class="odd">
+<td>MM‑Reward w/o Task 1</td>
+<td style="text-align: right;">.90/.80</td>
+<td style="text-align: right;">.70/.40</td>
+<td style="text-align: right;">.79/.60</td>
+<td style="text-align: right;">.69/.33</td>
+<td style="text-align: right;">.70/.60</td>
+<td style="text-align: right;">.75/.50</td>
+</tr>
+<tr class="even">
+<td>MM‑Reward w/o enhanced annotations</td>
+<td style="text-align: right;">.83/.70</td>
+<td style="text-align: right;">.92/.80</td>
+<td style="text-align: right;">.68/.40</td>
+<td style="text-align: right;">.69/.17</td>
+<td style="text-align: right;">.80/.60</td>
+<td style="text-align: right;">.79/.57</td>
+</tr>
+<tr class="odd">
+<td><strong>MM‑Reward full</strong></td>
+<td style="text-align: right;">.93/.70</td>
+<td style="text-align: right;"><strong>1.00/1.00</strong></td>
+<td style="text-align: right;">.71/.50</td>
+<td style="text-align: right;">.66/.17</td>
+<td style="text-align: right;"><strong>.92/.80</strong></td>
+<td style="text-align: right;"><strong>.85/.67</strong></td>
+</tr>
+<tr class="even">
+<td>Inference with GT annotation</td>
+<td style="text-align: right;"><strong>1.00/1.00</strong></td>
+<td style="text-align: right;"><strong>1.00/1.00</strong></td>
+<td style="text-align: right;"><strong>1.00/1.00</strong></td>
+<td style="text-align: right;">.69/.17</td>
+<td style="text-align: right;">.92/<strong>.90</strong></td>
+<td style="text-align: right;">.93/<strong>.87</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>从 w/o enhanced 到 full，ACC+ 0.57→0.67，绝对 +0.10、相对 +17.54%；从 w/o Task 1 到 full 是 +0.17、相对 +34.00%。但 Safety 的 full ACC/ACC+ 为 .66/.17，反而低于 GPT‑4o 的 .72/.33；“总体超过 GPT‑4o”不能外推到每个类别。</p>
+<h3 id="跨模型对比">9.2 跨模型对比</h3>
+<p>定稿表 3（PDF p.8）按 General/Hallucination/Reasoning 平均：MM‑Reward‑7B 为 <strong>45.04/50.45/57.55，Avg 50.15</strong>；最佳开源对照 InternVL2‑26B 为 39.30/36.90/60.80，Avg 45.67，因此平均 +4.48、相对 +9.81%。它也超过 GPT‑4o‑mini 的 44.80（+5.35，+11.94%），但低于 Claude‑3.5‑Sonnet 53.57、GPT‑4o 62.40、Gemini‑1.5‑Pro 62.50；相对 GPT‑4o 仍少 <strong>12.25 分 / 19.63%</strong>，相对 Gemini 少 <strong>12.35 / 19.76%</strong>（均为本报告复算）。</p>
+<p>论文正文写“comparable to or exceeding GPT‑4o”，但同页表 3 的总体平均并不支持这句；较可能指自建 RewardBench 的特定列或另一评测设置。严谨读法应是：<strong>7B reward model 是表中最强开源平均，但没有在该外部矩阵上追平 GPT‑4o。</strong></p>
+</section>
+
+<figure class="figure" aria-labelledby="figure-rm-title">
+  <p class="fig-title" id="figure-rm-title">Reward‑7B 是最强开源平均，但并未追平旗舰闭源模型</p>
+  <p class="fig-sub">General、Hallucination、Reasoning 三维的简单平均；单 Y 轴，越高越好。</p>
+  <div class="legend"><span><span class="swatch" style="background:#2a78d6"></span>开源/本文</span><span><span class="swatch" style="background:#eb6834"></span>闭源对照</span></div>
+  <svg class="chart" viewBox="0 0 900 350" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>MM-RLHF Reward-7B 与开源及闭源模型平均分对比</title>
+    <desc>MM-Reward-7B 平均 50.15，高于 InternVL2-26B 45.67 和 GPT-4o-mini 44.80，低于 Claude 53.57、GPT-4o 62.40 与 Gemini 62.50。</desc>
+    <line x1="72" y1="300.0" x2="860" y2="300.0" stroke="var(--grid)"/><text x="58" y="305.0" text-anchor="end" font-size="12">0</text><line x1="72" y1="230.0" x2="860" y2="230.0" stroke="var(--grid)"/><text x="58" y="235.0" text-anchor="end" font-size="12">20</text><line x1="72" y1="160.0" x2="860" y2="160.0" stroke="var(--grid)"/><text x="58" y="165.0" text-anchor="end" font-size="12">40</text><line x1="72" y1="90.0" x2="860" y2="90.0" stroke="var(--grid)"/><text x="58" y="95.0" text-anchor="end" font-size="12">60</text><line x1="72" y1="55.0" x2="860" y2="55.0" stroke="var(--grid)"/><text x="58" y="60.0" text-anchor="end" font-size="12">70</text><line x1="72" y1="55" x2="72" y2="300" stroke="var(--grid)"/><rect x="105" y="140.2" width="70" height="159.8" rx="5" fill="#2a78d6" tabindex="0" data-tip="InternVL2-26B · Avg：45.67" aria-label="InternVL2-26B 平均 45.67"/><text x="140" y="323" text-anchor="middle" font-size="11.5">InternVL2-26B</text><text x="140" y="132.2" text-anchor="middle" font-size="12">45.67</text><rect x="230" y="124.5" width="70" height="175.5" rx="5" fill="#3987e5" tabindex="0" data-tip="MM-Reward-7B · Avg：50.15" aria-label="MM-Reward-7B 平均 50.15"/><text x="265" y="323" text-anchor="middle" font-size="11.5">MM-Reward-7B</text><text x="265" y="116.5" text-anchor="middle" font-size="12">50.15</text><rect x="355" y="143.2" width="70" height="156.8" rx="5" fill="#eb6834" tabindex="0" data-tip="GPT-4o-mini · Avg：44.80" aria-label="GPT-4o-mini 平均 44.80"/><text x="390" y="323" text-anchor="middle" font-size="11.5">GPT-4o-mini</text><text x="390" y="135.2" text-anchor="middle" font-size="12">44.80</text><rect x="480" y="112.5" width="70" height="187.5" rx="5" fill="#d95926" tabindex="0" data-tip="Claude-3.5 · Avg：53.57" aria-label="Claude-3.5 平均 53.57"/><text x="515" y="323" text-anchor="middle" font-size="11.5">Claude-3.5</text><text x="515" y="104.5" text-anchor="middle" font-size="12">53.57</text><rect x="605" y="81.6" width="70" height="218.4" rx="5" fill="#eb6834" tabindex="0" data-tip="GPT-4o · Avg：62.40" aria-label="GPT-4o 平均 62.40"/><text x="640" y="323" text-anchor="middle" font-size="11.5">GPT-4o</text><text x="640" y="73.6" text-anchor="middle" font-size="12">62.40</text><rect x="730" y="81.2" width="70" height="218.8" rx="5" fill="#d95926" tabindex="0" data-tip="Gemini-1.5 · Avg：62.50" aria-label="Gemini-1.5 平均 62.50"/><text x="765" y="323" text-anchor="middle" font-size="11.5">Gemini-1.5</text><text x="765" y="73.2" text-anchor="middle" font-size="12">62.50</text>
+  </svg>
+  <figcaption>来源：核心论文定稿 Table 3（PDF p.8）；悬停或键盘聚焦柱形查看精确值。图中不含误差条，因为论文未报告。</figcaption>
+</figure>
+<section class="card" aria-label="报告章节 11">
+<h2 id="安全收益局部回退与完整性边界">10. 安全收益、局部回退与完整性边界</h2>
+<p>附录表 9（PDF pp.26–27）显示 LLaVA‑OV‑7B 的 Safety average <strong>75.8→85.4</strong>（+9.6 pp，+12.66% 相对），Unsafety <strong>40.2→13.9</strong>（−26.3 pp，−65.42% 相对）。具体地，NSFW‑Text 60.4→10.6（−49.8 pp，−82.45%），NSFW‑Image 80.1→24.2（−55.9 pp，−69.79%），Multimodal ASR 41.2→8.3（−31.9 pp，−77.43%）。这些是论文最可信的大效应。</p>
+<p>但安全不是单调改善：Risk 82→76（−6 pp），adversarial targeted 37→40（+3 pp，若为攻击成功则更差）。部分子集极小：cross‑model ASR 与 RtA 各 <strong>18</strong> 例（附录表 6，PDF pp.22–23），单个样本就等于 5.56 pp。因此聚合“安全 +60%”适合做方向摘要，不足以代表每个威胁模型。</p>
+<p>主 benchmark 也有明确回退。附录表 8（PDF pp.24–25）中 LLaVA‑OV‑7B 的 MME‑RealWorld English 48.36→46.95（−1.41 pp）、Chinese 54.01→53.39（−0.62 pp）、RealWorldQA 66.41→65.75（−0.66 pp）、AI2D 81.41→81.22（−0.19 pp）、MathVista format 62.50→62.20（−0.30 pp）。所以“几乎所有 benchmark 提升”是总体趋势，不是逐格事实。</p>
+</section>
+<section class="card" aria-label="报告章节 12">
+<h2 id="逐层消融超参敏感性与相变">11. 逐层消融、超参敏感性与相变</h2>
+<h3 id="critique-的三层贡献">11.1 Critique 的三层贡献</h3>
+<p>第一层，直接 pairwise LLaVA‑Critic ACC+ 只有 0.15；加入人类 critique 任务但去掉增强后为 0.57，表明“先解释再评分”可能是主要跃迁。第二层，GPT‑4o 扩写把 0.57 提至 0.67，说明扩写有增益，但无法区分是内容更完整还是风格更接近评测器。第三层，用 GT critique 推理达到 0.87，暴露出生成阶段 0.20 的绝对缺口。因为这三层并非完全同架构/同目标的单变量链，不能把全部差额相加当成独立贡献。</p>
+<h3 id="算法组件">11.2 算法组件</h3>
+<p>MM‑DPO 相对普通 DPO 在五列均更高，但没有“只用 all pairs、不动态 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>β</mi><annotation encoding="application/x-tex">\beta</annotation></semantics></math>”与“只动态 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>β</mi><annotation encoding="application/x-tex">\beta</annotation></semantics></math>、仍只用 hardest pair”的全量正交表。Table 4 同时比较 beta‑DPO、SimPO、LLaVA‑Critic、MIA‑DPO、MPO，回答了“整体配方是否有竞争力”，没有完全回答“all‑pairs 与 Dynamic Reward Scaling 各自贡献多少”。</p>
+<h3 id="小模型自改进相变">11.3 小模型自改进相变</h3>
+<p>论文最多从当前策略采样 <strong>8</strong> 个回答，再用 reward model 选择偏好对（§5.3 与附录分析）。小模型在难 MCQ 上常生成多个相同错误回答；若候选支持集不含正确解，再好的 RM 也无法创造正例。三阶段 LLaVA‑Critic 在 LLaVA‑Wild/MMHal 改善，却在 OCRBench 64.20、MathVista 58.74，分别低于 MM‑DPO 5.10 与 2.86 分（表 4，p.8）。这不是 RM 排序器的单点故障，而是 on‑policy 采样的“支持集相变”：生成质量低于阈值时，自训练只能选择不同程度的错。</p>
+<h3 id="kw-敏感性">11.4 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi><mo>,</mo><mi>w</mi></mrow><annotation encoding="application/x-tex">k,w</annotation></semantics></math> 敏感性</h3>
+<p>附录图 12（PDF p.29）只提供曲线，论文结论是 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>k</mi><mo>,</mo><mi>w</mi></mrow><annotation encoding="application/x-tex">k,w</annotation></semantics></math> 太大或太小均不理想，默认二者 0.5；<strong>未报告可逐格读取的精确分数、标准差、置信区间或相变阈值</strong>。因此可以推出动态范围需要约束，不能推出“0.5 是普适最优”或具体临界点。</p>
+</section>
+<section class="card" aria-label="报告章节 13">
+<h2 id="统计显著性与可复现性结论">12. 统计显著性与可复现性结论</h2>
+<p>主结果没有报告随机种子数、标准差、置信区间、显著性检验或多重比较校正。Table 4 中 +0.13、+0.23、+0.50 这种小差额可能落在普通训练噪声内；相反，Unsafety −26.3 pp、NSFW‑Text −49.8 pp 属大效应，即使没有误差条也更值得后续复现。</p>
+<p>复现层面已有代码、模型和数据入口是优点；但存在四个断点：公开数据口径 29,997/20k/16.3k 不一致；训练成本只报 32×H800，未报时长；GPT‑4o 扩写和若干闭源回答源会随服务版本变化；OpenReview 审稿页当日无法直接读取。结论是“可以复用框架”，而不是“可一键复现全部表格”。</p>
+</section>
+<section class="card" aria-label="报告章节 14">
+<h2 id="相关工作链解决什么遗留什么mmrlhf-如何回应">13. 相关工作链：解决什么—遗留什么—MM‑RLHF 如何回应</h2>
+<h3 id="dpo把-rlhf-变成分类但默认每对证据同质">13.1 DPO：把 RLHF 变成分类，但默认每对证据同质</h3>
+<p><strong>解决什么：</strong> DPO 从 KL 约束 RLHF 的最优策略形式导出成对 logistic 目标，省去显式 reward model 与在线 RL（NeurIPS 2023，公式 7）。<strong>遗留缺口：</strong> 标准形式固定 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>β</mi><annotation encoding="application/x-tex">\beta</annotation></semantics></math>，不区分多模态偏好对的置信度，也没有处理同一查询下 3–5 个回答的完整排序。<strong>MM‑RLHF 如何回应：</strong> 枚举所有不同排名对，以 Reward‑7B margin 生成有界 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>β</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>δ</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">\beta(\delta)</annotation></semantics></math>。<strong>设计传递：</strong> 保留 reference‑relative log‑ratio 的稳定骨架，只把实例级证据质量注入温度/间隔。</p>
+<h3 id="llavarlhf-factrlhf先证明多模态-rlhf-能减幻觉">13.2 LLaVA‑RLHF / Fact‑RLHF：先证明多模态 RLHF 能减幻觉</h3>
+<p><strong>解决什么：</strong> 以事实增强 reward 缓解视觉幻觉；论文报告在 LLaVA‑Bench 达到 text GPT‑4 的 94%，对照先前 87%，并在 MMHal 改善 60%（arXiv 2309.14525，摘要/主结果）。<strong>遗留缺口：</strong> 目标集中于事实性和幻觉，数据规模与任务覆盖不能回答 OCR、数学、视频与安全是否共同改善。<strong>MM‑RLHF 如何回应：</strong> 从五类 29,997 查询生成 120k 对，并在 10 维/27 benchmark 评测。<strong>设计传递：</strong> “事实性 reward”被扩展成 Helpful/Faithful/Ethical 三维人工理由。</p>
+<h3 id="vlfeedback把规模做大但由-ai-自己写偏好">13.3 VLFeedback：把规模做大，但由 AI 自己写偏好</h3>
+<p><strong>解决什么：</strong> VLFeedback 提供 82k 多模态指令的 AI feedback，原论文报告 base model 在 perception 与 cognition 分别提升 6.9% 和 9.5%（EMNLP 2024 定稿摘要/主表）。<strong>遗留缺口：</strong> AI 标注与 judge 可能共享偏差；缺少专业人工细粒度理由。<strong>MM‑RLHF 如何回应：</strong> 50+ 人工标注者先提供分数、排名与理由，再限制 GPT‑4o 只做扩写。<strong>设计传递：</strong> 大规模多源回答池保留，但“谁定义偏好”从纯 AI 改为 human‑anchored、AI‑expanded。</p>
+<h3 id="llavacritic通用多模态裁判与迭代-dpo">13.4 LLaVA‑Critic：通用多模态裁判与迭代 DPO</h3>
+<p><strong>解决什么：</strong> 把 LLaVA 训练成可点式/成对评估多模态回答的通用 critic，并可反复采样、筛选和 DPO。<strong>遗留缺口：</strong> critic 对训练分布过拟合；小模型若采不到正确回答，迭代筛选无解。<strong>MM‑RLHF 如何回应：</strong> 自建更广的人工 benchmark 与 critique reward；用离线人工排序避免完全依赖 on‑policy 候选。<strong>设计传递：</strong> 保留“批评作为中间推理”，但把它直接纳入联合训练目标。</p>
+<h3 id="rlaifv开放-ai-feedback-的低成本路线">13.5 RLAIF‑V：开放 AI feedback 的低成本路线</h3>
+<p><strong>解决什么：</strong> 以开源 AI feedback 构造偏好，论文报告 7B 模型 object hallucination 降 80.7%、总体 hallucination 降 33.7%（arXiv 2405.17220，摘要）。<strong>遗留缺口：</strong> 仍偏重 hallucination，且 AI feedback 的错误可能自举。<strong>MM‑RLHF 如何回应：</strong> 以人工排序做锚，并把 safety/video/general/OCR/math 纳入覆盖。<strong>设计传递：</strong> 自动化 feedback 仍可用于扩写和扩规模，但不能替代高价值人工裁决。</p>
+<h3 id="非线性技术演进树">非线性技术演进树</h3>
+<pre class="text"><code>                         ┌─ Fact-RLHF / RLAIF-V ── 幻觉与事实性
+SFT-only MLLM ──────────┤
+                         ├─ VLFeedback ─────────── 大规模 AI 偏好
+                         │
+文本 RLHF ─ DPO ─────────┼─ MIA-DPO / MPO ─────── 多图、数学与混合目标
+                         │
+                         └─ LLaVA-Critic ───────── critic → 采样 → 迭代 DPO
+                                      │
+                                      ├── 小模型候选支持集不足（负反馈）
+                                      │
+人工细粒度排序 ─ critique learning ───┴── MM-RLHF
+          │                              ├─ all ranked pairs
+          └─ GPT-4o constrained expansion├─ reward-margin β(δ)
+                                         └─ 10维 / 27 benchmark</code></pre>
+<p>演进动力经历三个转折：先从“会回答”转到“少幻觉”，再从单任务偏好转到通用评价器，最后从统一标量 reward 转到含解释、含置信度的实例级更新。MM‑RLHF 的转折不是取消人工，而是把人工用在定义偏好、把模型用在扩写与规模化；这也把新风险从“无人工监督”迁移成“闭源扩写器与自建 benchmark 的循环依赖”。</p>
+<h3 id="跨论文对标">跨论文对标</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">偏好来源</th>
+<th scope="col">主要覆盖</th>
+<th scope="col">Reward 形态</th>
+<th scope="col">Policy 更新</th>
+<th scope="col">MM‑RLHF 接过的设计</th>
+<th scope="col">仍未补齐</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DPO</td>
+<td>人类/任意成对数据</td>
+<td>文本通用</td>
+<td>隐式</td>
+<td>固定 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>β</mi><annotation encoding="application/x-tex">\beta</annotation></semantics></math></td>
+<td>稳定成对目标</td>
+<td>实例置信度理论</td>
+</tr>
+<tr class="even">
+<td>Fact‑RLHF</td>
+<td>事实增强反馈</td>
+<td>幻觉</td>
+<td>标量/事实性</td>
+<td>RLHF</td>
+<td>视觉事实锚</td>
+<td>广覆盖与成本</td>
+</tr>
+<tr class="odd">
+<td>VLFeedback</td>
+<td>AI feedback</td>
+<td>感知/认知</td>
+<td>AI 评分理由</td>
+<td>偏好微调</td>
+<td>多源大规模池</td>
+<td>教师/裁判偏差</td>
+</tr>
+<tr class="even">
+<td>LLaVA‑Critic</td>
+<td>AI+训练 critic</td>
+<td>通用评价</td>
+<td>critic 文本/分数</td>
+<td>迭代 DPO</td>
+<td>先批评后评分</td>
+<td>低能力自采样</td>
+</tr>
+<tr class="odd">
+<td>RLAIF‑V</td>
+<td>开源 AI feedback</td>
+<td>幻觉</td>
+<td>AI 反馈</td>
+<td>DPO 类</td>
+<td>低成本扩展</td>
+<td>人工锚不足</td>
+</tr>
+<tr class="even">
+<td><strong>MM‑RLHF</strong></td>
+<td>人工锚+GPT‑4o 扩写</td>
+<td>图像/视频/安全十维</td>
+<td>critique+score</td>
+<td>all‑pairs + 动态 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>β</mi><annotation encoding="application/x-tex">\beta</annotation></semantics></math></td>
+<td>端到端统一闭环</td>
+<td>外部分布、校准、版本 manifest</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section class="card" aria-label="报告章节 15">
+<h2 id="真正贡献可复用设计与迁移潜力">14. 真正贡献、可复用设计与迁移潜力</h2>
+<p>真正贡献有三点。第一，29,997 查询的五类构成与排序理由，让多模态 preference 不再等于“哪个 caption 更像图”。第二，RewardBench 的 GT‑critique 对照把 critique 生成瓶颈量化出来；这比只宣称“可解释”更有研究价值。第三，Table 4 与 Table 5 分别固定数据、固定算法，至少初步分开“数据好”与“优化器好”。</p>
+<p>最可复用的设计不是特定指数函数，而是三段协议：<strong>人类定义错误维度 → 模型生成结构化 critique → 校准后的 margin 控制更新强度</strong>。迁移到医学影像时可把三维扩成证据定位、临床正确性、风险等级；迁移到视频 Agent 时应改用时序 embedding 取代首帧聚类；迁移到端侧模型时，应把 reward 置信度与延迟/能耗约束共同纳入 pair weighting。</p>
+</section>
+<section class="card" aria-label="报告章节 16">
+<h2 id="论文自述限制">15. 论文自述限制</h2>
+<ol type="1">
+<li><strong>高分辨率数据不足。</strong> 作者明确把 RealWorld/高分辨率增益有限归因于超高分辨率样本少，且采样按图像相似而非分辨率优化（§5.1，PDF pp.7–8）。</li>
+<li><strong>细粒度标注未充分使用。</strong> 结论指出 per‑dimension scores 与 ranking rationales 在当前算法中仍被低利用，未来需更高级优化方法（§6，p.9）。</li>
+<li><strong>人工扩规模成本。</strong> 作者承认人工标注昂贵，未来需半自动策略扩展数据（§2.3 与 §6，pp.4, 9）。</li>
+</ol>
+</section>
+<section class="card" aria-label="报告章节 17">
+<h2 id="独立批判每点均给证据推论">16. 独立批判：每点均给“证据→推论”</h2>
+<ol type="1">
+<li><strong>[数据版本]</strong> 因为定稿为 29,997 queries/120k pairs，README 为 20k/80k，HF viewer 约 16.3k rows，且没有阶段 manifest，所以无法确认公开训练集等于论文训练集，也无法复算“所有不同排名对”到底产生多少条有效样本。</li>
+<li><strong>[评测闭环]</strong> 因为 RewardBench 从 MM‑RLHF 每类抽 10 条、总计 170 对，而同源数据又训练 Reward‑7B，所以表 2 的 0.85/0.67 更能证明同生态适配，不能单独证明跨分布 reward 泛化。</li>
+<li><strong>[训练—推理错位]</strong> 因为评分头训练时看 GT critique，推理时看生成 critique，且 GT 推理令 ACC+ 0.67→0.87，所以约 0.20 的绝对缺口来自可观测 exposure gap；部署稳定性取决于 critique 生成而非单纯 reward head。</li>
+<li><strong>[教师/裁判依赖]</strong> 因为 GPT‑4o 扩写训练理由，并参与多项开放式 benchmark 评价，所以提升可能同时包含“更像 GPT‑4o 的批评风格”与真实人类偏好；没有换教师/换 judge 的 2×2 实验就不能分离。</li>
+<li><strong>[视频代表性]</strong> 因为 4,235 条视频在聚类时只用首帧，所以开头相似、后续事件完全不同的视频可能被视作同簇；因此“视频覆盖”不等于时序多样性覆盖。</li>
+<li><strong>[安全平均掩盖]</strong> 因为 Unsafety 大幅下降时 Risk 82→76、targeted attack 37→40，且两个 cross‑model 子集各仅 18 例，所以聚合安全收益不能外推到每个攻击族，尤其不能据此主张全面鲁棒。</li>
+<li><strong>[优化归因]</strong> 因为 MM‑DPO 同时采用 all‑pairs、reward‑margin 动态 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>β</mi><annotation encoding="application/x-tex">\beta</annotation></semantics></math>、模型特定 SFT 权重与 grid search，却缺完整正交消融，所以 Table 4 的优势不能唯一归因于 Dynamic Reward Scaling。</li>
+<li><strong>[统计证据]</strong> 因为主表没有 seeds、标准差、CI 或检验，而 MM‑DPO 相对次优在 DocVQA/MathVista/MMHal 仅 +0.23/+0.50/+0.13，所以这些小差额只证明单次表值领先，不能证明稳定 SOTA。</li>
+</ol>
+</section>
+<section class="card" aria-label="报告章节 18">
+<h2 id="开放挑战写成可执行的-headtohead-空白">17. 开放挑战：写成可执行的 head‑to‑head 空白</h2>
+<h3 id="理论">理论</h3>
+<ul>
+<li><strong>校准 margin vs 原始 margin：</strong> 在相同 query/pairs/seed 下比较原始 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>δ</mi><annotation encoding="application/x-tex">\delta</annotation></semantics></math>、按任务做 temperature calibration 的 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mover><mi>δ</mi><mo accent="true">̃</mo></mover><annotation encoding="application/x-tex">\tilde\delta</annotation></semantics></math>、以及二元置信区间下界；横轴按 RM calibration error 分桶，纵轴报 win rate 与 KL。若校准版只在 OOD 赢，才能证明问题来自跨任务尺度。</li>
+<li><strong>动态 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>β</mi><annotation encoding="application/x-tex">\beta</annotation></semantics></math> vs 显式样本权重：</strong> 比较 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>β</mi><mi>i</mi></msub><msub><mi>z</mi><mi>i</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">\sigma(\beta_i z_i)</annotation></semantics></math> 与 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>a</mi><mi>i</mi></msub><mo>log</mo><mi>σ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>β</mi><msub><mi>z</mi><mi>i</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">a_i\log\sigma(\beta z_i)</annotation></semantics></math>，匹配平均梯度范数和 KL budget；这会检验论文所谓“loss weight”是否真等价于重要性加权。</li>
+<li><strong>相关 pair 的有效样本量：</strong> 固定 120k pair 数，比较来自更多 query 的 1 pair/query 与同一 query 的 all‑pairs；按 query cluster bootstrap 报 CI，测试多对扩张是否只是重复信息。</li>
+</ul>
+<h3 id="工程应用">工程应用</h3>
+<ul>
+<li><strong>全量可复现审计：</strong> 用定稿 29,997、README 20k、HF 16.3k 三个可获得版本分别训练，固定 32×H800 等效 token/GPU‑hour；若曲线不同，发布丢失的数据不是文档问题，而是结果复现变量。</li>
+<li><strong>等算力数据×算法 2×2：</strong> MM‑RLHF/最佳外部数据 × DPO/MM‑DPO，固定训练 token、搜索 trial 和 seed≥5；同时报告均值、95% CI、TTFT、GPU‑hour，分离数据质量与调参预算。</li>
+<li><strong>视频时序采样：</strong> 首帧 CLIP、均匀 8 帧 pooling、视频 encoder 三组保持 4,235 查询不变；在 temporal reasoning 与 static VQA 分开报告，直接验证首帧聚类的盲点。</li>
+<li><strong>安全尾部风险：</strong> 对每个攻击族至少 1,000 例，比较 base、DPO、MM‑DPO；同时报告 ASR、拒答误杀率、校准曲线和最坏组 CVaR，避免 Safety/Unsafety 双均值掩盖 Risk 回退。</li>
+</ul>
+<h3 id="新兴方向">新兴方向</h3>
+<ul>
+<li><strong>可验证 critique：</strong> 让 critique 输出可定位图像区域/视频时间戳，再比较纯文本 critique、grounded critique 与无 critique；以删除对应证据后的 reward 变化测忠实性，而不是只看语言流畅度。</li>
+<li><strong>小模型候选支持集修复：</strong> 在相同 8 sample 预算下比较 best‑of‑8、检索增强候选、强教师注入 1 个候选、以及离线人工 pair；按“候选集是否含正确答案”分层，验证负自举的真正瓶颈。</li>
+<li><strong>多 reward 不确定性：</strong> 单 Reward‑7B 与 5 个异构 RM ensemble head‑to‑head；用 disagreement 控制 <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>β</mi><annotation encoding="application/x-tex">\beta</annotation></semantics></math>，观察是否能减少 RealWorld/Risk 回退，而不牺牲对话收益。</li>
+</ul>
+</section>
+<section class="card" aria-label="报告章节 19">
+<h2 id="近期工作雷达">18. 近期工作雷达</h2>
+<ol type="1">
+<li><a href="https://proceedings.iclr.cc/paper_files/paper/2025/file/557a20663907ed637c2807f608d5bec2-Paper-Conference.pdf">MIA‑DPO（ICLR 2025）</a>：把 multi‑image augmented preference optimization 做成专门路线，报告 LLaVA‑v1.5 与 InternLM‑XC2.5 分别约 +3.0%/+4.3%；适合检验 MM‑RLHF “无专门多图数据也能提升”的可迁移性。</li>
+<li><a href="https://arxiv.org/abs/2501.09695">OPA‑DPO（CVPR 2025 Oral）</a>：以 on‑policy correction 修复候选与策略分布错位，仅 4.8k 数据仍进一步降低 AMBER/Object‑Hal 幻觉；它正面回应 MM‑RLHF 小模型自采样支持集不足，但仍偏单一幻觉轴。</li>
+<li><a href="https://arxiv.org/abs/2405.17220">RLAIF‑V（CVPR 2025 Highlight）</a>：开放 AI feedback 成本低、幻觉降幅大，是 MM‑RLHF 人工重路线最重要的成本对照；真正空白是等 GPU‑hour、等人工小时的 head‑to‑head。</li>
+<li><a href="https://openaccess.thecvf.com/content/CVPR2025/papers/Zhang_SPA-VL_A_Comprehensive_Safety_Preference_Alignment_Dataset_for_Vision_Language_CVPR_2025_paper.pdf">SPA‑VL（CVPR 2025）</a>：专门构建视觉语言安全偏好数据，适合作为 Risk/targeted attack 回退的补充域，而非被通用池取代。</li>
+<li><a href="https://arxiv.org/abs/2410.02712">LLaVA‑Critic（CVPR 2025）</a>：将通用多模态评价器与迭代 DPO 连接起来；MM‑RLHF 的结果提醒，critic 再强也受候选支持集约束。</li>
+<li><a href="https://aclanthology.org/2025.emnlp-main.1342/">VLA‑Mark（EMNLP 2025）</a>：把对齐/所有权问题推进到 vision‑language‑action 模型水印；说明多模态后训练的可信目标正从“回答安全”扩展到动作模型治理。</li>
+<li><a href="https://aclanthology.org/2025.emnlp-main.995/">Looking Beyond Text（EMNLP 2025）</a>：研究多模态证据在模型行为中的真实作用；可用于审计 MM‑RLHF 的 reward 是否真正依赖视觉，而不是批评文本模板。</li>
+</ol>
+</section>
+<section class="card" aria-label="报告章节 20">
+<h2 id="最终判断">19. 最终判断</h2>
+<p>MM‑RLHF 值得读，因为它把一个经常被拆散的问题做成了完整系统：<strong>什么数据值得标、如何把理由变成 reward、如何把 reward 差距变成 policy 更新强度、以及应该跨哪些维度验收。</strong> 表 4/5 说明数据和算法都有效，安全大效应尤其醒目；GT‑critique 消融则准确暴露了下一阶段瓶颈。</p>
+<p>但它不是“多模态对齐已经全面解决”的证据。更稳妥的结论是：在人类锚定、任务覆盖较广的离线偏好数据上，MM‑DPO 能把对话、安全、OCR 等多个维度同时推高；高分辨率、部分风险族和数学专门域仍可能回退。若团队要复用，优先借鉴 <strong>细粒度人工协议 + critique/score 解耦 + margin 校准</strong>，并立即补做外部分布 RewardBench、版本 manifest、等算力 2×2 与多 seed 检验。</p>
+<hr />
+<p><strong>证据脚注。</strong> 本报告所有定量结论均来自实际读取的 ICML/PMLR 定稿 PDF 或逐篇相关论文；无法从图中精确读取的敏感性曲线没有补数。<code>ml-report-index.md</code> 已在本地追加本次记录；若持久索引同步失败，应以本报告为准重新追加。HTML 的交互图只重绘定稿表 3 的数值，不引入新数据。Warm Editorial 结构验证器已通过；本机有 Playwright 包但没有 <code>/usr/bin/chromium</code>、<code>/opt/pw-browsers</code> 或 Playwright 缓存浏览器，实际 launch 明确失败，故无法完成浅色/深色/移动端截图检查，未虚称通过；已保留响应式表格、主题 token、原生 MathML 与静态可访问性校验。</p>
+</section>
+</main>
+
+  <footer>核心来源：ICML/PMLR 定稿、arXiv v1、官方代码与模型/数据页；相关链深读 DPO、LLaVA‑RLHF、VLFeedback、LLaVA‑Critic、RLAIF‑V。生成于 2026‑09‑15。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

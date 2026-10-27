@@ -1,0 +1,1126 @@
+---
+layout: null
+title: "Transition Matching"
+date: 2026-10-07
+topic: "vlm-vision"
+tags: ["vlm-vision", "flow-matching", "image-generation"]
+excerpt: "把“无穷小流”改造成“可学习的概率跳步” DTM 以随机有限步转移保留条件分布宽度，在同构 1.7B 对照中把 H100 采样从 10.8 秒降至 1.6 秒；但 head 计算、统计区间与可复现性仍是关键缺口。"
+permalink: "/blog/2026/10/07/transitionmatching/"
+blog_post: true
+lang: "zh-CN"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_en: "/blog/2026/10/07/transitionmatching/en/"
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Transition Matching · 2026-10-07</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #246fca;
+    --chart-comparison: #c95224;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">NEURIPS 2025 · GENERATIVE MODELS</p>
+    <h1>Transition Matching</h1>
+    <p class="subtitle">把“无穷小流”改造成“可学习的概率跳步”</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">NeurIPS 2025 Main</span>
+      <span class="chip">2026-10-07</span>
+      <span class="chip">Flow Matching · Continuous AR</span>
+    </div>
+    <p class="lede">DTM 以随机有限步转移保留条件分布宽度，在同构 1.7B 对照中把 H100 采样从 10.8 秒降至 1.6 秒；但 head 计算、统计区间与可复现性仍是关键缺口。</p>
+  </header>
+
+  <main>
+<figure class="figure" aria-labelledby="speed-chart-title">
+<p class="fig-title" id="speed-chart-title">DTM 与 Flow Matching 的单张采样时延</p>
+<p class="fig-sub">同一 1.7B DiT、单张 H100；DTM 由 10.8 秒降至 1.6 秒（6.75×）。</p>
+<div class="legend" aria-label="图例"><span><span class="swatch" style="background:var(--chart-primary)"></span>Flow Matching</span><span><span class="swatch" style="background:var(--chart-comparison)"></span>DTM</span></div>
+<svg class="chart" viewBox="0 0 900 360" role="img" xmlns="http://www.w3.org/2000/svg"><title>单张 H100 采样时延比较</title><desc>Flow Matching 10.8 秒，DTM 1.6 秒。纵轴单位为秒，越低越好。</desc>
+<line x1="110" y1="300" x2="840" y2="300" stroke="var(--grid)"/><line x1="110" y1="45" x2="110" y2="300" stroke="var(--grid)"/>
+<g font-size="13"><text x="70" y="305">0</text><text x="70" y="220">4</text><text x="70" y="135">8</text><text x="63" y="52">12 s</text></g>
+<rect x="230" y="70.5" width="170" height="229.5" rx="8" fill="var(--chart-primary)" tabindex="0" data-tip="Flow Matching: 10.8 秒"/><rect x="540" y="266" width="170" height="34" rx="8" fill="var(--chart-comparison)" tabindex="0" data-tip="DTM: 1.6 秒"/>
+<text x="315" y="326" text-anchor="middle">Flow Matching</text><text x="625" y="326" text-anchor="middle">DTM</text><text x="315" y="60" text-anchor="middle">10.8 s</text><text x="625" y="255" text-anchor="middle">1.6 s</text></svg>
+<figcaption>来源：核心论文表 3。注意：主表 NFE* 只计算 backbone；图中采用端到端实测秒数。</figcaption></figure>
+<section class="card" aria-labelledby="0-链接验证表"><h2 id="0-链接验证表">0. 链接验证表</h2>
+<p>下表中的网址均在 2026-10-07 实际访问。OpenReview 页面触发浏览器验证，但论文 ID、PDF入口与作者主页的 NeurIPS 2025 标注相互一致；核心稿件当前只有 arXiv v1。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">资料</th>
+<th scope="col">验证结果</th>
+<th scope="col">日期 / 版本</th>
+<th scope="col">地址</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>NeurIPS / OpenReview</td>
+<td>可达，触发验证页；ID <code>An0ePypuOJ</code></td>
+<td>NeurIPS 2025 Main</td>
+<td><a href="https://openreview.net/forum?id=An0ePypuOJ">https://openreview.net/forum?id=An0ePypuOJ</a></td>
+</tr>
+<tr class="even">
+<td>arXiv 摘要</td>
+<td>已验证</td>
+<td>v1，2025-06-30</td>
+<td><a href="https://arxiv.org/abs/2506.23589">https://arxiv.org/abs/2506.23589</a></td>
+</tr>
+<tr class="odd">
+<td>arXiv HTML 全文</td>
+<td>已验证，可逐表逐式读取</td>
+<td>v1</td>
+<td><a href="https://arxiv.org/html/2506.23589v1">https://arxiv.org/html/2506.23589v1</a></td>
+</tr>
+<tr class="even">
+<td>作者项目索引</td>
+<td>已验证，明确标注 NeurIPS 2025</td>
+<td>访问日 2026-10-07</td>
+<td><a href="https://neta93.github.io/">https://neta93.github.io/</a></td>
+</tr>
+<tr class="odd">
+<td>代码</td>
+<td><strong>未公开 / 未找到核心论文官方仓库</strong></td>
+<td>截至访问日</td>
+<td>论文 HTML 仅给训练伪代码，不等于可运行实现</td>
+</tr>
+<tr class="even">
+<td>数据</td>
+<td>Shutterstock 3.5 亿授权图文对，<strong>未公开下载</strong></td>
+<td>论文 §4，表前文字</td>
+<td>论文 HTML 第 278 行附近</td>
+</tr>
+<tr class="odd">
+<td>权重</td>
+<td><strong>未公开 / 未找到</strong></td>
+<td>截至访问日</td>
+<td>—</td>
+</tr>
+<tr class="even">
+<td>项目页</td>
+<td><strong>未找到独立项目页</strong></td>
+<td>截至访问日</td>
+<td>作者主页仅提供论文和 slides</td>
+</tr>
+<tr class="odd">
+<td>Slides / 视频</td>
+<td>Slides 已公开；核心论文视频未找到</td>
+<td>访问日 2026-10-07</td>
+<td><a href="https://neta93.github.io/">https://neta93.github.io/</a></td>
+</tr>
+<tr class="even">
+<td>Flow Matching</td>
+<td>已验证</td>
+<td>arXiv:2210.02747</td>
+<td><a href="https://arxiv.org/abs/2210.02747">https://arxiv.org/abs/2210.02747</a></td>
+</tr>
+<tr class="odd">
+<td>Fluid</td>
+<td>已验证</td>
+<td>arXiv:2410.13863，2024-10-17</td>
+<td><a href="https://arxiv.org/abs/2410.13863">https://arxiv.org/abs/2410.13863</a></td>
+</tr>
+<tr class="even">
+<td>Generator Matching</td>
+<td>已验证</td>
+<td>arXiv:2410.20587，2024-10-27</td>
+<td><a href="https://arxiv.org/abs/2410.20587">https://arxiv.org/abs/2410.20587</a></td>
+</tr>
+<tr class="odd">
+<td>Exploring TM</td>
+<td>已验证</td>
+<td>arXiv:2512.12465，2025-12-13</td>
+<td><a href="https://arxiv.org/abs/2512.12465">https://arxiv.org/abs/2512.12465</a></td>
+</tr>
+<tr class="even">
+<td>Demystifying TM</td>
+<td>已验证，AISTATS 2026 官方代码可达</td>
+<td>arXiv:2510.17991</td>
+<td><a href="https://arxiv.org/abs/2510.17991">https://arxiv.org/abs/2510.17991</a></td>
+</tr>
+<tr class="odd">
+<td>TMD</td>
+<td>已验证，NVIDIA 项目页可达</td>
+<td>arXiv:2601.09881</td>
+<td><a href="https://arxiv.org/abs/2601.09881">https://arxiv.org/abs/2601.09881</a></td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section class="card" aria-labelledby="1-候选池排重与随机抽取"><h2 id="1-候选池排重与随机抽取">1. 候选池、排重与随机抽取</h2>
+<p>最近 14 天索引已覆盖 DFM、MeanFlow、AIM-CoT、PointMapPolicy 等主题；其中 <strong>DFM（2026-09-30）</strong> 与本周方向最接近，故本次避免再选“渐进多尺度流匹配”，转向离散概率转移与连续自回归。ACL Anthology 在生成视觉模型方向没有形成有效候选；候选主要由 arXiv、NeurIPS/OpenReview、ICML/ICLR 页面以及作者/代码页交叉验证，Papers with Code 与 Hugging Face Daily Papers 仅用于线索核对，不将聚合页当数字来源。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">#</th>
+<th scope="col">候选论文</th>
+<th scope="col">年份 / 入口</th>
+<th scope="col">备注</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td>Transition Matching: Scalable and Flexible Generative Modeling</td>
+<td>NeurIPS 2025 / arXiv:2506.23589</td>
+<td><strong>第二次抽中，采用</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td>Diff2Flow: Training Flow Matching Models via Diffusion Model Alignment</td>
+<td>arXiv:2506.02221</td>
+<td>参数高效迁移</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td>Vid2World: Crafting Video Diffusion Models to Interactive World Models</td>
+<td>arXiv:2505.14357</td>
+<td>世界模型</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td>Mean Flows for One-step Generative Modeling</td>
+<td>NeurIPS 2025 Oral</td>
+<td>近 14 天已覆盖，排除</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td>Improving Progressive Generation with Decomposable Flow Matching</td>
+<td>NeurIPS 2025</td>
+<td>近 14 天已覆盖，排除</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td>Inductive Moment Matching</td>
+<td>ICML 2025</td>
+<td>概率路径替代</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td>Does Generation Require Memorization?</td>
+<td>ICML 2025</td>
+<td>近期已覆盖，排除</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">8</td>
+<td>Shortcut Models for Fast Generative Modeling</td>
+<td>ICLR 2025</td>
+<td>快速生成</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td>Self-Forcing</td>
+<td>NeurIPS 2025</td>
+<td>自回归视频</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td>LongLive</td>
+<td>ICLR 2026</td>
+<td>近期已覆盖，排除</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td>SANA-Sprint</td>
+<td>arXiv 2025</td>
+<td>一步蒸馏</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">12</td>
+<td>REPA-E</td>
+<td>arXiv 2025</td>
+<td>端到端 latent tuning</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td>Transition Matching Distillation</td>
+<td>arXiv 2026</td>
+<td>视频蒸馏</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td>Co-generation of Layout and Shape via Autoregressive 3D Diffusion</td>
+<td>arXiv:2604.16552</td>
+<td>3D 场景</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td>GaussianGPT</td>
+<td>arXiv:2603.26661</td>
+<td>3D Gaussian 自回归</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">16</td>
+<td>NitroFusion</td>
+<td>arXiv 2025</td>
+<td>单步对抗蒸馏</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td>Score Identity Distillation</td>
+<td>ICML 2024 / arXiv:2404.04057</td>
+<td><strong>第一次抽中；超过 24 个月，重抽</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td>FlowChef</td>
+<td>ICML 2025</td>
+<td>可控生成</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">19</td>
+<td>Video Generation Models as World Models</td>
+<td>arXiv:2603.28489</td>
+<td>综述候选</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">20</td>
+<td>EA-WM</td>
+<td>arXiv:2605.06192</td>
+<td>事件感知世界模型</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">21</td>
+<td>d1: Scaling Reasoning in Diffusion LLMs</td>
+<td>arXiv 2025</td>
+<td>离散扩散语言模型</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">22</td>
+<td>LLaDA</td>
+<td>arXiv 2025</td>
+<td>扩散语言模型</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">23</td>
+<td>Dream 7B</td>
+<td>arXiv 2025</td>
+<td>扩散语言模型</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">24</td>
+<td>Autoregressive Image Generation Guided by Chains of Thought</td>
+<td>ICLR 2025</td>
+<td>图像自回归</td>
+</tr>
+</tbody>
+</table></div>
+<p>实际执行 <code>shuf -i 1-24 -n 1</code>：第一次为 17，因 2024-04-05 到运行日已超过 24 个月，按规则重抽；第二次为 1。未因热度、作者或结果大小改变抽签。</p>
+</section>
+<section class="card" aria-labelledby="2-motivation真正卡住的是每一步只能做一件简单的事"><h2 id="2-motivation真正卡住的是每一步只能做一件简单的事">2. Motivation：真正卡住的是“每一步只能做一件简单的事”</h2>
+<p>扩散与 flow matching 的共同做法，是把噪声到数据的复杂映射拆成很多近乎无穷小的局部更新。优点是每个局部条件分布简单、训练稳定；代价是采样要重复调用昂贵 backbone。核心论文用同一 1.7B DiT、同一 3.5 亿授权图文数据、相同 50 万步训练做对照：普通 FM 在最优质量配置下需要 128 次大骨干前向，单张 H100 用时 <strong>10.8 秒</strong>；DTM 用 16 次骨干前向与一个小 head 的内部求解达到 <strong>1.6 秒</strong>，是 <strong>6.75×</strong> 加速、时延下降 <strong>85.19%</strong>（表 3，§4.2）。</p>
+<p>第二个痛点是视觉自回归的离散化与因果顺序。Fluid 的实证指出：连续 token 的重建 PSNR 为 <strong>31.5</strong>，离散 token 为 <strong>26.6</strong>；其 10.5B 随机顺序连续 AR 在 COCO-30K 达 FID <strong>6.16</strong>、GenEval <strong>0.69</strong>（Fluid 图 4、摘要与 §5）。但 raster-order 的因果模型不能回看并重排全局构图，masked AR 虽能双向建模，却不自然兼容语言模型的因果架构。TM 的问题意识因此不是“把 diffusion 变成 AR”，而是：<strong>能否保留连续状态和生成核的表达力，又把过程写成有限个可训练概率转移，使每一步可以随机、非确定、甚至完全因果？</strong></p>
+<p>这一选择也带来明确权衡：若每个转移核本身是小型生成模型，单个“大步”内部就要再积分；若采用 ARTM/FHTM，token 逐个生成还会导致 <code>transition_steps × image_tokens</code> 次骨干前向。因此论文实际提出三条路线而非一个万能算法：DTM 优先速度，ARTM/FHTM 优先因果统一。</p>
+</section>
+<section class="card" aria-labelledby="3-论文故事线与假设"><h2 id="3-论文故事线与假设">3. 论文故事线与假设</h2>
+<p>论文故事可压成四步。</p>
+<ol type="1">
+<li><strong>把目标从向量场改成转移核。</strong> 给定源分布 <code>p0</code> 与数据分布 <code>pT</code>，学习 <code>pθ(x_{t+1}|x_t)</code>，使从 <code>X0~p0</code> 连续采样 T 次后得到 <code>XT~pT</code>（式 1）。</li>
+<li><strong>用监督过程 q 提供相邻状态对。</strong> 只要求 <code>q0=p0</code>；它可以非连续、随机、跨分辨率，因而比固定 SDE/ODE 路径更自由（式 2–5）。</li>
+<li><strong>把难算的转移核换成潜变量后验。</strong> 通过全概率公式引入 <code>Y</code>：先由模型采 <code>Y~pθ(Y|Xt)</code>，再由已知 <code>q(x_{t+1}|x_t,Y)</code> 更新（式 6–7）。</li>
+<li><strong>实例化三种核。</strong> DTM 预测全局差分 <code>Y=XT−X0</code>；ARTM 逐 token 预测下一状态；FHTM 把全部历史作为上下文，得到完全因果的视觉生成器。</li>
+</ol>
+<p>核心假设是：有限步时，<code>q(Y|Xt)</code> 保留被 FM 条件均值抹去的多模态性；小 head 即使按 token 独立生成差分，也足以用少数外层步补偿。论文定理 1 只证明当步长趋零时 DTM 收敛到 Euler FM，并没有证明有限步一定更好；“随机核优于确定均值”主要靠实验与后续理论补充。</p>
+</section>
+<section class="card" aria-labelledby="4-方程级形式化与伪代码"><h2 id="4-方程级形式化与伪代码">4. 方程级形式化与伪代码</h2>
+<h3 id="41-一般-tm-目标">4.1 一般 TM 目标</h3>
+<p>监督过程由数据样本终点定义：</p>
+<p><code>q(x0,…,xT)=q(x0,…,x_{T−1}|xT) pT(xT),  q0=p0</code>。</p>
+<p>直接匹配条件转移的理想目标为：</p>
+<p><code>L(θ)=E_{t,Xt} D(q_{t+1|t}(·|Xt), pθ_{t+1|t}(·|Xt))</code>。</p>
+<p>当距离 <code>D</code> 有单样本经验形式 <code>D̂</code> 时，可从 <code>(Xt,X_{t+1})~q</code> 回归：</p>
+<p><code>L(θ)=E_{t,Xt,X_{t+1}} D̂(X_{t+1},pθ_{t+1|t}(·|Xt))</code>（论文式 4–5）。</p>
+<p>进一步引入潜变量 <code>Y</code>：</p>
+<p><code>q(x_{t+1}|x_t)=∫q(x_{t+1}|x_t,y)q(y|x_t)dy</code>，</p>
+<p>只需训练 <code>pθ(Y|Xt)≈q(Y|Xt)</code>，采样时先生成 <code>Y</code> 再执行显式更新（式 6–7）。该结构把“过程设计、核参数化、核内生成模型”拆成三个可独立替换的接口。</p>
+<h3 id="42-dtm随机差分而非条件均值">4.2 DTM：随机差分而非条件均值</h3>
+<p>沿 Cond-OT 线性过程：</p>
+<p><code>Xt=(1−t/T)X0+(t/T)XT,  X0~N(0,I)</code>，并定义 <code>Y=XT−X0</code>。</p>
+<p>于是：<code>X_{t+1}=Xt+Y/T</code>。模型不是输出唯一速度，而是用条件 flow head 从 <code>pθ(Y|t,Xt)</code> 采样。其条件均值满足</p>
+<p><code>E[Y|Xt=x]=E[XT−X0|Xt=x]=u_t(x)</code>，正好等于 FM 的边际速度（式 14）。因此 FM 可看作 DTM 的无穷小、确定性极限；有限步 DTM 则保留条件分布宽度。</p>
+<h3 id="43-artm-与-fhtm">4.3 ARTM 与 FHTM</h3>
+<p>ARTM 使用“独立线性过程”：每个离散时刻都有独立噪声 <code>X_{0,t}</code>，但边际仍等于普通线性过程：</p>
+<p><code>Xt=(1−t/T)X_{0,t}+(t/T)XT</code>（式 15）。</p>
+<p>然后按链式法则分解下一状态：</p>
+<p><code>q(X_{t+1}|Xt)=∏_i q(X_{t+1}^i|Xt,X_{t+1}^{&lt;i})</code>。</p>
+<p>FHTM 再把条件扩为全部历史 <code>X0,…,Xt</code>，使 backbone 可采用标准 causal Transformer。其代价是生成每个 token 都需要因果前向，无法获得 DTM 的并行速度。</p>
+<h3 id="44-伪代码">4.4 伪代码</h3>
+<pre class="text"><code>训练：
+  repeat
+    采样 t ~ Uniform{0,…,T−1} 与数据 XT ~ pT
+    依监督过程 q 采样 (Xt, Y) | XT
+    用 flow-matching 经验损失 D̂(Y, pθ(Y|t,Xt)) 更新 θ
+
+采样：
+  X0 ~ p0
+  for t = 0,…,T−1:
+    Y ~ pθ(Y|t,Xt)              # 小 flow head 内部 ODE
+    X_{t+1} ~ q(·|Xt,Y)          # DTM 时为 Xt + Y/T
+  return XT</code></pre>
+</section>
+<section class="card" aria-labelledby="5-机制与工程细节"><h2 id="5-机制与工程细节">5. 机制与工程细节</h2>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">组件</th>
+<th scope="col">论文配置</th>
+<th scope="col">作用</th>
+<th scope="col">代价 / 风险</th>
+<th scope="col">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Backbone</td>
+<td>24 blocks、hidden 2048、16 heads、1.7B DiT</td>
+<td>处理全局图像与文本条件</td>
+<td>每次约 84 ms/H100</td>
+<td>附录 A.1、表 9</td>
+</tr>
+<tr class="even">
+<td>Flow head</td>
+<td>6 层 MLP、hidden 1024、约 40M（约 backbone 2%）</td>
+<td>在每个外层转移内生成差分 / token</td>
+<td>每次约 3.5 ms；主表 NFE* 未计</td>
+<td>附录 A.1、图 5、表 9</td>
+</tr>
+<tr class="odd">
+<td>Latent</td>
+<td>SDXL-VAE，32×32×4；patch 2×2×4</td>
+<td>连续图像 token</td>
+<td>VAE 上限未被隔离</td>
+<td>§4</td>
+</tr>
+<tr class="even">
+<td>文本编码</td>
+<td>Flan-UL2；cross-attention</td>
+<td>文本条件</td>
+<td>与开放模型生态不完全一致</td>
+<td>§4</td>
+</tr>
+<tr class="odd">
+<td>训练数据</td>
+<td>350M licensed Shutterstock image-caption pairs</td>
+<td>大规模受控训练</td>
+<td>数据不可下载，复现门槛高</td>
+<td>§4</td>
+</tr>
+<tr class="even">
+<td>优化</td>
+<td>500K steps，batch 2048，lr 1e−4，warmup 2K</td>
+<td>固定公平对照</td>
+<td>单 seed / 方差未报告</td>
+<td>附录 A.1</td>
+</tr>
+<tr class="odd">
+<td>CFG</td>
+<td>文本 dropout 0.15；采样 scale 6.5 施于 head velocity</td>
+<td>提升对齐</td>
+<td>CFG 敏感性虽有附录，主表未给不使用 CFG 对照</td>
+<td>附录 A.1/A.9</td>
+</tr>
+<tr class="even">
+<td>DTM</td>
+<td>32 TM steps；主表 head NFE 64</td>
+<td>并行差分核</td>
+<td>NFE* 只数 backbone</td>
+<td>表 1/2/7</td>
+</tr>
+<tr class="odd">
+<td>ARTM/FHTM</td>
+<td>T=2 或 3；activation caching</td>
+<td>因果连续 token</td>
+<td>不加速，成本为 T×256 backbone</td>
+<td>§4.2</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section class="card" aria-labelledby="6-数据集基准与指标"><h2 id="6-数据集基准与指标">6. 数据集、基准与指标</h2>
+<p>训练使用 256×256 的 3.5 亿 Shutterstock 授权图文对，caption 为 1–128 CLIP tokens。评估不是五个独立数据集，而是三套 prompt/组合性基准上的多指标矩阵：PartiPrompts、MS-COCO 和 GenEval。论文没有报告 FID；这使“分布覆盖/多样性”主要依赖 preference reward 与质量打分器，不能直接与 Fluid 的 COCO FID 6.16 横向比较。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">基准 / 指标</th>
+<th scope="col">测什么</th>
+<th scope="col">趋势</th>
+<th scope="col">关键限制</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>PartiPrompts</td>
+<td>复杂文本提示</td>
+<td>越高越好</td>
+<td>1,632 prompts；自动指标可能偏向常见审美</td>
+</tr>
+<tr class="even">
+<td>MS-COCO</td>
+<td>通用 caption-to-image</td>
+<td>越高越好</td>
+<td>论文未在主结果报告 FID</td>
+</tr>
+<tr class="odd">
+<td>GenEval Overall</td>
+<td>物体级组合遵循</td>
+<td>越高越好</td>
+<td>依赖检测器，不能覆盖整体画质</td>
+</tr>
+<tr class="even">
+<td>CLIPScore</td>
+<td>语义对齐</td>
+<td>越高越好</td>
+<td>对排布、计数敏感度有限</td>
+</tr>
+<tr class="odd">
+<td>PickScore / ImageReward / UnifiedReward</td>
+<td>偏好代理</td>
+<td>越高越好</td>
+<td>同属学习式 judge，误差相关</td>
+</tr>
+<tr class="even">
+<td>Aesthetic / DeQA</td>
+<td>美学 / 质量</td>
+<td>越高越好</td>
+<td>不能替代真人盲评</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section class="card" aria-labelledby="7-完整主结果数据矩阵"><h2 id="7-完整主结果数据矩阵">7. 完整主结果数据矩阵</h2>
+<h3 id="71-partiprompts六指标--六方法论文表-1">7.1 PartiPrompts：六指标 × 六方法（论文表 1）</h3>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">Backbone NFE*</th>
+<th scope="col" style="text-align: right;">CLIP</th>
+<th scope="col" style="text-align: right;">Pick</th>
+<th scope="col" style="text-align: right;">ImageReward</th>
+<th scope="col" style="text-align: right;">UnifiedReward</th>
+<th scope="col" style="text-align: right;">Aesthetic</th>
+<th scope="col" style="text-align: right;">DeQA</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>MAR-discrete</td>
+<td style="text-align: right;">256</td>
+<td style="text-align: right;">26.7632</td>
+<td style="text-align: right;">20.6900</td>
+<td style="text-align: right;">0.1397</td>
+<td style="text-align: right;">4.3133</td>
+<td style="text-align: right;">5.1502</td>
+<td style="text-align: right;">2.4846</td>
+</tr>
+<tr class="even">
+<td>MAR</td>
+<td style="text-align: right;">256</td>
+<td style="text-align: right;">26.9800</td>
+<td style="text-align: right;">20.7300</td>
+<td style="text-align: right;">0.3250</td>
+<td style="text-align: right;">4.2590</td>
+<td style="text-align: right;">4.9540</td>
+<td style="text-align: right;">2.3610</td>
+</tr>
+<tr class="odd">
+<td>MAR-Fluid</td>
+<td style="text-align: right;">256</td>
+<td style="text-align: right;">25.9763</td>
+<td style="text-align: right;">20.5148</td>
+<td style="text-align: right;">0.0684</td>
+<td style="text-align: right;">3.8172</td>
+<td style="text-align: right;">4.7422</td>
+<td style="text-align: right;">2.3593</td>
+</tr>
+<tr class="even">
+<td>FM</td>
+<td style="text-align: right;">256</td>
+<td style="text-align: right;">25.9700</td>
+<td style="text-align: right;">21.0400</td>
+<td style="text-align: right;">0.2330</td>
+<td style="text-align: right;">4.7840</td>
+<td style="text-align: right;">5.2910</td>
+<td style="text-align: right;">2.5460</td>
+</tr>
+<tr class="odd">
+<td><strong>DTM</strong></td>
+<td style="text-align: right;"><strong>32</strong></td>
+<td style="text-align: right;">26.8400</td>
+<td style="text-align: right;"><strong>21.1800</strong></td>
+<td style="text-align: right;"><strong>0.5320</strong></td>
+<td style="text-align: right;"><strong>5.1230</strong></td>
+<td style="text-align: right;"><strong>5.4210</strong></td>
+<td style="text-align: right;"><strong>2.6460</strong></td>
+</tr>
+<tr class="even">
+<td>ARTM-3</td>
+<td style="text-align: right;">3×256</td>
+<td style="text-align: right;"><strong>27.0200</strong></td>
+<td style="text-align: right;">20.8700</td>
+<td style="text-align: right;">0.3750</td>
+<td style="text-align: right;">4.7690</td>
+<td style="text-align: right;">5.2110</td>
+<td style="text-align: right;">2.5280</td>
+</tr>
+</tbody>
+</table></div>
+<p>DTM 对 FM：CLIP <strong>+0.87（+3.35%）</strong>、Pick <strong>+0.14（+0.67%）</strong>、ImageReward <strong>+0.299（+128.33%）</strong>、UnifiedReward <strong>+0.339（+7.09%）</strong>、Aesthetic <strong>+0.130（+2.46%）</strong>、DeQA <strong>+0.100（+3.93%）</strong>。它赢 5/6 指标；CLIP 最优为 ARTM-3 的 27.02，而非 DTM。所有数字来自表 1；论文未给标准差。</p>
+<h3 id="72-ms-coco六指标--六方法论文表-7">7.2 MS-COCO：六指标 × 六方法（论文表 7）</h3>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">Backbone NFE*</th>
+<th scope="col" style="text-align: right;">CLIP</th>
+<th scope="col" style="text-align: right;">Pick</th>
+<th scope="col" style="text-align: right;">ImageReward</th>
+<th scope="col" style="text-align: right;">UnifiedReward</th>
+<th scope="col" style="text-align: right;">Aesthetic</th>
+<th scope="col" style="text-align: right;">DeQA</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>MAR-discrete</td>
+<td style="text-align: right;">256</td>
+<td style="text-align: right;"><strong>26.5723</strong></td>
+<td style="text-align: right;">20.6255</td>
+<td style="text-align: right;">0.0085</td>
+<td style="text-align: right;">4.1381</td>
+<td style="text-align: right;">5.2673</td>
+<td style="text-align: right;">2.4132</td>
+</tr>
+<tr class="even">
+<td>MAR</td>
+<td style="text-align: right;">256</td>
+<td style="text-align: right;">26.1200</td>
+<td style="text-align: right;">20.6600</td>
+<td style="text-align: right;">0.1650</td>
+<td style="text-align: right;">4.6150</td>
+<td style="text-align: right;">5.0580</td>
+<td style="text-align: right;">2.3420</td>
+</tr>
+<tr class="odd">
+<td>MAR-Fluid</td>
+<td style="text-align: right;">256</td>
+<td style="text-align: right;">25.4637</td>
+<td style="text-align: right;">20.4549</td>
+<td style="text-align: right;">−0.1094</td>
+<td style="text-align: right;">3.9407</td>
+<td style="text-align: right;">4.8603</td>
+<td style="text-align: right;">2.3822</td>
+</tr>
+<tr class="even">
+<td>FM</td>
+<td style="text-align: right;">256</td>
+<td style="text-align: right;">25.7800</td>
+<td style="text-align: right;">21.1100</td>
+<td style="text-align: right;">0.0880</td>
+<td style="text-align: right;">5.0030</td>
+<td style="text-align: right;">5.4500</td>
+<td style="text-align: right;">2.4660</td>
+</tr>
+<tr class="odd">
+<td><strong>DTM</strong></td>
+<td style="text-align: right;"><strong>32</strong></td>
+<td style="text-align: right;">26.1600</td>
+<td style="text-align: right;"><strong>21.1900</strong></td>
+<td style="text-align: right;">0.2240</td>
+<td style="text-align: right;">5.3780</td>
+<td style="text-align: right;"><strong>5.5460</strong></td>
+<td style="text-align: right;"><strong>2.5820</strong></td>
+</tr>
+<tr class="even">
+<td><strong>FHTM-3 (LLM)</strong></td>
+<td style="text-align: right;">3×256</td>
+<td style="text-align: right;">26.1400</td>
+<td style="text-align: right;">21.0800</td>
+<td style="text-align: right;"><strong>0.2430</strong></td>
+<td style="text-align: right;"><strong>5.5100</strong></td>
+<td style="text-align: right;">5.5260</td>
+<td style="text-align: right;">2.5070</td>
+</tr>
+</tbody>
+</table></div>
+<p>DTM 对 FM：CLIP <strong>+0.38（+1.47%）</strong>、Pick <strong>+0.08（+0.38%）</strong>、ImageReward <strong>+0.136（+154.55%）</strong>、UnifiedReward <strong>+0.375（+7.50%）</strong>、Aesthetic <strong>+0.096（+1.76%）</strong>、DeQA <strong>+0.116（+4.70%）</strong>。DTM 并非每列最优：CLIP 是 MAR-discrete，ImageReward/UnifiedReward 是 FHTM-3 LLM。来源：表 7。</p>
+<h3 id="73-geneval组合性结果论文表-2">7.3 GenEval：组合性结果（论文表 2）</h3>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">Overall</th>
+<th scope="col" style="text-align: right;">Single</th>
+<th scope="col" style="text-align: right;">Two objects</th>
+<th scope="col" style="text-align: right;">Counting</th>
+<th scope="col" style="text-align: right;">Colors</th>
+<th scope="col" style="text-align: right;">Position</th>
+<th scope="col" style="text-align: right;">Color attribute</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>MAR-discrete</td>
+<td style="text-align: right;">0.4438</td>
+<td style="text-align: right;">0.8625</td>
+<td style="text-align: right;">0.4343</td>
+<td style="text-align: right;">0.3670</td>
+<td style="text-align: right;">0.6595</td>
+<td style="text-align: right;">0.13</td>
+<td style="text-align: right;">0.29</td>
+</tr>
+<tr class="even">
+<td>MAR</td>
+<td style="text-align: right;">0.5200</td>
+<td style="text-align: right;"><strong>0.9800</strong></td>
+<td style="text-align: right;">0.5600</td>
+<td style="text-align: right;">0.4300</td>
+<td style="text-align: right;">0.7300</td>
+<td style="text-align: right;">0.11</td>
+<td style="text-align: right;">0.38</td>
+</tr>
+<tr class="odd">
+<td>MAR-Fluid</td>
+<td style="text-align: right;">0.4438</td>
+<td style="text-align: right;">0.9000</td>
+<td style="text-align: right;">0.3333</td>
+<td style="text-align: right;">0.3670</td>
+<td style="text-align: right;">0.7553</td>
+<td style="text-align: right;">0.12</td>
+<td style="text-align: right;">0.28</td>
+</tr>
+<tr class="even">
+<td>FM</td>
+<td style="text-align: right;">0.4700</td>
+<td style="text-align: right;">0.9100</td>
+<td style="text-align: right;">0.5200</td>
+<td style="text-align: right;">0.2700</td>
+<td style="text-align: right;">0.7100</td>
+<td style="text-align: right;">0.12</td>
+<td style="text-align: right;">0.34</td>
+</tr>
+<tr class="odd">
+<td><strong>DTM</strong></td>
+<td style="text-align: right;"><strong>0.5400</strong></td>
+<td style="text-align: right;">0.9300</td>
+<td style="text-align: right;"><strong>0.5800</strong></td>
+<td style="text-align: right;">0.3500</td>
+<td style="text-align: right;"><strong>0.7900</strong></td>
+<td style="text-align: right;"><strong>0.20</strong></td>
+<td style="text-align: right;"><strong>0.46</strong></td>
+</tr>
+<tr class="even">
+<td>FHTM-3</td>
+<td style="text-align: right;">0.5200</td>
+<td style="text-align: right;"><strong>0.9800</strong></td>
+<td style="text-align: right;">0.5400</td>
+<td style="text-align: right;"><strong>0.4400</strong></td>
+<td style="text-align: right;">0.7400</td>
+<td style="text-align: right;">0.16</td>
+<td style="text-align: right;">0.34</td>
+</tr>
+</tbody>
+</table></div>
+<p>DTM Overall 比 FM 高 <strong>0.07（若按 0–1 比例即 +7 pp，相对 +14.89%）</strong>，但 Counting 反而低 <strong>0.08（−29.63%）</strong>。因此“全面组合性提升”不成立；更精确的表述是 DTM 在双对象、颜色、位置与颜色属性上提升，计数仍是失败点。</p>
+</section>
+<section class="card" aria-labelledby="8-逐层消融与归因"><h2 id="8-逐层消融与归因">8. 逐层消融与归因</h2>
+<h3 id="81-速度质量相变表-8--9">8.1 速度—质量相变（表 8 / 9）</h3>
+<p>DTM 的收益不是 TM step 越多越好。CLIPScore 在 head NFE=4 时随 TM steps 从 1、2、4、8、16 变为 <strong>17.9、21.1、25.4、26.7、26.8</strong>，之后 32/64/128 步为 <strong>26.7/26.5/26.5</strong>；16 步已饱和。PickScore 同样在约 16 步达到 21.1。另一方面，head NFE 从 1 到 4 带来最大跃升；4 之后收益极小。真正的工程甜点是 <strong>16 外层步 × 4 head NFE</strong>，而不是主表使用的 32×64。</p>
+<p>H100 时间表给出 backbone 约 <strong>84 ms/step</strong>、head 约 <strong>3.5 ms/step</strong>。16×4 的粗略分解约为 <code>16×84 + 16×4×3.5 = 1568 ms</code>，与表 3 的 1.6 s 一致；128-step FM 为约 10.8 s。这个一致性说明小 head 的成本在甜点配置并非可以完全忽略（约 224 ms，占 14.3%），但仍远小于 backbone。</p>
+<h3 id="82-监督过程同边际不同条件正则性">8.2 监督过程：同边际，不同条件正则性</h3>
+<p>ARTM/FHTM 若使用与 DTM 相同的“共享 X0 线性路径”会退化，因为模型可能利用 Xt 与 X_{t+1} 的近确定线性关系，训练时学到捷径、推理时失效（附录 A.4，图 9）。独立线性过程为每个 t 重采 <code>X_{0,t}</code>，保持相同边际却扩大条件支持，100K 训练曲线显著更好。论文没有把图 9 的完整数值表导出，因此不能补造 pp 提升；可推出“条件耦合是关键变量”，不能推出其跨数据集的统计效应量。</p>
+<h3 id="83-核表达力patch-更大只帮助低步数">8.3 核表达力：patch 更大只帮助低步数</h3>
+<p>DTM 默认每个 head token 对应 2×2×4 latent patch，token 间独立。把 patch 扩到 2×8×4，在 1–4 个 TM steps 时更好，但步数大时差异消失（图 10）。这与定理 1 的极限直觉一致：步长小时转移更接近局部确定流，对跨 token 联合核的需求下降。图 10 仍未提供可抄录的完整数字矩阵，因此不能量化“更大 patch 提升多少”。</p>
+<h3 id="84-scheduler表-10">8.4 Scheduler（表 10）</h3>
+<p>ARTM-3/DiT 的 MS-COCO CLIP/Pick 从 uniform <strong>25.9914/20.8412</strong> 到 exponential <strong>26.07/20.92</strong>；PartiPrompts 从 <strong>26.8494/20.8204</strong> 到 <strong>27.02/20.87</strong>。FHTM-3/DiT 在 COCO 也略升，但 FHTM-3/LLM 的 Parti CLIP 从 <strong>26.9945 降至 26.95</strong>。所以 scheduler 影响在约 0.05–0.17 范围，没有稳定单向优势。</p>
+</section>
+<section class="card" aria-labelledby="9-超参敏感性相变与统计显著性"><h2 id="9-超参敏感性相变与统计显著性">9. 超参敏感性、相变与统计显著性</h2>
+<p>清晰的相变有两处。第一，DTM 从 2 到 4 个 TM steps（head NFE=4）CLIP 由 21.1 到 25.4，增 <strong>4.3</strong>；从 8 到 16 仅增 <strong>0.1</strong>，16 之后不再提升。第二，固定 16 TM steps 时，head NFE 从 1 到 2 使 CLIP 由 23.2 到 26.4，增 <strong>3.2</strong>；2 到 4 只增 <strong>0.4</strong>。这说明瓶颈先是核内生成精度，再转为外层 backbone 近似，二者都很快饱和。</p>
+<p>论文对 CFG scale 做了附录敏感性图，但没有在 HTML 中给出可机读完整数值；主结果固定 scale=6.5。训练只报告一个配置和单一曲线，<strong>未报告多随机种子、标准差、置信区间或显著性检验</strong>。因此可以说 DTM 在所报 run 上普遍领先 FM，但不能把 MS-COCO Pick 的 +0.08 或 Aesthetic 的 +0.096 认定为统计显著。</p>
+</section>
+<section class="card" aria-labelledby="10-真正贡献可复用设计与迁移潜力"><h2 id="10-真正贡献可复用设计与迁移潜力">10. 真正贡献、可复用设计与迁移潜力</h2>
+<p>真正贡献不是“又一个 sampler”，而是把生成范式拆成三个接口：监督过程 q、潜变量参数化 Y、核内生成模型 B|A。这个拆分让 diffusion、flow、连续 AR 成为同一训练模板的不同配置，也暴露了过去被绑定的设计自由度。</p>
+<p>最可复用的工程设计是“大 backbone 抽语义、小 head 解局部随机核”。当 backbone 占主要时延时，可把更多数值求解放在 2% 参数的 head 中，以少量便宜 NFE 换取少量昂贵 NFE。这个模式可迁移到视频、3D、分子或音频，但必须验证 head 的局部独立假设是否仍成立。</p>
+<p>FHTM 的潜力在统一多模态因果模型：文本 prefix 与图像连续 token 可以共用标准 LLM attention、训练和缓存框架。但当前证据仅表明 1.7B LLM 架构在若干自动图像指标上不差；它没有执行语言理解、图像问答或交错生成。因此“可无缝接入多模态 LLM”仍是架构兼容性陈述，不是已完成能力。</p>
+</section>
+<section class="card" aria-labelledby="11-论文自述限制"><h2 id="11-论文自述限制">11. 论文自述限制</h2>
+<ol type="1">
+<li><strong>速度限制（§4.2、§5）</strong>：ARTM/FHTM 不提供加速，骨干前向数等于转移步数乘图像 token 数；论文表 1/7 中为 <code>2×256</code> 或 <code>3×256</code>。所以因果统一与采样效率是两条分开的路线。</li>
+<li><strong>核独立性（§2.2、§4.2）</strong>：DTM head 独立生成每个差分 token，限制联合表达力；扩大 patch 只在低 TM step 时有帮助。</li>
+<li><strong>未来工作（§5）</strong>：作者明确把 scheduler、distillation 以及把 FHTM 纳入多模态系统列为未来方向；即论文没有完成蒸馏，也没有训练真正文本—图像统一模型。</li>
+</ol>
+</section>
+<section class="card" aria-labelledby="12-独立批判证据--推论"><h2 id="12-独立批判证据--推论">12. 独立批判（证据 → 推论）</h2>
+<ol type="1">
+<li><strong>[测量口径]</strong> 因为主表 <code>NFE*</code> 明确只统计 1.7B backbone，却把每个 DTM step 内的 64 次 40M head 求值排除，所以“32 vs 256 NFE”不是总计算 8×；应以表 3 的 10.8 s→1.6 s（6.75×）作为更可信系统指标。</li>
+<li><strong>[效率归因]</strong> 因为表 8 显示 16×4 已接近饱和，而主表使用 32×64，所以论文主质量结果与主速度结果不是完全同一采样配置；因此不能把主表全部质量数字直接归因给 1.6 s 配置。</li>
+<li><strong>[统计]</strong> 因为所有主表都没有 seed 数、标准差或 CI，而 MS-COCO Pick 只提高 0.08（0.38%），所以这些小差异可能落在训练或采样波动内，不能宣称稳定优势。</li>
+<li><strong>[数据复现]</strong> 因为训练依赖 3.5 亿个未公开 Shutterstock 授权对，且代码/权重未找到，所以“固定数据、架构与优化”的公平性只在作者内部成立，外部无法复核。</li>
+<li><strong>[指标覆盖]</strong> 因为论文不报告 FID、precision/recall、真人盲评或复制率，六个 Parti/COCO 指标又多为学习式 reward，所以可推出代理偏好提升，不能推出分布覆盖、原创性或真实人类偏好全面提升。</li>
+<li><strong>[组合性边界]</strong> 因为 DTM 的 GenEval Overall 虽比 FM 高 7 pp，但 Counting 从 0.27 到 0.35仍低 FHTM-3 的 0.44，且单对象低于 MAR 的 0.98，所以“DTM 改善组合性”应限定到双对象、颜色、位置等子项。</li>
+<li><strong>[理论—实践缺口]</strong> 因为定理 1 只证明 <code>T→∞</code> 时 DTM 收敛到 Euler FM，而实际优势发生在有限 T，所以定理解释了“为什么最终相同”，没有证明“为什么有限步更优”；后续 AISTATS 2026 工作才在高斯/混合高斯局部单峰条件下补充 KL 优势。</li>
+<li><strong>[统一模型叙事]</strong> 因为 FHTM-3 LLM 只把 2D 位置编码改为 1D、以文本 prefix 输入，并未评测语言生成或交错序列，所以当前实验支持“架构可移植”，不支持“已统一文本与图像生成”。</li>
+</ol>
+</section>
+<section class="card" aria-labelledby="13-相关工作链问题来源--技术来源--回应"><h2 id="13-相关工作链问题来源--技术来源--回应">13. 相关工作链：问题来源 → 技术来源 → 回应</h2>
+<h3 id="131-flow-matchinglipman-et-al-2022">13.1 Flow Matching（Lipman et al., 2022）</h3>
+<p><strong>解决什么</strong>：用条件概率路径回归向量场，免去仿真式训练，并以 Cond-OT 获得更直、更快的路径。<strong>遗留缺口</strong>：推理仍是确定 ODE，需要许多昂贵 backbone 调用；有限大步会把条件多模态压成均值。<strong>核心论文如何回应</strong>：DTM 不只回归 <code>E[Y|Xt]</code>，而是采样完整 <code>p(Y|Xt)</code>。<strong>设计如何传递</strong>：Cond-OT 线性路径、速度恒等式与 flow-matching head 被保留，但从“目标”降为“核内生成器”。</p>
+<h3 id="132-marautoregressive-image-generation-without-vqli-et-al-2024">13.2 MAR：Autoregressive Image Generation without VQ（Li et al., 2024）</h3>
+<p><strong>解决什么</strong>：用小 diffusion loss 建模连续 token，绕开 VQ 信息损失。<strong>遗留缺口</strong>：单轮 masked/raster AR 的顺序与注意力限制全局构图，且 token 内扩散仍昂贵。<strong>核心论文如何回应</strong>：ARTM 把 AR token 生成置于多个外层 Markov 转移中，FHTM 再保留完整历史。<strong>设计如何传递</strong>：1.7B backbone + 6 层小 head、连续 latent 与 per-token flow 都直接继承并扩展。</p>
+<h3 id="133-fluidfan-et-al-2024">13.3 Fluid（Fan et al., 2024）</h3>
+<p><strong>解决什么</strong>：系统比较离散/连续 token 与 raster/random order，证明连续随机顺序在视觉质量和 GenEval 上更强；10.5B 达 COCO FID 6.16、GenEval 0.69。<strong>遗留缺口</strong>：强模型依赖双向 masked attention，和标准因果 LLM 不自然统一。<strong>核心论文如何回应</strong>：FHTM 用完整历史 + causal attention，使相同 1.7B 规模的 LLM 架构在作者指标上接近或超过 DiT。<strong>设计如何传递</strong>：连续 token、随机/因果顺序、head NFE 都成为 TM 对照轴。</p>
+<h3 id="134-generator-matchingholderrieth-et-al-2025">13.4 Generator Matching（Holderrieth et al., 2025）</h3>
+<p><strong>解决什么</strong>：用一般 Markov generator 统一连续与离散生成过程，可叠加 jump process。<strong>遗留缺口</strong>：它仍从连续时间无穷小生成元出发，工程实现与模型类别较抽象。<strong>核心论文如何回应</strong>：TM 直接工作在离散时间转移核，训练只需相邻状态对；表达力放到每个有限步的内核模型。<strong>设计如何传递</strong>：任意监督过程与 modality-agnostic 统一思想保留，但建模对象从 generator 换成 kernel。</p>
+<h3 id="135-后续demystifying-tmaistats-2026">13.5 后续：Demystifying TM（AISTATS 2026）</h3>
+<p><strong>解决什么</strong>：补上原论文有限步优越性的理论：对单峰高斯，TM 在任意有限步数有更低 KL，因为随机差分更新保留协方差；在模态分离且方差非零的 GMM 局部区域优势仍在。<strong>遗留缺口</strong>：结论依赖受控分布近似，尚不能直接推出大规模图像模型的全局最优。<strong>设计如何传递</strong>：把原文“更富表达的随机核”从经验归因推进到协方差保持机制，并发布图像/视频代码。</p>
+</section>
+<section class="card" aria-labelledby="14-技术演进树"><h2 id="14-技术演进树">14. 技术演进树</h2>
+<pre class="text"><code>连续时间路径
+├─ Diffusion：随机微步 + 高 NFE
+├─ Flow Matching：确定向量场 + ODE
+│  ├─ Cond-OT：更直路径
+│  └─ Generator Matching：任意连续时间 Markov generator
+└─ Transition Matching：有限离散步 + 可学习概率核
+   ├─ DTM：全局差分随机核 → 少量昂贵 backbone + 多次便宜 head
+   │  └─ Demystifying TM：有限步 KL / 协方差解释
+   ├─ ARTM：下一状态按连续 token 自回归
+   └─ FHTM：全历史因果 Transformer
+      └─ 目标：文本—图像统一因果模型
+
+另一条技术来源
+VQ 自回归 → MAR 连续 token → Fluid 随机顺序扩展
+                         └────────────→ ARTM / FHTM</code></pre>
+<p>演进的动力有三次转折：第一，从模拟 SDE 转到直接回归向量场；第二，从离散 VQ token 转到连续 token 的小生成 head；第三，从“每一步确定更新”转到“每一步本身是条件分布”。TM 的关键不是更复杂路径，而是承认有限步条件分布应当有方差。</p>
+</section>
+<section class="card" aria-labelledby="15-跨论文对标"><h2 id="15-跨论文对标">15. 跨论文对标</h2>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">时间观</th>
+<th scope="col">状态</th>
+<th scope="col">每步对象</th>
+<th scope="col">因果性</th>
+<th scope="col">主要优势</th>
+<th scope="col">主要缺口</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Flow Matching</td>
+<td>连续</td>
+<td>连续</td>
+<td>确定速度</td>
+<td>非因果</td>
+<td>训练简单、ODE 成熟</td>
+<td>有限步取条件均值</td>
+</tr>
+<tr class="even">
+<td>Generator Matching</td>
+<td>连续</td>
+<td>任意</td>
+<td>generator</td>
+<td>可扩展</td>
+<td>理论统一、可跳跃</td>
+<td>工程抽象、仍是微分对象</td>
+</tr>
+<tr class="odd">
+<td>MAR</td>
+<td>单阶段 AR</td>
+<td>连续 token</td>
+<td>token 内 diffusion</td>
+<td>masked</td>
+<td>无 VQ 损失</td>
+<td>顺序与全局一致性</td>
+</tr>
+<tr class="even">
+<td>Fluid</td>
+<td>多阶段 masked AR</td>
+<td>连续 token</td>
+<td>token 分布</td>
+<td>双向</td>
+<td>10.5B 强扩展</td>
+<td>难与 causal LLM 合并</td>
+</tr>
+<tr class="odd">
+<td>DTM</td>
+<td>离散 T 步</td>
+<td>连续</td>
+<td>随机差分核</td>
+<td>并行</td>
+<td>1.6 s、5/6 Parti 指标领先 FM</td>
+<td>head 计费口径、无开源</td>
+</tr>
+<tr class="even">
+<td>FHTM</td>
+<td>离散 T 步</td>
+<td>连续 token</td>
+<td>全历史 AR 核</td>
+<td>完全因果</td>
+<td>LLM 架构兼容</td>
+<td>3×256 backbone，无加速</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section class="card" aria-labelledby="16-开放挑战必须可-head-to-head-验证"><h2 id="16-开放挑战必须可-head-to-head-验证">16. 开放挑战：必须可 head-to-head 验证</h2>
+<h3 id="理论">理论</h3>
+<ol type="1">
+<li><strong>有限步非高斯界</strong>：同一 1.7B backbone、同数据，比较 DTM 与 FM 在 2/4/8/16 步上的 empirical KL surrogate、协方差谱和 mode coverage；预注册“DTM 优势随 mode separation 增大”的趋势，连接 AISTATS 2026 理论与真实 latent。</li>
+<li><strong>核独立性误差</strong>：比较 per-token、2×2、2×8、全图低秩耦合四种 head；固定总 FLOPs，测 FID、precision/recall、GenEval，判断表达力来自更大联合核还是单纯更多参数。</li>
+</ol>
+<h3 id="工程应用">工程应用</h3>
+<ol start="3" type="1">
+<li><strong>统一计费</strong>：在 H100/B200 上统一报告端到端 latency、energy、峰值显存、全部 backbone/head NFE，比较 FM、DTM、MeanFlow、Shortcut；按相同 CLIP/Pick 下的 Pareto frontier 排名。</li>
+<li><strong>复现公平性</strong>：在可公开的 DataComp-1B 子集上重训 FM/DTM/MAR，至少 3 seeds，公开权重与日志；检验 +0.08 Pick 是否超过 95% CI。</li>
+<li><strong>视频迁移</strong>：固定 Wan2.1 1.3B 与相同训练帧数，比较 DTM、TMD、普通 flow distillation 的 VBench、FVD、temporal LPIPS 与实时 FPS；特别检查随机核是否改善长期模式坍缩。</li>
+</ol>
+<h3 id="新兴方向">新兴方向</h3>
+<ol start="6" type="1">
+<li><strong>真正的多模态统一</strong>：让 FHTM 与同规模 causal VLM 在交错文本—图像、caption、VQA、图像 continuation 上 head-to-head；共享 tokenizer/参数预算，验证“架构兼容”能否变成双向能力，而非仅图像生成。</li>
+<li><strong>安全与记忆</strong>：在相同训练数据上比较 FM/DTM 的 membership inference、最近邻复制率与 NSFW prompt 遵循。随机大步可能增强 mode coverage，也可能更易恢复训练样本；目前完全未知。</li>
+</ol>
+</section>
+<section class="card" aria-labelledby="17-近期工作追踪"><h2 id="17-近期工作追踪">17. 近期工作追踪</h2>
+<ol type="1">
+<li><strong>Exploring the Design Space of Transition Matching</strong>（2025-12-13）：训练 56 个 1.7B 模型、549 次评估，系统搜索 head、time weighting 与 sampler；价值在于把原论文的少数设计点扩成工程地图。<a href="https://arxiv.org/abs/2512.12465">https://arxiv.org/abs/2512.12465</a></li>
+<li><strong>Demystifying Transition Matching</strong>（AISTATS 2026）：给出 TM 在高斯/局部单峰混合高斯上有限步优于 FM 的条件，并有官方图像/视频代码；是当前最直接的机制补强。<a href="https://arxiv.org/abs/2510.17991">https://arxiv.org/abs/2510.17991</a></li>
+<li><strong>Transition Matching Distillation for Fast Video Generation</strong>（2026-01-14）：把每个外层转移拆成 backbone + flow head，并蒸馏 Wan2.1 1.3B/14B；将 TM 从训练范式推进到预训练视频模型压缩。<a href="https://arxiv.org/abs/2601.09881">https://arxiv.org/abs/2601.09881</a></li>
+<li><strong>Diff2Flow</strong>（2025-06-02）：通过时间与插值对齐把 diffusion prior 直接改造成 flow matching，适合参数高效微调；它解决“已有 diffusion 资产如何迁移”，与 TM 的“如何重新定义有限步核”互补。<a href="https://arxiv.org/abs/2506.02221">https://arxiv.org/abs/2506.02221</a></li>
+<li><strong>Vid2World</strong>（2025-05-20）：将预训练视频扩散模型因果化，并加入 action guidance；可作为 TM 迁移到交互世界模型时的重要对照。<a href="https://arxiv.org/abs/2505.14357">https://arxiv.org/abs/2505.14357</a></li>
+<li><strong>Co-generation of Layout and Shape via Autoregressive 3D Diffusion</strong>（2026-04-17）：在 23 万室内场景上用 3D-ARD+ 联合生成布局与对象 latent；展示“外层 AR + 内层 diffusion”在 3D 的相邻设计。<a href="https://arxiv.org/abs/2604.16552">https://arxiv.org/abs/2604.16552</a></li>
+<li><strong>GaussianGPT</strong>（2026-03-27）：把 Gaussian primitives VQ 化后做纯自回归，提供 TM 连续状态路线的离散 3D 对照。<a href="https://arxiv.org/abs/2603.26661">https://arxiv.org/abs/2603.26661</a></li>
+</ol>
+</section>
+<section class="card" aria-labelledby="18-结论"><h2 id="18-结论">18. 结论</h2>
+<p>Transition Matching 最值得记住的观点是：<strong>当采样只能走有限步时，正确对象可能不是一个速度均值，而是一整个条件转移分布。</strong> 在作者控制的 1.7B 对照里，DTM 对 FM 在 PartiPrompts 提升 5/6 个指标，GenEval Overall 从 0.47 到 0.54，同时 H100 时延从 10.8 s 降到 1.6 s。这个结果足以证明随机有限步核是强设计空间，但还不足以证明通用 SOTA：训练数据与代码未公开、无 FID/真人盲评/多 seed、主表 NFE* 排除了 head，且 FHTM 的“多模态统一”仍停留在图像生成指标。</p>
+<hr />
+<p><strong>来源说明</strong>：核心数字来自论文 arXiv v1 的表 1、2、3、7、8、9、10 与 §4/附录 A.1；所有二次计算均由表中原值计算。未报告的标准差、置信区间、FID、真人偏好与代码状态均明确标注，未作补造。索引 <code>ml-report-index.md</code> 已在本次运行追加记录。</p>
+</section>
+  </main>
+
+  <footer><p>核心来源：arXiv:2506.23589v1、NeurIPS 2025 OpenReview；生成于 2026-10-07。</p><p><strong>呈现验证说明：</strong>Warm Editorial 结构验证器已通过（0 错误、0 警告），HTML 的主题切换、表格横向滚动、打印规则与 reduced-motion 均已静态检查；本运行环境没有 <code>/usr/bin/chromium</code> 或 <code>/opt/pw-browsers</code> 下可启动的 Chromium，因此 Playwright 无法完成浅色、深色和移动端截图级视觉检查，未将其虚报为已通过。</p></footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

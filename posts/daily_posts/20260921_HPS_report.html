@@ -1,0 +1,1392 @@
+---
+layout: null
+title: "HPS"
+date: 2026-09-21
+topic: "rl-peft"
+tags: ["rl-peft", "preference-optimization", "negative-sampling"]
+excerpt: "Hard Preference Sampling 的理论、证据与安全含义 HPS 用外部排序器从多负例中抽一个“最像正例”的负例，在几乎不损害外部质量分的同时显著拉大隐式奖励间隔并节省训练时间；但 margin 指标与目标函数高度同构，安全结论仍需独立红队与单样本部署评测闭环。"
+permalink: "/blog/2026/09/21/hps/"
+blog_post: true
+lang: "zh-CN"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_en: "/blog/2026/09/21/hps/en/"
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>HPS：把“最难负例”变成偏好对齐的采样分布 · 2026-09-21</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #246fca;
+    --chart-comparison: #c95224;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  :root{--page:#f7f3ea;--surface-1:#fffaf1;--chart-primary:#2a78d6;--chart-comparison:#eb6834;--highlight-row:#e7f0fb}
+  :root[data-theme="dark"]{--page:#16130f;--surface-1:#211d18;--chart-primary:#3987e5;--chart-comparison:#d95926}
+  .card{overflow-wrap:anywhere}.card>h2{scroll-margin-top:70px}.card table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .card th,.card td{min-width:92px}.card td:nth-child(n+2),.card th:nth-child(n+2){font-variant-numeric:tabular-nums}
+  .card blockquote{margin:18px 0;padding:14px 18px;border-left:3px solid var(--chart-comparison);border-radius:0 8px 8px 0;background:var(--page);color:var(--text-secondary)}
+  .card .math.display,.card pre{max-width:100%;overflow-x:auto}.card code{overflow-wrap:anywhere}.report-body>p:first-of-type{font-size:1.05rem}
+  @media(max-width:640px){.chart{min-width:620px}.figure{overflow-x:auto}.card table{font-size:13px}.hero{padding-top:74px}}
+
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ICML 2025 · LLM/NLP</p>
+    <h1>HPS：把“最难负例”变成偏好对齐的采样分布</h1>
+    <p class="subtitle">Hard Preference Sampling 的理论、证据与安全含义</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">ICML 2025 / PMLR 267</span>
+      <span class="chip">2026-09-21</span>
+      <span class="chip">偏好优化 · 对齐 · 负例采样</span>
+    </div>
+    <p class="lede">HPS 用外部排序器从多负例中抽一个“最像正例”的负例，在几乎不损害外部质量分的同时显著拉大隐式奖励间隔并节省训练时间；但 margin 指标与目标函数高度同构，安全结论仍需独立红队与单样本部署评测闭环。</p>
+  </header>
+
+  <main>
+<div class="report-body">
+<blockquote>
+<p><strong>一句话核心定位。</strong> HPS（Hard Preference
+Sampling）不是新的 DPO
+替代品，而是一层可插拔的多负例采样机制：先用外部标量奖励把 99
+个拒绝答案变成随训练逐步变尖的分布，再只抽一个“最难拒绝”的答案进入
+DPO/EXO/IPO/SPPO/NCA；它把 PL 的 168.4 GPU-hour 降到 64.4，同时把
+HH-RLHF 上 DPO 的隐式 reward margin 从 0.349 拉到
+2.723，却几乎没有改变外部 Reward（0.431→0.430）。</p>
+</blockquote>
+<p><strong>版本与口径。</strong> 本报告深读的是 arXiv:2502.14400
+<strong>v5（2026-03-20）</strong>，并以 ICML 2025 / PMLR 267
+定稿页为会议身份依据。数字只取论文表格、正文或公开数据卡；“提升”默认是本报告按原始数字重算，绝对差记为
+pp/点，相对变化以比较对象为分母。由于报告日之后的 arXiv v5
+晚于会议版，版本差异本身被视为复现风险，而不是自动当作会议证据。</p>
+<section id="链接验证表" class="card level2">
+<h2>链接验证表</h2>
+<table style="width:100%;">
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">材料</th>
+<th scope="col">会议/正式页</th>
+<th scope="col">arXiv 版本与日期</th>
+<th scope="col">代码</th>
+<th scope="col">数据/权重</th>
+<th scope="col">项目页/视频</th>
+<th scope="col">核验结果</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>HPS（核心）</td>
+<td><a href="https://proceedings.mlr.press/v267/zou25c.html">ICML 2025 /
+PMLR 267</a>，80822–80845</td>
+<td><a href="https://arxiv.org/abs/2502.14400">2502.14400v5</a>，v1
+2025-02-20；v5 2026-03-20</td>
+<td><a href="https://github.com/LVLab-SMU/HPS">LVLab-SMU/HPS</a>：PMLR
+Software 链接已解析；直接页面本次超时</td>
+<td><a
+href="https://huggingface.co/datasets/yqcca/HH-RLHF">HH-RLHF</a>；<a
+href="https://huggingface.co/datasets/yqcca/PKU-Safety">PKU-Safety</a>；HPS
+微调权重未找到</td>
+<td>独立项目页/视频未找到</td>
+<td>PMLR、arXiv、两数据卡均实际访问；OpenReview 目标页遇到挑战页</td>
+</tr>
+<tr class="even">
+<td>DPO</td>
+<td>NeurIPS 2023；<a href="https://arxiv.org/abs/2305.18290">arXiv</a>
+给出正式版本信息</td>
+<td>2305.18290v3，2024-07-29</td>
+<td><a
+href="https://github.com/eric-mitchell/direct-preference-optimization">官方代码</a></td>
+<td>论文用数据沿各任务公开；统一权重未找到</td>
+<td>未找到独立视频</td>
+<td>arXiv 实际访问，行 8–29</td>
+</tr>
+<tr class="odd">
+<td>PRO</td>
+<td>AAAI 2024；<a href="https://arxiv.org/abs/2306.17492">arXiv</a> 标注
+accepted</td>
+<td>2306.17492v2，2024-02-27</td>
+<td>论文页未核得稳定官方仓库</td>
+<td>未找到统一数据/权重页</td>
+<td>未找到</td>
+<td>arXiv 实际访问，行 8–28</td>
+</tr>
+<tr class="even">
+<td>LiPO</td>
+<td>NAACL 2025；<a href="https://arxiv.org/abs/2402.01878">arXiv</a>
+标注 accepted</td>
+<td>2402.01878v3，2025-01-24</td>
+<td>未找到稳定官方代码入口</td>
+<td>未找到统一权重页</td>
+<td>未找到</td>
+<td>arXiv 实际访问，行 8–30</td>
+</tr>
+<tr class="odd">
+<td>KTO</td>
+<td><a href="https://proceedings.mlr.press/v235/ethayarajh24a.html">ICML
+2024 / PMLR 235</a></td>
+<td>2402.01306v5，2026-09-08</td>
+<td>未找到单独核验入口</td>
+<td>未找到统一权重页</td>
+<td>未找到</td>
+<td>PMLR 与 arXiv 实际访问</td>
+</tr>
+</tbody>
+</table>
+<p><strong>无法核实项。</strong> GitHub 目标由 PMLR 正式页的 Software
+链接确认，但直接抓取本次超时，因此仓库最新 commit、license
+与是否新增模型权重未做二次页面级确认；OpenReview 仅确认目标
+URL，内容被挑战页挡住。以上链接仍保留，但不据此声称“完整可复现”。</p>
+</section>
+<section id="轮转去重候选池与随机抽签" class="card level2">
+<h2>轮转、去重、候选池与随机抽签</h2>
+<p><code>date +%u</code> 的结果为 <strong>1</strong>，因此轮转到周一的
+LLM/NLP。先检查 <code>ml-report-index.md</code>，排除最近 14
+天已深度覆盖的 <strong>ATLANTIS</strong>（SFT 数据加权，2026-09-07）与
+<strong>ThinkSLM</strong>（小模型推理评测，2026-09-14），并避免把
+2026-09-15 已覆盖的 MM-RLHF 再作为核心。候选由 ICML 2025 PMLR
+正式目录为主干，并以 arXiv、OpenReview、Hugging Face Papers、Semantic
+Scholar 与 Papers with Code 入口交叉检索；聚合站存在缺页时，以正式
+proceedings 为准。</p>
+<table style="width:100%;">
+<colgroup>
+<col style="width: 30%" />
+<col style="width: 23%" />
+<col style="width: 23%" />
+<col style="width: 23%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">#</th>
+<th scope="col">候选论文</th>
+<th scope="col">主题</th>
+<th scope="col">优先级/来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td>LMRL Gym: Benchmarks for Multi-Turn Reinforcement Learning with
+Language Models</td>
+<td>多轮 RL 评测</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td>Grokking in the Wild: Data Augmentation for Real-World Multi-Hop
+Reasoning with Transformers</td>
+<td>多跳推理</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td>AlphaVerus: Bootstrapping Formally Verified Code Generation through
+Self-Improving Translation and Treefinement</td>
+<td>形式化代码推理</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td>The Missing Alignment Link of In-context Learning on Sequences</td>
+<td>上下文学习</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td>The Surprising Effectiveness of Test-Time Training for Few-Shot
+Learning</td>
+<td>测试时训练</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td>A Reasoning-Based Approach to Cryptic Crossword Clue Solving</td>
+<td>语言推理</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td>Policy-labeled Preference Learning: Is Preference Enough for
+RLHF?</td>
+<td>RLHF</td>
+<td>ICML 2025 Main / PMLR+arXiv</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">8</td>
+<td>AMPO: Active Multi Preference Optimization for Self-play Preference
+Selection</td>
+<td>多偏好优化</td>
+<td>ICML 2025 Main / PMLR+OpenReview</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td>Energy-Based Preference Model Offers Better Offline Alignment than
+the Bradley-Terry Preference Model</td>
+<td>偏好模型</td>
+<td>ICML 2025 Main / PMLR+arXiv</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td>Right Now, Wrong Then: Non-Stationary Direct Preference Optimization
+under Preference Drift</td>
+<td>偏好漂移</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td>T1: Advancing Language Model Reasoning through Reinforcement
+Learning and Inference Scaling</td>
+<td>推理扩展</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">12</td>
+<td>Reasoning-as-Logic-Units: Scaling Test-Time Reasoning Through Logic
+Unit Alignment</td>
+<td>test-time scaling</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td>Premise-Augmented Reasoning Chains Improve Error Identification in
+Math Reasoning</td>
+<td>数学评测</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td>Flow of Reasoning: Training LLMs for Divergent Reasoning with
+Minimal Examples</td>
+<td>发散推理</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td>VersaPRM: Multi-Domain Process Reward Model via Synthetic Reasoning
+Data</td>
+<td>过程奖励</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">16</td>
+<td>PARM: Multi-Objective Test-Time Alignment via Preference-Aware
+Autoregressive Reward Model</td>
+<td>测试时对齐</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td>ZebraLogic: On the Scaling Limits of LLMs for Logical Reasoning</td>
+<td>逻辑推理评测</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td>ReVISE: Learning to Refine at Test-Time via Intrinsic
+Self-Verification</td>
+<td>自验证</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">19</td>
+<td>Beyond Bradley-Terry Models: A General Preference Model for Language
+Model Alignment</td>
+<td>一般偏好模型</td>
+<td>ICML 2025 Main / PMLR+arXiv</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">20</td>
+<td>BRiTE: Bootstrapping Reinforced Thinking Process to Enhance Language
+Model Reasoning</td>
+<td>强化推理</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">21</td>
+<td>Accelerating Large Language Model Reasoning via Speculative
+Search</td>
+<td>推理加速</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">22</td>
+<td>RE-Bench: Evaluating Frontier AI R&amp;D Capabilities of Language
+Model Agents against Human Experts</td>
+<td>Agent 评测</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">23</td>
+<td>PoisonBench: Assessing Language Model Vulnerability to Poisoned
+Preference Data</td>
+<td>可信偏好数据</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">24</td>
+<td>HPS: Hard Preference Sampling for Human Preference Alignment</td>
+<td>偏好优化/安全</td>
+<td>ICML 2025 Main / PMLR+arXiv+HF</td>
+</tr>
+</tbody>
+</table>
+<p>候选冻结后实际执行 <code>shuf -i 1-24 -n 1</code>，结果为
+<strong>24</strong>，即
+HPS。论文、定稿、表格、代码入口与两数据集信息均足以深读，所以<strong>重抽次数为
+0</strong>。随机规则只决定核心，不替代资料门槛；本次命中最近 12
+个月主会长文，符合优先级。</p>
+</section>
+<section id="motivation真正的痛点不是没有负例而是负例怎样进入损失"
+class="level2">
+<h2>Motivation：真正的痛点不是“没有负例”，而是负例怎样进入损失</h2>
+<p>偏好训练常见两种压缩。BT 把一个 prompt 的候选压成二元胜负，只推开一个
+rejected；PL 保留完整顺序，却递归要求第二名胜第三名、第三名胜第四名。HPS
+指出后者在安全场景有语义冲突：当第二名和第三名都含有恶意内容时，训练“第二名优于第三名”等于暂时把有害回答放在正端；同时
+PL 对
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>n</mi><annotation encoding="application/x-tex">n</annotation></semantics></math>
+个候选逐一前向并构造
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>n</mi><annotation encoding="application/x-tex">n</annotation></semantics></math>
+个子损失，成本随候选数线性上升（正文 4.1，HTML 行 144–153）。</p>
+<p>量化证据有三层。第一，算力：PL、BT、HPS 的微调时间分别为
+<strong>168.4±1.9、62.8±1.1、64.4±0.8 GPU-hour</strong>；HPS 相对 PL 少
+<strong>104.0 GPU-hour / 61.76%</strong>，但比 BT 多 <strong>1.6
+GPU-hour / 2.55%</strong>（正文 6，HTML 行 314–316）。第二，目标内
+margin：HH-RLHF 的 DPO-BT 到 DPO-HPS，RM_DPO 从 <strong>0.349 到
+2.723</strong>，绝对 +2.374、相对 +680.23%；RM_R-DPO 从 <strong>−0.455
+到 2.040</strong>，跨过零点，百分比不具可解释性（表 2，HTML 行
+240–242）。第三，外部质量几乎不变：同三行 Reward 为
+<strong>0.431→0.430（−0.001，−0.23%）</strong>，BLEU 为
+<strong>0.230→0.232（+0.002，+0.87%）</strong>。所以论文最硬的结论是“更大的内部区分度与更低的
+PL 成本”，而不是“外部评分大幅提高”。</p>
+<p>更关键的是数据生成。每个原始 prompt 只有两个带人工偏好的回答，作者用
+RLHFlow/Llama3-v2-DPO 扩充为 <strong>100</strong> 个，再由
+Skywork-Reward-Llama3 排序（实验设置，HTML 行 305–313）。这让 HPS
+获得丰富的候选集合，却也把“human
+preference”部分转化为“reward-model-labelled synthetic
+preference”。若外部排序器把某类安全拒答误判为低质，HPS
+会比均匀/随机负例更集中地重复该偏差。</p>
+</section>
+<section id="论文故事线核心假设与权衡" class="card level2">
+<h2>论文故事线、核心假设与权衡</h2>
+<p>故事线可以压成四步：</p>
+<ol type="1">
+<li><strong>重定义信息价值。</strong> 不是所有 rejected
+都同样有用；最接近 preferred、因而最难区分的 rejected
+才提供高梯度信息。</li>
+<li><strong>把排序转成分布。</strong> 用固定的估计奖励
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>r</mi><mrow><mi>e</mi><mi>s</mi><mi>t</mi></mrow></msub><annotation encoding="application/x-tex">r_{est}</annotation></semantics></math>
+经过温度
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>g</mi><mi>a</mi><mi>m</mi><mi>m</mi><mi>a</mi></mrow><annotation encoding="application/x-tex">gamma</annotation></semantics></math>
+的 softmax 形成
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>q</mi><annotation encoding="application/x-tex">q</annotation></semantics></math>；<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>g</mi><mi>a</mi><mi>m</mi><mi>m</mi><mi>a</mi></mrow><annotation encoding="application/x-tex">gamma</annotation></semantics></math>
+越大，越接近 hardest-negative。</li>
+<li><strong>只采一个负例。</strong>
+不再把所有候选送入可训练模型反向传播；从
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>q</mi><annotation encoding="application/x-tex">q</annotation></semantics></math>
+抽一项，与首选构成常规成对优化。</li>
+<li><strong>给出极限解释。</strong> 当
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>g</mi><mi>a</mi><mi>m</mi><mi>m</mi><mi>a</mi><mo>→</mo><mi>∞</mi></mrow><annotation encoding="application/x-tex">gamma\to\infty</annotation></semantics></math>，采样趋近最坏负例分布，极限目标等价于最大化
+preferred 与最强 rejected 的最小间隔（定理 2–3，HTML 行 207–227）。</li>
+</ol>
+<p>这条线依赖三组假设。统计理论假设隐式奖励有界、梯度有界、Hessian
+有界且最优参数位于半径
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>B</mi><annotation encoding="application/x-tex">B</annotation></semantics></math>
+的球内（Assumption 1，HTML 行 187–192）；hardness 假设
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>r</mi><mrow><mi>e</mi><mi>s</mi><mi>t</mi></mrow></msub><annotation encoding="application/x-tex">r_{est}</annotation></semantics></math>
+的排序与真正难度方向一致；安全语义假设所有
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>j</mi><mo>≥</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">j\ge2</annotation></semantics></math>
+的候选都应该被整体压低。然而实际偏好往往有“两个都安全但风格不同”的弱序、不可传递偏好和多目标冲突，把所有
+rejected 都当潜在有害会混淆“不同意”与“不安全”。</p>
+<p>权衡也很清楚：HPS
+用<strong>离线候选生成与外部标注成本</strong>换取<strong>训练期反向传播成本</strong>。论文确实只反传一个负例，但生成
+100 个回答、用 8×L40S 做扩充与标注仍然昂贵；训练使用 4×L40S（附录
+D.1，HTML 行 732–736）。因此 61.76%
+是微调时长降幅，不是端到端数据生产+训练成本降幅。</p>
+</section>
+<section id="方程级形式化与流程" class="card level2">
+<h2>方程级形式化与流程</h2>
+<p>给 prompt
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>x</mi><annotation encoding="application/x-tex">x</annotation></semantics></math>
+和按偏好排列的候选
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>y</mi><mrow><mi>τ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo stretchy="true" form="postfix">)</mo></mrow></mrow></msub><mo>≻</mo><mi>⋯</mi><mo>≻</mo><msub><mi>y</mi><mrow><mi>τ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>n</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></msub></mrow><annotation encoding="application/x-tex">y_{\tau(1)}\succ\cdots\succ y_{\tau(n)}</annotation></semantics></math>，DPO
+风格的隐式奖励是</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>r</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mi>β</mi><mo>log</mo><mfrac><mrow><msub><mi>π</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>y</mi><mo>∣</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><mrow><msub><mi>π</mi><mrow><mi>r</mi><mi>e</mi><mi>f</mi></mrow></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>y</mi><mo>∣</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></mfrac><mi>.</mi></mrow><annotation encoding="application/x-tex">r_\theta(x,y)=\beta\log\frac{\pi_\theta(y\mid x)}{\pi_{ref}(y\mid x)}.</annotation></semantics></math></p>
+<p>HPS 先在 rejected 集合上定义 hardness 分布（论文式 9，HTML 行
+173–178）：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>q</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mfrac><mrow><mo>exp</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>γ</mi><msub><mi>r</mi><mrow><mi>e</mi><mi>s</mi><mi>t</mi></mrow></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">)</mo></mrow></mrow><mrow><munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>2</mn></mrow><mi>n</mi></munderover><mo>exp</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>γ</mi><msub><mi>r</mi><mrow><mi>e</mi><mi>s</mi><mi>t</mi></mrow></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><msub><mi>y</mi><mrow><mi>τ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>i</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">)</mo></mrow></mrow></mfrac><mo>,</mo><mspace width="2.0em"></mspace><mi>y</mi><mo>∈</mo><mo stretchy="false" form="prefix">{</mo><msub><mi>y</mi><mrow><mi>τ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>2</mn><mo stretchy="true" form="postfix">)</mo></mrow></mrow></msub><mo>,</mo><mi>…</mi><mo>,</mo><msub><mi>y</mi><mrow><mi>τ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>n</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></msub><mo stretchy="false" form="postfix">}</mo><mi>.</mi></mrow><annotation encoding="application/x-tex">q(x,y)=\frac{\exp(\gamma r_{est}(x,y))}{\sum_{i=2}^{n}\exp(\gamma r_{est}(x,y_{\tau(i)}))},\qquad y\in\{y_{\tau(2)},\ldots,y_{\tau(n)}\}.</annotation></semantics></math></p>
+<p>再把它代入“首选 vs 加权负例”目标（式 10）：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>ℒ</mi><mrow><mi>H</mi><mi>P</mi><mi>S</mi></mrow></msub><mo>=</mo><msub><mi>𝔼</mi><mrow><mi>d</mi><mo>∼</mo><mi>𝒟</mi></mrow></msub><mo>−</mo><mo>log</mo><mfrac><msup><mi>e</mi><mrow><msub><mi>r</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><msub><mi>y</mi><mrow><mi>τ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo stretchy="true" form="postfix">)</mo></mrow></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow></msup><mrow><msup><mi>e</mi><mrow><msub><mi>r</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><msub><mi>y</mi><mrow><mi>τ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo stretchy="true" form="postfix">)</mo></mrow></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow></msup><mo>+</mo><mi>N</mi><mspace width="0.167em"></mspace><msub><mi>𝔼</mi><mrow><mi>y</mi><mo>∼</mo><mi>p</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></msub><mrow><mo stretchy="true" form="prefix">[</mo><msup><mi>e</mi><mrow><msub><mi>r</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></msup><mi>q</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">]</mo></mrow></mrow></mfrac><mo>,</mo><mspace width="1.0em"></mspace><mi>N</mi><mo>=</mo><mi>n</mi><mo>−</mo><mn>1</mn><mi>.</mi></mrow><annotation encoding="application/x-tex">\mathcal L_{HPS}=\mathbb E_{d\sim\mathcal D}-\log\frac{e^{r_\theta(x,y_{\tau(1)})}}{e^{r_\theta(x,y_{\tau(1)})}+N\,\mathbb E_{y\sim p(y)}[e^{r_\theta(x,y)}q(x,y)]},\quad N=n-1.</annotation></semantics></math></p>
+<p>工程实现并不精确计算内层期望，而是
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>y</mi><mo>−</mo></msup><mo>∼</mo><mi>q</mi></mrow><annotation encoding="application/x-tex">y^-\sim q</annotation></semantics></math>
+单样本 Monte Carlo；于是一次更新仍像 DPO 的成对样本。极限上，定理 3
+把目标写成</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>θ</mi><mo>*</mo></msup><mo>=</mo><mo>arg</mo><munder><mo>max</mo><mi>θ</mi></munder><mrow><mo stretchy="true" form="prefix">[</mo><msub><mi>r</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><msub><mi>y</mi><mrow><mi>τ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo stretchy="true" form="postfix">)</mo></mrow></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>−</mo><munder><mo>max</mo><mrow><mn>1</mn><mo>&lt;</mo><mi>j</mi><mo>≤</mo><mrow><mo stretchy="true" form="prefix">|</mo><mi>τ</mi><mo stretchy="true" form="postfix">|</mo></mrow></mrow></munder><msub><mi>r</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><msub><mi>y</mi><mrow><mi>τ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>j</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">]</mo></mrow><mo>,</mo></mrow><annotation encoding="application/x-tex">\theta^*=\arg\max_\theta\left[r_\theta(x,y_{\tau(1)})-\max_{1&lt;j\le|\tau|}r_\theta(x,y_{\tau(j)})\right],</annotation></semantics></math></p>
+<p>即 maximin margin（式 14，HTML 行 224–227）。但“最大化内部
+margin”并不自动推出“真实有害率下降”：两者之间还缺一个已校准、外部、与训练模型无共享偏差的安全度量。</p>
+<pre class="text"><code>for each prompt x:
+    generate / retrieve n candidate responses
+    keep y+ = rank-1 response
+    score every rejected y_i with frozen r_est
+    gamma &lt;- linear schedule(-5, -3, -1, 1, 3, 5) at 20% intervals
+    q_i &lt;- softmax(gamma * r_est_i)
+    sample one y- ~ q
+    update chosen preference optimizer on (x, y+, y-)</code></pre>
+<p>注意论文方法段写“<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>g</mi><mi>a</mi><mi>m</mi><mi>m</mi><mi>a</mi><mo>&gt;</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">gamma&gt;1</annotation></semantics></math>”，实验却从
+<strong>−5 线性增至 5</strong>（正文 4.2 行 176 与实现行 315）。负
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>g</mi><mi>a</mi><mi>m</mi><mi>m</mi><mi>a</mi></mrow><annotation encoding="application/x-tex">gamma</annotation></semantics></math>
+会优先抽<strong>低奖励、容易拒绝</strong>的样本，与“hard
+negative”方向相反；这可以解释成从 easy-to-hard
+curriculum，但论文没有把该相变写进定义或理论。</p>
+</section>
+<section id="关键机制与工程细节" class="card level2">
+<h2>关键机制与工程细节</h2>
+<table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">组件</th>
+<th scope="col">论文设定</th>
+<th scope="col">作用</th>
+<th scope="col">可复用点</th>
+<th scope="col">风险/证据</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>候选扩充</td>
+<td>每 prompt 从 2 个扩到 100 个</td>
+<td>扩大负例支持集</td>
+<td>可替换任意生成器</td>
+<td>生成器单一，可能形成模式偏差；HTML 行 305–313</td>
+</tr>
+<tr class="even">
+<td>难度估计</td>
+<td>Skywork-Reward-Llama3 标量分</td>
+<td>定义
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>q</mi><annotation encoding="application/x-tex">q</annotation></semantics></math></td>
+<td>可替换领域 RM/规则</td>
+<td>排序器偏差被放大</td>
+</tr>
+<tr class="odd">
+<td>温度日程</td>
+<td>−5→5，每 20% 更新</td>
+<td>从易负例过渡到难负例</td>
+<td>课程学习接口</td>
+<td>与“<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>g</mi><mi>a</mi><mi>m</mi><mi>m</mi><mi>a</mi><mo>&gt;</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">gamma&gt;1</annotation></semantics></math>”理论条件冲突；行
+176、315</td>
+</tr>
+<tr class="even">
+<td>单样本 MC</td>
+<td>每 prompt 抽一个 rejected</td>
+<td>BT 级反传成本</td>
+<td>直接包在 DPO/EXO/IPO/SPPO/NCA 外</td>
+<td>梯度方差未报告</td>
+</tr>
+<tr class="odd">
+<td>策略/参考模型</td>
+<td>RLHFlow/Llama3-SFT-v2.0</td>
+<td>统一初始点</td>
+<td>便于同架构对比</td>
+<td>仅一个 8B 家族</td>
+</tr>
+<tr class="even">
+<td>参数高效训练</td>
+<td>LoRA rank 8，alpha 16</td>
+<td>降显存</td>
+<td>易复现</td>
+<td>全参训练外推未知</td>
+</tr>
+<tr class="odd">
+<td>正则/训练</td>
+<td>beta=0.1；2 epochs；AdamW；lr 5e−7；cosine</td>
+<td>稳定偏好训练</td>
+<td>标准配方</td>
+<td>随机种子、warmup、精确“over 2”文字不清</td>
+</tr>
+<tr class="even">
+<td>上下文/采样</td>
+<td>2048 tokens；temperature 0.9</td>
+<td>统一生成</td>
+<td>部署可直接迁移</td>
+<td>长上下文未知</td>
+</tr>
+<tr class="odd">
+<td>硬件</td>
+<td>扩充/标注 8×L40S；训练 4×L40S；batch 64</td>
+<td>成本基线</td>
+<td>可估资源</td>
+<td>端到端能耗未报告</td>
+</tr>
+<tr class="even">
+<td>评测抽样</td>
+<td>每法每 prompt 采 5 个，逐指标报最高分</td>
+<td>降低偶然差回答影响</td>
+<td>探索上界</td>
+<td>不是单次部署质量，会系统抬高所有方法</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="数据集基准与指标" class="card level2">
+<h2>数据集、基准与指标</h2>
+<p><strong>HH-RLHF</strong> 是多轮 helpful/harmless
+对话；作者使用的公开扩充卡显示 train <strong>161k
+rows</strong>，每条响应序列长度为 3（数据卡行
+72–80）。<strong>PKU-SafeRLHF / PKU-Safety</strong>
+是单轮安全偏好集合。本论文原始每 prompt 两回答，之后均扩成 100
+个，所以“样本数”既包括 prompt 数也包括每 prompt 候选数，不能把 100
+倍候选当作 100 倍独立人类标注。</p>
+<p>四类指标：BLEU
+衡量对参考答案的词面重叠，开放式对话中只是一项弱代理；Reward 来自外部
+ArmoRM-Llama3；RM_DPO 是 preferred 与 rejected 的隐式 log-ratio
+差；RM_R-DPO 再减去
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0.01</mn><mrow><mo stretchy="true" form="prefix">(</mo><mrow><mo stretchy="true" form="prefix">|</mo><msup><mi>y</mi><mo>+</mo></msup><mo stretchy="true" form="postfix">|</mo></mrow><mo>−</mo><mrow><mo stretchy="true" form="prefix">|</mo><msup><mi>y</mi><mo>−</mo></msup><mo stretchy="true" form="postfix">|</mo></mrow><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">0.01(|y^+|-|y^-|)</annotation></semantics></math>
+纠正长度（表 1，HTML 行 228–232）。人评是从两测试集各抽
+<strong>15</strong> 个 prompt，共 30 题、4
+个系统回答、<strong>20</strong> 名评分者，1–5
+Likert，匿名并随机顺序（正文 6.1，行 321–323）。Qwen2.5-72B-Instruct 给
+0–5 分和成对胜率。</p>
+</section>
+<section id="完整主结果矩阵" class="card level2">
+<h2>完整主结果矩阵</h2>
+<p>表 2 是微调设定。为保留完整性，下表列 SFT 与 5 个优化器×3
+个排名模型，共 <strong>16 行×8
+数值列</strong>；粗体只标每列最高值，不把不可比的隐式 margin
+跨优化器当作绝对安全尺度。来源：表 2，arXiv HTML 行 233–254。</p>
+<table>
+<colgroup>
+<col style="width: 8%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">HH BLEU↑</th>
+<th scope="col" style="text-align: right;">HH Reward↑</th>
+<th scope="col" style="text-align: right;">HH RM_DPO↑</th>
+<th scope="col" style="text-align: right;">HH RM_R-DPO↑</th>
+<th scope="col" style="text-align: right;">PKU BLEU↑</th>
+<th scope="col" style="text-align: right;">PKU Reward↑</th>
+<th scope="col" style="text-align: right;">PKU RM_DPO↑</th>
+<th scope="col" style="text-align: right;">PKU RM_R-DPO↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>SFT</td>
+<td style="text-align: right;">0.220</td>
+<td style="text-align: right;">0.425</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">0.294</td>
+<td style="text-align: right;">0.406</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+</tr>
+<tr class="even">
+<td>DPO-PL</td>
+<td style="text-align: right;">0.230</td>
+<td style="text-align: right;">0.430</td>
+<td style="text-align: right;">−0.795</td>
+<td style="text-align: right;">−1.448</td>
+<td style="text-align: right;">0.305</td>
+<td style="text-align: right;">0.412</td>
+<td style="text-align: right;">−6.852</td>
+<td style="text-align: right;">−5.961</td>
+</tr>
+<tr class="odd">
+<td>DPO-BT</td>
+<td style="text-align: right;">0.230</td>
+<td style="text-align: right;">0.431</td>
+<td style="text-align: right;">0.349</td>
+<td style="text-align: right;">−0.455</td>
+<td style="text-align: right;">0.306</td>
+<td style="text-align: right;">0.417</td>
+<td style="text-align: right;">−5.441</td>
+<td style="text-align: right;">−6.167</td>
+</tr>
+<tr class="even">
+<td><strong>DPO-HPS</strong></td>
+<td style="text-align: right;"><strong>0.232</strong></td>
+<td style="text-align: right;">0.430</td>
+<td style="text-align: right;"><strong>2.723</strong></td>
+<td style="text-align: right;"><strong>2.040</strong></td>
+<td style="text-align: right;">0.306</td>
+<td style="text-align: right;">0.407</td>
+<td style="text-align: right;">−5.359</td>
+<td style="text-align: right;">−5.851</td>
+</tr>
+<tr class="odd">
+<td>EXO-PL</td>
+<td style="text-align: right;"><strong>0.232</strong></td>
+<td style="text-align: right;"><strong>0.432</strong></td>
+<td style="text-align: right;">−0.724</td>
+<td style="text-align: right;">−1.406</td>
+<td style="text-align: right;">0.303</td>
+<td style="text-align: right;">0.409</td>
+<td style="text-align: right;">−5.455</td>
+<td style="text-align: right;">−6.128</td>
+</tr>
+<tr class="even">
+<td>EXO-BT</td>
+<td style="text-align: right;">0.231</td>
+<td style="text-align: right;">0.430</td>
+<td style="text-align: right;">0.816</td>
+<td style="text-align: right;">0.215</td>
+<td style="text-align: right;"><strong>0.324</strong></td>
+<td style="text-align: right;">0.421</td>
+<td style="text-align: right;">−5.553</td>
+<td style="text-align: right;">−6.164</td>
+</tr>
+<tr class="odd">
+<td>EXO-HPS</td>
+<td style="text-align: right;"><strong>0.232</strong></td>
+<td style="text-align: right;"><strong>0.432</strong></td>
+<td style="text-align: right;">1.079</td>
+<td style="text-align: right;">0.410</td>
+<td style="text-align: right;">0.314</td>
+<td style="text-align: right;">0.425</td>
+<td style="text-align: right;">−5.495</td>
+<td style="text-align: right;">−6.031</td>
+</tr>
+<tr class="even">
+<td>IPO-PL</td>
+<td style="text-align: right;">0.223</td>
+<td style="text-align: right;">0.429</td>
+<td style="text-align: right;">−5.199</td>
+<td style="text-align: right;">−5.264</td>
+<td style="text-align: right;">0.309</td>
+<td style="text-align: right;">0.401</td>
+<td style="text-align: right;">−66.337</td>
+<td style="text-align: right;">−66.946</td>
+</tr>
+<tr class="odd">
+<td>IPO-BT</td>
+<td style="text-align: right;"><strong>0.232</strong></td>
+<td style="text-align: right;">0.428</td>
+<td style="text-align: right;">−0.382</td>
+<td style="text-align: right;">−1.254</td>
+<td style="text-align: right;">0.310</td>
+<td style="text-align: right;">0.405</td>
+<td style="text-align: right;">−23.070</td>
+<td style="text-align: right;">−23.678</td>
+</tr>
+<tr class="even">
+<td>IPO-HPS</td>
+<td style="text-align: right;">0.231</td>
+<td style="text-align: right;">0.424</td>
+<td style="text-align: right;">−0.321</td>
+<td style="text-align: right;">−0.926</td>
+<td style="text-align: right;">0.308</td>
+<td style="text-align: right;">0.406</td>
+<td style="text-align: right;">−21.607</td>
+<td style="text-align: right;">−22.215</td>
+</tr>
+<tr class="odd">
+<td>SPPO-PL</td>
+<td style="text-align: right;">0.225</td>
+<td style="text-align: right;">0.430</td>
+<td style="text-align: right;">−7.630</td>
+<td style="text-align: right;">−7.674</td>
+<td style="text-align: right;">0.297</td>
+<td style="text-align: right;">0.413</td>
+<td style="text-align: right;">−67.474</td>
+<td style="text-align: right;">−68.082</td>
+</tr>
+<tr class="even">
+<td>SPPO-BT</td>
+<td style="text-align: right;">0.231</td>
+<td style="text-align: right;"><strong>0.432</strong></td>
+<td style="text-align: right;">−0.978</td>
+<td style="text-align: right;">−1.411</td>
+<td style="text-align: right;">0.297</td>
+<td style="text-align: right;">0.433</td>
+<td style="text-align: right;">−13.442</td>
+<td style="text-align: right;">−14.050</td>
+</tr>
+<tr class="odd">
+<td>SPPO-HPS</td>
+<td style="text-align: right;">0.231</td>
+<td style="text-align: right;"><strong>0.432</strong></td>
+<td style="text-align: right;">−0.969</td>
+<td style="text-align: right;">−1.302</td>
+<td style="text-align: right;">0.298</td>
+<td style="text-align: right;"><strong>0.435</strong></td>
+<td style="text-align: right;">−5.273</td>
+<td style="text-align: right;">−5.881</td>
+</tr>
+<tr class="even">
+<td>NCA-PL</td>
+<td style="text-align: right;">0.221</td>
+<td style="text-align: right;">0.431</td>
+<td style="text-align: right;">−5.760</td>
+<td style="text-align: right;">−5.819</td>
+<td style="text-align: right;">0.300</td>
+<td style="text-align: right;">0.411</td>
+<td style="text-align: right;">−70.910</td>
+<td style="text-align: right;">−71.518</td>
+</tr>
+<tr class="odd">
+<td>NCA-BT</td>
+<td style="text-align: right;">0.229</td>
+<td style="text-align: right;"><strong>0.432</strong></td>
+<td style="text-align: right;">−1.702</td>
+<td style="text-align: right;">−3.121</td>
+<td style="text-align: right;">0.305</td>
+<td style="text-align: right;">0.410</td>
+<td style="text-align: right;">−5.135</td>
+<td style="text-align: right;">−5.644</td>
+</tr>
+<tr class="even">
+<td>NCA-HPS</td>
+<td style="text-align: right;">0.231</td>
+<td style="text-align: right;"><strong>0.432</strong></td>
+<td style="text-align: right;">−0.822</td>
+<td style="text-align: right;">−1.268</td>
+<td style="text-align: right;">0.304</td>
+<td style="text-align: right;">0.411</td>
+<td style="text-align: right;">−5.109</td>
+<td style="text-align: right;">−5.318</td>
+</tr>
+</tbody>
+</table>
+<p>矩阵显示“稳定方向”与“例外”。在 HH 上，HPS 对每个优化器的两个 margin
+大多优于同族 BT/PL；但外部 Reward 并不系统提高：DPO 下降 0.001，IPO 由
+BT 的 0.428 降至 0.424。PKU 微调下，EXO-HPS Reward 0.425 和 SPPO-HPS
+0.435 较同族有收益，但 DPO-HPS 的 Reward 0.407 低于 DPO-BT 的
+0.417，绝对 −0.010、相对 −2.40%。因此不能用“margin
+更大”概括为“所有外部维度都更好”。</p>
+<p><strong>人评。</strong> 表 3 的质量分：SFT 3.63、DPO-BT 3.82、DPO-PL
+3.69、DPO-HPS <strong>3.93</strong>。HPS 较 BT +0.11（+2.88%），较 PL
++0.24（+6.50%），较 SFT +0.30（+8.26%）；论文未给标准差或显著性。表 4 的
+Qwen judge：HPS 对 SFT / BT / PL 在 HH 的 win 为
+<strong>63.875/58.712/57.612%</strong>，在 PKU 为
+<strong>67.100/56.100/57.650%</strong>；对应 lose 最低到
+5.150%。这些是有意义的外部证据，但 judge 与训练标注均为公开 LLM/RM
+生态，仍可能共享偏差。</p>
+<p><strong>迁移设定。</strong> 表 5 的 DPO-HPS 在 PKU 的 RM_DPO 为
+<strong>5.725</strong>，DPO-BT 为 1.346，绝对 +4.379、相对
++325.33%；RM_R-DPO 5.116 vs 1.738，+3.378、+194.36%。但两者 Reward 都是
+0.407，BLEU 仅 0.310 vs
+0.308。换言之，迁移实验强化“内部边界更陡”，没有展示外部奖励同步上升。</p>
+</section>
+
+<figure class="figure" aria-labelledby="margin-chart-title">
+  <p class="fig-title" id="margin-chart-title">DPO 系列：HH-RLHF 的隐式奖励间隔</p>
+  <p class="fig-sub">HPS 显著拉大其直接优化的 margin；外部 Reward 基本不变，因此两类证据必须分开解释。</p>
+  <div class="legend" aria-label="图例"><span><span class="swatch" style="background:#2a78d6"></span>RM_DPO</span><span><span class="swatch" style="background:#eb6834"></span>外部 Reward（×5，仅为可视化）</span></div>
+  <div style="overflow-x:auto">
+  <svg class="chart" viewBox="0 0 900 390" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>DPO-PL、DPO-BT、DPO-HPS 的隐式奖励间隔与外部奖励</title>
+    <desc>RM_DPO 分别为负0.795、0.349、2.723；外部 Reward 分别为0.430、0.431、0.430。图中外部 Reward 为乘以5后的柱高，仅便于同图比较。</desc>
+    <g stroke="var(--grid)" stroke-width="1"><line x1="100" y1="310" x2="850" y2="310"/><line x1="100" y1="235" x2="850" y2="235"/><line x1="100" y1="160" x2="850" y2="160"/><line x1="100" y1="85" x2="850" y2="85"/></g>
+    <g font-size="13"><text x="88" y="315" text-anchor="end">−1</text><text x="88" y="240" text-anchor="end">0</text><text x="88" y="165" text-anchor="end">1</text><text x="88" y="90" text-anchor="end">2</text></g>
+    <g>
+      <rect x="160" y="235" width="70" height="59.6" rx="5" fill="#2a78d6" tabindex="0" data-tip="DPO-PL RM_DPO：−0.795"><title>DPO-PL RM_DPO −0.795</title></rect>
+      <rect x="240" y="78.8" width="70" height="156.2" rx="5" fill="#eb6834" tabindex="0" data-tip="DPO-PL Reward：0.430（图示×5）"><title>DPO-PL Reward 0.430</title></rect>
+      <rect x="380" y="208.8" width="70" height="26.2" rx="5" fill="#2a78d6" tabindex="0" data-tip="DPO-BT RM_DPO：0.349"><title>DPO-BT RM_DPO 0.349</title></rect>
+      <rect x="460" y="78.4" width="70" height="156.6" rx="5" fill="#eb6834" tabindex="0" data-tip="DPO-BT Reward：0.431（图示×5）"><title>DPO-BT Reward 0.431</title></rect>
+      <rect x="600" y="30.8" width="70" height="204.2" rx="5" fill="#3987e5" tabindex="0" data-tip="DPO-HPS RM_DPO：2.723"><title>DPO-HPS RM_DPO 2.723</title></rect>
+      <rect x="680" y="78.8" width="70" height="156.2" rx="5" fill="#d95926" tabindex="0" data-tip="DPO-HPS Reward：0.430（图示×5）"><title>DPO-HPS Reward 0.430</title></rect>
+    </g>
+    <g font-size="13" text-anchor="middle"><text x="235" y="335">DPO-PL</text><text x="455" y="335">DPO-BT</text><text x="675" y="335">DPO-HPS</text></g>
+    <text x="475" y="373" text-anchor="middle" font-size="12">蓝柱：RM_DPO 原值；橙柱：外部 Reward×5。两者尺度不同，数值表见正文。</text>
+  </svg></div>
+  <figcaption>数据：HPS 表 2，arXiv HTML 行 233–254。图仅显示 DPO 三行；外部 Reward 乘 5 只为可见性。</figcaption>
+</figure>
+
+<section id="逐层消融超参敏感性与相变" class="card level2">
+<h2>逐层消融、超参敏感性与相变</h2>
+<p><strong>候选数。</strong> 表 6 的 HH 消融中，DPO-HPS 的 RM_DPO 从
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi><mo>=</mo><mn>5</mn></mrow><annotation encoding="application/x-tex">n=5</annotation></semantics></math>
+的 <strong>0.600</strong> 增至
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi><mo>=</mo><mn>100</mn></mrow><annotation encoding="application/x-tex">n=100</annotation></semantics></math>
+的 <strong>2.723</strong>，+2.123、相对 +353.83%；DPO-BT 从 0.166 到
+0.349，+0.183、+110.24%。BLEU 与 Reward
+基本横盘。说明扩大支持集主要改变拒绝边界，不是首选答案的词面或外部 RM
+质量。它也构成一个相变：候选池越大，遇到“高分但错误/有害”的 hard
+negative 越可能，HPS 的收益随极值统计增强。</p>
+<p><strong>迁移消融。</strong> 附录表 7 的 PKU HPS RM_DPO 为
+1.191、1.620、2.164、5.725（<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi><mo>=</mo><mn>5</mn><mo>,</mo><mn>20</mn><mo>,</mo><mn>50</mn><mo>,</mo><mn>100</mn></mrow><annotation encoding="application/x-tex">n=5,20,50,100</annotation></semantics></math>）。但
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi><mo>=</mo><mn>50</mn></mrow><annotation encoding="application/x-tex">n=50</annotation></semantics></math>
+的 HPS 行把 BLEU/Reward 写成 <strong>0.230/0.307</strong>，与相邻行约
+0.31/0.407 严重不一致（HTML 行
+704–713），像排版或转录错误；在作者澄清前不据该两格作趋势判断。</p>
+<p><strong>beta 敏感性。</strong> 附录表 8 给
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>β</mi><mo>=</mo><mn>0.1</mn><mo>,</mo><mn>0.25</mn><mo>,</mo><mn>0.5</mn><mo>,</mo><mn>0.75</mn><mo>,</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">\beta=0.1,0.25,0.5,0.75,1</annotation></semantics></math>。HPS
+的 RM_R-DPO 为 <strong>2.040, −0.828, −0.911, −0.925,
+−1.178</strong>；真正为正只发生在 0.1。HPS 相对 BT 在每个 beta
+都较高，但“较高”不等于“绝对安全”：从 0.1 到 0.25，HPS RM_DPO 由 2.723 变
+−0.146，出现明显符号翻转。KL 也从 11.767 降到 6.972，显示最大的 margin
+伴随最大的策略漂移。论文把它总结为“所有 KL 值均优于 BT”（行
+730–731），却没有讨论这个阈值。</p>
+<p><strong>gamma。</strong> 论文只给 −5→5 日程，未报告固定
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>γ</mi><annotation encoding="application/x-tex">\gamma</annotation></semantics></math>、日程方向、更新频率的消融，也未测
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>g</mi><mi>a</mi><mi>m</mi><mi>m</mi><mi>a</mi><mo>→</mo><mi>∞</mi></mrow><annotation encoding="application/x-tex">gamma\to\infty</annotation></semantics></math>
+的数值稳定性。因此不能从实验推出“hardness
+越尖越好”；理论极限与最优工程点之间仍为空白。</p>
+<p><strong>逐层归因缺口。</strong> 没有“100 候选+均匀单采样”“同一候选池
+top-1 deterministic”“仅 easy-to-hard 日程”“oracle human
+hardness”等关键控制组。所以已观察到的收益无法完全拆成：多候选、外部 RM
+排序、单样本、温度课程、HPS 损失五部分。</p>
+</section>
+<section id="统计显著性" class="card level2">
+<h2>统计显著性</h2>
+<p>论文只为训练时间报告均值±波动：PL <strong>168.4±1.9</strong>、BT
+<strong>62.8±1.1</strong>、HPS <strong>64.4±0.8 GPU-hour</strong>。主表
+BLEU、Reward、margin、人评均是点估计；未报告随机种子数、标准差、置信区间、bootstrap、配对检验或多重比较校正。人评虽有
+20 位评分者与 30 个
+prompt，但也未给评分者一致性、题目级方差或效应区间。因此可以说 HPS
+在这次运行里分数更高，不能严谨地说 +0.11 Likert 已统计显著。</p>
+<p>Qwen 胜率的小数到三位并不等于高精度。若没有样本总数、配对重复结构和
+judge 位置偏差估计，63.875% 与 58.712%
+的差异不能按显示位数解释。最佳实践应对 prompt 做成对 bootstrap，并把
+judge 随机种子、响应位置交换、单样本/Best-of-5 分开报告。</p>
+</section>
+<section id="真正贡献可复用设计与迁移潜力" class="card level2">
+<h2>真正贡献、可复用设计与迁移潜力</h2>
+<p>真正贡献不是又造一个偏好损失，而是把“listwise
+信息”拆成<strong>离线排序分布 + 在线单负例更新</strong>。这让任何只接受
+<code>(prompt, chosen, rejected)</code> 的训练器都能利用 100
+候选，却不付 PL 的全量反传成本。第二个贡献是把 hardest-negative 的
+max-margin 直觉写进对齐理论；第三个是跨 DPO/EXO/IPO/SPPO/NCA
+的正交插拔验证。</p>
+<p>可复用设计包括：把
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>q</mi><annotation encoding="application/x-tex">q</annotation></semantics></math>
+替换成安全分类器、事实性 verifier、多目标 Pareto 分布；用小 RM
+先缓存采样概率；按域或用户群设置
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>g</mi><mi>a</mi><mi>m</mi><mi>m</mi><mi>a</mi></mrow><annotation encoding="application/x-tex">gamma</annotation></semantics></math>；在在线场景把新失败回答加入候选池。迁移到代码生成时，<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>r</mi><mrow><mi>e</mi><mi>s</mi><mi>t</mi></mrow></msub><annotation encoding="application/x-tex">r_{est}</annotation></semantics></math>
+可用单元测试；数学推理可用过程
+verifier；医疗问答可用指南一致性+拒答质量的多目标分数。但在任何高风险域，hard
+negative 的定义必须由外部实证校准，不能把“模型分高”直接当“最危险”。</p>
+</section>
+<section id="论文自述限制" class="card level2">
+<h2>论文自述限制</h2>
+<ol type="1">
+<li><strong>评测器预算（Section 7，HTML 行 337–340）。</strong>
+作者明确说因预算使用开源 LLM 估胜率，更强的 GPT-4/Claude
+可能更稳。这限制 judge 的外部有效性。</li>
+<li><strong>计算约束（Implementation，HTML 行 313–316）。</strong>
+由于计算限制只做 LoRA rank
+8；因此全参训练、更大模型与其他架构的结论未验证。</li>
+<li><strong>未在 Limitations 明说但由设置直接限定。</strong> 仅 HH-RLHF
+与 PKU-SafeRLHF、一个 Llama3
+参考家族、2048-token，不能覆盖长上下文、多语言或生产
+red-team。论文限制段只写一项，以上两项按正文设置标注，避免冒充作者原话。</li>
+</ol>
+</section>
+<section id="独立批判" class="card level2">
+<h2>独立批判</h2>
+<ol type="1">
+<li><strong>[构念效度]</strong> 因为 RM_DPO 正是由
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>l</mi><mi>o</mi><mi>g</mi><msub><mi>π</mi><mi>θ</mi></msub><mi>/</mi><msub><mi>π</mi><mrow><mi>r</mi><mi>e</mi><mi>f</mi></mrow></msub></mrow><annotation encoding="application/x-tex">log\pi_\theta/\pi_{ref}</annotation></semantics></math>
+导出，而 HPS 的定理 3 和训练目标直接最大化该间隔，所以 margin
+的大幅上升部分是目标—指标同构；因此它证明“优化成功”，不能单独证明真实有害生成下降。</li>
+<li><strong>[外部有效性]</strong> 因为每 prompt 的 100 候选由同一 DPO
+模型扩充、再由 Skywork RM
+排序，真正的人类信息仍主要来自原始二元对；所以“hard human
+preference”更准确地说是“hard reward-model
+preference”，迁移到不同生成器/文化群体可能失效。</li>
+<li><strong>[评测偏差]</strong> 因为每方法采 5
+个响应并对每项指标报最高分（HTML 行
+313），而生产通常只返回一次采样，所以表 2 是 best-of-5
+上界；因此不能直接当作单样本部署安全率。</li>
+<li><strong>[超参稳健性]</strong> 因为 HPS 的 RM_R-DPO 在
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>β</mi><mo>=</mo><mn>0.1</mn></mrow><annotation encoding="application/x-tex">\beta=0.1</annotation></semantics></math>
+为 2.040、到 0.25 即变 −0.828，且最大 margin 对应
+KL=11.767，所以主要结论依赖窄超参区；因此“稳健拒绝”需要在固定 KL
+或固定外部质量下比较。</li>
+<li><strong>[理论—实现一致性]</strong> 因为方法定义写
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>g</mi><mi>a</mi><mi>m</mi><mi>m</mi><mi>a</mi><mo>&gt;</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">gamma&gt;1</annotation></semantics></math>，实现却从
+−5 开始；负温度反转排序，先采 easy negative，所以定理 2 的
+hardest-distribution
+极限没有覆盖完整训练路径；因此理论不能解释课程前半段收益。</li>
+<li><strong>[归因]</strong> 因为缺少均匀单采样、deterministic
+top-1、固定 gamma 与 oracle ranking 控制组，所以单样本效率与 hard
+weighting 的贡献没有分离；因此 64.4 GPU-hour 与 margin
+增益不能全部归功于“hard sampling”。</li>
+<li><strong>[统计]</strong> 因为主表与人评没有方差/置信区间，且人评只含
+30 prompt，DPO-HPS 对 BT 的 Likert 差仅
+0.11；所以可以报告方向，不能断言效应稳定或显著。</li>
+<li><strong>[数据一致性]</strong> 因为附录表 7 的
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi><mo>=</mo><mn>50</mn></mrow><annotation encoding="application/x-tex">n=50</annotation></semantics></math>
+HPS BLEU/Reward 0.230/0.307 与邻近值 0.31/0.407
+不连贯，所以至少两格可能有转录问题；因此任何基于该点的“平滑 scaling
+law”都不可靠。</li>
+</ol>
+</section>
+<section id="相关工作问题来源与技术来源链" class="card level2">
+<h2>相关工作：问题来源与技术来源链</h2>
+<section id="dpo把-rlhf-化成二元分类" class="level3">
+<h3>DPO：把 RLHF 化成二元分类</h3>
+<p>DPO 解决“先学 reward 再跑 PPO”的复杂性，通过闭式奖励参数化直接优化
+chosen/rejected；arXiv 摘要明确称其稳定、轻量且无需训练时从 LM
+采样（2305.18290v3，行 16–19）。遗留缺口是每次只见一个 rejected，且默认
+BT 的标量、可传递偏好。HPS 沿用 DPO 的隐式奖励与训练器，却把多个
+rejected 压成一个有信息的采样分布；DPO 的“成对接口”因此成为 HPS
+的工程落点。</p>
+</section>
+<section id="pro把二元偏好扩成完整排序" class="level3">
+<h3>PRO：把二元偏好扩成完整排序</h3>
+<p>PRO 解决 pairwise 丢失宏观次序的问题，把任意长度排名递归对比，AAAI
+2024 arXiv 摘要称其让概率排序对齐人类排序（2306.17492v2，行
+16–19）。遗留缺口恰是 HPS 的出发点：PL/PRO
+会要求次优有害回答胜过更差有害回答，并要对所有候选反传。HPS
+保留“多候选带来信息”的来源，但拒绝递归排序，仅围绕首选构建
+one-vs-hard-rest。</p>
+</section>
+<section id="lipo用-learning-to-rank-重新加权列表" class="level3">
+<h3>LiPO：用 learning-to-rank 重新加权列表</h3>
+<p>LiPO 把偏好优化系统化为 listwise learning-to-rank，并用
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>λ</mi><annotation encoding="application/x-tex">\lambda</annotation></semantics></math>
+权重区分不同偏好对；其摘要称在多项任务上胜过 DPO 变体（2402.01878v3，行
+16–20）。遗留缺口是完整列表的成本与“哪类负例最值得更新”仍绑定在损失里。HPS
+把权重前移到采样层，代价是每步只保留一个负例、可能增大梯度方差。</p>
+</section>
+<section id="kto二元-desirable-标签也能对齐" class="level3">
+<h3>KTO：二元 desirable 标签也能对齐</h3>
+<p>KTO 用前景理论的损失厌恶解释偏好优化，只需 desirable/undesirable
+标签；ICML 2024 arXiv 摘要强调 1B–30B 上可匹配成对方法，也明确“没有一种
+HALO 普遍最好”（2402.01306v5，行 16–19）。遗留缺口是它不利用同 prompt 内
+rejected 的相对难度。HPS 反向选择：不改变 optimizer
+的行为经济学假设，只改变负例数据分布。两者可以组合成 HPS-KTO
+的可检验方案。</p>
+<pre class="text"><code>                         人类/AI 偏好数据
+                                |
+               +----------------+----------------+
+               |                                 |
+          二元 chosen/rejected                多响应排序
+               |                                 |
+         DPO / KTO (2023–24)          PRO / LiPO (2024–25)
+               |                                 |
+               |                    信息更全，但全列表反传昂贵
+               |                                 |
+               +---------------+-----------------+
+                               |
+                  HPS：排序只用于构造 q
+                               |
+              +----------------+----------------+
+              |                                 |
+      单负例更新：BT 级训练成本         γ→∞：maximin margin
+              |                                 |
+     DPO/EXO/IPO/SPPO/NCA 可插拔       安全含义仍待外部验证</code></pre>
+<p>演进动力不是单调“更多排序更好”，而是在三角约束中移动：偏好信息量、反传成本、偏差放大。DPO
+把成本降下来；PRO/LiPO 把信息找回来；HPS
+再用重要性采样把二者折中。真正转折是把 listwise
+结构从“损失内部”搬到“数据采样层”。</p>
+<table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">反馈形态</th>
+<th scope="col">多负例利用</th>
+<th scope="col">每 prompt 训练开销</th>
+<th scope="col">核心归纳偏置</th>
+<th scope="col">HPS 如何继承/改变</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DPO</td>
+<td>二元</td>
+<td>否</td>
+<td>O(1)</td>
+<td>BT、隐式奖励</td>
+<td>继承成对训练与隐式 reward</td>
+</tr>
+<tr class="even">
+<td>PRO</td>
+<td>完整排序</td>
+<td>递归全用</td>
+<td>O(n)</td>
+<td>PL 次序一致</td>
+<td>拒绝 rejected-rejected 排序</td>
+</tr>
+<tr class="odd">
+<td>LiPO-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>λ</mi><annotation encoding="application/x-tex">\lambda</annotation></semantics></math></td>
+<td>列表</td>
+<td>加权成对/列表</td>
+<td>O(n) 或更多</td>
+<td>LTR 权重</td>
+<td>把权重转为抽样概率</td>
+</tr>
+<tr class="even">
+<td>KTO</td>
+<td>二元 desirability</td>
+<td>否</td>
+<td>O(1)</td>
+<td>前景理论损失厌恶</td>
+<td>可与 HPS 组合但论文未测</td>
+</tr>
+<tr class="odd">
+<td>HPS</td>
+<td>列表+外部标量</td>
+<td>采一个 hard negative</td>
+<td>训练 O(1)，离线评分 O(n)</td>
+<td>hard-negative / maximin</td>
+<td>信息压缩到
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>q</mi><annotation encoding="application/x-tex">q</annotation></semantics></math>，换来低反传成本</td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
+<section id="开放挑战可操作的-head-to-head-实验空白" class="card level2">
+<h2>开放挑战：可操作的 head-to-head 实验空白</h2>
+<section id="理论" class="level3">
+<h3>理论</h3>
+<ol type="1">
+<li><strong>有噪 hardness 的一致性。</strong> 固定生成候选与
+optimizer，对比 oracle human ranking、Skywork RM、加入 5/10/20%
+pair-flip 的 RM；主指标为真实人类 unsafe rate、margin calibration error
+与定理界中的有效样本数。检验 HPS
+是否在噪声超过阈值后比均匀采样更差。</li>
+<li><strong>有限 gamma 而非极限。</strong> 比较固定
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>g</mi><mi>a</mi><mi>m</mi><mi>m</mi><mi>a</mi><mo>∈</mo><mo stretchy="false" form="prefix">{</mo><mo>−</mo><mn>5</mn><mo>,</mo><mo>−</mo><mn>1</mn><mo>,</mo><mn>0</mn><mo>,</mo><mn>1</mn><mo>,</mo><mn>3</mn><mo>,</mo><mn>5</mn><mo>,</mo><mn>10</mn><mo stretchy="false" form="postfix">}</mo></mrow><annotation encoding="application/x-tex">gamma\in\{-5,-1,0,1,3,5,10\}</annotation></semantics></math>、−5→5
+日程、5→−5 反日程；在固定 KL 下画风险—质量 Pareto，验证
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>g</mi><mi>a</mi><mi>m</mi><mi>m</mi><mi>a</mi><mo>→</mo><mi>∞</mi></mrow><annotation encoding="application/x-tex">gamma\to\infty</annotation></semantics></math>
+是否真是最优，而非只会过拟合 RM。</li>
+</ol>
+</section>
+<section id="工程与应用" class="level3">
+<h3>工程与应用</h3>
+<ol start="3" type="1">
+<li><strong>端到端成本公平比较。</strong> 在同一 8×L40S 预算下比较
+PL-20、HPS-100、均匀-100、online hard-negative
+mining；总成本必须包含生成、RM 标注、缓存、训练，并报
+wall-clock、GPU-hour、能耗、显存峰值。</li>
+<li><strong>单样本部署安全。</strong> 对每 prompt 只采 1 个回答，与论文
+best-of-5 并列；用独立安全分类器+人工红队，报告 jailbreak
+success、过度拒答、helpfulness 和 P95 延迟。这样才能判断 margin
+是否转化为真实拒绝能力。</li>
+<li><strong>规模迁移。</strong> 在 7B/13B/70B、LoRA/全参、2048/32k
+上做同一候选池 head-to-head；若 HPS
+优势随模型规模消失，则它更像小模型数据效率技巧而非一般对齐原则。</li>
+</ol>
+</section>
+<section id="新兴方向" class="level3">
+<h3>新兴方向</h3>
+<ol start="6" type="1">
+<li><strong>多目标 hard negative。</strong> 用安全、事实、风格三个 RM
+构造标量加权、Pareto-front
+采样、随机目标采样三法；对比不同人群偏好下的最坏群体效用，检验单一
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>r</mi><mrow><mi>e</mi><mi>s</mi><mi>t</mi></mrow></msub><annotation encoding="application/x-tex">r_{est}</annotation></semantics></math>
+是否压扁不可通约偏好。</li>
+<li><strong>循环/不可传递偏好。</strong> 在合成 rock-paper-scissors
+偏好与真实多用户数据上比较 HPS、GPM/GPO 与
+BT-DPO；指标为循环恢复率、群体 Condorcet regret 和个体胜率，直接测试 HPS
+的标量排序假设。</li>
+</ol>
+</section>
+</section>
+<section id="近期工作速览" class="card level2">
+<h2>近期工作速览</h2>
+<ol type="1">
+<li><a href="https://arxiv.org/abs/2505.06273">Policy-labeled Preference
+Learning</a>（ICML 2025）把行为策略标签纳入 regret-based
+likelihood，补的是离线偏好数据的行为策略错配；它提醒 HPS 的 100
+候选来自特定生成策略，不应把生成器信息丢掉。</li>
+<li><a
+href="https://proceedings.mlr.press/v267/gupta25c.html">AMPO</a>（ICML
+2025）用主动子集选择覆盖奖励极值与语义簇；它与 HPS
+的直接对标应固定子集大小，区分“只采最难”与“兼顾多样性”。</li>
+<li><a
+href="https://proceedings.mlr.press/v267/hong25i.html">Energy-Based
+Preference Model / EPA</a>（ICML 2025）指出 BT MLE
+可能不唯一，并用强负例+大量免费弱负例逼近能量模型；它从偏好模型可识别性挑战
+HPS 所依赖的标量排序。</li>
+<li><a href="https://proceedings.mlr.press/v267/zhang25de.html">Beyond
+Bradley-Terry Models / GPM</a>（ICML
+2025）用向量嵌入表达循环偏好，查询复杂度仍为 O(K)；适合检验 HPS
+在不可传递偏好下是否错误地强行线性排序。</li>
+<li><a href="https://proceedings.mlr.press/v267/">Right Now, Wrong
+Then</a>（ICML 2025 PMLR 卷目录）研究偏好漂移下的非平稳 DPO；对 HPS
+而言，缓存的
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>q</mi><annotation encoding="application/x-tex">q</annotation></semantics></math>
+会随人群/时间失效，应该增加时间戳与在线重估。</li>
+<li><a href="https://proceedings.mlr.press/v267/">PoisonBench</a>（ICML
+2025 PMLR 卷目录）评估偏好数据投毒；HPS 对高分 hard negative
+的集中采样可能成为攻击放大器，需测少量 poisoned response 是否主导
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>q</mi><annotation encoding="application/x-tex">q</annotation></semantics></math>。</li>
+</ol>
+</section>
+<section id="结论" class="card level2">
+<h2>结论</h2>
+<p>HPS
+最值得带走的设计是：<strong>让多候选信息服务于采样，而不必全部进入反向传播。</strong>
+它在同一 8B/LoRA 设定下把 PL 微调时间降 61.76%，并在多种 optimizer
+上扩大隐式 margin；人评 3.93 也高于 BT 的
+3.82，说明不仅是纯粹数值游戏。</p>
+<p>但最关键的审慎结论同样明确：DPO-HPS 的 HH Reward 是 0.430，几乎等于
+BT 的 0.431；最大的数字跃迁发生在被目标函数直接塑造的 margin。再加上
+best-of-5、窄 beta
+相变、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>g</mi><mi>a</mi><mi>m</mi><mi>m</mi><mi>a</mi></mrow><annotation encoding="application/x-tex">gamma</annotation></semantics></math>
+定义—实现冲突与缺失显著性，HPS 应被定位为<strong>高效 hard-negative
+对齐框架</strong>，而不是已完成真实安全闭环的方案。</p>
+<hr />
+<p><strong>索引与制作脚注。</strong> 已将 2026-09-21、LLM/NLP、HPS、ICML
+2025 及一句话结论追加到 <code>ml-report-index.md</code>。HTML
+使用单文件内联 CSS/JS、system-ui + PingFang SC/Microsoft
+YaHei、暖色纸感、浅/深主题切换、响应式宽表与可键盘聚焦 SVG
+tooltip；内容与 Markdown/纯文本相同。Warm Editorial 结构验证器通过且为 0
+warnings；本机未安装
+<code>/usr/bin/chromium</code>，<code>/opt/pw-browsers</code>
+也没有可执行 Chromium，因此无法实际完成 Playwright
+的浅色/深色/移动端截图检查，已以静态响应式、主题与依赖检查替代，不能声称做过浏览器像素级验收。所有
+URL 在本轮实际访问；无法访问或未找到的项已明确标注。</p>
+</section>
+</div>
+
+  </main>
+
+  <footer>来源：ICML 2025 / PMLR 267、arXiv:2502.14400v5、OpenReview、作者软件链接与公开数据卡；生成日期：2026-09-21。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

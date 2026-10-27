@@ -1,0 +1,933 @@
+---
+layout: null
+title: "Seesaw"
+date: 2026-09-25
+topic: "llm-systems"
+tags: ["llm-systems", "parallelism", "llm-serving"]
+excerpt: "Dynamic model re-sharding × tiered KV buffer × asynchronous transfer 同一组 GPU 在 prefill 与 decode 之间改变 TP/PP，可把 PCIe 系统平均吞吐提高 36%，但收益明确以延迟、CPU 内存和可复现性为代价。"
+permalink: "/blog/2026/09/25/seesaw/"
+blog_post: true
+lang: "zh-CN"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_en: "/blog/2026/09/25/seesaw/en/"
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Seesaw：让预填充与解码使用不同的并行形态 · 2026-09-25</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  :root { --chart-primary:#2a78d6; --chart-primary-soft:#3987e5; --chart-comparison:#eb6834; --chart-comparison-dark:#d95926; }
+  :root[data-theme="dark"] { --chart-primary:#3987e5; --chart-comparison:#d95926; }
+  blockquote { margin:16px 0; padding:10px 18px; border-left:3px solid var(--chart-primary); color:var(--text-secondary); background:var(--page); }
+  h2 { scroll-margin-top:20px; }
+  h3 { color:var(--text-primary); }
+  table td, table th { vertical-align:top; }
+  table th:not(:first-child), table td:not(:first-child) { font-variant-numeric:tabular-nums; }
+  table td:first-child, table th:first-child { min-width:132px; }
+  strong { color:var(--text-primary); }
+  code { overflow-wrap:anywhere; }
+  .math.display { display:block; max-width:100%; margin:12px 0; padding:12px 16px; overflow-x:auto; border:1px solid var(--border); border-radius:8px; background:var(--page); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .card > :last-child { margin-bottom:0; }
+  @media (max-width:640px) { .toolbar { position:sticky; top:8px; z-index:20; } .theme-toggle { box-shadow:0 2px 12px rgba(0,0,0,.12); } pre { font-size:11.5px; } .chart text { font-size:10px; } }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">MLSYS 2025 · EFFICIENCY &amp; SYSTEMS</p>
+    <h1>Seesaw：让预填充与解码使用不同的并行形态</h1>
+    <p class="subtitle">Dynamic model re-sharding × tiered KV buffer × asynchronous transfer</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">MLSys 2025 · arXiv:2503.06433v1</span>
+      <span class="chip">2026-09-25</span>
+      <span class="chip">LLM Inference · TP/PP · KV Cache</span>
+    </div>
+    <p class="lede">同一组 GPU 在 prefill 与 decode 之间改变 TP/PP，可把 PCIe 系统平均吞吐提高 36%，但收益明确以延迟、CPU 内存和可复现性为代价。</p>
+  </header>
+
+  <main>
+<section class="card" aria-label="报告章节 0">
+<p><strong>日期：</strong> 2026-09-25<br />
+<strong>领域：</strong> 效率与系统（分布式推理、并行策略、KV cache）<br />
+<strong>核心论文：</strong> <em>Seesaw: High-throughput LLM Inference via Model Re-sharding</em>，MLSys 2025<br />
+<strong>作者：</strong> Qidong Su, Wei Zhao, Xin Li, Muralidhar Andoorveedu, Chenhao Jiang, Zhanda Zhu, Kevin Song, Christina Giannoula, Gennady Pekhimenko<br />
+<strong>证据口径：</strong> 下文所有论文内数字均来自实际读取的论文 PDF；“PDF p.x”按下载文件页码，“Fig./Table/§”按论文编号。没有数值标签的图不做像素估读。</p>
+</section>
+<section class="card" aria-label="报告章节 1">
+<h2 id="链接验证表与版本边界">0. 链接验证表与版本边界</h2>
+<p>全部链接于 <strong>2026-09-25</strong> 实际访问。核心论文的 OpenReview 页面触发浏览器验证，但 PDF 地址可访问；因此把“OpenReview”标成“入口受验证墙限制”，而不把它当作正文数值来源。未在论文、官方会议页、arXiv 或可检索仓库中找到 Seesaw 官方代码、数据/权重、项目页或视频，均明确记为“未公开/未找到”。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">论文</th>
+<th scope="col">会议 / 正式入口</th>
+<th scope="col">arXiv 版本与日期</th>
+<th scope="col">代码</th>
+<th scope="col">数据 / 权重</th>
+<th scope="col">项目页 / 视频</th>
+<th scope="col">验证结论</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Seesaw</strong></td>
+<td><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/cbc4ab80cd77aa0eb87da062fbcddb46-Abstract-Conference.html">MLSys 2025 Proceedings</a></td>
+<td><a href="https://arxiv.org/abs/2503.06433">2503.06433v1</a>，2025-03-09；仅 v1</td>
+<td>未公开/未找到</td>
+<td>未公开/未找到</td>
+<td>项目页、视频未找到；<a href="https://openreview.net/forum?id=YDksTjY3YY">OpenReview 入口</a>受验证墙限制</td>
+<td>会议页、PDF、arXiv 均可访问；正文以 MLSys PDF 为准</td>
+</tr>
+<tr class="even">
+<td><strong>vLLM / PagedAttention</strong></td>
+<td>SOSP 2023；<a href="https://arxiv.org/abs/2309.06180">arXiv 论文页</a>注明 venue</td>
+<td><a href="https://arxiv.org/abs/2309.06180">2309.06180v1</a>，2023-09-12</td>
+<td><a href="https://github.com/vllm-project/vllm">vllm-project/vllm</a></td>
+<td>独立数据/权重不适用</td>
+<td><a href="https://vllm.ai/">vllm.ai</a>；论文视频未核实</td>
+<td>arXiv 与官方仓库可访问</td>
+</tr>
+<tr class="odd">
+<td><strong>DistServe</strong></td>
+<td><a href="https://www.usenix.org/conference/osdi24/presentation/zhong-yinmin">OSDI 2024</a></td>
+<td><a href="https://arxiv.org/abs/2401.09670">2401.09670v3</a>，v1 2024-01-18，v3 2024-06-06</td>
+<td><a href="https://github.com/LLMServe/DistServe">LLMServe/DistServe</a></td>
+<td>独立权重不适用</td>
+<td>USENIX 页含 slides 与 presentation video</td>
+<td>会议页、PDF、代码、视频入口均可访问</td>
+</tr>
+<tr class="even">
+<td><strong>Sarathi-Serve</strong></td>
+<td><a href="https://www.usenix.org/conference/osdi24/presentation/agrawal">OSDI 2024</a></td>
+<td><a href="https://arxiv.org/abs/2403.02310">2403.02310v3</a>，v1 2024-03-04，v3 2024-06-17</td>
+<td><a href="https://github.com/microsoft/sarathi-serve">microsoft/sarathi-serve</a></td>
+<td>独立权重不适用</td>
+<td>USENIX 页含 slides 与 presentation video</td>
+<td>会议页、PDF、代码、视频入口均可访问</td>
+</tr>
+<tr class="odd">
+<td><strong>Mooncake</strong></td>
+<td><a href="https://www.usenix.org/conference/fast25/presentation/qin">FAST 2025 Best Paper</a></td>
+<td><a href="https://arxiv.org/abs/2407.00079">2407.00079v4</a>，v1 2024-06-24，v4 2025-09-03</td>
+<td><a href="https://github.com/kvcache-ai/Mooncake">kvcache-ai/Mooncake</a></td>
+<td>独立模型权重不适用</td>
+<td>USENIX 页含 slides 与 presentation video</td>
+<td>会议页、PDF、代码、视频入口均可访问</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section class="card" aria-label="报告章节 2">
+<h2 id="候选池排重与随机选择">1. 候选池、排重与随机选择</h2>
+<p>运行日为周五，因此领域按规则轮转到“效率与系统”。先检查 <code>ml-report-index.md</code>：最近 14 天已经深度覆盖 <strong>Search Your Block Floating Point Scales!</strong>（低比特量化）、<strong>Ada-KV</strong>（KV cache 分配）以及稍早的 <strong>Lumos</strong>（训练性能建模）；这三篇与对应主题从候选中排除。候选由 MLSys 2025 proceedings 与 OSDI 2025 正式页面整理，并用 arXiv、OpenReview、Hugging Face Daily Papers、Papers with Code、Semantic Scholar 作交叉发现；其中部分聚合站没有新增的一手版本信息，最终链接统一回到会议正式入口。下列 <strong>23 个</strong>正式入口均实访返回可用页面：</p>
+<ol type="1">
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/136b9a13861308c8948cd308ccd02658-Abstract-Conference.html">Youmu: Efficient Columnar Data Pipeline for LLM Training</a> — MLSys 2025<br />
+</li>
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/16ec6494e9b5a4138de7238761d715b4-Abstract-Conference.html">LeanAttention: Hardware-Aware Scalable Attention Mechanism for Decode</a> — MLSys 2025<br />
+</li>
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/26289c647c6828e862e271ca3c490486-Abstract-Conference.html">Rethinking Key-Value Cache Compression Techniques for LLM Serving</a> — MLSys 2025<br />
+</li>
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/2d04d97593c8c33d415337f408ed0e1b-Abstract-Conference.html">SampleAttention: Near-Lossless Long Context LLM Inference</a> — MLSys 2025<br />
+</li>
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/3b3889d313ba9476c12c2d77ea66b24f-Abstract-Conference.html">ReaL: Efficient RLHF Training with Parameter Reallocation</a> — MLSys 2025<br />
+</li>
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/437bc4ccafd3fc6d4289bd10940be42b-Abstract-Conference.html">APOLLO: SGD-like Memory, AdamW-level Performance</a> — MLSys 2025<br />
+</li>
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/53d3f45797970d323bd8a0d379c525aa-Abstract-Conference.html">PipeFill: Using GPUs During Bubbles in Pipeline-parallel LLM Training</a> — MLSys 2025<br />
+</li>
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/5431dca75a8d2abc1fb51e89e8324f10-Abstract-Conference.html">HyC-LoRA: Memory Efficient LoRA Fine-tuning with Hybrid Activation Compression</a> — MLSys 2025<br />
+</li>
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/5c20ca4b0b20b0bd2f1d839dc605e70f-Abstract-Conference.html">XGrammar: Flexible and Efficient Structured Generation Engine</a> — MLSys 2025<br />
+</li>
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/61a9278dfef5f871b5e472389f8d6fa1-Abstract-Conference.html">FlexAttention: A Programming Model for Generating Fused Attention Variants</a> — MLSys 2025<br />
+</li>
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/66a026c0d17040889b50f0dfa650e5e0-Abstract-Conference.html">NEO: CPU Offloading for Online LLM Inference</a> — MLSys 2025<br />
+</li>
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/78834433edc3291f4c6cbbd2759324db-Abstract-Conference.html">Context Parallelism for Scalable Million-Token Inference</a> — MLSys 2025<br />
+</li>
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/7c180af017258d239bac6248d1eb26ac-Abstract-Conference.html">Marconi: Prefix Caching for the Era of Hybrid LLMs</a> — MLSys 2025<br />
+</li>
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/96894468eb44631a32d7ebd56f9892c7-Abstract-Conference.html">FastTree: Attention Kernel and Runtime for Tree-Structured LLM Inference</a> — MLSys 2025<br />
+</li>
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/9f73d65a4186198152357be871345771-Abstract-Conference.html">Scaling Deep Learning Training with MPMD Pipeline Parallelism</a> — MLSys 2025<br />
+</li>
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/afd6374c7f2839cba22f537f15f4f760-Abstract-Conference.html">Efficient LLM Inference using Dynamic Input Pruning and Cache-Aware Masking</a> — MLSys 2025<br />
+</li>
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/b5dc49f44db2fadc5c4d717c57f4a424-Abstract-Conference.html">Optimizing LLM Queries in Relational Data Analytics Workloads</a> — MLSys 2025<br />
+</li>
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/bc82dbfbfa43232be85b8d9838f49c3e-Abstract-Conference.html">SOLA: SLO Attainment with State-Aware Scheduling</a> — MLSys 2025<br />
+</li>
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/c2a0e26dd9ee7d57e92bb1c24b39659a-Abstract-Conference.html">ThunderServe: High-performance Cost-efficient LLM Serving in Clouds</a> — MLSys 2025<br />
+</li>
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/cbc4ab80cd77aa0eb87da062fbcddb46-Abstract-Conference.html">Seesaw: High-throughput LLM Inference via Model Re-sharding</a> — MLSys 2025<br />
+</li>
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/cc8c6b9d89f7a898a29f58869b238e46-Abstract-Conference.html">LServe: Efficient Long-sequence LLM Serving with Unified Sparse Attention</a> — MLSys 2025<br />
+</li>
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/dbf02b21d77409a2db30e56866a8ab3a-Abstract-Conference.html">FlashInfer: Efficient and Customizable Attention Engine for LLM Inference Serving</a> — MLSys 2025<br />
+</li>
+<li><a href="https://www.usenix.org/conference/osdi25/presentation/he">WaferLLM: Large Language Model Inference at Wafer Scale</a> — OSDI 2025</li>
+</ol>
+<p>在原始 24 项清单中排除已覆盖的 Lumos（原编号 16），随后实际执行 <code>printf '%s\n' {1..15} {17..24} | shuf -n 1</code>，返回原编号 <strong>21</strong>，即 <strong>Seesaw</strong>。其正式 PDF 有完整模型、硬件、工作负载、端到端结果与敏感性分析，资料充足，故<strong>重抽次数为 0</strong>。</p>
+</section>
+<section class="card" aria-label="报告章节 3">
+<h2 id="motivation静态并行为什么是结构性错配">2. Motivation：静态并行为什么是结构性错配</h2>
+<p>问题不是“TP 还是 PP 谁总体更好”，而是两个阶段的主瓶颈交换了。Prefill 一次处理数百到数千输入 token，模型权重加载能被大量 token 摊薄，运行时主要被计算和 all-reduce 通信支配；decode 每一步每条序列只生成一个 token，算术强度低，逐层从 HBM 读取权重的占比高。TP 把线性层权重分摊到多卡，因此 decode 能并行加载权重，却需要在每层同步完整激活；PP 只跨 stage 传激活，prefill 通信轻，却把全局 batch 切成约 <code>1/PP</code> 的 micro-batch，使相同全局 batch 需要 <code>PP</code> 倍 forward pass，并重复加载权重。论文用 Fig. 3 明确给出这一方向相反的偏好（PDF pp.4–5）。</p>
+<p>痛点有三组定量证据。第一，低带宽连接会把 TP 的每层 all-reduce 变成 prefill 税；实验中的 PCIe 4.0 ×8 仅 <strong>16 GiB/s</strong>，而对照 NVLink 为 <strong>600 GiB/s</strong>（§6.1，PDF p.8）。第二，空间拆分 prefill/decode 并不自动解决小集群问题：LLaMA2-70B 的 FP16 权重约 <strong>140 GiB</strong>，在 8×40 GiB GPU 上每阶段至少 4 卡，于是资源切分只能是 4/4；该配置的 prefill 吞吐比 decode 高 <strong>6×以上</strong>，而 4 卡 decode 吞吐仅为 8 卡 decode 的 <strong>15%</strong>（§3.2、Fig. 4，PDF p.6）。第三，实际 A100 对比显示连接决定收益：在 NVLink 上 Seesaw 对 70B ShareGPT 仍有 <strong>13%</strong> 提升，但 PCIe 上对 arxiv-summarization 和 ShareGPT 分别是 <strong>46%</strong> 与 <strong>30%</strong>（§6.4、Fig. 11，PDF p.9）。</p>
+<p>因此论文的核心假设是：同一批物理 GPU 可以“时间复用”为不同的逻辑并行拓扑，只要重分片与 KV 迁移的开销能够被更大的阶段批次摊薄或异步隐藏。这个假设天然偏向 offline/high-throughput；如果系统要满足严格 TTFT/TPOT，积攒 CPU KV 缓冲直到满再切换会引入额外等待，作者在 §7.1（PDF p.10）也明确承认其以延迟换吞吐。</p>
+</section>
+<section class="card" aria-label="报告章节 4">
+<h2 id="故事线形式化与关键权衡">3. 故事线、形式化与关键权衡</h2>
+<h3 id="平均每序列时间模型">3.1 平均每序列时间模型</h3>
+<p>论文在 §3.1（PDF p.5）把平均每序列时间写成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mo>≈</mo><mfrac><msubsup><mi>T</mi><mrow><mi>d</mi><mi>m</mi></mrow><mrow><mi>l</mi><mi>i</mi><mi>n</mi><mi>e</mi><mi>a</mi><mi>r</mi></mrow></msubsup><mrow><mi>T</mi><mi>P</mi></mrow></mfrac><mo>+</mo><mfrac><mrow><msubsup><mi>T</mi><mrow><mi>d</mi><mi>m</mi></mrow><mrow><mi>a</mi><mi>t</mi><mi>t</mi><mi>n</mi></mrow></msubsup><mo>+</mo><msub><mi>T</mi><mrow><mi>c</mi><mi>o</mi><mi>m</mi><mi>p</mi></mrow></msub></mrow><mrow><mi>D</mi><mi>P</mi><mo>⋅</mo><mi>T</mi><mi>P</mi><mo>⋅</mo><mi>P</mi><mi>P</mi></mrow></mfrac><mo>+</mo><mfrac><mrow><msub><mi>T</mi><mrow><mi>c</mi><mi>o</mi><mi>m</mi><mi>m</mi></mrow></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>T</mi><mi>P</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><mrow><mi>P</mi><mi>P</mi><mo>⋅</mo><mi>D</mi><mi>P</mi></mrow></mfrac><mi>.</mi></mrow><annotation encoding="application/x-tex">
+T \approx \frac{T_{dm}^{linear}}{TP}
++ \frac{T_{dm}^{attn}+T_{comp}}{DP\cdot TP\cdot PP}
++ \frac{T_{comm}(TP)}{PP\cdot DP}.
+</annotation></semantics></math></p>
+<p>其中 <code>T_dm^linear</code> 主要是线性层权重的数据移动，<code>T_dm^attn</code> 主要是 KV cache 数据移动，<code>T_comp</code> 是计算，<code>T_comm(TP)</code> 是通信且随 TP 单调增加。decode 中第一项占比大，增大 TP 有利；prefill 中第一项相对可忽略，第三项更关键，降低 TP、提高 PP/DP 更有利。这个模型的价值是把并行策略选择从经验规则变成三个资源项的权衡；它的局限是没有把切换、CPU 内存带宽、NUMA、PCIe 争用直接写入主式，而是由系统机制事后处理。</p>
+<h3 id="动态重分片流程">3.2 动态重分片流程</h3>
+<pre class="text"><code>输入请求队列
+   │
+   ▼
+选择 prefill 配置 c_p（常偏 PP，少 all-reduce）
+   │  计算 prompt；GPU KV → pinned memory → shared CPU memory
+   │  重复，直到 CPU KV 缓冲满
+   ▼
+从 CPU 重载目标 weight shards，并按 c_d 取回 KV shards
+   │
+   ▼
+选择 decode 配置 c_d（常偏 TP，权重加载并行）
+   │  prefetcher 异步 swap-in；continuous batching 解码
+   │  重复，直到 CPU KV 缓冲空
+   └───────────────────────────────↺ 回到 prefill</code></pre>
+<p>更接近实现的伪代码如下；它不是论文逐字代码，而是依据 §4–§5 的保真流程化表达：</p>
+<pre class="text"><code>while pending_requests or live_sequences:
+    if cpu_kv_store.is_empty():
+        reshard_weights(target=c_p)
+        while not cpu_kv_store.is_full() and pending_requests:
+            batch = schedule_prefill(pending_requests)
+            kv = workers.prefill(batch, layout=HND)
+            async_swap_out(kv, gpu_to_pinned=True, pinned_to_shared=True)
+    else:
+        reshard_weights(target=c_d)
+        while not cpu_kv_store.is_empty():
+            prefetcher.async_swap_in(free_gpu_kv_slots, shards_for=c_d)
+            batch = schedule_decode(ready_sequences)
+            workers.decode(batch)</code></pre>
+<p>关键权衡不是免费午餐。更少的阶段切换意味着更大批次和更好吞吐，却增加请求等待；CPU KV 缓冲扩展了 prefill 批次，却把 CPU 内存容量、NUMA 路径和 PCIe 带宽变成新约束；从 CPU 重载权重 shard 的开销近似与 batch 大小无关，可以摊薄，而 KV 搬运随 batch 增长，只能靠重叠隐藏（§5.2，PDF p.7）。</p>
+</section>
+<section class="card" aria-label="报告章节 5">
+<h2 id="关键机制与工程细节">4. 关键机制与工程细节</h2>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">机制</th>
+<th scope="col">具体实现</th>
+<th scope="col">解决的瓶颈</th>
+<th scope="col">新增成本 / 适用条件</th>
+<th scope="col">证据来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>阶段级模型重分片</td>
+<td>prefill 使用 <code>c_p</code>，decode 使用 <code>c_d</code>；切换时从 CPU 重载所需权重 shard</td>
+<td>静态 TP/PP 无法同时匹配两阶段</td>
+<td>需要主机端权重副本与切换时间；不动态改变 DP</td>
+<td>§4.1，PDF p.6</td>
+</tr>
+<tr class="even">
+<td>KV cache 重分片</td>
+<td>各 GPU 按 <code>c_p</code> 写入共享 CPU 内存，形成完整 KV；按 <code>c_d</code> 读取目标 shard</td>
+<td>TP/PP 改变后 KV 归属不一致</td>
+<td>CPU 内存容量与跨进程共享内存成为资源</td>
+<td>Fig. 7、§4.2，PDF pp.6–7</td>
+</tr>
+<tr class="odd">
+<td>分层 KV 缓冲</td>
+<td>prefill 后 KV 先落 CPU；decode 前按 GPU 空槽取回</td>
+<td>避免 GPU KV 容量限制 prefill 批次</td>
+<td>每 GPU 实验分配 <strong>80 GiB CPU 内存</strong></td>
+<td>§6.1，PDF p.8</td>
+</tr>
+<tr class="even">
+<td>transition-minimizing 调度</td>
+<td>CPU KV 满才从 prefill 切 decode，空才切回</td>
+<td>避免 continuous batching 造成频繁重分片</td>
+<td>明确牺牲在线延迟；缓冲阈值没有完整敏感性表</td>
+<td>§4.2，PDF p.7；§7.1，p.10</td>
+</tr>
+<tr class="odd">
+<td>两段式 swap-out</td>
+<td>GPU→pinned 与计算重叠；pinned→shared 是 host 侧并发操作</td>
+<td>shared memory 不能直接 pinned</td>
+<td>多一次 host copy；依赖 host 带宽</td>
+<td>§5.2，PDF p.7</td>
+</tr>
+<tr class="even">
+<td>异步 swap-in</td>
+<td>每个 worker 有独立 prefetcher，由 scheduler 发任务，通过共享队列回报完成</td>
+<td>隐藏 KV 取回延迟</td>
+<td>输出过短时难以充分重叠</td>
+<td>§5.2，PDF p.7</td>
+</tr>
+<tr class="odd">
+<td>HND CPU KV 布局</td>
+<td><code>(num_heads, seq_len, head_dim)</code>，而非 NHD</td>
+<td>TP 沿 head 维切分时形成连续搬运</td>
+<td>与既有 kernel 布局转换存在实现复杂度</td>
+<td>§5.2，PDF pp.7–8</td>
+</tr>
+<tr class="even">
+<td>scheduler-worker 架构</td>
+<td>单 scheduler、多 worker；每 worker 控制一张 GPU 与顺序 task queue</td>
+<td>统一阶段切换、异步 copy、PP 执行</td>
+<td>单 scheduler 扩展上限未量化</td>
+<td>§5.1，PDF p.7</td>
+</tr>
+</tbody>
+</table></div>
+<p>论文不动态调整 DP，是一个重要设计边界。改变 DP 会改变模型副本占用与 KV 可用显存比例，要么提高复杂度，要么引入额外 CPU↔︎GPU 数据移动，因此作者只在 TP/PP 之间动态调整（§4.1，PDF p.6）。这既让实现可控，也意味着“动态并行”并非全空间自动搜索。</p>
+</section>
+<section class="card" aria-label="报告章节 6">
+<h2 id="数据集模型硬件与指标">5. 数据集、模型、硬件与指标</h2>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">维度</th>
+<th scope="col">配置</th>
+<th scope="col">为什么重要</th>
+<th scope="col">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>GPU</td>
+<td>A10 24 GiB / 600 GiB/s / 125T；L4 24 GiB / 300 GiB/s / 121T；A100 40 GiB / 1,555 GiB/s / 312T</td>
+<td>A10 与 L4 无 NVLink，适合观察通信瓶颈；A100 提供 NVLink/PCIe 对照</td>
+<td>Table 1，PDF p.8</td>
+</tr>
+<tr class="even">
+<td>连接</td>
+<td>PCIe 4.0 ×8 <strong>16 GiB/s</strong>；NVLink <strong>600 GiB/s</strong></td>
+<td>决定 TP all-reduce 代价</td>
+<td>§6.1，PDF p.8</td>
+</tr>
+<tr class="odd">
+<td>主机内存</td>
+<td>每 GPU <strong>80 GiB CPU memory</strong></td>
+<td>承载权重重载与 CPU KV tier</td>
+<td>§6.1，PDF p.8</td>
+</tr>
+<tr class="even">
+<td>模型</td>
+<td>LLaMA3 变体 15B、CodeLLaMA-34B、LLaMA2-70B；均 GQA、FP16</td>
+<td>覆盖 4 卡与 8 卡，但不含 MoE/量化</td>
+<td>§6.1，PDF p.8</td>
+</tr>
+<tr class="odd">
+<td>工作负载</td>
+<td>ShareGPT <strong>2,000</strong> 请求；arxiv-summarization <strong>500</strong> 请求；另有合成长短比</td>
+<td>前者输入/输出相近，后者输入远长于输出</td>
+<td>§6.1、Fig. 9，PDF p.8</td>
+</tr>
+<tr class="even">
+<td>baseline</td>
+<td>vLLM <strong>0.5.4</strong>；扫所有单一并行配置，启用并调优 chunked prefill</td>
+<td>避免拿未调优 chunk size 作弱基线</td>
+<td>§6.1–6.2，PDF p.8</td>
+</tr>
+<tr class="odd">
+<td>指标</td>
+<td>端到端 throughput，Seesaw 归一化到最佳 vLLM 固定并行</td>
+<td>与 offline 目标一致，但不能回答 TTFT/TPOT/SLO</td>
+<td>§6.1，PDF p.8</td>
+</tr>
+</tbody>
+</table></div>
+<p>作者没有纳入 SGLang 与 DeepSpeed-FastGen，理由是它们不支持 PP；也没有纳入 TensorRT-LLM，理由是其调度与 vLLM 类似且 vLLM 吞吐相当（§6.1，PDF p.8）。这解释了基线选择，却没有替代与 DistServe、Sarathi-Serve 或更新服务栈的 head-to-head。</p>
+</section>
+<section class="card" aria-label="报告章节 7">
+<h2 id="主结果能从论文推出什么">6. 主结果：能从论文推出什么</h2>
+<h3 id="完整可读的跨硬件汇总">6.1 完整可读的跨硬件汇总</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<colgroup>
+<col style="width: 13%" />
+<col style="width: 13%" />
+<col style="width: 13%" />
+<col style="width: 13%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 13%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">硬件 / 连接</th>
+<th scope="col">模型与负载范围</th>
+<th scope="col">最强固定并行 baseline</th>
+<th scope="col">Seesaw 结果</th>
+<th scope="col" style="text-align: right;">绝对提升</th>
+<th scope="col" style="text-align: right;">相对提升</th>
+<th scope="col">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>A10 / PCIe</td>
+<td class="num">15B、34B、70B；ShareGPT、arxiv</td>
+<td>每格扫到的最佳 vLLM</td>
+<td>几何平均 <strong>1.45×</strong>，最高 <strong>1.78×</strong></td>
+<td style="text-align: right;">平均 +0.45×，最高 +0.78×</td>
+<td style="text-align: right;">平均 <strong>+45%</strong>，最高 <strong>+78%</strong></td>
+<td>Fig. 10a、§6.2，PDF p.8–9</td>
+</tr>
+<tr class="even">
+<td>L4 / PCIe</td>
+<td>同上</td>
+<td>每格最佳 vLLM</td>
+<td>几何平均 <strong>1.29×</strong>，最高 <strong>1.52×</strong></td>
+<td style="text-align: right;">平均 +0.29×，最高 +0.52×</td>
+<td style="text-align: right;">平均 <strong>+29%</strong>，最高 <strong>+52%</strong></td>
+<td>Fig. 10b、§6.2，PDF p.8–9</td>
+</tr>
+<tr class="odd">
+<td>A10+L4 / PCIe</td>
+<td>全部 Fig. 10 组合</td>
+<td>每格最佳 vLLM</td>
+<td>总体平均 <strong>1.36×</strong></td>
+<td style="text-align: right;">+0.36×</td>
+<td style="text-align: right;"><strong>+36%</strong></td>
+<td>§6.2，PDF p.8</td>
+</tr>
+<tr class="even">
+<td class="num">8×A100 / NVLink</td>
+<td class="num">70B、ShareGPT</td>
+<td>vLLM</td>
+<td class="num"><strong>1.13×</strong></td>
+<td style="text-align: right;">+0.13×</td>
+<td style="text-align: right;"><strong>+13%</strong></td>
+<td>Fig. 11、§6.4，PDF p.9</td>
+</tr>
+<tr class="odd">
+<td class="num">8×A100 / PCIe</td>
+<td>arxiv-summarization</td>
+<td>vLLM</td>
+<td><strong>1.46×</strong>（同 PCIe 比）</td>
+<td style="text-align: right;">+0.46×</td>
+<td style="text-align: right;"><strong>+46%</strong></td>
+<td>Fig. 11、§6.4，PDF p.9</td>
+</tr>
+<tr class="even">
+<td class="num">8×A100 / PCIe</td>
+<td>ShareGPT</td>
+<td>vLLM</td>
+<td><strong>1.30×</strong>（同 PCIe 比）</td>
+<td style="text-align: right;">+0.30×</td>
+<td style="text-align: right;"><strong>+30%</strong></td>
+<td>Fig. 11、§6.4，PDF p.9</td>
+</tr>
+</tbody>
+</table></div>
+<p>相对提升的分母均为同硬件上的 vLLM。<code>1.45×</code> 既可表述为比 baseline 高 45%，也可表述为吞吐乘数 1.45；报告保留两种表达以避免“pp”和百分比混用。吞吐不是百分率，所以不写 percentage point。</p>
+<h3 id="a100-归一化矩阵论文真正给出精确柱值的部分">6.2 A100 归一化矩阵：论文真正给出精确柱值的部分</h3>
+<p>Fig. 11 以“vLLM + NVLink = 1.00”为跨连接归一化基准。论文只有两个真实数据集，无法诚实补成“五基准×六方法”；下面给出可逐项读出的完整 <strong>2×4</strong> 矩阵，并保留缺失事实。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<colgroup>
+<col style="width: 17%" />
+<col style="width: 23%" />
+<col style="width: 23%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">方法 / 连接</th>
+<th scope="col" style="text-align: right;">arxiv-summarization ↑</th>
+<th scope="col" style="text-align: right;">ShareGPT ↑</th>
+<th scope="col">相对同连接 vLLM</th>
+<th scope="col">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>vLLM + PCIe</td>
+<td style="text-align: right;">0.61</td>
+<td style="text-align: right;">0.62</td>
+<td>baseline</td>
+<td>Fig. 11，PDF p.9</td>
+</tr>
+<tr class="even">
+<td><strong>Seesaw + PCIe</strong></td>
+<td style="text-align: right;"><strong>0.89</strong></td>
+<td style="text-align: right;"><strong>0.82</strong></td>
+<td class="num">+46% / +30%（正文取整）</td>
+<td>Fig. 11、§6.4，PDF p.9</td>
+</tr>
+<tr class="odd">
+<td>vLLM + NVLink</td>
+<td style="text-align: right;">1.00</td>
+<td style="text-align: right;">1.00</td>
+<td>baseline</td>
+<td>Fig. 11，PDF p.9</td>
+</tr>
+<tr class="even">
+<td><strong>Seesaw + NVLink</strong></td>
+<td style="text-align: right;"><strong>1.00</strong></td>
+<td style="text-align: right;"><strong>1.13</strong></td>
+<td class="num">0% / +13%</td>
+<td>Fig. 11、§6.4，PDF p.9</td>
+</tr>
+</tbody>
+</table></div>
+<p>由柱值直接计算，PCIe 上 arxiv 的 <code>0.89/0.61−1=45.90%</code>，ShareGPT 的 <code>0.82/0.62−1=32.26%</code>；正文报告为 46% 与 30%，可能因为柱图值经两位小数取整。为了不制造精度，后续结论沿用正文 <strong>46% / 30%</strong>。同样，vLLM PCIe 约为 NVLink 的 <strong>60%</strong>，而 Seesaw 拉到 <strong>82%–89%</strong>，说明主要价值不是超越高速互连，而是在低带宽环境接近高速互连的吞吐（§6.4，PDF p.9）。</p>
+<h3 id="为什么没有五基准六方法">6.3 为什么没有五基准×六方法</h3>
+<p>论文只公开两个真实数据集、一个 vLLM baseline 和若干固定并行配置；Fig. 10 的各模型/数据集柱子没有印出精确数值，只给出汇总 speedup。若从图高估读并填满矩阵，会制造不存在的精度。因此此处明确：<strong>论文未报告可复核的五基准×六方法绝对吞吐矩阵</strong>，也未报告 tokens/s 或 requests/s 的完整表格；我们能确认系统在其目标场景中相对最佳固定配置占优，却不能计算单位 GPU 成本、能耗或集群 TCO。</p>
+</section>
+
+<figure class="figure" aria-labelledby="figure-a100-title">
+  <p class="fig-title" id="figure-a100-title">A100 PCIe：重分片缩小与 NVLink 的吞吐差距</p>
+  <p class="fig-sub">单 Y 轴为归一化吞吐，vLLM + NVLink = 1.00；仅展示论文 Fig. 11 标注的精确值。</p>
+  <div class="legend"><span><span class="swatch" style="background:#2a78d6"></span>Seesaw + PCIe</span><span><span class="swatch" style="background:#eb6834"></span>vLLM + PCIe</span></div>
+  <svg class="chart" viewBox="0 0 900 345" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>A100 PCIe 上 Seesaw 与 vLLM 的归一化吞吐</title>
+    <desc>arxiv-summarization 上 vLLM 0.61、Seesaw 0.89；ShareGPT 上 vLLM 0.62、Seesaw 0.82。归一化基准为各 workload 的 vLLM 加 NVLink。</desc>
+    <line x1="88" y1="285.0" x2="850" y2="285.0" stroke="var(--grid)"/><text x="72" y="290.0" text-anchor="end" font-size="12">0.0</text><line x1="88" y1="175.0" x2="850" y2="175.0" stroke="var(--grid)"/><text x="72" y="180.0" text-anchor="end" font-size="12">0.5</text><line x1="88" y1="65.0" x2="850" y2="65.0" stroke="var(--grid)"/><text x="72" y="70.0" text-anchor="end" font-size="12">1.0</text><line x1="88" y1="65" x2="88" y2="285" stroke="var(--grid)"/><rect x="210" y="150.8" width="84" height="134.2" rx="5" fill="#eb6834" tabindex="0" data-tip="arxiv-summarization · vLLM + PCIe: 0.61" aria-label="arxiv-summarization vLLM + PCIe 0.61"/><text x="252" y="142.8" text-anchor="middle" font-size="13">0.61</text><rect x="322" y="89.2" width="84" height="195.8" rx="5" fill="#2a78d6" tabindex="0" data-tip="arxiv-summarization · Seesaw + PCIe: 0.89" aria-label="arxiv-summarization Seesaw + PCIe 0.89"/><text x="364" y="81.2" text-anchor="middle" font-size="13">0.89</text><text x="308" y="315" text-anchor="middle" font-size="13">arxiv-summarization</text><rect x="590" y="148.6" width="84" height="136.4" rx="5" fill="#eb6834" tabindex="0" data-tip="ShareGPT · vLLM + PCIe: 0.62" aria-label="ShareGPT vLLM + PCIe 0.62"/><text x="632" y="140.6" text-anchor="middle" font-size="13">0.62</text><rect x="702" y="104.6" width="84" height="180.4" rx="5" fill="#2a78d6" tabindex="0" data-tip="ShareGPT · Seesaw + PCIe: 0.82" aria-label="ShareGPT Seesaw + PCIe 0.82"/><text x="744" y="96.6" text-anchor="middle" font-size="13">0.82</text><text x="688" y="315" text-anchor="middle" font-size="13">ShareGPT</text>
+  </svg>
+  <figcaption>来源：核心论文 Fig. 11（PDF p.9）。数据同时列于正文矩阵；论文未报告误差条。悬停或键盘聚焦柱形查看精确值。</figcaption>
+</figure>
+<section class="card" aria-label="报告章节 8">
+<h2 id="逐层消融敏感性与相变">7. 逐层消融、敏感性与相变</h2>
+<h3 id="机制级-breakdown">7.1 机制级 breakdown</h3>
+<p>Fig. 12（PDF p.9）用 CodeLLaMA-34B、4×A10、arxiv-summarization 分解 prefill、decode 与 mixed batch：PP4 的 prefill 最快，TP4 的 decode 最快，Seesaw 用 <code>P4→D4</code> 同时接近两阶段的最佳值；最佳静态 vLLM 是带 chunked prefill 的 TP2PP2。作者把差距归因于两点：chunked prefill 仍会留下纯 decode step；TP2PP2 的 prefill 又慢于 PP4。<strong>但 Fig. 12 没有在柱上给出精确毫秒或吞吐数字</strong>，因此不能量化“重分片”“tiered KV”“异步搬运”各自贡献多少，也不能声称某一个组件贡献占比。</p>
+<p>论文没有标准的逐组件 <code>full → −async → −tiered → −reshard</code> 消融表。能观察到的是系统路径对比，而非因果隔离。于是可以推出“联合系统优于最佳静态配置”，不能推出“tiered buffer 单独贡献 X%”或“异步管线隐藏 Y% 开销”。</p>
+<h3 id="输入输出比的相变">7.2 输入/输出比的相变</h3>
+<p>Fig. 13（PDF pp.9–10）在 70B、8×A10 上固定输入 <strong>3,000 tokens</strong> 并改变输出长度。输出仅 1 token 时，PP8 与 Seesaw 相近，TP4PP2 因通信更慢；输出增长后，PP8 的 decode 权重重复加载代价迅速显现，最优固定配置先转为 TP2PP4，最后在 decode 主导时转为 TP4PP2。Seesaw 跨整个比例范围都高于固定策略。这里真正的相变是“prefill 通信主导 → 混合阶段 → decode 权重带宽主导”，不是某个魔法超参的单调收益。</p>
+<p>图中没有给每个长度点印精确数值，故报告不估读转折发生在第几个输出 token；只能确认最优策略顺序和定性趋势。真实变长请求混在一批时，作者推断动态适配会更有利，但没有另设随机长度分布的显著性实验来证明该推断。</p>
+<h3 id="互连带宽敏感性">7.3 互连带宽敏感性</h3>
+<p>Fig. 14（PDF p.10）覆盖 PCIe 带宽的 <strong>0.1×–50×</strong>：低带宽时 PP 最好，高带宽时 TP 最好，Seesaw 在全范围优于固定策略。需要强调的是，这不是部署 0.1×、1×、50× 多套网络得到的实测；作者先在 34B、8×A10、arxiv workload 上测量并 trace all-reduce，再“mutate all-reduce time”投影吞吐。因此能推出模型对带宽变化的预期方向，不能把曲线当作真实多网络端到端证据。</p>
+<h3 id="超参与统计显著性">7.4 超参与统计显著性</h3>
+<p>论文报告调优 vLLM 的 chunk size，但没有公开完整搜索网格、最终每个组合的 chunk size，也没有报告 CPU KV 缓冲阈值、prefetch 深度、pinned buffer 数量的敏感性。CPU KV 总量实际上影响切换频率与等待时延，却没有单独 sweep。</p>
+<p>统计方面，论文<strong>未报告</strong>随机种子、重复次数、均值±标准差、置信区间、误差条或显著性检验。系统吞吐通常方差较小，但这不能替代报告；特别是 13% NVLink 增益是否稳健、云实例噪声是否改变排序，都无法从单点图判断。故 1.36× 是被观察到的实验汇总，不是带置信区间的总体效应估计。</p>
+</section>
+<section class="card" aria-label="报告章节 9">
+<h2 id="相关工作问题来源与技术来源链">8. 相关工作：问题来源与技术来源链</h2>
+<h3 id="vllm-pagedattention先把-kv-内存碎片问题变成分页问题">8.1 vLLM / PagedAttention：先把 KV 内存碎片问题变成分页问题</h3>
+<p><strong>解决什么。</strong> vLLM 通过 PagedAttention 把 KV cache 分成固定块，做到近零浪费并跨请求共享；论文摘要报告在相同延迟水平下相对 FasterTransformer/Orca 提升 <strong>2–4×</strong> 吞吐（vLLM PDF p.1）。它提供了 continuous batching 与高效 KV 管理这一“地基”，也是 Seesaw 的唯一主 baseline。</p>
+<p><strong>遗留缺口。</strong> PagedAttention 解决“KV 放不下/碎片多”，却不解决同一静态 TP/PP 在 prefill 和 decode 的目标相反。更大 batch 仍会受到固定并行拓扑的通信与权重带宽权衡。</p>
+<p><strong>Seesaw 如何回应。</strong> Seesaw 直接复用 vLLM 模型实现并扫其固定并行配置，然后把优化轴从“页式 KV”推进到“阶段级拓扑变化”。</p>
+<p><strong>设计如何传递。</strong> vLLM 的 block 化、continuous batching 思想传到 Seesaw 的 GPU KV slot 管理；Seesaw 再把 KV 的归属从单一 GPU layout 扩展到 CPU shared-memory 中间态。</p>
+<h3 id="distserve把两阶段拆到不同-gpu但面向-goodputslo">8.2 DistServe：把两阶段拆到不同 GPU，但面向 goodput/SLO</h3>
+<p><strong>解决什么。</strong> DistServe 空间拆分 prefill 与 decode，独立规划资源和并行策略，并以 TTFT/TPOT 约束下的 goodput 为目标；摘要报告可服务 <strong>7.4×</strong> 更多请求或把 SLO 收紧 <strong>12.6×</strong>，同时超过 <strong>90%</strong> 请求满足约束（DistServe PDF p.1）。</p>
+<p><strong>遗留缺口。</strong> 空间拆分需要每个阶段各自放下模型，资源粒度粗。Seesaw 的 70B 案例表明 8×40 GiB 只能 4/4，造成 prefill 比 decode 快 6×以上、4 卡 decode 仅为 8 卡的 15%。</p>
+<p><strong>Seesaw 如何回应。</strong> 它做时间拆分而非空间拆分：全部 GPU 先共同 prefill，再共同 decode；因此小集群没有永久的 4/4 资源锁定。</p>
+<p><strong>设计如何传递。</strong> DistServe 把“阶段异质性”确立为系统边界；Seesaw把这个边界进一步变成可切换的模型 shard 布局。但两者目标不同：DistServe 优先 SLO，Seesaw优先 offline 吞吐。</p>
+<h3 id="sarathi-serve不拆集群而是把-prefill-切块塞进-decode">8.3 Sarathi-Serve：不拆集群，而是把 prefill 切块塞进 decode</h3>
+<p><strong>解决什么。</strong> Sarathi-Serve 用 chunked prefill 与 stall-free batching 形成均匀迭代，降低 pipeline bubble；摘要报告 Mistral-7B 单 A100 serving capacity <strong>2.6×</strong>、Yi-34B 双 A100 <strong>3.7×</strong>、Falcon-180B PP 场景最高 <strong>5.6×</strong>（Sarathi PDF p.1）。</p>
+<p><strong>遗留缺口。</strong> chunk 太大时仍有 decode-only step，太小时 kernel 效率下降，而且固定 TP/PP 仍需同时服务两阶段。Seesaw 的 §7.1 明确指出 chunk size 的两难。</p>
+<p><strong>Seesaw 如何回应。</strong> baseline 已启用并调优 chunked prefill；Seesaw 仍在纯 decode step 用 TP 配置、prefill 用 PP 配置。它不是绕开 Sarathi，而是在其仍遗留的固定拓扑上加一层阶段重分片。</p>
+<p><strong>设计如何传递。</strong> Sarathi 的“把阶段调度问题显式化”传到 Seesaw 的 scheduler；未来最自然组合是 chunked prefill 负责细粒度 latency/throughput 平衡，resharding 负责剩余纯阶段的并行拓扑。</p>
+<h3 id="mooncake把-cpudramssdnic-变成全局-kvcache-池">8.4 Mooncake：把 CPU/DRAM/SSD/NIC 变成全局 KVCache 池</h3>
+<p><strong>解决什么。</strong> Mooncake为空间分离的 prefill/decode 构建 KVCache-centric 全局缓存与调度器；arXiv v4 摘要报告仿真场景吞吐最高 <strong>+525%</strong>，真实 workload 可处理 <strong>75%</strong> 更多请求（Mooncake PDF p.1），FAST 正式页另报告真实 trace 容量提升 <strong>59%–498%</strong> 与数千节点部署。</p>
+<p><strong>遗留缺口。</strong> 它假设大规模服务集群、复杂存储/网络层和 SLO 调度，小型 commodity GPU 节点不一定能承担同样架构。</p>
+<p><strong>Seesaw 如何回应。</strong> Seesaw 只用共享 CPU 内存作阶段切换中间态，面向单节点/小集群的有限 GPU 与慢连接；这牺牲在线延迟，却显著降低资源拆分粒度。</p>
+<p><strong>设计如何传递。</strong> Mooncake 与 Seesaw共同表明 KV 不再只是 GPU 内部缓存，而是调度状态。Mooncake 将其变成跨节点存储对象，Seesaw将其变成跨并行布局的重分片媒介。</p>
+</section>
+<section class="card" aria-label="报告章节 10">
+<h2 id="非线性技术演进树与跨论文对标">9. 非线性技术演进树与跨论文对标</h2>
+<pre class="text"><code>                              ┌─ DistServe ── 空间拆 P/D、独立 SLO 规划
+阶段异质性 ──────────────────┤
+                              └─ Mooncake ─── 全局 KVCache 池、跨节点复用
+                                      │
+KV 内存可管理 ─ vLLM/PagedAttention ──┼──────────────┐
+                                      │              │
+调度平滑化 ─ Sarathi-Serve ─ chunked prefill         │
+                                      │              ▼
+                                      └──────► Seesaw
+                                         时间复用全部 GPU
+                                  PP-prefill ⇄ TP-decode
+                                      │
+                                      ├─ tiered CPU KV
+                                      ├─ async resharding
+                                      └─ transition-minimizing schedule</code></pre>
+<p>演进动力有三次转折。第一，从“模型能不能放下”转向“KV cache 能否不浪费”，vLLM 让 batch 扩大。第二，从“统一请求流水线”转向“prefill/decode 资源异质”，DistServe/Mooncake 让阶段成为独立调度单元。第三，从“阶段必须占不同 GPU”转向“同一 GPU 集合可随时间改拓扑”，Seesaw 用切换成本换资源粒度。Sarathi 走的是另一条非线性分支：通过合并阶段减小干扰，而非分离阶段；Seesaw 证明即便用了 chunked prefill，固定拓扑仍有残余损失。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">系统</th>
+<th scope="col">目标</th>
+<th scope="col">P/D 处理方式</th>
+<th scope="col">KV 层级</th>
+<th scope="col">并行策略</th>
+<th scope="col">核心报告值</th>
+<th scope="col">关键缺口</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>vLLM</td>
+<td>同延迟下高吞吐</td>
+<td>共置、continuous batching</td>
+<td>GPU 分页</td>
+<td>固定配置</td>
+<td class="num">2–4× vs 早期系统</td>
+<td>不解决阶段最优并行冲突</td>
+</tr>
+<tr class="even">
+<td>DistServe</td>
+<td>SLO 下 goodput</td>
+<td>空间分离到不同 GPU</td>
+<td>跨阶段传 KV</td>
+<td>两阶段独立规划</td>
+<td class="num">7.4× 请求或 12.6× 更严 SLO</td>
+<td>小集群模型副本与比例粒度</td>
+</tr>
+<tr class="odd">
+<td>Sarathi-Serve</td>
+<td>吞吐-尾延迟平衡</td>
+<td>chunked prefill 合并进 decode</td>
+<td>GPU</td>
+<td>固定配置</td>
+<td class="num">2.6×/3.7×/5.6× capacity</td>
+<td>chunk size 两难、纯 decode 残留</td>
+</tr>
+<tr class="even">
+<td>Mooncake</td>
+<td>长上下文在线服务</td>
+<td>空间分离</td>
+<td>GPU+CPU DRAM+SSD+NIC</td>
+<td>大集群调度</td>
+<td>仿真最高 +525%，真实 +75%</td>
+<td>架构和部署规模重</td>
+</tr>
+<tr class="odd">
+<td><strong>Seesaw</strong></td>
+<td><strong>离线端到端吞吐</strong></td>
+<td><strong>时间分离、同一 GPU 全量复用</strong></td>
+<td><strong>GPU+shared CPU</strong></td>
+<td><strong>阶段间动态 TP/PP</strong></td>
+<td><strong>平均 1.36×，最高 1.78× vs vLLM</strong></td>
+<td><strong>延迟、代码、绝对吞吐与统计缺失</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>这些倍率不能横向判定谁“最好”，因为 baseline、模型、硬件、SLO 和指标不同；表格用于比较设计目标和证据形态，不用于做跨论文排行榜。</p>
+</section>
+<section class="card" aria-label="报告章节 11">
+<h2 id="真正贡献可复用设计与迁移潜力">10. 真正贡献、可复用设计与迁移潜力</h2>
+<p>Seesaw 的真正贡献不是“CPU offload”本身，也不是再做一个并行搜索器，而是把并行布局纳入请求生命周期：拓扑不再是模型部署时一次决定的静态属性，而可以随阶段切换。这个抽象使“prefill 更怕通信、decode 更怕权重带宽”的事实能够被系统直接利用。</p>
+<p>最可复用的三个设计是：其一，用完整 CPU KV image 作为不同 shard layout 之间的规范中间表示，避免 GPU 间复杂 all-to-all；其二，把 GPU→pinned 与 pinned→shared 分开，绕过 shared memory 无法 pinned 的限制；其三，用“CPU KV 满/空”把切换次数与 batch 大小绑定，使开销能被阶段批次摊薄。它们可以迁移到推理引擎、异构加速器和服务编排中。</p>
+<p>迁移到量化模型时，权重体积变小会降低 decode 的权重带宽占比，也会改变 TP 的收益，必须重新选择 <code>c_d</code>；迁移到 MoE 时，expert routing 和 all-to-all 可能取代 all-reduce 成为主瓶颈，CPU 重载专家 shard 也更复杂；迁移到 speculative decoding 时，每次 decode 处理多个 draft token，decode 算术强度上升，prefill/decode 边界变弱；迁移到 prefix caching 时，CPU KV store 需要维护共享前缀引用与一致性。也就是说，Seesaw 的“阶段自适应”思想可迁移，但其论文中的具体 PP→TP 策略不能直接照搬。</p>
+</section>
+<section class="card" aria-label="报告章节 12">
+<h2 id="论文自述限制">11. 论文自述限制</h2>
+<ol type="1">
+<li><strong>吞吐优先、延迟受损。</strong> 作者明确写出 chunked prefill 可同时服务吞吐与延迟，而 Seesaw “prioritizes throughput at the cost of increased latency”（§7.1，PDF p.10）。所以结论只覆盖 offline，不应外推到交互式聊天。</li>
+<li><strong>低带宽/资源受限场景最有利。</strong> A10 的平均 <strong>1.45×</strong> 高于 L4 的 <strong>1.29×</strong>，NVLink 上 ShareGPT 只剩 <strong>13%</strong>；作者据此把适用点放在 commodity GPU 与慢互连（§6.2、§6.4–6.5，PDF pp.8–10）。</li>
+<li><strong>动态空间不含 DP。</strong> 因为改变 DP 会改变模型副本与 KV 内存份额并增加移动，系统只动态调 TP/PP（§4.1，PDF p.6）。因此“dynamic model resharding”并非任意并行维度的全局最优器。</li>
+</ol>
+</section>
+<section class="card" aria-label="报告章节 13">
+<h2 id="独立批判证据推论链">12. 独立批判：证据—推论链</h2>
+<ol type="1">
+<li><strong>[比较公平性]</strong> 因为主实验只与 vLLM 0.5.4 比，DistServe、Sarathi-Serve、Mooncake 和 TensorRT-LLM 没有同硬件 head-to-head（§6.1，PDF p.8），所以 <strong>1.36× 只能解释为相对这版调优 vLLM 的收益，不能证明超过全部同期系统</strong>。</li>
+<li><strong>[可复现性]</strong> 因为截至核验日未找到 Seesaw 官方代码、配置文件或复现实验脚本，而论文又没有列出每个 workload 的最终 chunk size 与所有 <code>c_p/c_d</code> 选择，所以 <strong>独立研究者难以复核 1.06–1.78× 范围是否依赖隐藏调参</strong>。</li>
+<li><strong>[指标完整性]</strong> 因为论文以端到端 throughput 为唯一主指标，未报告绝对 requests/s、tokens/s、TTFT、TPOT、P50/P99 或 SLO attainment，所以 <strong>无法把 36% 平均相对增益转换为容量规划、用户体验或每美元收益</strong>。</li>
+<li><strong>[因果归因]</strong> 因为 Fig. 12 没有 <code>−tiered buffer</code>、<code>−async pipeline</code>、<code>−transition minimization</code> 的逐组件数值，只有整套系统与固定并行路径，所以 <strong>能确认联合设计有效，却不能知道重分片选择本身是否压倒了辅助机制</strong>。</li>
+<li><strong>[外部有效性]</strong> 因为评测只含 15B/34B/70B 的 FP16 dense GQA 模型，没有 MoE、量化、speculative decoding 或 prefix cache，而这些技术会改变权重带宽、KV 占比和通信形态，所以 <strong>不能假设 PP-prefill/TP-decode 的排序在现代推理栈中保持不变</strong>。</li>
+<li><strong>[资源会计]</strong> 因为实验为每张 GPU 配置 <strong>80 GiB CPU memory</strong>，8 卡节点就是 <strong>640 GiB</strong> 主机内存预算，却没有把 DRAM/NUMA/CPU copy 带宽与能耗计入成本，所以 <strong>“commodity GPU 更划算”的推论可能把代价转移到了主机侧</strong>。</li>
+<li><strong>[带宽敏感性]</strong> 因为 0.1×–50× PCIe 曲线通过修改 trace 中 all-reduce 时间投影，而不是在多种网络上运行，所以 <strong>该结果验证了模型内推，不等价于验证拥塞、NUMA、DMA 竞争下的端到端可移植性</strong>。</li>
+<li><strong>[统计可靠性]</strong> 因为论文没有重复次数、误差条或显著性检验，所以 <strong>尤其是 NVLink 上 13% 的中等增益无法与云实例抖动、热状态和调度噪声严格区分</strong>。</li>
+</ol>
+</section>
+<section class="card" aria-label="报告章节 14">
+<h2 id="可操作的开放挑战">13. 可操作的开放挑战</h2>
+<h3 id="理论">13.1 理论</h3>
+<p><strong>实验空白 T1：在线最优切换策略。</strong> 在相同到达序列与硬件上比较 <code>(A) 满/空阈值 Seesaw</code>、<code>(B) 基于剩余 KV/预计输出长度的 MDP policy</code>、<code>(C) oracle 动态规划</code>；横轴扫请求到达率和输出长度变异系数，统一报告 throughput、平均等待、P99 TTFT、切换次数与搬运字节。目标是估计 Seesaw 的阈值策略距 Pareto 前沿多远。</p>
+<p><strong>实验空白 T2：包含重分片成本的解析模型。</strong> 比较原式、加入 CPU 带宽/NUMA/reshard 项的新模型与实测；在 A10/L4/A100 上做 <code>c_p×c_d×batch×CPU-KV-size</code> 全因子实验，用 MAPE 和配置 top-1 命中率评估。若新模型不能更好选配置，就不能声称理论项解释了系统收益。</p>
+<h3 id="工程应用">13.2 工程应用</h3>
+<p><strong>实验空白 E1：公平的同栈对比。</strong> 在同版 vLLM backend、同 tokenizer、同 prompt/output trace、同 8 卡节点上比较 Seesaw、调优 vLLM chunked prefill、Sarathi-Serve、DistServe；同时报告 tokens/s、requests/s、P50/P99 TTFT/TPOT、GPU/CPU 内存、PCIe bytes、能耗和故障恢复。这样才能判断重分片相对空间拆分与阶段合并的净收益。</p>
+<p><strong>实验空白 E2：CPU 资源压力测试。</strong> 固定 GPU 与 workload，扫每 GPU CPU KV 预算 <code>10/20/40/80/160 GiB</code>、单/双 NUMA、PCIe ×4/×8/×16；比较 Seesaw 与“不用 CPU tier 的最佳静态配置”。若收益在 80 GiB 以下消失，部署建议必须显式把主机内存列为前置条件。</p>
+<p><strong>实验空白 E3：现代推理组合。</strong> 对 FP16、INT8、INT4、MoE、EAGLE speculative decoding 分别重跑 <code>c_p/c_d</code> 搜索，比较静态、Seesaw、Seesaw+chunked prefill。观察 decode 算术强度升高后切换是否仍有正收益，并把最优策略改变作为主要结果，而非只报总吞吐。</p>
+<h3 id="新兴方向">13.3 新兴方向</h3>
+<p><strong>实验空白 N1：跨请求 prefix/KV 复用。</strong> 比较 <code>Seesaw-HND full copy</code>、<code>copy-on-write shared prefix</code>、<code>Mooncake-like global KV object</code>，使用前缀共享率 0%/25%/50%/75% 的 trace；指标包括搬运字节、命中率、吞吐、首 token 时延和一致性错误。它检验 CPU 完整 KV image 是否会重复搬运共享前缀。</p>
+<p><strong>实验空白 N2：多租户与弹性 GPU。</strong> 在抢占、GPU 故障与动态租户负载下比较静态 vLLM、Seesaw、DistServe；测重分片恢复时间、KV 丢失率、尾延迟和有效吞吐。Seesaw 的 CPU 中间态可能成为恢复锚点，也可能成为单机故障域，必须以故障注入区分。</p>
+</section>
+<section class="card" aria-label="报告章节 15">
+<h2 id="近期工作雷达">14. 近期工作雷达</h2>
+<ol type="1">
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/c2a0e26dd9ee7d57e92bb1c24b39659a-Abstract-Conference.html">ThunderServe（MLSys 2025）</a>：从单节点重分片扩展到云上异构实例与成本感知调度；适合与 Seesaw 比较“节点内拓扑适配”和“节点间资源适配”能否联合。</li>
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/cc8c6b9d89f7a898a29f58869b238e46-Abstract-Conference.html">LServe（MLSys 2025）</a>：以 unified sparse attention 降低长序列 KV/计算压力；若 attention 项缩小，Seesaw 解析模型中的阶段平衡会重新移动。</li>
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/dbf02b21d77409a2db30e56866a8ab3a-Abstract-Conference.html">FlashInfer（MLSys 2025）</a>：把可组合 attention kernel 与调度原语交给服务栈；它可能降低固定配置的 kernel 损失，是更强 backend 对照。</li>
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/66a026c0d17040889b50f0dfa650e5e0-Abstract-Conference.html">NEO（MLSys 2025）</a>：在线推理的 CPU offloading，与 Seesaw“CPU 只作中间态”的选择形成直接对照；可检验 CPU 算力利用是否优于纯搬运。</li>
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/bc82dbfbfa43232be85b8d9838f49c3e-Abstract-Conference.html">SOLA（MLSys 2025）</a>：以 state-aware scheduling 追求 SLO attainment；它代表 Seesaw 若要从 offline 走向在线必须补上的状态和尾延迟控制。</li>
+<li><a href="https://www.usenix.org/conference/osdi25/presentation/he">WaferLLM（OSDI 2025）</a>：在 wafer-scale 互连上研究 LLM 推理；当通信带宽极高时，Seesaw 预测 TP 占优，这篇工作提供完全不同硬件点的参照。</li>
+<li><a href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/78834433edc3291f4c6cbbd2759324db-Abstract-Conference.html">Context Parallelism for Scalable Million-Token Inference（MLSys 2025）</a>：长上下文把 KV/attention 项推到主导位置，可能需要把 CP 纳入 Seesaw 目前只有 TP/PP 的动态空间。</li>
+</ol>
+</section>
+<section class="card" aria-label="报告章节 16">
+<h2 id="结论">15. 结论</h2>
+<p>Seesaw 值得看的地方，是它把“并行策略选择”从部署参数提升成推理阶段状态：在低带宽小集群上，prefill 用通信友好的 PP，decode 用权重带宽友好的 TP，再用 CPU KV tier 和异步 copy 把切换成本藏起来。论文在 A10 上给出 <strong>1.45× 几何平均、1.78× 最高</strong>，A10+L4 总体平均 <strong>1.36×</strong>；A100 PCIe 上把 vLLM 相对 NVLink 的约 60% 吞吐拉到 <strong>82%–89%</strong>（Fig. 10–11，PDF pp.8–9）。</p>
+<p>但最稳妥的结论应当窄一些：这是一套针对 <strong>offline、throughput-first、低带宽互连</strong> 的有效联合设计，不是在线服务的全面替代。没有代码、绝对吞吐、延迟/SLO、逐组件消融、现代模型组合和统计区间，使 1.36× 还不能直接转化为生产容量承诺；最关键的后续实验，是让它与 DistServe、Sarathi-Serve 和现代 vLLM 在同一栈、同一 trace、同一延迟约束下正面对比。</p>
+<hr />
+<p><strong>索引状态：</strong> 已更新 <code>ml-report-index.md</code>，追加本报告日期、领域、标题、venue 与一句话结论。<br />
+<strong>资料说明：</strong> MLSys 正式页与 arXiv 均写作 Wei Zhao；下载 PDF 的字体抽取将其误识别为 “Wei hao”，本报告采用正式元数据。所有无法核实的代码、数据、项目页与核心论文视频均明确标注，未以第三方镜像替代官方入口。<br />
+<strong>视觉核验说明：</strong> 已实际调用 Playwright，但本机 <code>/usr/bin/chromium</code>、<code>/opt/pw-browsers</code> 及 Playwright 缓存均无 Chromium 可执行文件；遵照“不运行 <code>playwright install</code>”约束，没有联网安装浏览器，因此无法完成真实的浅色/深色/移动端截图检查。已改用 Warm Editorial 确定性验证器（0 warning）、HTML 语义检查与响应式 CSS 静态审查；这不能完全替代浏览器像素级核验。</p>
+</section>
+</main>
+
+  <footer>核心来源：MLSys 2025 正式论文与 arXiv v1；技术链深读 vLLM、DistServe、Sarathi-Serve 与 Mooncake。生成并核验于 2026-09-25。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

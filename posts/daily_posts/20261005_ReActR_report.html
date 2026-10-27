@@ -1,0 +1,1575 @@
+---
+layout: null
+title: "ReActR"
+date: 2026-10-05
+topic: "rl-peft"
+tags: ["rl-peft", "reflection", "curriculum-learning"]
+excerpt: "把错误轨迹变成可训练的反思能力 六类错误、困难度课程与分段反思奖励，使 Qwen3-4B 的五基准 Overall 从 LEMMA 的 52.4 提升到 57.3；但核心“反思”没有被直接测量，代码、数据、权重与统计区间也未公开。"
+permalink: "/blog/2026/10/05/reactr/"
+blog_post: true
+lang: "zh-CN"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_en: "/blog/2026/10/05/reactr/en/"
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>ReActR 深度研究报告 · 2026-10-05</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  main { display: grid; gap: 22px; min-width: 0; }
+  .card.level2 { margin: 0; min-width: 0; }
+  .subsection { margin-top: 24px; }
+  .subsection h3 { margin-top: 0; }
+  blockquote { margin: 14px 0; padding: 10px 14px; border-left: 4px solid var(--chart-primary); background: var(--surface-2); color: var(--text-secondary); }
+  pre { overflow-x: auto; padding: 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); font-size: 12.5px; line-height: 1.55; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  p code, li code, td code { padding: .08em .3em; border-radius: 4px; background: var(--surface-2); }
+  ol, ul { padding-left: 1.35em; }
+  li + li { margin-top: .38em; }
+  .table-scroll { margin: 15px 0 22px; }
+  table { min-width: 760px; }
+  .figure { margin: 0; min-width: 0; max-width: 100%; }
+  p, li, td, th, a { overflow-wrap: anywhere; }
+  math[display="block"] { display: block; max-width: 100%; margin: 14px 0; padding: 10px 12px; overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+  .chart circle { outline: none; }
+  .chart circle:focus { stroke: var(--text-primary); stroke-width: 2; }
+  @media (max-width: 640px) {
+    .toolbar { position: static; justify-content: flex-end; margin-bottom: 10px; }
+    .hero { margin-top: 0; }
+    .chart { width: 760px; max-width: none; }
+    .figure { overflow-x: auto; }
+  }
+
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ACL 2026 Main · LLM Reasoning · Error-Activated Post-Training</p>
+    <h1>ReActR</h1>
+    <p class="subtitle">把错误轨迹变成可训练的反思能力</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">ACL 2026 Long · 43017–43028</span>
+      <span class="chip">2026-10-05</span>
+      <span class="chip">Error Taxonomy · SFT · GRPO</span>
+    </div>
+    <p class="lede">六类错误、困难度课程与分段反思奖励，使 Qwen3-4B 的五基准 Overall 从 LEMMA 的 52.4 提升到 57.3；但核心“反思”没有被直接测量，代码、数据、权重与统计区间也未公开。</p>
+  </header>
+
+  <main>
+
+<blockquote>
+<p><strong>一句话核心定位。</strong> ReActR
+不把数学推理中的错误样本当作应当过滤的噪声，而是把“错误类型—传播分析—局部修正—可迁移教训”组织成多轮监督，再用一个区分“发现错误”和“最终纠正”的分段奖励做
+GRPO；它因此更像一套<strong>错误激活的后训练课程</strong>，而不是又一个单纯扩大正确答案数据量的方法。</p>
+</blockquote>
+<p><strong>领域：</strong> LLM/NLP——推理、post-training、评测<br />
+<strong>核心论文：</strong> Lina Sun. <em>ReActR: Reasoning through
+Error-Activated Reflection for LLM Post-Training</em>. ACL 2026 Main,
+Long Paper, pp. 43017–43028. DOI: 10.18653/v1/2026.acl-long.1993.<br />
+<strong>报告日期：</strong> 2026-10-05<br />
+<strong>证据边界：</strong> 所有性能数字均来自实际读取的 ACL 正式论文
+PDF；“pp”表示百分点。论文没有报告的随机种子、标准差、置信区间、显著性检验、服务延迟与显存数据，本文一律不补造。</p>
+<section id="链接验证表" class="card level2">
+<h2>0. 链接验证表</h2>
+<p>以下链接均在本次报告中实际访问；“未找到”表示在论文、ACL
+页面及定向检索中均未发现可核实链接，并不等价于作者明确声明不存在。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">会议 / 正式页</th>
+<th scope="col">arXiv（版本与日期）</th>
+<th scope="col">代码</th>
+<th scope="col">数据 / 权重</th>
+<th scope="col">项目页 / 视频</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>ReActR</strong></td>
+<td><a href="https://aclanthology.org/2026.acl-long.1993/">ACL 2026 Main
+正式页</a>；<a
+href="https://aclanthology.org/2026.acl-long.1993.pdf">PDF</a></td>
+<td><strong>未找到</strong></td>
+<td><strong>未找到</strong></td>
+<td><strong>未公开 / 未找到</strong></td>
+<td><strong>未找到</strong></td>
+</tr>
+<tr class="even">
+<td>Self-Refine</td>
+<td><a href="https://openreview.net/forum?id=S37hOerQLB">NeurIPS 2023
+OpenReview</a></td>
+<td><a
+href="https://arxiv.org/abs/2303.17651">arXiv:2303.17651</a>，v1，2023-03-30</td>
+<td><a href="https://github.com/madaan/self-refine">GitHub</a></td>
+<td>无专用权重；任务与提示见代码</td>
+<td><a href="https://selfrefine.info/">项目页</a></td>
+</tr>
+<tr class="odd">
+<td>RefAug / Learn Beyond the Answer</td>
+<td><a href="https://aclanthology.org/2024.emnlp-main.754.pdf">EMNLP
+2024 Main PDF</a></td>
+<td><a
+href="https://arxiv.org/abs/2406.12050">arXiv:2406.12050</a>，v1，2024-06-17</td>
+<td><a href="https://github.com/ytyz1307zzh/RefAug">GitHub</a></td>
+<td>仓库公开构造脚本与数据说明；独立权重未找到</td>
+<td><strong>未找到</strong></td>
+</tr>
+<tr class="even">
+<td>LEMMA</td>
+<td><a href="https://aclanthology.org/2025.findings-acl.694/">Findings
+of ACL 2025 正式页</a></td>
+<td><a
+href="https://arxiv.org/abs/2503.17439">arXiv:2503.17439</a>，v2，2025-05-30</td>
+<td><a href="https://github.com/pzs19/LEMMA">GitHub</a></td>
+<td>代码页链接公开模型 / 数据资源</td>
+<td><a href="https://huggingface.co/papers/2503.17439">Hugging Face
+Papers</a></td>
+</tr>
+<tr class="odd">
+<td>DeepSeek-R1</td>
+<td><a href="https://www.nature.com/articles/s41586-025-09422-z">Nature
+论文页</a></td>
+<td><a
+href="https://arxiv.org/abs/2501.12948">arXiv:2501.12948</a>，v1，2025-01-22</td>
+<td><a href="https://github.com/deepseek-ai/DeepSeek-R1">GitHub</a></td>
+<td><a href="https://huggingface.co/deepseek-ai">Hugging Face
+模型集合</a></td>
+<td><strong>未找到独立项目页 / 视频</strong></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="候选池排重与随机选择" class="card level2">
+<h2>1. 候选池、排重与随机选择</h2>
+<p>运行日为周一，主题轮转到 <strong>LLM/NLP（推理、test-time
+scaling、post-training、评测）</strong>。先检查
+<code>ml-report-index.md</code>，排除近 14 天已经深度覆盖的
+HPS、RGM/Test-Time
+Scaling，以及相邻日期中的多模态、生成、Agent、系统、安全和 AI4Science
+主题。候选来自 ACL Anthology、ICML / OpenReview、arXiv、Hugging Face
+Papers、Papers with Code 与 Semantic Scholar 的交叉检索；优先保留近 12
+个月主会论文。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<colgroup>
+<col style="width: 40%" />
+<col style="width: 30%" />
+<col style="width: 30%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">#</th>
+<th scope="col">候选论文</th>
+<th scope="col">主要方向 / 来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td>T1: Advancing Language Model Reasoning through RL and Inference
+Scaling</td>
+<td>推理综述 / ACL 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td>Satori</td>
+<td>推理自改进 / ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td>BRiTE</td>
+<td>推理训练 / ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td>Optimizing Language Models for Inference-Time Objectives using
+RL</td>
+<td>test-time objective / ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td>Language Models as Implicit Tree Search</td>
+<td>隐式搜索 / ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td>The Surprising Effectiveness of Test-Time Training for Few-Shot
+Learning</td>
+<td>TTT / ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td>Accelerating LLM Reasoning via Speculative Search</td>
+<td>推理加速 / ACL 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">8</td>
+<td>Token Assorted</td>
+<td>token 级推理调度 / ACL 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td>Do LLMs Overthink Basic Math Reasoning? / LLMThinkBench</td>
+<td>过度思考评测 / ACL 2026 Findings</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td>Benchmarking LLM Reasoning over Conflicting Web References</td>
+<td>冲突证据推理 / ACL 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td>Challenging the Boundaries of Reasoning</td>
+<td>奥赛推理评测 / ACL 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">12</td>
+<td>SATQuest</td>
+<td>SAT 推理 / ACL 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td>Reasoning Gets Harder for LLMs Inside A Dialogue</td>
+<td>对话内推理 / ACL 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td>SMART</td>
+<td>结构化推理评测 / ACL 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td>ReEfBench</td>
+<td>反思有效性评测 / ACL 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">16</td>
+<td>Your Reasoning Benchmark May Not Test Reasoning</td>
+<td>评测效度 / ACL 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td>Scaling Behaviors of LLM RL Post-Training</td>
+<td>RL 后训练缩放 / ACL 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td>How Instruction and Reasoning Data Shape Post-Training</td>
+<td>数据配比 / ACL 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">19</td>
+<td>Why Does Reinforcement Learning Generalize?</td>
+<td>RL 泛化 / ACL 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;"><strong>20</strong></td>
+<td><strong>ReActR: Reasoning through Error-Activated Reflection for LLM
+Post-Training</strong></td>
+<td><strong>错误反思后训练 / ACL 2026 Main</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">21</td>
+<td>What Makes a Good Curriculum?</td>
+<td>课程学习 / ACL 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">22</td>
+<td>Rethinking Expert Trajectory Utilization</td>
+<td>轨迹利用 / ACL 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">23</td>
+<td>Can Post-Training Transform LLMs into Causal Reasoners?</td>
+<td>因果推理 / ACL 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">24</td>
+<td>LRBench and Judge-R1</td>
+<td>长推理评测 / ACL 2026 Findings</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">25</td>
+<td>Do LLMs Catch Their Own Mistakes?</td>
+<td>自纠错评测 / 近期 arXiv</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>在固定上述 25 项并完成排重后，执行
+<code>shuf -i 1-25 -n 1</code>，结果为 <strong>20</strong>，即
+ReActR。正式论文、PDF、主表、消融和附录均可读取，资料足以开展定量复核，因此<strong>重抽次数为
+0</strong>。</p>
+</section>
+<section id="motivation为什么只学正确答案不够" class="card level2">
+<h2>2. Motivation：为什么“只学正确答案”不够</h2>
+<p>推理后训练的常见直觉是：高质量答案越多越好，错误轨迹应被过滤掉。ReActR
+反过来追问：如果模型永远只看到完成良好的证明，它究竟在哪里学会“何时怀疑自己”“错误从哪一步开始传播”“修正后应抽象出什么教训”？论文认为，正确轨迹主要传递<strong>如何做对</strong>，错误—修正对才显式传递<strong>如何从失败返回正确轨道</strong>。</p>
+<p>这个痛点不是纯概念性的。以 Qwen3-4B 为例，论文的普通 SFT 基线在 GSM8K
+为 79.8、MATH 为 48.6，而 ReActR 为 91.1 和 65.7，分别高 11.3 和 17.1
+pp；五个测试集合并后的 Overall 从 42.4 到 57.3，绝对增加 14.9
+pp、相对增加 35.14%（Table 2，PDF p.7 / 会议页
+43023）。更重要的是，收益没有停留在训练域：DeepMind Mathematics 从 47.9
+到 68.9、College Math 从 22.5 到 35.2、OlympiadBench-Math 从 13.2 到
+25.6，绝对提升分别为 21.0、12.7、12.4
+pp。这里能推出的是：<strong>这套数据与奖励组合在作者的数学设置中显著强于其普通
+SFT
+实现</strong>；不能直接推出收益完全来自“反思机制”，因为训练数据规模、教师模型、数据难度与
+GRPO 同时变化。</p>
+<p>论文先对错误做六类划分（Table 1，PDF p.3 / 会议页
+43019）：Calculation Error（CA，计算错误）、Formula
+Confusion（FC，公式混淆）、Question
+Misinterpretation（QM，题意误解）、Missing
+Step（MS，缺失步骤）、Confusing Concept（CC，概念混淆）、Nonsensical
+Output（NO，无意义输出）。这一步把“答案错了”拆成可操作的诊断标签。标签本身不是最终贡献；真正关键是标签如何控制后续的数据生成、错误覆盖与奖励设计。</p>
+</section>
+<section id="论文故事线假设与权衡" class="card level2">
+<h2>3. 论文故事线、假设与权衡</h2>
+<p>论文的故事线可概括为四步。</p>
+<ol type="1">
+<li><strong>先让学生暴露真实失败模式。</strong> 作者用 Qwen3-4B 在 MATH
+与 GSM8K 上以 temperature 0.6
+自生成推理，筛出错误答案，得到学生自然发生的失误分布。</li>
+<li><strong>再用强教师补齐“难而有用”的错误。</strong> Gemini 2.5 Pro
+面向 MATH level 3–5 题目定向生成错误，重点覆盖高频的
+QM、CC、CA，避免数据只被容易产生的表面计算错误主导。</li>
+<li><strong>把错误变成结构化反思监督。</strong>
+教师不仅给正确答案，还指出错误类型、定位错误步骤、解释传播影响、给出修正版推理，并总结可迁移教训。最终数据由
+25K 错误—修正轨迹与 25K 正确轨迹组成，共 50K 多轮样本（方法部分与
+Appendix A.2，PDF pp.3–5、11）。</li>
+<li><strong>用分段奖励强化“发现 + 修正”。</strong> GRPO
+不只看最后答案：初始答案错误时，正确识别错误得 0.3，最终纠正再得
+0.7；初始答案正确且反思确认正确得
+1.0。模型既要避免盲目翻案，也要在真正错误时完成修复（Figure 6，PDF p.5 /
+会议页 43021）。</li>
+</ol>
+<p>核心假设有三个。第一，错误轨迹含有正确轨迹没有的局部决策边界信息；第二，显式错误分类能让有限预算覆盖更有教学价值的失败；第三，验证器可检查的数学答案足以为反思建立稳定的强化信号。相应权衡也很清楚：教师生成可快速规模化，但会继承教师偏差；分段奖励可归因“发现”与“修正”，却把反思压缩成少数离散状态；多轮反思提高纠错机会，但训练和推理
+token 成本上升。</p>
+</section>
+<section id="方程级形式化与流程" class="card level2">
+<h2>4. 方程级形式化与流程</h2>
+<section id="数据单元" class="subsection level3">
+<h3>4.1 数据单元</h3>
+<p>令题目为
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>x</mi><annotation encoding="application/x-tex">x</annotation></semantics></math>，学生初始轨迹为
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi>y</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>0</mn><mo stretchy="true" form="postfix">)</mo></mrow></msup><annotation encoding="application/x-tex">y^{(0)}</annotation></semantics></math>，答案判定器为
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>V</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>∈</mo><mo stretchy="false" form="prefix">{</mo><mn>0</mn><mo>,</mo><mn>1</mn><mo stretchy="false" form="postfix">}</mo></mrow><annotation encoding="application/x-tex">V(x,y)\in\{0,1\}</annotation></semantics></math>。对错误轨迹，教师生成结构化反思：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>z</mi><mo>=</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>c</mi><mo>,</mo><mo>ℓ</mo><mo>,</mo><mi>e</mi><mo>,</mo><msup><mi>y</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo stretchy="true" form="postfix">)</mo></mrow></msup><mo>,</mo><mi>g</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>,</mo></mrow><annotation encoding="application/x-tex">
+z=(c,\ell,e,y^{(1)},g),
+</annotation></semantics></math></p>
+<p>其中
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>c</mi><annotation encoding="application/x-tex">c</annotation></semantics></math>
+是六类错误标签，<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mo>ℓ</mo><annotation encoding="application/x-tex">\ell</annotation></semantics></math>
+是错误发生位置，<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>e</mi><annotation encoding="application/x-tex">e</annotation></semantics></math>
+是错误如何传播的解释，<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi>y</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo stretchy="true" form="postfix">)</mo></mrow></msup><annotation encoding="application/x-tex">y^{(1)}</annotation></semantics></math>
+是修正轨迹，<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>g</mi><annotation encoding="application/x-tex">g</annotation></semantics></math>
+是可迁移的 lesson。训练样本可写为
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><msup><mi>y</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>0</mn><mo stretchy="true" form="postfix">)</mo></mrow></msup><mo>,</mo><mi>z</mi><mo stretchy="true" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">(x,y^{(0)},z)</annotation></semantics></math>。对正确轨迹，数据仍保留“确认正确”的反思回合，防止模型形成“一反思就推翻”的偏差。</p>
+<p>监督阶段优化标准自回归负对数似然：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>ℒ</mi><mtext mathvariant="normal">SFT</mtext></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>θ</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mo>−</mo><munder><mo>∑</mo><mrow><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><mi>s</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>∈</mo><mi>𝒟</mi></mrow></munder><munder><mo>∑</mo><mi>t</mi></munder><mo>log</mo><msub><mi>π</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>s</mi><mi>t</mi></msub><mo>∣</mo><mi>x</mi><mo>,</mo><msub><mi>s</mi><mrow><mo>&lt;</mo><mi>t</mi></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>,</mo></mrow><annotation encoding="application/x-tex">
+\mathcal L_{\text{SFT}}(\theta)=-\sum_{(x,s)\in\mathcal D}\sum_t
+\log \pi_\theta(s_t\mid x,s_{&lt;t}),
+</annotation></semantics></math></p>
+<p>其中
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>s</mi><annotation encoding="application/x-tex">s</annotation></semantics></math>
+串接初始推理、反思、修正与总结。论文没有给出新的 SFT
+方程；上式只是对其已描述训练过程的标准形式化。</p>
+</section>
+<section id="五种奖励状态" class="subsection level3">
+<h3>4.2 五种奖励状态</h3>
+<p>记
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>a</mi><mn>0</mn></msub><mo>=</mo><mi>V</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><msup><mi>y</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>0</mn><mo stretchy="true" form="postfix">)</mo></mrow></msup><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">a_0=V(x,y^{(0)})</annotation></semantics></math>，反思判断
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>d</mi><mo>∈</mo><mo stretchy="false" form="prefix">{</mo><mtext mathvariant="normal">correct</mtext><mo>,</mo><mtext mathvariant="normal">wrong</mtext><mo stretchy="false" form="postfix">}</mo></mrow><annotation encoding="application/x-tex">d\in\{\text{correct},\text{wrong}\}</annotation></semantics></math>，修正后答案为
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>a</mi><mn>1</mn></msub><mo>=</mo><mi>V</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><msup><mi>y</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo stretchy="true" form="postfix">)</mo></mrow></msup><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">a_1=V(x,y^{(1)})</annotation></semantics></math>。Figure
+6 给出五种情形：</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">初始答案</th>
+<th scope="col">反思判断</th>
+<th scope="col">修正结果</th>
+<th scope="col" style="text-align: right;">奖励</th>
+<th scope="col">含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>正确</td>
+<td>确认正确</td>
+<td>不需要修正</td>
+<td style="text-align: right;"><strong>1.0</strong></td>
+<td>正确校准，不制造错误</td>
+</tr>
+<tr class="even">
+<td>正确</td>
+<td>错判为错误</td>
+<td>修成错误</td>
+<td style="text-align: right;"><strong>0.0</strong></td>
+<td>惩罚盲目自我怀疑</td>
+</tr>
+<tr class="odd">
+<td>错误</td>
+<td>识别错误</td>
+<td>修正正确</td>
+<td style="text-align: right;"><strong>0.3 + 0.7 = 1.0</strong></td>
+<td>发现与纠正都成功</td>
+</tr>
+<tr class="even">
+<td>错误</td>
+<td>识别错误</td>
+<td>仍修错</td>
+<td style="text-align: right;"><strong>0.3</strong></td>
+<td>诊断有价值，但修复失败</td>
+</tr>
+<tr class="odd">
+<td>错误</td>
+<td>错判为正确</td>
+<td>未修正</td>
+<td style="text-align: right;"><strong>0.0</strong></td>
+<td>未激活反思</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>可把它写成：</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>r</mi><mo>=</mo><mn>𝟙</mn><mrow><mo stretchy="true" form="prefix">[</mo><msub><mi>a</mi><mn>0</mn></msub><mo>=</mo><mn>1</mn><mo>,</mo><mi>d</mi><mo>=</mo><mtext mathvariant="normal">correct</mtext><mo stretchy="true" form="postfix">]</mo></mrow><mo>+</mo><mn>0.3</mn><mspace width="0.167em"></mspace><mn>𝟙</mn><mrow><mo stretchy="true" form="prefix">[</mo><msub><mi>a</mi><mn>0</mn></msub><mo>=</mo><mn>0</mn><mo>,</mo><mi>d</mi><mo>=</mo><mtext mathvariant="normal">wrong</mtext><mo stretchy="true" form="postfix">]</mo></mrow><mo>+</mo><mn>0.7</mn><mspace width="0.167em"></mspace><mn>𝟙</mn><mrow><mo stretchy="true" form="prefix">[</mo><msub><mi>a</mi><mn>0</mn></msub><mo>=</mo><mn>0</mn><mo>,</mo><mi>d</mi><mo>=</mo><mtext mathvariant="normal">wrong</mtext><mo>,</mo><msub><mi>a</mi><mn>1</mn></msub><mo>=</mo><mn>1</mn><mo stretchy="true" form="postfix">]</mo></mrow><mi>.</mi></mrow><annotation encoding="application/x-tex">
+r=\mathbb 1[a_0=1,d=\text{correct}]
++0.3\,\mathbb 1[a_0=0,d=\text{wrong}]
++0.7\,\mathbb 1[a_0=0,d=\text{wrong},a_1=1].
+</annotation></semantics></math></p>
+<p>这一定义揭示了一个容易忽略的性质：正确答案被正确确认与错误答案被完整修复同为
+1.0，所以奖励鼓励的是<strong>任务成功状态</strong>，不是“越多反思越好”。但它也没有区分高置信正确与侥幸正确，没有对反思文本的因果忠实度打分。</p>
+</section>
+<section id="grpo-的组内比较" class="subsection level3">
+<h3>4.3 GRPO 的组内比较</h3>
+<p>论文说明每题采样 5 个响应、训练 3 epochs、固定学习率
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mrow><mo>−</mo><mn>6</mn></mrow></msup><annotation encoding="application/x-tex">10^{-6}</annotation></semantics></math>，使用
+<code>verl</code> 运行 GRPO（Appendix A.2，PDF
+p.11）。论文未写出完整目标；可依据 GRPO
+的标准做法把作者描述形式化为：对同一题的
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>G</mi><mo>=</mo><mn>5</mn></mrow><annotation encoding="application/x-tex">G=5</annotation></semantics></math>
+个响应，先做组内标准化优势</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mover><mi>A</mi><mo accent="true">̂</mo></mover><mi>i</mi></msub><mo>=</mo><mfrac><mrow><msub><mi>r</mi><mi>i</mi></msub><mo>−</mo><msub><mi>μ</mi><mi>r</mi></msub></mrow><mrow><msub><mi>σ</mi><mi>r</mi></msub><mo>+</mo><mi>ϵ</mi></mrow></mfrac><mo>,</mo></mrow><annotation encoding="application/x-tex">
+\widehat{A}_i=\frac{r_i-\mu_r}{\sigma_r+\epsilon},
+</annotation></semantics></math></p>
+<p>再用裁剪比率
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>ρ</mi><mi>i</mi></msub><mo>=</mo><msub><mi>π</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>y</mi><mi>i</mi></msub><mo>∣</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow><mi>/</mi><msub><mi>π</mi><msub><mi>θ</mi><mrow><mi>o</mi><mi>l</mi><mi>d</mi></mrow></msub></msub><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>y</mi><mi>i</mi></msub><mo>∣</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">\rho_i=\pi_\theta(y_i\mid x)/\pi_{\theta_{old}}(y_i\mid x)</annotation></semantics></math>
+优化</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>J</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>θ</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mfrac><mn>1</mn><mi>G</mi></mfrac><munder><mo>∑</mo><mi>i</mi></munder><mo>min</mo><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>ρ</mi><mi>i</mi></msub><msub><mover><mi>A</mi><mo accent="true">̂</mo></mover><mi>i</mi></msub><mo>,</mo><mrow><mi mathvariant="normal">c</mi><mi mathvariant="normal">l</mi><mi mathvariant="normal">i</mi><mi mathvariant="normal">p</mi></mrow><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>ρ</mi><mi>i</mi></msub><mo>,</mo><mn>1</mn><mo>−</mo><mi>ε</mi><mo>,</mo><mn>1</mn><mo>+</mo><mi>ε</mi><mo stretchy="true" form="postfix">)</mo></mrow><msub><mover><mi>A</mi><mo accent="true">̂</mo></mover><mi>i</mi></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>−</mo><mi>β</mi><mspace width="0.167em"></mspace><mrow><mi mathvariant="normal">K</mi><mi mathvariant="normal">L</mi></mrow><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>π</mi><mi>θ</mi></msub><mo>,</mo><msub><mi>π</mi><mrow><mi>r</mi><mi>e</mi><mi>f</mi></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow><mi>.</mi></mrow><annotation encoding="application/x-tex">
+J(\theta)=\frac{1}{G}\sum_i \min\left(
+\rho_i\widehat{A}_i,
+\mathrm{clip}(\rho_i,1-\varepsilon,1+\varepsilon)\widehat{A}_i\right)
+-\beta\,\mathrm{KL}(\pi_\theta,\pi_{ref}).
+</annotation></semantics></math></p>
+<p>这段是<strong>对流程的标准化重述，不是 ReActR
+论文逐字给出的方程</strong>。论文没有报告
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>ε</mi><annotation encoding="application/x-tex">\varepsilon</annotation></semantics></math>、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>β</mi><annotation encoding="application/x-tex">\beta</annotation></semantics></math>、KL
+实现细节或它们的敏感性，因此不能据此复现完整 GRPO 配置。</p>
+</section>
+<section id="伪代码" class="subsection level3">
+<h3>4.4 伪代码</h3>
+<pre class="text"><code>输入：MATH、GSM8K 题目；学生 Qwen3-4B；教师 Gemini 2.5 Pro
+1  学生以 temperature=0.6 采样初始推理，保留真实错误
+2  教师在 MATH level 3–5 定向合成 QM/CC/CA 等困难错误
+3  对每个错误：标类型 → 定位首个关键错误 → 分析传播
+                  → 生成修正轨迹 → 总结 lesson
+4  混合 25K 错误—修正样本与 25K 正确轨迹
+5  用 LoRA 做 4 epochs SFT
+6  每题采样 5 个响应，按五状态奖励计算组内优势
+7  用 GRPO 训练 3 epochs
+输出：能确认正确、发现错误并修正的推理模型</code></pre>
+</section>
+</section>
+<section id="关键机制与工程细节" class="card level2">
+<h2>5. 关键机制与工程细节</h2>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">环节</th>
+<th scope="col">论文设置</th>
+<th scope="col">为什么重要</th>
+<th scope="col">证据位置</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>学生错误采样</td>
+<td>Qwen3-4B，temperature 0.6；MATH + GSM8K</td>
+<td>捕获基础模型真实失误，而非全由教师编造</td>
+<td>方法，PDF pp.3–4</td>
+</tr>
+<tr class="even">
+<td>定向困难错误</td>
+<td>Gemini 2.5 Pro；MATH levels 3–5；重点 QM/CC/CA</td>
+<td>提高复杂推理错误覆盖</td>
+<td>方法，PDF p.4</td>
+</tr>
+<tr class="odd">
+<td>错误本体</td>
+<td>CA、FC、QM、MS、CC、NO 六类</td>
+<td>将错误从二元标签转成课程控制变量</td>
+<td>Table 1，PDF p.3</td>
+</tr>
+<tr class="even">
+<td>反思结构</td>
+<td>类型、位置、传播、修正、lesson</td>
+<td>让监督信号同时覆盖诊断与恢复</td>
+<td>Figure 3–4，PDF pp.4–5</td>
+</tr>
+<tr class="odd">
+<td>训练混合</td>
+<td>25K 错误—修正 + 25K 正确 = 50K</td>
+<td>避免全错误训练退化，也避免全正确缺纠错</td>
+<td>方法 / Table 3，PDF pp.5、7</td>
+</tr>
+<tr class="even">
+<td>SFT</td>
+<td>LLaMA-Factory；LoRA；4 epochs；batch 4；lr
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mrow><mo>−</mo><mn>5</mn></mrow></msup><annotation encoding="application/x-tex">10^{-5}</annotation></semantics></math>；cosine</td>
+<td>可复现实验骨架，但 LoRA rank 等未报告</td>
+<td>Appendix A.2，PDF p.11</td>
+</tr>
+<tr class="odd">
+<td>RL</td>
+<td><code>verl</code>；GRPO；5 responses/group；3 epochs；lr
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mrow><mo>−</mo><mn>6</mn></mrow></msup><annotation encoding="application/x-tex">10^{-6}</annotation></semantics></math></td>
+<td>用结果可验证信号塑造反思策略</td>
+<td>Appendix A.2，PDF p.11</td>
+</tr>
+<tr class="even">
+<td>数据生成成本</td>
+<td>超过 100M tokens；API 成本略高于 700 美元</td>
+<td>说明数据合成并非免费，但未含训练成本</td>
+<td>Appendix A.2，PDF p.11</td>
+</tr>
+<tr class="odd">
+<td>评测</td>
+<td>greedy / Pass@1；5 个数学基准</td>
+<td>结果易解释，但没有多样采样或成本曲线</td>
+<td>实验设置，PDF p.6</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="数据集基准与指标" class="card level2">
+<h2>6. 数据集、基准与指标</h2>
+<p>训练域包括 GSM8K 与 MATH。GSM8K
+以小学到初中风格的多步文字题为主；MATH
+难度更高、覆盖代数、几何、数论等。论文还把 MATH level 3–5
+用作教师定向错误合成的主要来源，因此 MATH
+不只是测试集名称，也是困难课程的核心来源。</p>
+<p>评测分成两组：<strong>in-domain</strong> 为
+GSM8K、MATH；<strong>out-of-domain</strong> 为 DeepMind
+Mathematics、College Math、OlympiadBench-Math。主指标是
+Pass@1，即每题一个输出是否得到正确最终答案。表中的 <code>In AVG</code>
+是前两个基准均值，<code>Overall</code>
+是五个基准的平均。该设计能观察是否从训练域迁移到不同数学分布，但不能验证代码、开放式科学推理或无法自动判定答案的任务。</p>
+<p>评价协议还有三个边界。第一，Pass@1
+只看最终答案，不能测反思定位是否正确；第二，论文没有报告每个基准的样本裁剪、提示模板全文和解码长度上限；第三，Figure
+5 的 MATH 难度分层结果注明是 10 次 inference runs 的平均，但 Table 2 / 3
+没有标准差或置信区间。因此本文把主表差异视为观察到的点估计，不称为“统计显著”。</p>
+</section>
+<section id="完整主结果矩阵" class="card level2">
+<h2>7. 完整主结果矩阵</h2>
+<section id="qwen3-4b" class="subsection level3">
+<h3>7.1 Qwen3-4B</h3>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<colgroup>
+<col style="width: 9%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">方法（训练样本量）</th>
+<th scope="col" style="text-align: right;">GSM8K ↑</th>
+<th scope="col" style="text-align: right;">MATH ↑</th>
+<th scope="col" style="text-align: right;">In AVG ↑</th>
+<th scope="col" style="text-align: right;">DeepMind Math ↑</th>
+<th scope="col" style="text-align: right;">College Math ↑</th>
+<th scope="col" style="text-align: right;">Olympiad ↑</th>
+<th scope="col" style="text-align: right;">Overall ↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>SFT (15K)</td>
+<td style="text-align: right;">79.8</td>
+<td style="text-align: right;">48.6</td>
+<td style="text-align: right;">64.2</td>
+<td style="text-align: right;">47.9</td>
+<td style="text-align: right;">22.5</td>
+<td style="text-align: right;">13.2</td>
+<td style="text-align: right;">42.4</td>
+</tr>
+<tr class="even">
+<td>RefAug (30K)</td>
+<td style="text-align: right;">83.3</td>
+<td style="text-align: right;">51.9</td>
+<td style="text-align: right;">67.6</td>
+<td style="text-align: right;">58.6</td>
+<td style="text-align: right;">26.0</td>
+<td style="text-align: right;">18.1</td>
+<td style="text-align: right;">47.6</td>
+</tr>
+<tr class="odd">
+<td>MetaMath (60K)</td>
+<td style="text-align: right;">86.5</td>
+<td style="text-align: right;">59.3</td>
+<td style="text-align: right;">72.9</td>
+<td style="text-align: right;">58.2</td>
+<td style="text-align: right;">30.4</td>
+<td style="text-align: right;">17.2</td>
+<td style="text-align: right;">50.3</td>
+</tr>
+<tr class="even">
+<td>LEMMA (60K)</td>
+<td style="text-align: right;">86.6</td>
+<td style="text-align: right;">60.5</td>
+<td style="text-align: right;">73.5</td>
+<td style="text-align: right;">62.1</td>
+<td style="text-align: right;">29.9</td>
+<td style="text-align: right;">22.7</td>
+<td style="text-align: right;">52.4</td>
+</tr>
+<tr class="odd">
+<td><strong>ReActR (50K)</strong></td>
+<td style="text-align: right;"><strong>91.1</strong></td>
+<td style="text-align: right;"><strong>65.7</strong></td>
+<td style="text-align: right;"><strong>78.4</strong></td>
+<td style="text-align: right;"><strong>68.9</strong></td>
+<td style="text-align: right;"><strong>35.2</strong></td>
+<td style="text-align: right;"><strong>25.6</strong></td>
+<td style="text-align: right;"><strong>57.3</strong></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>来源：核心论文 Table 2（PDF p.7 / 会议页 43023）。相对最强对照
+LEMMA，ReActR 在五个单项上分别增加 <strong>4.5、5.2、6.8、5.3、2.9
+pp</strong>，Overall 增加 <strong>4.9 pp / 9.35%</strong>。相对普通
+SFT，Overall 增加 <strong>14.9 pp / 35.14%</strong>。</p>
+</section>
+<section id="mistral-7b" class="subsection level3">
+<h3>7.2 Mistral-7B</h3>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<colgroup>
+<col style="width: 9%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">GSM8K ↑</th>
+<th scope="col" style="text-align: right;">MATH ↑</th>
+<th scope="col" style="text-align: right;">In AVG ↑</th>
+<th scope="col" style="text-align: right;">DeepMind Math ↑</th>
+<th scope="col" style="text-align: right;">College Math ↑</th>
+<th scope="col" style="text-align: right;">Olympiad ↑</th>
+<th scope="col" style="text-align: right;">Overall ↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>SFT</td>
+<td style="text-align: right;">56.3</td>
+<td style="text-align: right;">12.8</td>
+<td style="text-align: right;">34.5</td>
+<td style="text-align: right;">19.3</td>
+<td style="text-align: right;">8.4</td>
+<td style="text-align: right;">2.2</td>
+<td style="text-align: right;">19.8</td>
+</tr>
+<tr class="even">
+<td>RefAug</td>
+<td style="text-align: right;">62.2</td>
+<td style="text-align: right;">13.4</td>
+<td style="text-align: right;">37.8</td>
+<td style="text-align: right;">15.8</td>
+<td style="text-align: right;">10.4</td>
+<td style="text-align: right;">3.1</td>
+<td style="text-align: right;">21.0</td>
+</tr>
+<tr class="odd">
+<td>MetaMath</td>
+<td style="text-align: right;">71.6</td>
+<td style="text-align: right;">24.7</td>
+<td style="text-align: right;">48.1</td>
+<td style="text-align: right;">26.9</td>
+<td style="text-align: right;">14.6</td>
+<td style="text-align: right;">5.3</td>
+<td style="text-align: right;">28.6</td>
+</tr>
+<tr class="even">
+<td>LEMMA</td>
+<td style="text-align: right;">71.9</td>
+<td style="text-align: right;">26.4</td>
+<td style="text-align: right;">49.2</td>
+<td style="text-align: right;">30.8</td>
+<td style="text-align: right;">13.9</td>
+<td style="text-align: right;">5.9</td>
+<td style="text-align: right;">29.8</td>
+</tr>
+<tr class="odd">
+<td><strong>ReActR</strong></td>
+<td style="text-align: right;"><strong>75.8</strong></td>
+<td style="text-align: right;"><strong>31.2</strong></td>
+<td style="text-align: right;"><strong>53.5</strong></td>
+<td style="text-align: right;"><strong>34.1</strong></td>
+<td style="text-align: right;"><strong>19.7</strong></td>
+<td style="text-align: right;"><strong>6.2</strong></td>
+<td style="text-align: right;"><strong>33.4</strong></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>来源：Table 2（PDF p.7）。相对 LEMMA，五个单项增加
+<strong>3.9、4.8、3.3、5.8、0.3 pp</strong>，Overall 增加 <strong>3.6 pp
+/ 12.08%</strong>。相对 SFT，Overall 增加 <strong>13.6 pp /
+68.69%</strong>。这里相对百分比很大，部分原因是 Mistral 的 SFT 基数只有
+19.8；不应把 68.69%误读成绝对能力接近翻倍。</p>
+</section>
+<section id="llama3-8b" class="subsection level3">
+<h3>7.3 Llama3-8B</h3>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<colgroup>
+<col style="width: 9%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">GSM8K ↑</th>
+<th scope="col" style="text-align: right;">MATH ↑</th>
+<th scope="col" style="text-align: right;">In AVG ↑</th>
+<th scope="col" style="text-align: right;">DeepMind Math ↑</th>
+<th scope="col" style="text-align: right;">College Math ↑</th>
+<th scope="col" style="text-align: right;">Olympiad ↑</th>
+<th scope="col" style="text-align: right;">Overall ↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>SFT</td>
+<td style="text-align: right;">65.6</td>
+<td style="text-align: right;">21.6</td>
+<td style="text-align: right;">43.6</td>
+<td style="text-align: right;">22.5</td>
+<td style="text-align: right;">14.1</td>
+<td style="text-align: right;">4.7</td>
+<td style="text-align: right;">25.7</td>
+</tr>
+<tr class="even">
+<td>RefAug</td>
+<td style="text-align: right;">73.2</td>
+<td style="text-align: right;">27.3</td>
+<td style="text-align: right;">50.2</td>
+<td style="text-align: right;">25.9</td>
+<td style="text-align: right;">18.2</td>
+<td style="text-align: right;">4.9</td>
+<td style="text-align: right;">29.9</td>
+</tr>
+<tr class="odd">
+<td>MetaMath</td>
+<td style="text-align: right;">77.8</td>
+<td style="text-align: right;">34.5</td>
+<td style="text-align: right;">56.1</td>
+<td style="text-align: right;">32.3</td>
+<td style="text-align: right;">19.7</td>
+<td style="text-align: right;">5.6</td>
+<td style="text-align: right;">33.9</td>
+</tr>
+<tr class="even">
+<td>LEMMA</td>
+<td style="text-align: right;">76.6</td>
+<td style="text-align: right;">36.4</td>
+<td style="text-align: right;">56.5</td>
+<td style="text-align: right;">37.1</td>
+<td style="text-align: right;">22.3</td>
+<td style="text-align: right;">6.3</td>
+<td style="text-align: right;">35.7</td>
+</tr>
+<tr class="odd">
+<td><strong>ReActR</strong></td>
+<td style="text-align: right;"><strong>81.3</strong></td>
+<td style="text-align: right;"><strong>39.2</strong></td>
+<td style="text-align: right;"><strong>60.2</strong></td>
+<td style="text-align: right;"><strong>41.5</strong></td>
+<td style="text-align: right;"><strong>26.4</strong></td>
+<td style="text-align: right;"><strong>7.5</strong></td>
+<td style="text-align: right;"><strong>39.2</strong></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>来源：Table 2（PDF p.7）。相对 LEMMA，五个单项增加
+<strong>4.7、2.8、4.4、4.1、1.2 pp</strong>，Overall 增加 <strong>3.5 pp
+/ 9.80%</strong>；相对 SFT，Overall 增加 <strong>13.5 pp /
+52.53%</strong>。</p>
+</section>
+<section id="跨骨干结论" class="subsection level3">
+<h3>7.4 跨骨干结论</h3>
+<p>ReActR 在三种骨干、15 个“模型 × 单项基准”格子全部高于
+LEMMA，这是比单一平均值更扎实的稳定性证据。但这种一致性仍不是统计显著性：同一训练数据和教师信号可能给三种骨干带来同方向偏差，论文又没有多随机种子。定量上，ReActR
+对 LEMMA 的 Overall 优势在 <strong>3.5–4.9 pp</strong>；这比它对普通 SFT
+的 <strong>13.5–14.9 pp</strong>
+小很多，说明相当一部分收益来自“更好的数学训练数据”这一大类因素，而非只有
+ReActR 特有的分段奖励。</p>
+</section>
+</section>
+<figure class="figure" aria-labelledby="main-chart-title">
+      <p class="fig-title" id="main-chart-title">Qwen3-4B：ReActR 与最强错误纠正基线 LEMMA</p>
+      <p class="fig-sub">五个基准全部提升，最大绝对差距出现在 DeepMind Mathematics（+6.8 pp）。</p>
+      <div class="legend" aria-label="图例">
+        <span><span class="swatch" style="background:var(--chart-primary)"></span>ReActR</span>
+        <span><span class="swatch" style="background:var(--chart-comparison)"></span>LEMMA</span>
+      </div>
+      <svg class="chart" viewBox="0 0 900 360" role="img" xmlns="http://www.w3.org/2000/svg">
+        <title>Qwen3-4B 上 ReActR 与 LEMMA 的五基准 Pass@1</title>
+        <desc>ReActR 在 GSM8K、MATH、DeepMind、College 和 Olympiad 上分别为 91.1、65.7、68.9、35.2、25.6；LEMMA 为 86.6、60.5、62.1、29.9、22.7。</desc>
+        <line x1="85" x2="850" y1="300.0" y2="300.0" stroke="var(--border)" stroke-width="1" /><text x="69" y="304.0" text-anchor="end" font-size="12">0</text><line x1="85" x2="850" y1="252.0" y2="252.0" stroke="var(--border)" stroke-width="1" /><text x="69" y="256.0" text-anchor="end" font-size="12">20</text><line x1="85" x2="850" y1="204.0" y2="204.0" stroke="var(--border)" stroke-width="1" /><text x="69" y="208.0" text-anchor="end" font-size="12">40</text><line x1="85" x2="850" y1="156.0" y2="156.0" stroke="var(--border)" stroke-width="1" /><text x="69" y="160.0" text-anchor="end" font-size="12">60</text><line x1="85" x2="850" y1="108.0" y2="108.0" stroke="var(--border)" stroke-width="1" /><text x="69" y="112.0" text-anchor="end" font-size="12">80</text><line x1="85" x2="850" y1="60.0" y2="60.0" stroke="var(--border)" stroke-width="1" /><text x="69" y="64.0" text-anchor="end" font-size="12">100</text><polyline points="130,81.4 300,142.3 470,134.6 640,215.5 810,238.6" fill="none" stroke="var(--chart-primary)" stroke-width="3" /><polyline points="130,92.2 300,154.8 470,151.0 640,228.2 810,245.5" fill="none" stroke="var(--chart-comparison)" stroke-width="3" /><circle cx="130" cy="81.4" r="7" fill="var(--chart-primary)" tabindex="0" data-tip="ReActR · GSM8K: 91.1" /><circle cx="300" cy="142.3" r="7" fill="var(--chart-primary)" tabindex="0" data-tip="ReActR · MATH: 65.7" /><circle cx="470" cy="134.6" r="7" fill="var(--chart-primary)" tabindex="0" data-tip="ReActR · DeepMind: 68.9" /><circle cx="640" cy="215.5" r="7" fill="var(--chart-primary)" tabindex="0" data-tip="ReActR · College: 35.2" /><circle cx="810" cy="238.6" r="7" fill="var(--chart-primary)" tabindex="0" data-tip="ReActR · Olympiad: 25.6" /><circle cx="130" cy="92.2" r="7" fill="var(--chart-comparison)" tabindex="0" data-tip="LEMMA · GSM8K: 86.6" /><circle cx="300" cy="154.8" r="7" fill="var(--chart-comparison)" tabindex="0" data-tip="LEMMA · MATH: 60.5" /><circle cx="470" cy="151.0" r="7" fill="var(--chart-comparison)" tabindex="0" data-tip="LEMMA · DeepMind: 62.1" /><circle cx="640" cy="228.2" r="7" fill="var(--chart-comparison)" tabindex="0" data-tip="LEMMA · College: 29.9" /><circle cx="810" cy="245.5" r="7" fill="var(--chart-comparison)" tabindex="0" data-tip="LEMMA · Olympiad: 22.7" /><text x="130" y="329" text-anchor="middle" font-size="12">GSM8K</text><text x="300" y="329" text-anchor="middle" font-size="12">MATH</text><text x="470" y="329" text-anchor="middle" font-size="12">DeepMind</text><text x="640" y="329" text-anchor="middle" font-size="12">College</text><text x="810" y="329" text-anchor="middle" font-size="12">Olympiad</text>
+        <text x="24" y="180" transform="rotate(-90 24 180)" text-anchor="middle" font-size="12">Pass@1</text>
+        <text x="470" y="351" text-anchor="middle" font-size="12">评测基准</text>
+      </svg>
+      <figcaption>数据源：核心论文 Table 2（PDF p.7 / 会议页 43023）。悬停或键盘聚焦数据点可查看精确值；正文保留完整三骨干矩阵。</figcaption>
+    </figure>
+<section id="逐层消融超参敏感性与相变" class="card level2">
+<h2>8. 逐层消融、超参敏感性与相变</h2>
+<section id="数据设计与-rl-消融" class="subsection level3">
+<h3>8.1 数据设计与 RL 消融</h3>
+<p>论文在 Qwen3-4B 上给出下表（Table 3，PDF p.7 / 会议页 43023）：</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<colgroup>
+<col style="width: 13%" />
+<col style="width: 18%" />
+<col style="width: 18%" />
+<col style="width: 18%" />
+<col style="width: 18%" />
+<col style="width: 13%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">配置</th>
+<th scope="col" style="text-align: right;">GSM8K ↑</th>
+<th scope="col" style="text-align: right;">相对完整模型</th>
+<th scope="col" style="text-align: right;">MATH ↑</th>
+<th scope="col" style="text-align: right;">相对完整模型</th>
+<th scope="col">解释</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Out-Error</td>
+<td style="text-align: right;">84.6</td>
+<td style="text-align: right;">−6.5 pp</td>
+<td style="text-align: right;">56.2</td>
+<td style="text-align: right;">−9.5 pp</td>
+<td>去掉错误类型导向</td>
+</tr>
+<tr class="even">
+<td>Out-Difficulty</td>
+<td style="text-align: right;">87.5</td>
+<td style="text-align: right;">−3.6 pp</td>
+<td style="text-align: right;">60.3</td>
+<td style="text-align: right;">−5.4 pp</td>
+<td>去掉困难度导向</td>
+</tr>
+<tr class="odd">
+<td>Out-Both</td>
+<td style="text-align: right;">82.6</td>
+<td style="text-align: right;">−8.5 pp</td>
+<td style="text-align: right;">46.3</td>
+<td style="text-align: right;">−19.4 pp</td>
+<td>两者都去掉</td>
+</tr>
+<tr class="even">
+<td>All-Correct</td>
+<td style="text-align: right;">79.8</td>
+<td style="text-align: right;">−11.3 pp</td>
+<td style="text-align: right;">48.6</td>
+<td style="text-align: right;">−17.1 pp</td>
+<td>只用正确轨迹</td>
+</tr>
+<tr class="odd">
+<td>All-Error</td>
+<td style="text-align: right;">训练失败 / 无有效结果</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">训练失败 / 无有效结果</td>
+<td style="text-align: right;">—</td>
+<td>只用错误轨迹不可稳定学习</td>
+</tr>
+<tr class="even">
+<td>Out-GRPO</td>
+<td style="text-align: right;">88.4</td>
+<td style="text-align: right;">−2.7 pp</td>
+<td style="text-align: right;">62.1</td>
+<td style="text-align: right;">−3.6 pp</td>
+<td>只做监督，不做强化阶段</td>
+</tr>
+<tr class="odd">
+<td><strong>ReActR</strong></td>
+<td style="text-align: right;"><strong>91.1</strong></td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;"><strong>65.7</strong></td>
+<td style="text-align: right;">—</td>
+<td>完整方法</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>最有信息量的不是“每个模块都有效”这句常规结论，而是三个非线性现象。第一，<code>Out-Both</code>
+在 MATH 上比完整模型低 19.4
+pp，损失大于单独移除错误类型（9.5）或难度（5.4）之和 14.9
+pp，说明两种课程信号可能互相放大；但没有多种子，不能断言这 4.5 pp
+差额是稳定交互效应。第二，All-Error
+直接失败，说明“错误有价值”不等于“错误越多越好”；25K
+正确轨迹承担锚定正确策略的作用。第三，去掉 GRPO 仍达 88.4 /
+62.1，说明大部分提升在 SFT 阶段已经建立；GRPO 提供额外 2.7 / 3.6
+pp，而不是全部收益来源。</p>
+</section>
+<section id="数据规模曲线" class="subsection level3">
+<h3>8.2 数据规模曲线</h3>
+<p>Figure 7a（PDF p.7）展示 augmented data 从 10K 增至 50K 时 GSM8K 与
+MATH 总体上升，MATH
+的上升更明显。图中没有逐点数字标签，因此本文不伪造精确矩阵；只能可靠推出在作者测试范围内尚未明显饱和。Figure
+7c 还显示混入更多 MetaMath
+数据后平均性能上升，但同样只给图形、无精确表格。这支持“高质量正确轨迹仍能补充错误课程”，却无法计算每
+1K 样本的边际收益。</p>
+</section>
+<section id="错误分布变化" class="subsection level3">
+<h3>8.3 错误分布变化</h3>
+<p>Figure 7b 显示增强前后 QM 与 CA 的占比下降，而 CC 与
+<code>Others</code>
+上升。作者解释为定向合成补充了更复杂概念错误。由于柱状图没有精确数值标签，本文仅保留方向性结论。它提示数据策展不是简单复制自然错误频率，而是主动改变错误分布；相应风险是该分布可能更接近
+Gemini 2.5 Pro 的“教学想象”，不一定等于真实用户失误。</p>
+</section>
+<section id="超参数敏感性" class="subsection level3">
+<h3>8.4 超参数敏感性</h3>
+<p><strong>论文未报告。</strong> 奖励拆分固定为
+0.3（识别）+0.7（纠正），但没有比较 0.1/0.9、0.5/0.5 或连续评分；GRPO
+的组大小固定为 5，没有组大小曲线；SFT 学习率
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mrow><mo>−</mo><mn>5</mn></mrow></msup><annotation encoding="application/x-tex">10^{-5}</annotation></semantics></math>、GRPO
+学习率
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mrow><mo>−</mo><mn>6</mn></mrow></msup><annotation encoding="application/x-tex">10^{-6}</annotation></semantics></math>、4
+/ 3 epochs、temperature 0.6
+都未做敏感性分析。故不能判断方法是否对奖励比例、采样温度或训练长度脆弱，也不能确认
+0.3/0.7 是机制上合理还是单点调参结果。</p>
+</section>
+<section id="相变判断" class="subsection level3">
+<h3>8.5 相变判断</h3>
+<p>有两个“相变候选”，但证据强度不同。<code>All-Error</code>
+失败显示数据混合从“有正确锚点”跨到“全错误”时出现训练崩溃，这是定性相变；但作者没有扫描
+10%、25%、50%、75%、100% 错误比例，因此阈值未知。数据规模 10K→50K
+的曲线没有显示突变，只显示持续增益，故不能宣称存在规模相变。</p>
+</section>
+</section>
+<section id="统计显著性与可重复性" class="card level2">
+<h2>9. 统计显著性与可重复性</h2>
+<p>论文没有为 Table 2 / 3
+报告随机种子数、标准差、置信区间或显著性检验。Figure 5 明确说 MATH
+难度分层结果是 10 次 inference runs 的平均，但仍没有误差条。Pass@1
+评测本身可按题目级 bootstrap 构造区间，作者未提供。因此：</p>
+<ul>
+<li>能说三种骨干的点估计方向一致，且部分差距较大；</li>
+<li>不能说 0.3 pp 的 Mistral Olympiad 优势稳定，也不能比较 3.5 与 3.6 pp
+哪个“更强”；</li>
+<li>不能把 Table 3 中 2.7–3.6 pp 的 GRPO增益直接视为跨 seed
+因果效应；</li>
+<li>没有代码、数据和权重链接，使独立复现无法从报告时点开始。</li>
+</ul>
+<p>更合适的最小统计方案是：三个训练 seed；题目级 paired
+bootstrap；报告均值、标准差与 95% CI；对五基准多重比较做 Holm
+修正；对反思识别本身报告 precision、recall、ECE 与错误类型混淆矩阵。</p>
+</section>
+<section id="真正贡献可复用设计与迁移潜力" class="card level2">
+<h2>10. 真正贡献、可复用设计与迁移潜力</h2>
+<section id="真正贡献" class="subsection level3">
+<h3>10.1 真正贡献</h3>
+<p><strong>第一，错误被提升为课程单元。</strong>
+以前很多方法要么在推理时反复自评，要么在训练时用错误答案当负例。ReActR
+把错误类型、难度和传播分析串成数据策展回路，使错误不只是“负标签”，而是决定训练覆盖的控制变量。</p>
+<p><strong>第二，奖励把诊断与修复拆开。</strong>
+错误识别成功但修正失败仍得
+0.3，这让部分正确的内部决策获得学习信号。虽然奖励仍粗糙，但它比“最终答案全有或全无”更接近反思的分阶段结构。</p>
+<p><strong>第三，正负轨迹混合成为必要条件。</strong> All-Error 失败而
+All-Correct
+明显落后，说明可复用的设计不是“喂错误”，而是让正确轨迹稳定基本策略、错误轨迹塑造恢复策略。这个结论比某个特定错误标签更值得迁移。</p>
+</section>
+<section id="可复用模块" class="subsection level3">
+<h3>10.2 可复用模块</h3>
+<ol type="1">
+<li><strong>错误本体 + 配额采样。</strong>
+对代码可对应到语法、类型、边界、算法、复杂度、工具调用错误；对 Agent
+可对应到观察遗漏、计划冲突、工具选择、状态更新与停止错误。</li>
+<li><strong>首错定位。</strong>
+与其整段重写，先找到最早导致后续偏离的决策点；这可减少信用分配跨度。</li>
+<li><strong>反思 lesson。</strong>
+让修正后输出一条未来可检索的规则，便于构建 episodic memory
+或错误簿。</li>
+<li><strong>分段可验证奖励。</strong>
+当任务有单元测试、定理检查器、模拟器状态或数据库约束时，可分别奖励识别、修复和最终完成。</li>
+<li><strong>正误混合课程。</strong>
+保持正确策略的锚点，再逐步提高困难错误比例，避免只学会怀疑。</li>
+</ol>
+</section>
+<section id="迁移潜力" class="subsection level3">
+<h3>10.3 迁移潜力</h3>
+<p>迁移到代码最直接，因为单元测试可同时验证初始与修正版本；但需避免模型通过删测试或硬编码投机。迁移到工具
+Agent
+时，可把“错误传播”定义成错误工具调用如何污染后续状态，并用环境回滚验证修复。迁移到科学问答较难，因为最终答案可能不可自动判定；需要引文一致性、单位检查、符号约束或外部模拟器，不能照搬数学答案匹配。迁移到开放式写作最弱，因为“纠正”缺少客观验证器，教师偏好会主导奖励。</p>
+</section>
+</section>
+<section id="问题来源-技术来源链" class="card level2">
+<h2>11. 问题来源 / 技术来源链</h2>
+<section id="self-refine从推理时自反馈到可训练反思" class="subsection level3">
+<h3>11.1 Self-Refine：从推理时自反馈到可训练反思</h3>
+<p><strong>解决什么。</strong> Self-Refine
+让同一模型生成、反馈并迭代改写，无需额外训练；论文报告在 7
+类任务上平均约 20% 绝对提升（NeurIPS 2023 正式工作）。<br />
+<strong>遗留缺口。</strong>
+它主要发生在推理时：模型是否能可靠识别错误、何时停止，以及反馈是否真的对应首个关键错误，没有训练级保证。<br />
+<strong>ReActR 如何回应。</strong> ReActR
+把“生成—反馈—修正”下沉到后训练数据，并用答案验证器奖励错误发现与最终修正。<br />
+<strong>设计如何传递。</strong> Self-Refine 的迭代回路传递为 ReActR
+的多轮样本结构，但 ReActR 增加错误本体、混合课程与 RL 信号。</p>
+</section>
+<section id="refaug从答案之外学习反思说明" class="subsection level3">
+<h3>11.2 RefAug：从“答案之外”学习反思说明</h3>
+<p><strong>解决什么。</strong> RefAug
+为指令数据附加反思与扩展信息，使模型不只模仿答案，还学习解题后的解释与替代思路。<br />
+<strong>遗留缺口。</strong>
+通用反思增强未明确控制错误类型和难度，也没有把“识别错误”和“修正错误”拆成奖励。<br />
+<strong>ReActR 如何回应。</strong> 它用六类错误和 MATH level 3–5
+定向采样，明确覆盖难错，并把 RefAug 作为 30K 基线；Qwen Overall 47.6 对
+57.3，差 9.7 pp（Table 2）。<br />
+<strong>设计如何传递。</strong>
+“答案后再学习一层元信息”被保留，但元信息从泛化反思改为首错定位、传播与
+lesson。</p>
+</section>
+<section id="lemma从错误修正数据到类型难度课程" class="subsection level3">
+<h3>11.3 LEMMA：从错误修正数据到类型—难度课程</h3>
+<p><strong>解决什么。</strong> LEMMA
+系统利用错误解答及纠正进行数学推理训练，是与 ReActR
+最直接的技术前身。<br />
+<strong>遗留缺口。</strong>
+错误样本如果不按类型和难度策展，容易被频繁、浅层错误主导；仅监督纠正也无法单独奖励“发现错误”。<br />
+<strong>ReActR 如何回应。</strong> 它增加错误分类与困难度导向，再叠加
+GRPO。三种骨干 Overall 均高于 LEMMA：Qwen +4.9、Mistral +3.6、Llama +3.5
+pp（Table 2）。<br />
+<strong>设计如何传递。</strong> LEMMA
+的错误—纠正轨迹成为数据骨架；ReActR
+加入课程控制与分段奖励。与此同时，LEMMA 用 60K、ReActR 用
+50K，使结果兼具一定样本效率信号，但不是严格算力匹配实验。</p>
+</section>
+<section id="deepseek-r1从可验证结果奖励到反思专用奖励" class="subsection level3">
+<h3>11.4 DeepSeek-R1：从可验证结果奖励到反思专用奖励</h3>
+<p><strong>解决什么。</strong> DeepSeek-R1 表明大规模 RL
+可从可验证数学与代码奖励中涌现长链推理与自检行为。<br />
+<strong>遗留缺口。</strong>
+只看最终正确与否的稀疏奖励难以区分“发现错误但没修好”与“根本没发现”，信用分配跨度长。<br />
+<strong>ReActR 如何回应。</strong> 它显式给错误识别 0.3、最终修正
+0.7，并对正确答案的正确确认给 1.0。<br />
+<strong>设计如何传递。</strong> 可验证结果 RL
+的框架被保留，但奖励结构围绕反思状态机重新设计；代价是依赖 gold
+answer，开放域迁移受限。</p>
+</section>
+<section id="非线性技术演进树" class="subsection level3">
+<h3>11.5 非线性技术演进树</h3>
+<pre class="text"><code>                         ┌─ Self-Refine：推理时生成→反馈→改写
+                         │          └─ 多轮反思格式 ──────────┐
+传统正确轨迹 SFT ────────┼─ RefAug：答案之外的元信息 ─────────┤
+                         │                                    ├─ ReActR
+错误轨迹学习 ────────────┼─ LEMMA：错误→纠正监督 ─────────────┤   ├─ 六类错误
+                         │          └─ 纠错数据骨架 ──────────┤   ├─ 类型×难度课程
+可验证结果强化学习 ──────┴─ DeepSeek-R1：最终答案奖励 ───────┘   └─ 0.3识别+0.7修正</code></pre>
+<p>技术转折不在“模型第一次会反思”，而在三条支线汇合：推理时自我改写提供交互形态，错误纠正数据提供监督载体，可验证
+RL 提供优化机制。ReActR
+的新增量是用错误类型与难度连接数据策展和奖励设计。</p>
+</section>
+<section id="跨论文对标" class="subsection level3">
+<h3>11.6 跨论文对标</h3>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table style="width:100%;">
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">发生阶段</th>
+<th scope="col">是否需要错误轨迹</th>
+<th scope="col">是否显式错误分类</th>
+<th scope="col">反馈 / 教师</th>
+<th scope="col">主要优化信号</th>
+<th scope="col">主要缺口</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Self-Refine</td>
+<td>推理时</td>
+<td>可选</td>
+<td>否</td>
+<td>同模型自反馈</td>
+<td>迭代提示</td>
+<td>成本高、停机与真实性难校准</td>
+</tr>
+<tr class="even">
+<td>RefAug</td>
+<td>SFT</td>
+<td>非必要</td>
+<td>否</td>
+<td>教师增强</td>
+<td>token likelihood</td>
+<td>反思目标较泛</td>
+</tr>
+<tr class="odd">
+<td>LEMMA</td>
+<td>SFT</td>
+<td>是</td>
+<td>有纠错但非 ReActR 课程</td>
+<td>教师纠错</td>
+<td>token likelihood</td>
+<td>类型 / 难度控制有限</td>
+</tr>
+<tr class="even">
+<td>DeepSeek-R1</td>
+<td>RL</td>
+<td>由 rollout 自然产生</td>
+<td>否</td>
+<td>规则验证器</td>
+<td>最终正确奖励</td>
+<td>中间反思信用稀疏</td>
+</tr>
+<tr class="odd">
+<td><strong>ReActR</strong></td>
+<td><strong>SFT + RL</strong></td>
+<td><strong>是</strong></td>
+<td><strong>六类</strong></td>
+<td><strong>Gemini 2.5 Pro + 验证器</strong></td>
+<td><strong>0 / 0.3 / 1.0 分段奖励</strong></td>
+<td><strong>教师偏差、开放域验证、反思指标缺失</strong></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</section>
+<section id="论文自述限制" class="card level2">
+<h2>12. 论文自述限制</h2>
+<ol type="1">
+<li><strong>教师质量上限。</strong> 作者指出 Gemini 2.5 Pro
+生成的数据仍可能含细微不准确或歧义，模型质量受教师能力限制（Limitations，PDF
+p.8 / 会议页 43024）。这意味着“错误课程”本身也可能教错。</li>
+<li><strong>复合错误难以一次修完。</strong> 当前流程聚焦 dominant
+error；修复一个错误后可能暴露另一个，未来需要迭代多轮纠正（Limitations，PDF
+p.8）。因此现有 reward 状态机更适合单个主要错误。</li>
+<li><strong>规模与任务域有限。</strong>
+数据规模仍有限，作者明确提出扩展数据，并迁移到代码等其他可验证域（Limitations，PDF
+p.8）。因此论文证据不支持开放域通用反思。</li>
+</ol>
+</section>
+<section id="独立批判" class="card level2">
+<h2>13. 独立批判</h2>
+<ol type="1">
+<li><strong>[测量效度]</strong>
+因为论文的核心主张是学会“反思”，但主表只报告最终答案
+Pass@1，没有错误检测 precision /
+recall、首错定位准确率、修正成功条件概率或 lesson
+质量，所以性能提升不能区分“真正更会反思”和“吸收了更多数学知识”。</li>
+<li><strong>[归因]</strong> 因为 ReActR
+同时改变数据量、错误类型分布、难度分布、教师质量与 GRPO，而基线样本量从
+SFT 15K、RefAug 30K 到 MetaMath/LEMMA 60K 不等，所以 Table 2
+证明系统整体有效，却不能把 3.5–4.9 pp 的 LEMMA
+优势唯一归因于错误激活奖励。</li>
+<li><strong>[教师偏差]</strong> 因为 Gemini 2.5 Pro
+同时参与合成困难错误、诊断错误、生成修正与
+lesson，所以训练信号高度相关，模型可能学习教师特有措辞与错误观，而不是对自然用户错误分布稳健的反思策略。</li>
+<li><strong>[奖励设计]</strong>
+因为“正确→确认正确”和“错误→发现并修正”都得
+1.0，且只按最终答案判定，所以奖励无法区分高质量因果解释与偶然猜中；模型可能通过简短重算获得相同回报，而不真正定位传播链。</li>
+<li><strong>[统计]</strong> 因为 Table 2 / 3 没有
+seed、标准差、区间或检验，所以 Mistral Olympiad 上仅 0.3 pp
+的优势可能小于训练与解码噪声；即便三个骨干方向一致，也不能替代配对统计。</li>
+<li><strong>[可重复性]</strong> 因为 ACL 页面未给代码、数据、权重或
+arXiv，Appendix 也未报告 LoRA rank、GRPO clip / KL
+等关键配置，所以独立团队无法完整复现 50K 数据构造和 RL 阶段。</li>
+<li><strong>[成本]</strong> 因为论文只报告数据合成超过 100M tokens、API
+略高于 700 美元，没有 GPU 时数、峰值显存、训练吞吐、推理 token
+与延迟，所以无法判断 2.7–3.6 pp 的 GRPO 增益是否值得生产部署。</li>
+<li><strong>[外推]</strong> 因为奖励依赖 gold
+answer，五个评测也全是数学，所以能推出的是“可验证数学反思有效”，不能推出对开放式事实核查、长程
+Agent 或科学解释同样有效。</li>
+</ol>
+</section>
+<section id="开放挑战可执行的-head-to-head-实验空白" class="card level2">
+<h2>14. 开放挑战：可执行的 head-to-head 实验空白</h2>
+<section id="理论" class="subsection level3">
+<h3>14.1 理论</h3>
+<p><strong>错误轨迹为何有额外信息？</strong> 做严格
+head-to-head：固定题目、token 数、教师和最终正确解，把 50K
+数据分为（A）正确解重复、（B）随机错误+正确解、（C）真实错误+正确解、（D）类型配额错误+正确解。比较样本复杂度与错误检测互信息，验证收益来自“决策边界信息”还是单纯更长文本。</p>
+<p><strong>奖励分解是否可识别？</strong> 固定 SFT checkpoint，比较
+final-only、0.1/0.9、0.3/0.7、0.5/0.5、learned critic
+五种奖励。除最终正确率外，测错误检测 AUPRC、条件修正率
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>P</mi><mrow><mo stretchy="true" form="prefix">(</mo><msub><mi>a</mi><mn>1</mn></msub><mo>=</mo><mn>1</mn><mo>∣</mo><msub><mi>a</mi><mn>0</mn></msub><mo>=</mo><mn>0</mn><mo>,</mo><mi>d</mi><mo>=</mo><mi>w</mi><mi>r</mi><mi>o</mi><mi>n</mi><mi>g</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">P(a_1=1\mid a_0=0,d=wrong)</annotation></semantics></math>
+与过度翻案率。只有这样才能判断 0.3 是否有机制意义。</p>
+<p><strong>正误混合的崩溃阈值。</strong> 将错误比例从 0% 扫到 100%，每
+10% 一档、每档 3 seeds；画能力、校准和训练稳定性曲线，直接定位 All-Error
+失败前的临界区，而不是只比较两个端点。</p>
+</section>
+<section id="工程与应用" class="subsection level3">
+<h3>14.2 工程与应用</h3>
+<p><strong>等算力对照。</strong> 让 ReActR、LEMMA、RefAug 和正确轨迹 SFT
+使用相同 50K 样本、相同总 token、相同 LoRA rank、相同 GPU
+时数；同时报告训练成本与
+Pass@1。当前不同样本量使样本效率和方法增益混在一起。</p>
+<p><strong>服务级价值。</strong>
+在相同准确率目标下，比较无反思、固定一次反思、置信触发反思、ReActR
+四种策略的平均输出 token、P50/P95
+延迟、能耗与成本；重点测试“只在可能错误时激活”能否抵消多轮开销。</p>
+<p><strong>代码迁移。</strong> 在 HumanEval+、MBPP+、SWE-bench Verified
+的可复现子集上，对比 final-only RL、unit-test error taxonomy 和 ReActR
+风格首错定位；奖励必须防止篡改测试。看收益是否落在 compile error、logic
+error 或 repository navigation 的不同层级。</p>
+</section>
+<section id="新兴方向" class="subsection level3">
+<h3>14.3 新兴方向</h3>
+<p><strong>工具 Agent 的可回滚反思。</strong> 在 WebArena 或 τ-bench
+中记录首个错误工具调用，比较“完整重启”“状态回滚到首错”“文本反思但不回滚”。以任务成功、额外调用数和状态污染深度为指标，检验错误传播分析是否真能缩短恢复路径。</p>
+<p><strong>过程验证器联合训练。</strong> 将 ReActR 与独立 process reward
+model 做 head-to-head：相同 rollout
+数下，比较最终答案奖励、步骤奖励、两者组合；用人工标注子集评估 verifier
+是否只是复制教师偏差。</p>
+<p><strong>复合错误的迭代纠正。</strong>
+构造每题含两个已知错误的诊断集，比较单轮 dominant-error
+修正与最多三轮的逐错修正。指标应包含首错定位、第二错暴露率、累积成功率与
+token 开销，直接回应作者自述限制。</p>
+</section>
+</section>
+<section id="近期值得跟踪的工作" class="card level2">
+<h2>15. 近期值得跟踪的工作</h2>
+<ol type="1">
+<li><a
+href="https://aclanthology.org/2026.findings-acl.122/">LLMThinkBench: Do
+LLMs Overthink Basic Math Reasoning?</a>（ACL 2026
+Findings）——把“推理越长越好”拆成过度思考和正确性问题，适合作为 ReActR
+是否制造冗余反思的外部评测。</li>
+<li><a
+href="https://aclanthology.org/2026.acl-long.1687/">SATQuest</a>（ACL
+2026）——把评测扩展到标准化考试式的多领域推理，可检验数学错误本体是否能迁移。</li>
+<li><a
+href="https://aclanthology.org/2026.acl-long.1115/">ReEfBench</a>（ACL
+2026）——直接关注反思是否有效，为 ReActR
+缺失的“反思本身”测量提供更合适的框架。</li>
+<li><a href="https://aclanthology.org/2026.acl-long.1477/">Scaling
+Behaviors of LLM Reinforcement Learning Post-Training</a>（ACL
+2026）——从规模维度审视 RL 后训练，能帮助判断 ReActR 的 5-rollout GRPO
+是否处于收益递减区。</li>
+<li><a href="https://aclanthology.org/2026.acl-long.1682/">Why Does
+Reinforcement Learning Generalize?</a>（ACL 2026）——关注 RL 泛化来源；与
+ReActR 结合可区分“错误课程覆盖”与“策略优化”各自的 OOD 贡献。</li>
+<li><a href="https://aclanthology.org/2026.findings-acl.1079/">LRBench
+and Judge-R1</a>（ACL 2026 Findings）——面向长推理与 judge
+训练，适合测试反思奖励是否在长轨迹中仍能正确分配信用。</li>
+<li><a href="https://aclanthology.org/2026.acl-long.1759/">How
+Instruction and Reasoning Data Shape Post-Training</a>（ACL
+2026）——系统讨论后训练数据构成，可为 ReActR 50:50
+正误比例提供更强的配比基线。</li>
+</ol>
+</section>
+<section id="结论" class="card level2">
+<h2>16. 结论</h2>
+<p>ReActR
+最值得看的地方，不是它把“反思”写进提示，而是把错误从被丢弃的副产物变成可控课程：真实错误提供分布，教师补齐困难类型，结构化纠错提供监督，分段奖励再区分发现与修复。三种骨干上相对
+LEMMA 的 Overall 提升稳定在 3.5–4.9 pp；Qwen3-4B 的 Overall 为 57.3，对
+LEMMA 52.4 提升 4.9 pp / 9.35%。消融更尖锐：去掉错误类型导向，MATH 从
+65.7 降到 56.2；类型和难度都去掉则降到 46.3，损失 19.4 pp。</p>
+<p>但最关键的未闭环点也正是“反思”：论文没有直接测错误检测、首错定位或
+lesson 质量，没有多 seed
+显著性，没有完整等算力对照，也没有公开代码、数据或权重。因而最稳妥的结论是：<strong>错误类型
+× 难度课程 × 正误混合 × 分段 GRPO
+是一套强而可迁移的数学后训练配方；它是否真的产生了可靠、可校准、跨域的自我反思能力，仍需专门评测。</strong></p>
+<hr />
+<p><strong>脚注。</strong> 本报告已在本地索引
+<code>ml-report-index.md</code> 追加记录。HTML 按 Warm Editorial
+规范制作，正文与 Markdown /
+纯文本版本保持同一证据与结论口径。若运行环境未提供可用 Playwright
+浏览器，将在交付前的校验记录中明确标注，不以未执行的视觉检查冒充完成。</p>
+</section>
+
+  </main>
+
+  <footer>基于 ACL 2026 正式论文、官方论文页及四篇技术来源链；生成于 2026-10-05。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

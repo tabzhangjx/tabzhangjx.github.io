@@ -1,0 +1,1561 @@
+---
+layout: null
+title: "MolJO"
+date: 2026-09-20
+topic: "ai4science"
+tags: ["ai4science", "molecular-generation", "bayesian-flow-networks"]
+excerpt: "连续坐标、离散类型与 backward correction 如何共同优化分子 MolJO 把联合梯度变成了可用的分子优化器，但 docking 代理、尺寸偏置与搜索预算意味着“分数更好”仍不是“药物更好”。"
+permalink: "/blog/2026/09/20/moljo/"
+blog_post: true
+lang: "zh-CN"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_en: "/blog/2026/09/20/moljo/en/"
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>MolJO：梯度引导贝叶斯流网络的结构化分子优化 · 2026-09-20</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #246fca;
+    --chart-comparison: #c95224;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  :root{--page:#f7f3ea;--surface-1:#fffaf1;--chart-primary:#2a78d6;--chart-comparison:#eb6834;--highlight-row:#e7f0fb}
+  :root[data-theme="dark"]{--page:#16130f;--surface-1:#211d18;--chart-primary:#3987e5;--chart-comparison:#d95926}
+  .card{overflow-wrap:anywhere}.card>h2{scroll-margin-top:70px}.card table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .card th,.card td{min-width:100px}.card td:nth-child(n+2),.card th:nth-child(n+2){font-variant-numeric:tabular-nums}
+  .card blockquote{margin:18px 0;padding:14px 18px;border-left:3px solid var(--chart-comparison);border-radius:0 8px 8px 0;background:var(--page);color:var(--text-secondary)}
+  .card .math.display,.card pre{max-width:100%;overflow-x:auto}.card code{overflow-wrap:anywhere}
+  @media(max-width:640px){.chart{min-width:620px}.figure{overflow-x:auto}.card table{font-size:13px}}
+
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ICML 2025 · AI4Science 与跨界</p>
+    <h1>MolJO：梯度引导贝叶斯流网络的结构化分子优化</h1>
+    <p class="subtitle">连续坐标、离散类型与 backward correction 如何共同优化分子</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">ICML 2025 / PMLR 267</span>
+      <span class="chip">2026-09-20</span>
+      <span class="chip">结构基础药物设计 · 分子优化</span>
+    </div>
+    <p class="lede">MolJO 把联合梯度变成了可用的分子优化器，但 docking 代理、尺寸偏置与搜索预算意味着“分数更好”仍不是“药物更好”。</p>
+  </header>
+
+  <main>
+<div class="report-body">
+<p><strong>日期：</strong> 2026-09-20<br />
+<strong>领域：</strong> AI4Science
+与跨界——结构基础药物设计、分子生成、连续—离散联合优化<br />
+<strong>核心论文：</strong> Keyue Qiu, Yuxuan Song, Jie Yu, Hongbo Ma,
+Ziyao Cao, Zhilong Zhang, Yushuai Wu, Mingyue Zheng, Hao Zhou, Wei-Ying
+Ma. <em>Empower Structure-Based Molecule Optimization with Gradient
+Guided Bayesian Flow Networks</em>. ICML 2025, PMLR
+267:50645–50671.<br />
+<strong>一句话核心定位：</strong> MolJO
+把原子坐标与原子类型投到可微的贝叶斯流参数空间，用联合梯度与滑窗式
+backward correction 同时追求结合亲和力、药物相似性和可合成性；它把
+CrossDocked2020 成功率从最强同协议基线的 39.4% 推到 51.3%，但证据仍是
+docking 代理、单一基准和未归一化搜索预算，不能等价为真实药效突破。</p>
+<hr />
+<section id="链接验证表与证据口径" class="card level2">
+<h2>0. 链接验证表与证据口径</h2>
+<p>下列链接均在 2026-09-20 实际访问。核心论文的精确数字只取自 arXiv v4
+HTML/PDF
+的表格、算法与正文；本报告写明“复算”的百分比仅由论文原报数字做四则运算。Docking
+分数越负通常表示预测结合越强，QED、SA、Success Rate、Connected 与
+Diversity 越高越好；Energy、Clash 与 RMSD
+越低越好。对不同论文、不同采样数或不同 success
+定义的数字不做无条件横比。</p>
+<table style="width:100%;">
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">对象</th>
+<th scope="col">会议/正式页</th>
+<th scope="col">arXiv（版本、日期）</th>
+<th scope="col">代码</th>
+<th scope="col">数据/权重</th>
+<th scope="col">项目页/视频</th>
+<th scope="col">验证结论</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>核心：MolJO</td>
+<td><a href="https://proceedings.mlr.press/v267/qiu25h.html">ICML 2025 /
+PMLR 267</a>；<a
+href="https://openreview.net/forum?id=CIoBEB17FT">OpenReview</a></td>
+<td><a
+href="https://arxiv.org/abs/2411.13280">arXiv:2411.13280v4</a>，初版
+2024-11-20，v4 2025-06-05；<a
+href="https://arxiv.org/html/2411.13280v4">HTML</a>；<a
+href="https://arxiv.org/pdf/2411.13280">PDF</a></td>
+<td><a href="https://github.com/GenSI-THUAIR/MolCRAFT">GitHub：MolCRAFT
+series</a>；PMLR 旧链接会重定向到官方仓库</td>
+<td><a href="https://huggingface.co/GenSI/MolJO">Hugging
+Face：GenSI/MolJO</a>；CrossDocked 数据链接、property
+predictors、backbone checkpoint 与作者生成样本由仓库/HF 卡给出</td>
+<td>独立项目页/视频未找到；代码仓库兼作项目总览</td>
+<td>正式页注明 PMLR 267:50645–50671；arXiv
+版本、代码、数据说明与模型卡均可访问</td>
+</tr>
+<tr class="even">
+<td>技术源头：Bayesian Flow Networks</td>
+<td>正式会议页未找到；以 arXiv 为准</td>
+<td><a
+href="https://arxiv.org/abs/2308.07037">arXiv:2308.07037</a>，2023-08-14
+初版</td>
+<td>未找到与论文绑定的官方仓库</td>
+<td>未公开/不适用</td>
+<td>未找到独立项目页/视频</td>
+<td>提供用贝叶斯更新在参数空间建模连续与离散数据的基础形式</td>
+</tr>
+<tr class="odd">
+<td>生成骨干：MolCRAFT</td>
+<td><a href="https://proceedings.mlr.press/v235/qu24a.html">ICML 2024 /
+PMLR 235</a></td>
+<td><a
+href="https://arxiv.org/abs/2404.12141">arXiv:2404.12141v4</a>，v4
+2024-05-28</td>
+<td><a
+href="https://github.com/GenSI-THUAIR/MolCRAFT">同一官方仓库</a></td>
+<td>HF 卡给出 backbone 与数据入口</td>
+<td>独立视频未找到</td>
+<td>在连续参数空间统一分子坐标与类型，是 MolJO 直接骨干</td>
+</tr>
+<tr class="even">
+<td>梯度前驱：TAGMol</td>
+<td><a href="https://openreview.net/forum?id=tTtHBSGikn">ICML 2024
+ML4LMS OpenReview</a></td>
+<td><a
+href="https://arxiv.org/abs/2406.01650">arXiv:2406.01650v1</a>，2024-06-03</td>
+<td><a
+href="https://github.com/MoleculeAI/TAGMol">GitHub：MoleculeAI/TAGMol</a></td>
+<td>仓库提供配置；独立权重页未找到</td>
+<td>未找到独立项目页/视频</td>
+<td>对扩散坐标显式引导、类型隐式响应，是“梯度只容易作用于连续模态”的直接问题来源</td>
+</tr>
+<tr class="odd">
+<td>搜索前驱：DecompOpt</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2024/hash/180f6184a3458fa19c28c5483bc61877-Abstract-Conference.html">ICLR
+2024 Proceedings</a></td>
+<td><a
+href="https://arxiv.org/abs/2403.13829">arXiv:2403.13829v1</a>，2024-03-07</td>
+<td><a
+href="https://github.com/bytedance/DecompOpt">GitHub：bytedance/DecompOpt</a></td>
+<td>仓库提供训练/优化代码；独立权重页未找到</td>
+<td>未找到独立项目页/视频</td>
+<td>以迭代生成—筛选—再训练做黑盒优化，强但昂贵，构成 MolJO
+“一次生成过程内优化”的对照</td>
+</tr>
+</tbody>
+</table>
+<p><strong>检索覆盖说明。</strong> 候选身份与正式发表状态以
+PMLR、OpenReview 和 arXiv 为主；Hugging Face Daily Papers、Papers with
+Code 与 Semantic Scholar 用于交叉发现和查找代码/引用，但本轮未找到 MolJO
+稳定的独立 Papers with Code 条目，Semantic Scholar 入口由 arXiv 的
+References &amp; Citations 区可达，故没有把聚合页当作数字证据。ACL
+Anthology 在本日 AI4Science 主题下用于排查生物医学 NLP
+候选，但最终随机池以 ICML 2025 主会的可核验论文为主。</p>
+</section>
+<section id="候选池排重与随机选择" class="card level2">
+<h2>1. 候选池、排重与随机选择</h2>
+<p>先核对 <code>ml-report-index.md</code>，排除最近 14 天已深度覆盖的
+<strong>Foundation Molecular
+Grammar</strong>（2026-09-06，分子神经符号语法）和
+<strong>PemNN</strong>（2026-09-13，蛋白力谱物理归纳偏置），也避免重复前一日的鲁棒理论主题。随后冻结
+24 篇候选，均为 2025 年 ICML 主会论文，距运行日不超过 24 个月：</p>
+<ol type="1">
+<li>From Mechanistic Interpretability to Mechanistic Biology: Training,
+Evaluating, and Interpreting Sparse Autoencoders on Protein Language
+Models</li>
+<li>Training Flexible Models of Genetic Variant Effects from Functional
+Annotations using Accelerated Linear Algebra</li>
+<li>Raptor: Scalable Train-Free Embeddings for 3D Medical Volumes
+Leveraging Pretrained 2D Foundation Models</li>
+<li>Visual and Domain Knowledge for Professional-level Graph-of-Thought
+Medical Reasoning</li>
+<li>Breaking the Barrier of Hard Samples: A Data-Centric Approach to
+Synthetic Data for Medical Tasks</li>
+<li>MedRAX: Medical Reasoning Agent for Chest X-ray</li>
+<li>HealthGPT: A Medical Large Vision-Language Model for Unifying
+Comprehension and Generation via Heterogeneous Knowledge Adaptation</li>
+<li>TinyMIG: Transferring Generalization from Vision Foundation Models
+to Single-Domain Medical Imaging</li>
+<li>Distribution-aware Fairness Learning in Medical Image Segmentation
+From A Control-Theoretic Perspective</li>
+<li>Modalities Contribute Unequally: Enhancing Medical Multi-modal
+Learning through Adaptive Modality Token Re-balancing</li>
+<li>Multimodal Medical Code Tokenizer</li>
+<li>BoxLM: Unifying Structures and Semantics of Medical Concepts for
+Diagnosis Prediction in Healthcare</li>
+<li>LangDAug: Langevin Data Augmentation for Multi-Source Domain
+Generalization in Medical Image Segmentation</li>
+<li>GraphCL: Graph-based Clustering for Semi-Supervised Medical Image
+Segmentation</li>
+<li>MMedPO: Aligning Medical Vision-Language Models with Clinical-Aware
+Multimodal Preference Optimization</li>
+<li>MedXpertQA: Benchmarking Expert-Level Medical Reasoning and
+Understanding</li>
+<li>Hierarchical Graph Tokenization for Molecule-Language Alignment</li>
+<li>Scalable Non-Equivariant 3D Molecule Generation via Rotational
+Alignment</li>
+<li><strong>Empower Structure-Based Molecule Optimization with Gradient
+Guided Bayesian Flow Networks</strong></li>
+<li>Compositional Flows for 3D Molecule and Synthesis Pathway
+Co-design</li>
+<li>Protriever: End-to-End Differentiable Protein Homology Search for
+Fitness Prediction</li>
+<li>Protein Structure Tokenization: Benchmarking and New Recipe</li>
+<li>ReQFlow: Rectified Quaternion Flow for Efficient and High-Quality
+Protein Backbone Generation</li>
+<li>All-atom inverse protein folding through discrete flow matching</li>
+</ol>
+<p>实际执行 <code>shuf -i 1-24 -n 1</code>，输出
+<strong>19</strong>。MolJO 有主会正式页、v4
+全文、代码、数据说明、权重与完整补充实验，资料足以满足深读，因此重抽次数为
+<strong>0</strong>。这个过程不按热度挑选；所谓“值得看”是在抽签后基于证据解释，而不是在抽签前主观筛热门。</p>
+</section>
+<section id="motivation为什么让分子更好比生成一个分子更难"
+class="level2">
+<h2>2. Motivation：为什么“让分子更好”比“生成一个分子”更难</h2>
+<p>结构基础分子生成不是纯图像生成。一个候选配体同时包含连续的三维原子坐标与离散的元素/原子类型；优化目标又常常彼此拉扯：Vina
+亲和力更强并不保证药物相似性 QED、更不保证可合成性
+SA，也不保证几何连通。若只对坐标求梯度，模型可能把原子推到有利于代理评分的位置，却没有相应地改变类型；若对离散类型做硬
+argmax，梯度又断掉；若用强化学习或反复生成—筛选—再训练，搜索成本会迅速增长。</p>
+<p>论文把痛点量化在同一个 CrossDocked2020 协议上。TAGMol
+已是梯度引导方法，但 Success Rate 只有 <strong>11.1%</strong>；迭代式
+DecompOpt 是更强的搜索基线，Success Rate 为
+<strong>39.4%</strong>；MolJO 达 <strong>51.3%</strong>（主文表 1，HTML
+行 279–297）。因此相对 TAGMol，MolJO 绝对提升 <strong>40.2
+pp</strong>、复算相对提升 <strong>362.16%</strong>；相对最强同协议基线
+DecompOpt，则提升 <strong>11.9 pp</strong>、复算
+<strong>30.20%</strong>。它不是只把 Vina 做得更负：相对 DecompOpt，Vina
+Dock 从 -7.63 到 -9.05，绝对幅度改善 1.42 kcal/mol（按绝对值复算
++18.61%），SA 从 0.73 到 0.78（+0.05，复算 +6.85%），QED 同为 0.56。</p>
+<p>但这组成绩也说明问题的本质是多目标而非单榜单。MolJO 的 Diversity 为
+0.66，低于 TAGMol 0.69、IPDiff 0.74、DecompOpt 0.63则略高；若从每个
+pocket 生成 10 个样本再由规则挑最优，MolJO† Success Rate 从 51.3% 升至
+<strong>70.3%</strong>，但 Diversity 从 0.66 降至
+<strong>0.61</strong>（表 1）。这相当于成功率 +19.0 pp（复算
++37.04%），同时多样性 -0.05（复算
+-7.58%）。性能的很大一部分来自搜索预算，不能把 top-of-10
+与单样本质量混成一个数字。</p>
+</section>
+<section id="论文故事线核心假设与权衡" class="card level2">
+<h2>3. 论文故事线、核心假设与权衡</h2>
+<p>论文故事线可压缩成四步。第一，继承 MolCRAFT 的 Bayesian Flow
+Network（BFN），把离散原子类型表示为概率参数，把坐标表示为高斯参数；这样“离散样本”背后有一个连续可微的信念状态。第二，在该参数空间训练亲和力、QED
+与 SA 能量预测器，对坐标参数和类型概率共同求梯度，避免 TAGMol
+的“坐标显式、类型隐式”。第三，指出一次局部梯度仍容易早熟，于是在最近 (k)
+个历史状态内回退并重采样，形成 backward
+correction（B.C.），用滑窗长度调节 exploitation 与
+exploration。第四，证明连续坐标引导保持 SE(3) 等变，并把同一机制扩展到
+R-group redesign、fragment growing、scaffold hopping、联合目标和大
+pocket OOD。</p>
+<p>背后有三条关键假设。其一，能量预测器 (E_phi( heta,t,p)) 在 BFN
+参数轨迹附近给出的梯度方向与真实属性改善一致；论文验证的是代理分数而非湿实验。其二，连续参数化足以让类型概率梯度表达离散化后的选择变化；实际采样仍要经过
+categorical
+抽样，梯度与最终原子类型不是一一对应。其三，滑窗回退会探索到更好的局部盆地而不会破坏化学有效性；附录的
+(k) 扫描支持一个经验稳定区间，却没有全局最优保证。</p>
+<p>核心权衡是三组：<strong>属性—有效性</strong>，更强亲和力引导会牺牲连通性；<strong>开发—探索</strong>，B.C.
+窗口过短积累局部误差，过长增加回退成本；<strong>质量—预算</strong>，top-of-10
+明显提高成功率，但其成本与单样本方法不再等价。论文的价值正在于没有把这些权衡藏起来，附录给出了可读的相变；不足则是主摘要的“state
+of the art”没有把这些边界写在同一句话里。</p>
+</section>
+<section id="方程级形式化与算法" class="card level2">
+<h2>4. 方程级形式化与算法</h2>
+<section id="bfn-的可微参数空间" class="level3">
+<h3>4.1 BFN 的可微参数空间</h3>
+<p>对数据 (x) 的潜在参数 ( heta)，BFN 在时间 (t)
+上维护发送分布、贝叶斯更新分布与输出分布。论文式 (1)–(3)（HTML 行
+145–155）将接收噪声 (y) 后的参数更新写成</p>
+<p>[ p_F(x;t)=E_{yp_S(yx;(t))},!(-h(_0,y,(t))), ]</p>
+<p>并以神经网络 ((,t,p)) 预测洁净数据或下一步分布；(p) 是 pocket
+条件。对坐标，参数可视作高斯均值/精度；对类型，参数是类别概率向量。关键不是把离散原子“假装连续”，而是在它被采样前对概率单纯形求导。</p>
+</section>
+<section id="联合梯度引导" class="level3">
+<h3>4.2 联合梯度引导</h3>
+<p>给定属性能量 (E(,t,p)) 与引导尺度 (s)，论文式 (4)–(5)（行
+170–177）以指数倾斜近似条件转移：</p>
+<p>[ p(‘,p,E)p(’,p). ]</p>
+<p>对连续坐标，式 (6)–(7)（行 180–189）把均值沿 (-_{}E)
+方向偏移；对离散类型，式 (8)–(9)（行
+191–203）在类别概率上作对应修正，再归一化。因为能量对坐标只依赖 SE(3)
+不变量/等变表示，命题 4.4（行
+204–210）说明更新保持旋转平移等变。联合目标取若干属性梯度的平均；这简单、可解释，但不是
+Pareto 自适应权重。</p>
+</section>
+<section id="backward-correction" class="level3">
+<h3>4.3 Backward correction</h3>
+<p>单步引导会把当前误差一路传下去。B.C. 在第 (i)
+步保存历史状态，回看最近 (k)
+步，从历史后验重新采样并用当前属性梯度校正。论文式 (11)–(14)（行
+243–258）可概括为</p>
+<p>[ <em>i^{} =!(</em>{i-k}, y_{i-k+1:i}, -s_E(_i,t_i,p)), ]</p>
+<p>其中离散分支在实现上引入近似导数 ((1-))
+以避免数值不稳定。该替代是工程启发式，不是由精确 categorical Jacobian
+唯一推出；它是方法有效性与理论完整性之间最值得复现实验的一处缝隙。</p>
+</section>
+<section id="伪代码" class="level3">
+<h3>4.4 伪代码</h3>
+<pre class="text"><code>输入：protein pocket p；预训练 MolCRAFT；属性能量 Eφ；步数 n=200；尺度 s=50；窗口 k=130
+初始化：坐标信念 θx,0、类型概率 θv,0；历史缓存 H←∅
+for i = 1..n:
+    t ← i/n
+    x̂, v̂ ← Φ(θx,i-1, θv,i-1, t, p)
+    gx ← ∂Eφ/∂θx ; gv ← ∂Eφ/∂θv
+    θx,i ← ContinuousBFNUpdate(θx,i-1, x̂, -s·gx)
+    θv,i ← DiscreteBFNUpdate(θv,i-1, v̂, -s·gv)
+    H.push(θx,i, θv,i)
+    if correction step:
+        j ← max(0, i-k)
+        (θx,i, θv,i) ← ReconstructAndResample(H[j:i], gx, gv)
+采样最终原子类型，解码坐标，检查连通性与化学有效性
+输出：分子候选；可选地每 pocket 采 10 个再按成功条件挑最优</code></pre>
+</section>
+</section>
+<section id="关键机制与工程细节" class="card level2">
+<h2>5. 关键机制与工程细节</h2>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">层</th>
+<th scope="col">论文/仓库原报</th>
+<th scope="col">为什么重要</th>
+<th scope="col">可复用注意点</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>生成骨干</td>
+<td>直接加载预训练 MolCRAFT，不为 MolJO 重新微调；坐标噪声
+(_1=0.03)，类型精度 (_1=1.5)（附录实现，行 517–538）</td>
+<td>把收益集中到 test-time guidance，而非更大生成器</td>
+<td>迁移到新分子域前先校准骨干密度覆盖；域外梯度可能沿低密度区逃逸</td>
+</tr>
+<tr class="even">
+<td>网络</td>
+<td>kNN 图 (k=32)，9 层，隐藏维 128，16 heads；原子/口袋特征共同编码（行
+517–538）</td>
+<td>同一表示同时服务坐标和类型能量</td>
+<td>pocket 截取半径、邻居数与大蛋白内存应单独消融</td>
+</tr>
+<tr class="odd">
+<td>属性预测器</td>
+<td>MSE 训练 Vina、QED、SA 能量；Adam，lr (5^{-4})，batch 8；单 RTX 3090
+小于 8 小时、至多 5 epochs（行 517–538）</td>
+<td>梯度质量由预测器决定</td>
+<td>必须报告 predictor 的 OOD
+校准和梯度平滑度，不能只报最终采样分数</td>
+</tr>
+<tr class="even">
+<td>采样</td>
+<td>200 steps；位置与类型 guidance scale 均为
+50；多目标梯度简单平均（仓库 sample 命令；论文附录）</td>
+<td>推理期不需要 RL/再训练</td>
+<td>不同目标量纲会让平均梯度隐式偏权；应先归一化梯度范数</td>
+</tr>
+<tr class="odd">
+<td>B.C.</td>
+<td>最终 (k=130)；附录称 (k&gt;50) 改善，(k(50,200]) 较稳（行
+744–750）</td>
+<td>回退是主要性能来源</td>
+<td>k 与采样步数耦合；换成 50/100/1000 steps 时应按时间比例重扫</td>
+</tr>
+<tr class="even">
+<td>数据</td>
+<td>CrossDocked2020：去掉 RMSD&gt;1Å，蛋白序列相似度 &lt;30%
+聚类；100,000 poses 训练、100 test proteins；主结果每 pocket 100
+分子（行 267–275）</td>
+<td>这是严格但单一的 benchmark</td>
+<td>序列去重不等于口袋几何/配体骨架无泄漏，应补 pocket similarity 与
+scaffold split</td>
+</tr>
+<tr class="odd">
+<td>成功条件</td>
+<td>Vina Dock &lt; -8.18、QED &gt;0.25、SA &gt;0.59（行 267–275）</td>
+<td>单个 Success Rate 汇总三目标</td>
+<td>阈值改变可重排模型；应报告三维 Pareto 面与阈值曲线</td>
+</tr>
+</tbody>
+</table>
+<p>仓库与论文存在一处需诚实标注的配置差异：HF/README 的训练示例给
+<code>epochs 15</code>，而论文附录描述 property predictor 至多 5
+epochs；两者可能对应通用默认配置与论文实际运行，但公开材料没有逐
+checkpoint 的哈希—配置映射。因此，权重虽公开，训练级复现仍应固定
+commit、checkpoint hash 与命令行，而不能只执行 README 默认值。</p>
+</section>
+<section id="数据集基准与指标" class="card level2">
+<h2>6. 数据集、基准与指标</h2>
+<p>CrossDocked2020 把蛋白 pocket 与配体复合物对齐后切分，是 SBDD/SBMO
+常用基准。论文主评估有五类场景：标准从头优化、R-group redesign、fragment
+growing、scaffold hopping、大 pocket
+OOD；另补联合目标、构象质量和推理耗时。Vina Score
+通常在未局部优化构象上评估，Vina Min 经局部最小化，Vina Dock 经过
+docking 搜索；三者不是同一变量。QED 是药物相似性的经验组合，SA
+是合成可达性的学习/规则代理，Diversity 衡量样本差异，Success
+是三个阈值的逻辑与。</p>
+<p>这套指标能回答“在相同
+docking/代理评分流水线上，哪种生成策略更容易同时过线”，不能回答临床活性、选择性、毒性、ADMET、合成收率或真实结合自由能。尤其
+docking 分数常随分子尺寸增加而改善；主实验虽对 atom count
+先验有所控制，大 pocket OOD 仍需同时看平均原子数。</p>
+</section>
+<section id="完整主结果矩阵" class="card level2">
+<h2>7. 完整主结果矩阵</h2>
+<section id="标准-crossdocked2020十五方法七指标" class="level3">
+<h3>7.1 标准 CrossDocked2020：十五方法、七指标</h3>
+<p>下表逐项来自核心论文表 1（HTML 行 279–297）；斜杠前后为
+mean/median。Vina 越负越好，其余越高越好。<code>—</code>
+表示论文未报告，不补造。</p>
+<table>
+<colgroup>
+<col style="width: 11%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">Vina Score ↓</th>
+<th scope="col" style="text-align: right;">Vina Min ↓</th>
+<th scope="col" style="text-align: right;">Vina Dock ↓</th>
+<th scope="col" style="text-align: right;">QED ↑</th>
+<th scope="col" style="text-align: right;">SA ↑</th>
+<th scope="col" style="text-align: right;">Div ↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Reference</td>
+<td style="text-align: right;">-6.36/-6.46</td>
+<td style="text-align: right;">-6.71/-6.49</td>
+<td style="text-align: right;">-7.45/-7.26</td>
+<td style="text-align: right;">0.48</td>
+<td style="text-align: right;">0.73</td>
+<td style="text-align: right;">—</td>
+</tr>
+<tr class="even">
+<td>AR</td>
+<td style="text-align: right;">-5.75/-5.64</td>
+<td style="text-align: right;">-6.18/-5.88</td>
+<td style="text-align: right;">-6.75/-6.62</td>
+<td style="text-align: right;">0.51</td>
+<td style="text-align: right;">0.63</td>
+<td style="text-align: right;">0.70</td>
+</tr>
+<tr class="odd">
+<td>GraphBP</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">-4.80/-4.70</td>
+<td style="text-align: right;">0.43</td>
+<td style="text-align: right;">0.49</td>
+<td style="text-align: right;">0.79</td>
+</tr>
+<tr class="even">
+<td>Pocket2Mol</td>
+<td style="text-align: right;">-5.14/-4.70</td>
+<td style="text-align: right;">-6.42/-5.82</td>
+<td style="text-align: right;">-7.15/-6.79</td>
+<td style="text-align: right;">0.57</td>
+<td style="text-align: right;">0.76</td>
+<td style="text-align: right;">0.69</td>
+</tr>
+<tr class="odd">
+<td>FLAG</td>
+<td style="text-align: right;">45.85/36.52</td>
+<td style="text-align: right;">9.71/-2.43</td>
+<td style="text-align: right;">-4.84/-5.56</td>
+<td style="text-align: right;">0.61</td>
+<td style="text-align: right;">0.63</td>
+<td style="text-align: right;">0.70</td>
+</tr>
+<tr class="even">
+<td>DiffSBDD</td>
+<td style="text-align: right;">-1.44/-4.91</td>
+<td style="text-align: right;">-4.52/-5.84</td>
+<td style="text-align: right;">-7.14/-7.30</td>
+<td style="text-align: right;">0.47</td>
+<td style="text-align: right;">0.58</td>
+<td style="text-align: right;">0.73</td>
+</tr>
+<tr class="odd">
+<td>TargetDiff</td>
+<td style="text-align: right;">-5.47/-6.30</td>
+<td style="text-align: right;">-6.64/-6.83</td>
+<td style="text-align: right;">-7.80/-7.91</td>
+<td style="text-align: right;">0.48</td>
+<td style="text-align: right;">0.58</td>
+<td style="text-align: right;">0.72</td>
+</tr>
+<tr class="even">
+<td>DecompDiff</td>
+<td style="text-align: right;">-5.19/-5.27</td>
+<td style="text-align: right;">-6.03/-6.00</td>
+<td style="text-align: right;">-7.03/-7.16</td>
+<td style="text-align: right;">0.51</td>
+<td style="text-align: right;">0.66</td>
+<td style="text-align: right;">0.73</td>
+</tr>
+<tr class="odd">
+<td>IPDiff</td>
+<td style="text-align: right;">-6.41/-7.01</td>
+<td style="text-align: right;">-7.45/-7.48</td>
+<td style="text-align: right;">-8.57/-8.51</td>
+<td style="text-align: right;">0.52</td>
+<td style="text-align: right;">0.59</td>
+<td style="text-align: right;"><strong>0.74</strong></td>
+</tr>
+<tr class="even">
+<td>MolCRAFT</td>
+<td style="text-align: right;">-6.55/-6.95</td>
+<td style="text-align: right;">-7.21/-7.14</td>
+<td style="text-align: right;">-7.67/-7.82</td>
+<td style="text-align: right;">0.50</td>
+<td style="text-align: right;">0.67</td>
+<td style="text-align: right;">0.70</td>
+</tr>
+<tr class="odd">
+<td>AutoGrow4</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">-8.99/-9.00</td>
+<td style="text-align: right;">0.46</td>
+<td style="text-align: right;">0.76</td>
+<td style="text-align: right;">0.47</td>
+</tr>
+<tr class="even">
+<td>RGA</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">-8.01/-8.17</td>
+<td style="text-align: right;"><strong>0.57</strong></td>
+<td style="text-align: right;">0.71</td>
+<td style="text-align: right;">0.41</td>
+</tr>
+<tr class="odd">
+<td>DecompOpt</td>
+<td style="text-align: right;">-5.75/-5.97</td>
+<td style="text-align: right;">-6.58/-6.70</td>
+<td style="text-align: right;">-7.63/-8.02</td>
+<td style="text-align: right;">0.56</td>
+<td style="text-align: right;">0.73</td>
+<td style="text-align: right;">0.63</td>
+</tr>
+<tr class="even">
+<td>TAGMol</td>
+<td style="text-align: right;">-7.02/-7.77</td>
+<td style="text-align: right;">-7.95/-8.07</td>
+<td style="text-align: right;">-8.59/-8.69</td>
+<td style="text-align: right;">0.55</td>
+<td style="text-align: right;">0.56</td>
+<td style="text-align: right;">0.69</td>
+</tr>
+<tr class="odd">
+<td><strong>MolJO</strong></td>
+<td style="text-align: right;"><strong>-7.52/-8.02</strong></td>
+<td style="text-align: right;"><strong>-8.33/-8.34</strong></td>
+<td style="text-align: right;"><strong>-9.05/-9.13</strong></td>
+<td style="text-align: right;">0.56</td>
+<td style="text-align: right;"><strong>0.78</strong></td>
+<td style="text-align: right;">0.66</td>
+</tr>
+<tr class="even">
+<td>MolJO†（top-of-10）</td>
+<td style="text-align: right;">-8.54/-8.81</td>
+<td style="text-align: right;">-9.48/-9.09</td>
+<td style="text-align: right;">-10.50/-10.14</td>
+<td style="text-align: right;">0.67</td>
+<td style="text-align: right;">0.79</td>
+<td style="text-align: right;">0.61</td>
+</tr>
+</tbody>
+</table>
+<p><code>MolJO†</code> 的更好数字以 10
+倍候选池换来，不标为同预算最优。相对梯度基线 TAGMol，MolJO 的 Success
++40.2 pp（+362.16%），SA +0.22（+39.29%），Vina Dock 均值绝对幅度改善
+0.46（5.36%）；相对 DecompOpt，Success +11.9 pp（+30.20%），Vina Dock
+改善 1.42（18.61%），SA +0.05（6.85%）。</p>
+</section>
+<section id="三类约束优化" class="level3">
+<h3>7.2 三类约束优化</h3>
+<p>表 2（行 299–313）只报告 Success Rate。MolJO 对最强基线 MolCRAFT
+的绝对/相对提升分别为：redesign +6.3 pp/+27.75%，growing +12.8
+pp/+64.32%，hopping +9.0 pp/+61.64%。</p>
+<table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">R-group redesign ↑</th>
+<th scope="col" style="text-align: right;">Fragment growing ↑</th>
+<th scope="col" style="text-align: right;">Scaffold hopping ↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>TargetDiff</td>
+<td style="text-align: right;">18.9%</td>
+<td style="text-align: right;">11.2%</td>
+<td style="text-align: right;">6.2%</td>
+</tr>
+<tr class="even">
+<td>TAGMol</td>
+<td style="text-align: right;">19.2%</td>
+<td style="text-align: right;">11.8%</td>
+<td style="text-align: right;">6.9%</td>
+</tr>
+<tr class="odd">
+<td>MolCRAFT</td>
+<td style="text-align: right;">22.7%</td>
+<td style="text-align: right;">19.9%</td>
+<td style="text-align: right;">14.6%</td>
+</tr>
+<tr class="even">
+<td><strong>MolJO</strong></td>
+<td style="text-align: right;"><strong>29.0%</strong></td>
+<td style="text-align: right;"><strong>32.7%</strong></td>
+<td style="text-align: right;"><strong>23.6%</strong></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="大-pocket-ood" class="level3">
+<h3>7.3 大 pocket OOD</h3>
+<p>表 3（行 331–338）显示 MolJO 的 OOD Success 为 64.2%，高于 DecompOpt
+52.5%（+11.7 pp，复算 +22.29%），Vina Dock 为 -10.53，SA 0.72。但 MolJO
+平均 30.0 个原子，Reference 为 22.8，增加 7.2（+31.58%）；DecompOpt
+甚至为 32.9。由于 docking 评分对尺寸敏感，这一表支持“在该 atom-count
+分布与代理指标下更强”，不能单独证明单位重原子的化学效率更高。</p>
+<table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">Vina Dock ↓</th>
+<th scope="col" style="text-align: right;">QED ↑</th>
+<th scope="col" style="text-align: right;">SA ↑</th>
+<th scope="col" style="text-align: right;">Success ↑</th>
+<th scope="col" style="text-align: right;">平均原子数</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Reference</td>
+<td style="text-align: right;">-7.45</td>
+<td style="text-align: right;">0.48</td>
+<td style="text-align: right;"><strong>0.73</strong></td>
+<td style="text-align: right;">25.0%</td>
+<td style="text-align: right;">22.8</td>
+</tr>
+<tr class="even">
+<td>DecompDiff</td>
+<td style="text-align: right;">-8.39</td>
+<td style="text-align: right;">0.45</td>
+<td style="text-align: right;">0.61</td>
+<td style="text-align: right;">24.5%</td>
+<td style="text-align: right;">29.4</td>
+</tr>
+<tr class="odd">
+<td>DecompOpt</td>
+<td style="text-align: right;">-9.01</td>
+<td style="text-align: right;">0.48</td>
+<td style="text-align: right;">0.65</td>
+<td style="text-align: right;">52.5%</td>
+<td style="text-align: right;">32.9</td>
+</tr>
+<tr class="even">
+<td>MolCRAFT</td>
+<td style="text-align: right;">-9.25</td>
+<td style="text-align: right;">0.46</td>
+<td style="text-align: right;">0.62</td>
+<td style="text-align: right;">36.6%</td>
+<td style="text-align: right;">29.4</td>
+</tr>
+<tr class="odd">
+<td><strong>MolJO</strong></td>
+<td style="text-align: right;"><strong>-10.53</strong></td>
+<td style="text-align: right;"><strong>0.50</strong></td>
+<td style="text-align: right;">0.72</td>
+<td style="text-align: right;"><strong>64.2%</strong></td>
+<td style="text-align: right;">30.0</td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
+
+<figure class="figure" aria-labelledby="success-chart-title">
+  <p class="fig-title" id="success-chart-title">同协议 Success Rate 与搜索预算</p>
+  <p class="fig-sub">MolJO 单配置领先 TAGMol 与 DecompOpt；top-of-10 进一步提升，但不是同预算比较。</p>
+  <div class="legend" aria-label="图例">
+    <span><span class="swatch" style="background:#2a78d6"></span>单配置/原报</span>
+    <span><span class="swatch" style="background:#eb6834"></span>MolJO 系列</span>
+  </div>
+  <svg class="chart" viewBox="0 0 900 390" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>TAGMol、DecompOpt、MolJO 与 MolJO top-of-10 的成功率</title>
+    <desc>四个柱分别为 11.1%、39.4%、51.3% 和 70.3%。最后一项使用每个 pocket 十个候选后择优，不是同预算。</desc>
+    <g stroke="var(--grid)" stroke-width="1">
+      <line x1="105" y1="315" x2="850" y2="315"/><line x1="105" y1="247.5" x2="850" y2="247.5"/>
+      <line x1="105" y1="180" x2="850" y2="180"/><line x1="105" y1="112.5" x2="850" y2="112.5"/>
+      <line x1="105" y1="45" x2="850" y2="45"/>
+    </g>
+    <g font-size="13">
+      <text x="88" y="320" text-anchor="end">0%</text><text x="88" y="252" text-anchor="end">20%</text>
+      <text x="88" y="185" text-anchor="end">40%</text><text x="88" y="117" text-anchor="end">60%</text>
+      <text x="88" y="50" text-anchor="end">80%</text>
+    </g>
+    <g>
+      <rect x="145" y="277.5" width="115" height="37.5" rx="5" fill="#2a78d6" tabindex="0" data-tip="TAGMol：11.1%"><title>TAGMol 11.1%</title></rect>
+      <rect x="325" y="182.0" width="115" height="133.0" rx="5" fill="#2a78d6" tabindex="0" data-tip="DecompOpt：39.4%"><title>DecompOpt 39.4%</title></rect>
+      <rect x="505" y="141.9" width="115" height="173.1" rx="5" fill="#eb6834" tabindex="0" data-tip="MolJO：51.3%"><title>MolJO 51.3%</title></rect>
+      <rect x="685" y="77.7" width="115" height="237.3" rx="5" fill="#d95926" tabindex="0" data-tip="MolJO† top-of-10：70.3%，搜索预算更高"><title>MolJO top-of-10 70.3%</title></rect>
+    </g>
+    <g font-size="13" text-anchor="middle">
+      <text x="202" y="338">TAGMol</text><text x="382" y="338">DecompOpt</text>
+      <text x="562" y="338">MolJO</text><text x="742" y="338">MolJO†</text>
+      <text x="202" y="270">11.1%</text><text x="382" y="174">39.4%</text>
+      <text x="562" y="134">51.3%</text><text x="742" y="70">70.3%</text>
+    </g>
+    <text x="475" y="378" text-anchor="middle" font-size="12">Success Rate；越高越好。MolJO† 为每 pocket 10 个候选择优。</text>
+  </svg>
+  <figcaption>数据：MolJO 论文表 1（arXiv v4，HTML 行 279–297）；单位：百分比。</figcaption>
+</figure>
+
+<section id="逐层消融真正的收益来自哪里" class="card level2">
+<h2>8. 逐层消融：真正的收益来自哪里</h2>
+<p>表 4（行 343–353）把无梯度/有梯度与三种采样器拆开。下面保留 mean
+指标；括号是论文原表给出的相对变化，不另推断统计显著性。</p>
+<table>
+<colgroup>
+<col style="width: 13%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">采样/引导</th>
+<th scope="col" style="text-align: right;">Vina Score ↓</th>
+<th scope="col" style="text-align: right;">Vina Min ↓</th>
+<th scope="col" style="text-align: right;">Vina Dock ↓</th>
+<th scope="col" style="text-align: right;">QED ↑</th>
+<th scope="col" style="text-align: right;">SA ↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Vanilla，无梯度</td>
+<td style="text-align: right;">-5.23</td>
+<td style="text-align: right;">-6.30</td>
+<td style="text-align: right;">-7.37</td>
+<td style="text-align: right;">0.46</td>
+<td style="text-align: right;">0.62</td>
+</tr>
+<tr class="even">
+<td>Vanilla，有梯度</td>
+<td style="text-align: right;">-5.47（+4.6%）</td>
+<td style="text-align: right;">-6.29（-0.2%）</td>
+<td style="text-align: right;">-7.49（+2.2%）</td>
+<td style="text-align: right;">0.46（0）</td>
+<td style="text-align: right;">0.62（0）</td>
+</tr>
+<tr class="odd">
+<td>SDE，无梯度</td>
+<td style="text-align: right;">-6.62</td>
+<td style="text-align: right;">-7.31</td>
+<td style="text-align: right;">-8.22</td>
+<td style="text-align: right;">0.51</td>
+<td style="text-align: right;">0.65</td>
+</tr>
+<tr class="even">
+<td>SDE，有梯度</td>
+<td style="text-align: right;">-7.11（+7.4%）</td>
+<td style="text-align: right;">-7.76（+6.1%）</td>
+<td style="text-align: right;">-8.39（+2.1%）</td>
+<td style="text-align: right;">0.50（-1.9%）</td>
+<td style="text-align: right;">0.68（+4.6%）</td>
+</tr>
+<tr class="odd">
+<td>B.C.，无梯度</td>
+<td style="text-align: right;">-6.50</td>
+<td style="text-align: right;">-7.03</td>
+<td style="text-align: right;">-7.95</td>
+<td style="text-align: right;">0.49</td>
+<td style="text-align: right;">0.69</td>
+</tr>
+<tr class="even">
+<td><strong>B.C.，有梯度（MolJO）</strong></td>
+<td style="text-align: right;"><strong>-7.52（+15.7%）</strong></td>
+<td style="text-align: right;"><strong>-8.34（+18.6%）</strong></td>
+<td style="text-align: right;"><strong>-9.11（+14.6%）</strong></td>
+<td style="text-align: right;"><strong>0.56（+14.3%）</strong></td>
+<td style="text-align: right;"><strong>0.77（+11.6%）</strong></td>
+</tr>
+</tbody>
+</table>
+<p>层层读法是：第一，给 Vanilla 直接加梯度几乎没解决多目标问题，QED/SA
+不动，Vina Min 还略退；因此“有梯度”不是充分条件。第二，SDE
+的随机性扩大探索，亲和力明显改善，却让 QED 略降。第三，只有
+B.C.+梯度在五项上同时改善，说明回退重采样不是装饰，而是把局部方向变成可持续搜索的核心机制。</p>
+<p>表 11（行 727–740）进一步拆 joint guidance。在 affinity
+目标下，去掉类型梯度，Vina Score 从 -7.74 退到 -7.13；去掉坐标梯度退到
+-6.61。坐标梯度贡献更大，但类型梯度仍带来 0.61 的绝对幅度改善；在 QED
+目标下，完整模型 QED 0.66，去掉类型梯度降到 0.52，而去掉坐标仍为
+0.65。这提供了清楚的因果画像：亲和力更依赖几何，QED
+更依赖类型；所谓“joint”不是两个冗余梯度。</p>
+</section>
+<section id="超参敏感性相变与统计显著性" class="card level2">
+<h2>9. 超参敏感性、相变与统计显著性</h2>
+<section id="引导尺度的可见相变" class="level3">
+<h3>9.1 引导尺度的可见相变</h3>
+<p>附录表 13（行 765–787）是论文最重要却最容易被摘要忽略的结果。Affinity
+scale 从 20 提到 50，Vina Min 由 -7.84 改善到 -8.39，Connected 仅从 0.98
+降到 0.90；再提到 100，Vina Min 到 -9.87，却使 Connected
+<strong>0.90→0.55，绝对 -35 pp、复算相对 -38.89%</strong>，SA 也从 0.68
+降到 0.63。属性优化在 50–100
+之间出现明显的“代理更好、结构更坏”相变。</p>
+<table>
+<colgroup>
+<col style="width: 13%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Affinity scale</th>
+<th scope="col" style="text-align: right;">Vina Score ↓</th>
+<th scope="col" style="text-align: right;">Vina Min ↓</th>
+<th scope="col" style="text-align: right;">QED ↑</th>
+<th scope="col" style="text-align: right;">SA ↑</th>
+<th scope="col" style="text-align: right;">Connected ↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>0.1</td>
+<td style="text-align: right;">-6.28</td>
+<td style="text-align: right;">-7.17</td>
+<td style="text-align: right;">0.50</td>
+<td style="text-align: right;">0.70</td>
+<td style="text-align: right;">0.96</td>
+</tr>
+<tr class="even">
+<td>1</td>
+<td style="text-align: right;">-6.24</td>
+<td style="text-align: right;">-7.27</td>
+<td style="text-align: right;">0.50</td>
+<td style="text-align: right;">0.69</td>
+<td style="text-align: right;">0.96</td>
+</tr>
+<tr class="odd">
+<td>10</td>
+<td style="text-align: right;">-6.69</td>
+<td style="text-align: right;">-7.46</td>
+<td style="text-align: right;">0.51</td>
+<td style="text-align: right;">0.70</td>
+<td style="text-align: right;">0.97</td>
+</tr>
+<tr class="even">
+<td>20</td>
+<td style="text-align: right;">-7.03</td>
+<td style="text-align: right;">-7.84</td>
+<td style="text-align: right;">0.51</td>
+<td style="text-align: right;">0.70</td>
+<td style="text-align: right;"><strong>0.98</strong></td>
+</tr>
+<tr class="odd">
+<td>50（主配置）</td>
+<td style="text-align: right;">-7.64</td>
+<td style="text-align: right;">-8.39</td>
+<td style="text-align: right;">0.53</td>
+<td style="text-align: right;">0.68</td>
+<td style="text-align: right;">0.90</td>
+</tr>
+<tr class="even">
+<td>100</td>
+<td style="text-align: right;"><strong>-9.33</strong></td>
+<td style="text-align: right;"><strong>-9.87</strong></td>
+<td style="text-align: right;"><strong>0.55</strong></td>
+<td style="text-align: right;">0.63</td>
+<td style="text-align: right;">0.55</td>
+</tr>
+</tbody>
+</table>
+<p>QED 引导则在 scale 10–50 达到 0.66，scale 100 回落到 0.62、SA 降到
+0.60；SA 引导在 scale 20–50 达
+0.79，继续放大不再有收益。可操作结论不是“50
+永远最佳”，而是每个属性都有不同的饱和/崩塌点，统一 scale
+隐含了未经验证的量纲假设。</p>
+</section>
+<section id="b.c.-窗口" class="level3">
+<h3>9.2 B.C. 窗口</h3>
+<p>论文文字报告 (k&gt;50) 后多指标平衡改善，并选 (k=130)，在 (k(50,200])
+内相对稳健（行
+744–750）。但<strong>论文未报告完整数值表或方差</strong>，只有图/文字趋势，因此本报告不从图上抄伪精确值。我们能推出“太短窗口会累积误差、130
+在本 200-step 设置可用”，不能推出“130
+对所有步数、口袋大小与目标都最优”。</p>
+</section>
+<section id="显著性" class="level3">
+<h3>9.3 显著性</h3>
+<p>附录表 12（行 751–756）在 (N=1000) 上做独立 t-test。MolJO 相对
+Vanilla 的 p 值依次为 Vina Score (2.63^{-13})、Vina Min
+(3.31^{-31})、Vina Dock (2.79^{-35})、SA (8.10^{-115})、QED
+(1.98^{-26})；相对 SDE 为
+(2.55<sup>{-19})、(6.48</sup>{-19})、(7.84<sup>{-4})、(2.10</sup>{-50})、(1.82^{-12})。表
+6还给连续指标 95% CI，例如 MolJO Vina Dock -9.048±0.083、QED
+0.556±0.003、SA 0.775±0.003（行 644–657）。</p>
+<p>但 Success Rate、三类约束任务、OOD 与 top-of-10
+<strong>未报告置信区间或配对检验</strong>；多指标多比较也未说明校正。因此可以说连续代理指标的改进在该样本上很难由均值噪声解释，不能说所有任务的
+11.9 pp、6.3 pp 等差距都已统计显著。</p>
+</section>
+</section>
+<section id="构象质量与系统成本" class="card level2">
+<h2>10. 构象质量与系统成本</h2>
+<p>表 14（行 804–817）显示 MolJO energy 163、clash 6.72、RMSD&lt;2Å 比例
+43.5%、connected 97.3%。它的 RMSD 通过率略高 MolCRAFT 的 42.4%，energy
+低于 MolCRAFT 196，但仍不及 Reference energy 114，clash 也高于 Reference
+5.46。这意味着优化没有把几何彻底破坏，却也没有达到晶体构象分布。</p>
+<table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">Energy ↓</th>
+<th scope="col" style="text-align: right;">Clash ↓</th>
+<th scope="col" style="text-align: right;">RMSD&lt;2Å ↑</th>
+<th scope="col" style="text-align: right;">Connected ↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Reference</td>
+<td style="text-align: right;"><strong>114</strong></td>
+<td style="text-align: right;">5.46</td>
+<td style="text-align: right;">34.0%</td>
+<td style="text-align: right;"><strong>100%</strong></td>
+</tr>
+<tr class="even">
+<td>Pocket2Mol</td>
+<td style="text-align: right;">186</td>
+<td style="text-align: right;">6.22</td>
+<td style="text-align: right;">31.3%</td>
+<td style="text-align: right;">96.3%</td>
+</tr>
+<tr class="odd">
+<td>TargetDiff</td>
+<td style="text-align: right;">1208</td>
+<td style="text-align: right;">10.67</td>
+<td style="text-align: right;">31.0%</td>
+<td style="text-align: right;">90.4%</td>
+</tr>
+<tr class="even">
+<td>MolCRAFT</td>
+<td style="text-align: right;">196</td>
+<td style="text-align: right;">6.91</td>
+<td style="text-align: right;">42.4%</td>
+<td style="text-align: right;">96.7%</td>
+</tr>
+<tr class="odd">
+<td>TAGMol</td>
+<td style="text-align: right;">2058</td>
+<td style="text-align: right;">7.41</td>
+<td style="text-align: right;">37.2%</td>
+<td style="text-align: right;">92.0%</td>
+</tr>
+<tr class="even">
+<td><strong>MolJO</strong></td>
+<td style="text-align: right;">163</td>
+<td style="text-align: right;">6.72</td>
+<td style="text-align: right;"><strong>43.5%</strong></td>
+<td style="text-align: right;">97.3%</td>
+</tr>
+</tbody>
+</table>
+<p>推理耗时表 16（行 839–844）在单 RTX 3090、batch 5、10 个 protein 上给
+mean±sd：MolJO <strong>146±11 s</strong>，TAGMol 667±69 s，RGA 458±43
+s，AutoGrow4 2586±360 s，DecompOpt 11714±1115 s。复算 MolJO 分别快
+<strong>4.57×、3.14×、17.71×、80.23×</strong>。这是实际工程贡献：性能不依赖
+30 轮黑盒再训练。不过论文未报告吞吐随
+batch、口袋大小、样本数的曲线，也未把 predictor 训练成本、docking
+后处理与 top-of-10 选择全部摊入端到端成本。</p>
+</section>
+<section id="相关工作问题来源与技术传递链" class="card level2">
+<h2>11. 相关工作：问题来源与技术传递链</h2>
+<section id="bayesian-flow-networks统一参数空间" class="level3">
+<h3>11.1 Bayesian Flow Networks：统一参数空间</h3>
+<p><strong>解决什么。</strong> BFN
+用贝叶斯更新把噪声注入和生成写在分布参数空间，对连续变量与离散变量都能给出统一流程（arXiv:2308.07037）。<br />
+<strong>遗留缺口。</strong> 原始 BFN 解决“如何生成”，没有回答 pocket
+条件下如何用属性梯度同时改坐标与原子类型。<br />
+<strong>MolJO 如何回应。</strong> 它在 BFN
+的中间信念状态上训练能量并求导，使离散类型不需要穿过最终硬采样。<br />
+<strong>设计如何传递。</strong>
+“先把异构模态映射到可微信念参数，再做联合引导”可迁移到蛋白序列—结构、材料成分—晶格、反应物—路径的混合生成。</p>
+</section>
+<section id="molcraft从统一生成到可控优化" class="level3">
+<h3>11.2 MolCRAFT：从统一生成到可控优化</h3>
+<p><strong>解决什么。</strong> MolCRAFT
+在连续参数空间联合生成坐标和类型，ICML 2024 正式页报告 reference-level
+Vina Score -6.59 kcal/mol，并较强基线改善 0.84。<br />
+<strong>遗留缺口。</strong> 它是 pocket-conditioned
+generator，不直接让用户在推理时指定“更高 affinity/QED/SA”。<br />
+<strong>MolJO 如何回应。</strong> 直接复用预训练
+MolCRAFT，把新训练成本压到属性预测器；这使比较更像控制器增量，而非换一个更大骨干。<br />
+<strong>设计如何传递。</strong>
+先预训练无条件/条件“可行域模型”，再外挂小型可微 property head，是
+AI4Science 中比端到端重训更经济的路线。</p>
+</section>
+<section id="tagmol连续坐标可引导离散类型仍滞后" class="level3">
+<h3>11.3 TAGMol：连续坐标可引导，离散类型仍滞后</h3>
+<p><strong>解决什么。</strong> TAGMol
+把目标函数梯度加到扩散采样中，论文表 1报告 Vina Score -7.02、Vina Min
+-7.95、Vina Dock -8.59、QED 0.55、SA 0.56、Diversity 0.69；它证明无需 RL
+也能 test-time 优化。<br />
+<strong>遗留缺口。</strong>
+其核心引导显式作用于坐标，类型变化主要依靠生成网络的耦合，且 SA
+明显偏低；不同论文的 hit/success 定义也不完全一致。<br />
+<strong>MolJO 如何回应。</strong> 对类型概率直接求梯度，并用 B.C.
+防止局部引导积累错误。核心论文同协议重评 TAGMol Success 11.1%，MolJO
+51.3%。<br />
+<strong>设计如何传递。</strong>
+对混合模态不能只优化“好求导的那一半”；需要明确每一模态对每个目标的消融。</p>
+</section>
+<section id="decompopt强黑盒搜索但计算极重" class="level3">
+<h3>11.4 DecompOpt：强黑盒搜索，但计算极重</h3>
+<p><strong>解决什么。</strong> DecompOpt
+通过分解生成、性质筛选和迭代优化完成 SBDD；原论文选定 Opt Prior 时报告
+Success 52.5%、Vina Dock -8.98、Diversity 0.60，并使用 30 rounds。<br />
+<strong>遗留缺口。</strong> 迭代再训练/筛选带来 11714±1115 s
+的推理级成本（MolJO 论文表
+16复测），多目标权衡也没有统一最佳方案。<br />
+<strong>MolJO 如何回应。</strong> 在单次 200-step
+采样轨迹内做可微优化，达到 146±11 s；核心论文自己的统一协议下 DecompOpt
+Success 为 39.4%，MolJO 51.3%。<br />
+<strong>设计如何传递。</strong> 若科学代理可微或可蒸馏成可微
+surrogate，轨迹内控制往往比外循环黑盒搜索更便宜；若 surrogate
+不可靠，则黑盒验证仍不可省。</p>
+</section>
+<section id="非线性技术演进树" class="level3">
+<h3>11.5 非线性技术演进树</h3>
+<pre class="text"><code>                         ┌─ TAGMol：扩散采样 + 坐标梯度 ──┐
+BFN：参数空间贝叶斯流 ─┤                                ├─ MolJO：坐标+类型联合梯度
+                         └─ MolCRAFT：连续参数空间 SBDD ─┘          │
+                                                                  ├─ backward correction
+黑盒性质优化 ─ DecompOpt：生成→筛选→再训练（30轮） ────────────────┘
+                                                                  │
+                    ┌─ R-group redesign / growing / hopping ──────┤
+                    ├─ affinity + QED + SA 多目标 ────────────────┤
+                    └─ 大 pocket OOD / top-of-N 搜索 ─────────────┘
+                                      ↓
+           下一转折：可微代理的校准、Pareto 权重、湿实验闭环与合成路线约束</code></pre>
+<p>演进动力有两次转折。第一次从“生成合法分子”转向“生成时满足目标”，梯度比
+RL/黑盒搜索更直接；第二次从“只推坐标”转向“联合控制混合模态”，BFN
+参数空间成为接口。下一次转折不会只是再多一个 docking
+指标，而应把代理不确定性、合成路径与实验反馈放进闭环。</p>
+</section>
+<section id="跨论文对标" class="level3">
+<h3>11.6 跨论文对标</h3>
+<table>
+<colgroup>
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 16%" />
+<col style="width: 12%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">生成骨干/搜索</th>
+<th scope="col">坐标引导</th>
+<th scope="col">类型引导</th>
+<th scope="col">探索机制</th>
+<th scope="col">多目标</th>
+<th scope="col" style="text-align: right;">统一协议 Success</th>
+<th scope="col">核心代价</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>MolCRAFT</td>
+<td>BFN</td>
+<td>无显式属性梯度</td>
+<td>无显式属性梯度</td>
+<td>原生采样</td>
+<td>否</td>
+<td style="text-align: right;">26.8%</td>
+<td>可控性弱</td>
+</tr>
+<tr class="even">
+<td>TAGMol</td>
+<td>Diffusion</td>
+<td>显式</td>
+<td>隐式耦合</td>
+<td>随机扩散</td>
+<td>有</td>
+<td style="text-align: right;">11.1%</td>
+<td>SA 与离散控制弱</td>
+</tr>
+<tr class="odd">
+<td>DecompOpt</td>
+<td>分解生成 + 30轮迭代</td>
+<td>黑盒</td>
+<td>黑盒</td>
+<td>外循环筛选</td>
+<td>有</td>
+<td style="text-align: right;">39.4%</td>
+<td>11714±1115 s</td>
+</tr>
+<tr class="even">
+<td><strong>MolJO</strong></td>
+<td>BFN + B.C.</td>
+<td>显式</td>
+<td>显式</td>
+<td>滑窗回退重采样</td>
+<td>有，梯度平均</td>
+<td style="text-align: right;"><strong>51.3%</strong></td>
+<td>代理偏置与 scale 相变</td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
+<section id="真正贡献可复用设计与迁移潜力" class="card level2">
+<h2>12. 真正贡献、可复用设计与迁移潜力</h2>
+<p><strong>真正贡献一：离散引导的接口。</strong> MolJO
+的关键不是又造一个 docking model，而是把 categorical
+类型留在概率参数空间直至最后采样，让属性梯度能改“是什么原子”而不只改“原子在哪里”。这一接口适合任何连续—离散混合科学对象。</p>
+<p><strong>真正贡献二：B.C. 是优化器而非采样花活。</strong> 消融显示
+Vanilla+gradient 几乎无效，SDE+gradient 有限，而 B.C.+gradient
+五指标齐升。换言之，科学生成中的 test-time guidance
+需要显式的错误恢复/探索机制。</p>
+<p><strong>真正贡献三：效率可落地。</strong> 相对 DecompOpt 80.23×
+的单卡耗时差，把“每个新 pocket
+做一轮昂贵适配”变成“复用骨干和属性头执行一次受控采样”。这对虚拟筛选规模比单项均值更重要。</p>
+<p>可复用迁移有三类。蛋白设计可把氨基酸类型视为离散模态、骨架坐标视为连续模态；晶体/材料可把元素占位与晶格坐标联合引导；反应规划可把离散反应模板与连续条件/能垒联合引导。迁移时必须同时迁移三样东西：可微参数化、属性代理的不确定性估计、以及类似
+B.C. 的探索恢复，而不是只复制一条 gradient update。</p>
+</section>
+<section id="论文自述限制" class="card level2">
+<h2>13. 论文自述限制</h2>
+<ol type="1">
+<li><strong>多目标冲突（附录联合目标，行 679–681）。</strong> 作者指出
+QED+SA 的联合引导会损害
+affinity，最终采用简单梯度平均。因为不同目标梯度量纲与夹角未被校准，所以当前联合优化不能保证
+Pareto 最优，只能说给出一个经验折中。</li>
+<li><strong>窗口误差与超参依赖（方法式 11–14；附录行
+744–750）。</strong> 作者指出太小 (k) 会造成误差积累，最终选
+130。因为没有跨采样步数/骨干的完整数表，所以窗口稳定性只能限定在当前
+200-step CrossDocked 设置。</li>
+<li><strong>评估与潜在滥用（附录构象讨论行 795–797；Impact 行
+371–373）。</strong> 作者承认 Auto‑Dock poses/RMSD
+评估有局限，并指出方法可能被用于有害物质设计、虽需要湿实验资源。因为所有主结论仍停留在计算代理，所以真实安全性与活性都未被验证。</li>
+</ol>
+</section>
+<section id="独立批判每一点都用证据推出边界" class="card level2">
+<h2>14. 独立批判：每一点都用证据推出边界</h2>
+<ol type="1">
+<li><strong>[构念效度] 因为</strong>主结论依赖 Auto‑Dock Vina、QED 与
+SA，且没有生化 assay、自由能微扰或合成实验，<strong>所以</strong>51.3%
+Success
+只能代表通过三个计算阈值，不能推出真实结合、选择性、毒性或可合成收率。</li>
+<li><strong>[代理奖励/分布外优化] 因为</strong> affinity scale 从 50
+增至 100 时 Vina Min -8.39→-9.87，却让 Connected 0.90→0.55、SA
+0.68→0.63（表 13），<strong>所以</strong>能量梯度存在典型 reward hacking
+区域；继续提高代理分数会离开化学可行域。</li>
+<li><strong>[规模混杂] 因为</strong>大 pocket OOD 中 MolJO 平均原子数
+30.0、Reference 22.8（+31.58%），而 docking
+分数会受接触面积/尺寸影响，<strong>所以</strong>-10.53
+的优势不能完全归因于更聪明的化学设计；应补 ligand
+efficiency、每重原子得分与匹配 atom-count 对照。</li>
+<li><strong>[搜索预算公平] 因为</strong>MolJO† 由每 pocket 10
+个候选择优，Success 51.3→70.3%但 Diversity 0.66→0.61，而基线未统一成相同
+oracle 调用数，<strong>所以</strong>70.3%不能作为同预算 SOTA；应画
+success–oracle calls 曲线。</li>
+<li><strong>[统计完整性] 因为</strong>t-test 与 95% CI
+只覆盖部分连续指标，Success、三类约束任务、OOD 和 top-of-10
+没有区间，且多重检验未校正，<strong>所以</strong>可以信连续分数差异很稳定，却不能断言所有成功率差距都超出
+pocket 间方差。</li>
+<li><strong>[内部一致性/复现] 因为</strong>主表 1与附录表 6对
+DecompOpt、MolCRAFT 的部分均值不一致（例如 DecompOpt Vina Score -5.75 对
+-4.839），README 的训练示例又是 15 epochs、论文 property head 写至多 5
+epochs，<strong>所以</strong>复现者必须固定“哪一张表/哪一份
+checkpoint/哪条命令”，不能把公开仓库默认配置自动视为论文配置。</li>
+<li><strong>[离散梯度理论] 因为</strong>实现为稳定性采用 ((1-))
+近似离散导数，而论文没有给这一替代的偏差界或收敛保证，<strong>所以</strong>“联合离散引导”目前是有效工程机制，而非已闭合的理论最优更新；需要与
+exact simplex Jacobian、Gumbel-softmax、straight-through
+做等预算对照。</li>
+<li><strong>[外推范围] 因为</strong>训练/主测试只来自 CrossDocked2020 的
+100,000 poses 与 100 test proteins，序列相似度阈值虽为 30%但未报告
+pocket geometry 与配体 scaffold
+泄漏，<strong>所以</strong>不能推出跨靶点家族、共价配体、金属口袋或蛋白柔性场景同样有效。</li>
+</ol>
+</section>
+<section id="开放挑战可直接执行的-head-to-head-实验空白" class="card level2">
+<h2>15. 开放挑战：可直接执行的 head-to-head 实验空白</h2>
+<section id="理论" class="level3">
+<h3>15.1 理论</h3>
+<ol type="1">
+<li><strong>离散梯度估计器对照。</strong> 固定 MolCRAFT
+checkpoint、property head、200 steps、每 pocket 样本数与随机种子，比
+((1-))、exact simplex Jacobian、Gumbel-softmax、straight-through
+四种更新；报告属性增益、connected、梯度方差、wall-clock
+与最终类型翻转率。若 B.C.
+只对某一估计器有效，就能分离“回退”与“梯度近似”的贡献。</li>
+<li><strong>B.C. 的预算等价实验。</strong> 令所有方法拥有相同 200
+次能量/网络调用，比较 B.C. (k{25,50,100,130,200})、SDE、多起点 beam 与
+MCMC rejuvenation；主指标用 success–calls AUC，而非只比最后一点。</li>
+<li><strong>多目标 Pareto 机制。</strong> 固定总梯度范数，对 simple
+average、GradNorm、MGDA、PCGrad、uncertainty weighting 做
+head-to-head；报告 affinity/QED/SA 三维
+hypervolume、连通性与每个目标的最坏退化，验证“平均梯度”是否真是合理折中。</li>
+</ol>
+</section>
+<section id="工程与应用" class="level3">
+<h3>15.2 工程与应用</h3>
+<ol start="4" type="1">
+<li><strong>代理—物理双重盲测。</strong> 在同一 pocket/scaffold split
+上，让 MolJO、TAGMol、DecompOpt 各提交固定数量候选，先用未参与训练的
+docking 引擎/FEP 重排，再对 top 候选做盲法 assay；比较 Vina
+增益转化为真实 (K_d/IC_{50}) 增益的校准曲线。</li>
+<li><strong>尺寸匹配对照。</strong> 对每种方法做相同 heavy-atom
+count、相同 formal charge、相同 rotatable bonds 的匹配采样，报告 Vina
+per heavy atom、ligand efficiency、QED、SA 与 success；这能直接检验 OOD
+-10.53 中有多少来自尺寸。</li>
+<li><strong>全成本审计。</strong> 在同一 GPU/CPU、相同每 pocket
+目标成功数下，比较 MolJO、TAGMol、DecompOpt 的 predictor
+训练、采样、docking、top-N 选择、失败重试和 I/O；报告能耗、P50/P95
+time-to-valid 与每个成功分子的 GPU-hour。</li>
+</ol>
+</section>
+<section id="新兴方向" class="level3">
+<h3>15.3 新兴方向</h3>
+<ol start="7" type="1">
+<li><strong>不确定性感知的引导。</strong> 给 property head 加 ensemble
+或 conformal uncertainty，在高不确定区把 scale 自动衰减；与固定 50、100
+做 head-to-head，观察是否能保留 -9 级 docking 同时避免 connected 在 100
+scale 崩到 0.55。</li>
+<li><strong>合成路线共同生成。</strong> 将 MolJO 与 CGFlow
+类“分子+合成路径”共同设计接合，对仅 SA 引导与显式反应路径生成比较：最终
+wet-lab 可合成率、步骤数、成本、yield 与属性 Pareto 面。若显式路径只提升
+SA 代理而不提升真实合成率，也能及时否证。</li>
+<li><strong>蛋白柔性闭环。</strong> 固定配体预算，比较刚性 pocket
+MolJO、side-chain ensemble、诱导契合 docking 与短 MD/FEP
+重评分；按蛋白家族分层报告。该实验能检验 BFN
+坐标优化是在学真实互补性，还是适配单一刚性口袋。</li>
+</ol>
+</section>
+</section>
+<section id="近期值得跟踪的-6-篇工作" class="card level2">
+<h2>16. 近期值得跟踪的 6 篇工作</h2>
+<ol type="1">
+<li><strong>MolPilot / Piloting Structure-Based Drug Design via
+Modality-Specific Optimal Schedule（ICML 2025）</strong>：<a
+href="https://proceedings.mlr.press/v267/qiu25g.html">PMLR</a>｜<a
+href="https://arxiv.org/abs/2505.07286">arXiv:2505.07286</a>。它不再主攻属性梯度，而优化混合模态噪声调度；正式材料报告
+95.9% PoseBusters pass，适合与 MolJO 组合成“更强骨干 + 更稳引导”。</li>
+<li><strong>Compositional Flows for 3D Molecule and Synthesis Pathway
+Co-design（ICML 2025）</strong>：<a
+href="https://arxiv.org/abs/2504.08051">arXiv:2504.08051</a>｜<a
+href="https://github.com/tsa87/cgflow">代码</a>。它把分子和合成路径放进同一个
+compositional flow，报告 4.2× sampling efficiency；正面回应 MolJO 的 SA
+只是代理而非路线证据。</li>
+<li><strong>LDMol: Text-Conditioned Molecule Diffusion Model Leveraging
+Chemically Informative Latent Space（ICML 2025）</strong>：<a
+href="https://proceedings.mlr.press/v267/chang25d.html">PMLR</a>｜<a
+href="https://arxiv.org/abs/2405.17829">arXiv:2405.17829</a>。它探索语言条件的化学
+latent；与 pocket-conditioned MolJO
+互补，可测试自然语言目标是否能转成可靠联合梯度。</li>
+<li><strong>Scalable Non-Equivariant 3D Molecule Generation via
+Rotational Alignment（ICML 2025）</strong>：<a
+href="https://proceedings.mlr.press/v267/ding25a.html">PMLR</a>｜<a
+href="https://arxiv.org/abs/2506.10186">arXiv:2506.10186</a>。它挑战“必须全程等变”的成本假设；值得和
+MolJO 的 SE(3) 保证做精度—吞吐 head-to-head。</li>
+<li><strong>Multi-Fidelity Latent Active Learning for Molecular Property
+Discovery（ICML 2025）</strong>：<a
+href="https://proceedings.mlr.press/v267/eckmann25a.html">PMLR</a>。正式页报告平均
+binding free energy 改善 50%；其多保真主动学习可作为 MolJO docking
+surrogate 与昂贵物理验证之间的预算分配器。</li>
+<li><strong>Hierarchical Graph Tokenization for Molecule-Language
+Alignment（ICML 2025）</strong>：<a
+href="https://arxiv.org/abs/2406.14021">arXiv:2406.14021</a>｜<a
+href="https://openreview.net/forum?id=wpbNczwAwV">OpenReview</a>。它以层级
+graph tokens 对齐分子与语言，若把这些 token 接到 MolJO
+类型参数，可检验“语义级编辑”是否比逐原子梯度更稳。</li>
+</ol>
+</section>
+<section id="结论" class="card level2">
+<h2>17. 结论</h2>
+<p>MolJO 最值得看的不是 51.3% 这个孤立数字，而是一条可复用的控制链：BFN
+把连续坐标与离散类型放到统一可微信念空间，联合梯度负责定向，backward
+correction 负责从局部误差中恢复。主表、类型/坐标消融和 80.23× 相对
+DecompOpt 的耗时差共同支持这一设计确实有效。</p>
+<p>最关键的科学判断则更克制：MolJO
+把<strong>计算代理上的结构化分子优化</strong>显著推进了，却没有跨过代理到实验的鸿沟。Scale
+100 时连接率从 0.90 崩到
+0.55，是一条清楚的红线：当生成器学会讨好评价器，分数继续变好并不等于分子继续变好。下一步应优先做不确定性感知引导、预算等价对照、尺寸匹配和盲法实验闭环，而不是继续只刷新单一
+Vina 数字。</p>
+<hr />
+<p><strong>脚注与索引状态。</strong> 本报告使用的核心数字来自 MolJO
+arXiv v4 HTML 的表 1–4、6、11–16、算法
+1与对应正文/附录行域；相关工作数字来自各自论文正式页或正文。<code>ml-report-index.md</code>
+已在本次运行中追加本条记录。HTML 已通过 Warm Editorial 结构验证器（0
+error / 0 warning）；运行环境虽有 Playwright 包，但
+<code>/usr/bin/chromium</code>、<code>/opt/pw-browsers</code> 与
+Playwright 缓存均无可执行浏览器，且按要求未运行
+<code>playwright install</code>，故本轮无法完成真实 Chromium
+的浅色、深色和移动端截图核验。未公开或未找到的项目页、视频、独立聚合条目均已明确标注，不以搜索缺失推断“绝对不存在”。</p>
+</section>
+</div>
+
+  </main>
+
+  <footer>来源：ICML 2025 / PMLR 267、arXiv:2411.13280v4、OpenReview 与作者公开仓库；生成日期：2026-09-20。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

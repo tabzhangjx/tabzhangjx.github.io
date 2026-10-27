@@ -1,0 +1,1616 @@
+---
+layout: null
+title: "DFM"
+date: 2026-09-30
+topic: "vlm-vision"
+tags: ["vlm-vision", "flow-matching", "image-generation"]
+excerpt: "把渐进生成压缩成“多尺度表示 + 多时间轴 + 单共享 DiT” ImageNet-1K 512px 的最佳 FDD 从普通 Flow Matching 的 132.5 降至 85.8；简单接口有效，但高频伪影、内部数据和非忠实公开实现仍是复现边界。"
+permalink: "/blog/2026/09/30/dfm/"
+blog_post: true
+lang: "zh-CN"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_en: "/blog/2026/09/30/dfm/en/"
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Decomposable Flow Matching 深度研究报告 · 2026-09-30</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  main { display: grid; gap: 22px; min-width: 0; }
+  .card.level2 { margin: 0; min-width: 0; }
+  .subsection { margin-top: 24px; }
+  .subsection h3 { margin-top: 0; }
+  h4 { margin: 18px 0 8px; font-size: 16px; }
+  blockquote { margin: 14px 0; padding: 10px 14px; border-left: 4px solid var(--chart-primary); background: var(--surface-2); color: var(--text-secondary); }
+  pre { overflow-x: auto; padding: 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); font-size: 12.5px; line-height: 1.55; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  p code, li code, td code { padding: .08em .3em; border-radius: 4px; background: var(--surface-2); }
+  ol, ul { padding-left: 1.35em; }
+  li + li { margin-top: .38em; }
+  .table-scroll { margin: 15px 0 22px; }
+  table { min-width: 720px; }
+  .figure { margin: 0; min-width: 0; max-width: 100%; }
+  p, li, td, th, a { overflow-wrap: anywhere; }
+  math[display="block"] { display: block; max-width: 100%; margin: 14px 0; padding: 10px 12px; overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+  .chart rect { outline: none; }
+  .chart rect:focus { stroke: var(--text-primary); stroke-width: 2; }
+  @media (max-width: 640px) {
+    .toolbar { position: static; justify-content: flex-end; margin-bottom: 10px; }
+    .hero { margin-top: 0; }
+    .chart { width: 690px; max-width: none; }
+    .figure { overflow-x: auto; }
+  }
+
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">NeurIPS 2025 · 生成模型 · 流匹配</p>
+    <h1>Decomposable Flow Matching</h1>
+    <p class="subtitle">把渐进生成压缩成“多尺度表示 + 多时间轴 + 单共享 DiT”</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">arXiv:2506.19839v1</span>
+      <span class="chip">2026-09-30</span>
+      <span class="chip">图像 · 视频 · 渐进生成</span>
+    </div>
+    <p class="lede">ImageNet-1K 512px 的最佳 FDD 从普通 Flow Matching 的 132.5 降至 85.8；简单接口有效，但高频伪影、内部数据和非忠实公开实现仍是复现边界。</p>
+  </header>
+
+  <main>
+<figure class="figure" aria-labelledby="fdd-chart-title">
+      <p class="fig-title" id="fdd-chart-title">ImageNet-1K 512px：cfg=1.5 的 FDD</p>
+      <p class="fig-sub">DFM 把普通 Flow Matching 的 132.5 降至 85.8，并低于两个渐进基线；纵轴单一且从 0 起。</p>
+      <div class="legend" aria-label="图例">
+        <span><span class="swatch" style="background:var(--chart-primary)"></span>DFM</span>
+        <span><span class="swatch" style="background:var(--chart-comparison)"></span>对照方法</span>
+      </div>
+      <svg class="chart" viewBox="0 0 900 350" role="img" xmlns="http://www.w3.org/2000/svg">
+        <title>DFM 与三种对照方法在 ImageNet 512px cfg 1.5 下的 FDD</title>
+        <desc>Flow Matching 132.5，Cascaded 114.0，Pyramidal Flow 116.2，DFM 85.8。FDD 越低越好。</desc>
+        <line x1="72" x2="850" y1="300.0" y2="300.0" stroke="var(--border)" stroke-width="1" /><text x="60" y="304.0" text-anchor="end" font-size="12">0</text><line x1="72" x2="850" y1="251.0" y2="251.0" stroke="var(--border)" stroke-width="1" /><text x="60" y="255.0" text-anchor="end" font-size="12">30</text><line x1="72" x2="850" y1="202.0" y2="202.0" stroke="var(--border)" stroke-width="1" /><text x="60" y="206.0" text-anchor="end" font-size="12">60</text><line x1="72" x2="850" y1="153.0" y2="153.0" stroke="var(--border)" stroke-width="1" /><text x="60" y="157.0" text-anchor="end" font-size="12">90</text><line x1="72" x2="850" y1="104.0" y2="104.0" stroke="var(--border)" stroke-width="1" /><text x="60" y="108.0" text-anchor="end" font-size="12">120</text><line x1="72" x2="850" y1="55.0" y2="55.0" stroke="var(--border)" stroke-width="1" /><text x="60" y="59.0" text-anchor="end" font-size="12">150</text>
+        <rect x="118" y="83.6" width="76" height="216.4" rx="6" fill="var(--chart-comparison)" opacity=".88" tabindex="0" data-tip="Flow Matching FDD: 132.5" /><rect x="298" y="113.8" width="76" height="186.2" rx="6" fill="var(--chart-comparison)" opacity=".88" tabindex="0" data-tip="Cascaded FDD: 114.0" /><rect x="478" y="110.2" width="76" height="189.8" rx="6" fill="var(--chart-comparison)" opacity=".88" tabindex="0" data-tip="Pyramidal Flow FDD: 116.2" /><rect x="658" y="159.9" width="76" height="140.1" rx="6" fill="var(--chart-primary)" opacity="1" tabindex="0" data-tip="DFM FDD: 85.8" />
+        <text x="156" y="326" text-anchor="middle" font-size="12">Flow Matching</text><text x="336" y="326" text-anchor="middle" font-size="12">Cascaded</text><text x="516" y="326" text-anchor="middle" font-size="12">Pyramidal Flow</text><text x="696" y="326" text-anchor="middle" font-size="12">DFM</text>
+      </svg>
+      <figcaption>数据源：核心论文 Table 2（PDF p.8）。FDD 越低越好；悬停或键盘聚焦柱体可查看精确值。</figcaption>
+    </figure>
+
+<p><strong>日期：</strong> 2026-09-30<br />
+<strong>领域：</strong> 生成模型｜流匹配、渐进生成、图像/视频 DiT<br />
+<strong>核心论文：</strong> Moayed Haji-Ali, Willi Menapace, Ivan
+Skorokhodov, Arpit Sahni, Sergey Tulyakov, Vicente Ordonez, Aliaksandr
+Siarohin. <em>Improving Progressive Generation with Decomposable Flow
+Matching</em>. NeurIPS 2025
+Main；arXiv:2506.19839v1（2025-06-24）。<br />
+<strong>简称：</strong> DFM</p>
+<blockquote>
+<p><strong>一句话核心定位：</strong> DFM 把一条高维视觉流拆成共享 DiT
+内彼此独立、按粗到细调度的多尺度流，在不训练模型级
+cascade、也不改用专用求解器的前提下，把 ImageNet-1K 512px 的最佳 FDD 从
+Pyramidal Flow 的 116.2 降到 85.8；真正的价值是“把渐进生成变成标准 Flow
+Matching
+的轻量接口”，真正的边界则是高频细节、隐藏数据与超参数选择仍未闭环。</p>
+</blockquote>
+<hr />
+<section id="链接验证与材料完备性" class="card level2">
+<h2>0. 链接验证与材料完备性</h2>
+<p>下表中的 URL 均已实际访问；定量数字只来自论文 PDF/HTML、正式
+proceedings 或官方代码 README。OpenReview
+页面触发人机校验时，以可访问的正式 proceedings、arXiv 与 OpenReview PDF
+交叉核验。未找到的内容明确写为“未公开/未找到”。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table style="width:100%;">
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">论文</th>
+<th scope="col">会议 / 正式页</th>
+<th scope="col">arXiv（版本与日期）</th>
+<th scope="col">代码</th>
+<th scope="col">数据 / 权重</th>
+<th scope="col">项目页 / 视频</th>
+<th scope="col">核验结论</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>核心：DFM</strong></td>
+<td><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/efccec15378fba34be92d814a38e89ac-Abstract-Conference.html">NeurIPS
+2025 Proceedings</a>；<a
+href="https://openreview.net/forum?id=3isHlkiykj">OpenReview</a></td>
+<td><a
+href="https://arxiv.org/abs/2506.19839">2506.19839v1</a>，2025-06-24；<a
+href="https://arxiv.org/html/2506.19839v1">HTML</a></td>
+<td><a
+href="https://github.com/snap-research/dfm">snap-research/dfm</a>；README
+明示为 SiT 上的<strong>重实现</strong>，并非论文原架构</td>
+<td>ImageNet-1K、Kinetics-700；主实验权重<strong>未公开</strong>，README
+写“将发布”</td>
+<td><a
+href="https://snap-research.github.io/dfm/">项目页</a>（含视频）；<a
+href="https://vislang.ai/publications/hajiali2025improving">Rice
+VisLang</a></td>
+<td>会议、论文、附录、项目、代码均核验；公开代码不能视为表 1–3
+的一键复现包</td>
+</tr>
+<tr class="even">
+<td>Lipman et al., <em>Flow Matching for Generative Modeling</em></td>
+<td><a
+href="https://openreview.net/pdf/e99034416acd1ca82991f5d63735e77130fc06a7.pdf">ICLR
+2023 / OpenReview PDF</a></td>
+<td><a href="https://arxiv.org/abs/2210.02747">2210.02747</a></td>
+<td>官方实验代码<strong>未在论文入口单列核验</strong></td>
+<td>依各实验公开数据；权重<strong>未找到</strong></td>
+<td>独立项目视频<strong>未找到</strong></td>
+<td>方法地基：以条件向量场回归训练 CNF</td>
+</tr>
+<tr class="odd">
+<td>Ho et al., <em>Cascaded Diffusion Models</em></td>
+<td><a href="https://www.jmlr.org/papers/v23/21-0635.html">JMLR
+23(47)</a></td>
+<td><a
+href="https://arxiv.org/abs/2106.15282">2106.15282v3</a>，2021-12-17</td>
+<td>官方代码<strong>未找到</strong></td>
+<td>ImageNet；独立权重<strong>未找到</strong></td>
+<td><a href="https://cascaded-diffusion.github.io/">项目页</a></td>
+<td>问题来源：多模型低分辨率→超分 cascade</td>
+</tr>
+<tr class="even">
+<td>Gu et al., <em>f-DM</em></td>
+<td><a href="https://jiataogu.me/fdm/">ICLR 2023 项目/接收页</a></td>
+<td><a
+href="https://arxiv.org/abs/2210.04955">2210.04955v1</a>，2022-10-10</td>
+<td>项目页仍写 Code &amp; Data “Coming soon”</td>
+<td>独立数据/权重<strong>未公开/未找到</strong></td>
+<td><a href="https://jiataogu.me/fdm/">项目页</a></td>
+<td>技术来源：用渐进信号变换显式改变扩散阶段</td>
+</tr>
+<tr class="odd">
+<td>Gu et al., <em>Matryoshka Diffusion Models</em></td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2024/hash/81166fbd9cc5adf14031cdb69d3fd6a8-Abstract-Conference.html">ICLR
+2024 Proceedings</a></td>
+<td><a
+href="https://arxiv.org/abs/2310.15111">2310.15111v2</a>，2024-04-15</td>
+<td><a href="https://github.com/apple/ml-mdm">apple/ml-mdm</a></td>
+<td>代码与预训练 checkpoint 已发布</td>
+<td><a
+href="https://machinelearning.apple.com/research/matryoshka-diffusion-models">Apple
+Research</a></td>
+<td>技术来源：同一嵌套网络联合去噪多分辨率</td>
+</tr>
+<tr class="even">
+<td>Jin et al., <em>Pyramidal Flow Matching</em></td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2025/hash/3ab228c4703c4459b1a600ebadc5732c-Abstract-Conference.html">ICLR
+2025 Proceedings</a></td>
+<td><a
+href="https://arxiv.org/abs/2410.05954">2410.05954v2</a>，2025-03-15</td>
+<td><a
+href="https://github.com/jy0205/Pyramid-Flow">jy0205/Pyramid-Flow</a></td>
+<td>代码/权重见仓库</td>
+<td><a href="https://pyramid-flow.github.io/">项目页</a></td>
+<td>最近技术来源：latent pyramid、升采样与重新加噪</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>索引站覆盖。</strong> 核心论文另在 <a
+href="https://huggingface.co/papers/2506.19839">Hugging Face Daily
+Papers</a> 与 <a
+href="https://www.semanticscholar.org/paper/Improving-Progressive-Generation-with-Decomposable-Ali-Menapace/8b0466171d68c03f5285ee9890c4dbdc353071c3">Semantic
+Scholar</a> 核验；Papers with Code
+未找到稳定的核心论文专页，故标为未找到，不用第三方摘要作数值证据。候选检索同时覆盖
+ICLR/NeurIPS proceedings、OpenReview、arXiv、Hugging Face、Papers with
+Code 与 Semantic Scholar。</p>
+<hr />
+</section>
+<section id="候选池近-14-天排重与随机抽签" class="card level2">
+<h2>1. 候选池、近 14 天排重与随机抽签</h2>
+<section id="排重" class="subsection level3">
+<h3>1.1 排重</h3>
+<p>先读取 <code>ml-report-index.md</code>。近 14
+天已经深度覆盖：MeanFlow（一步 Flow
+Matching）、MolJO/I2Mole（分子生成与优化）、LongLive
+之前的长视频生成、以及理论/系统主题。故本次将“一步流”“分子生成”“记忆/隐私扩散”从核心主题排除；候选仍可包含视频、3D、离散流与对齐，但抽中的主问题必须不同。DFM
+聚焦<strong>多尺度、单模型、渐进式流匹配</strong>，与 MeanFlow
+的“一步速度恒等式”不同，也不与分子方向重复。</p>
+</section>
+<section id="固定候选池20-篇" class="subsection level3">
+<h3>1.2 固定候选池（20 篇）</h3>
+<p>顺序在抽签前固定。1–15 优先为正式接收论文，16–20 为资料较新的 ICLR
+2026 公开稿/高质量 arXiv，因此若抽中后资料不足才允许重抽。</p>
+<ol type="1">
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/41b93c59da0d0f835907fd661d419db2-Abstract-Conference.html">SANA-Video:
+Efficient Video Generation with Block Linear Diffusion Transformer</a> —
+ICLR 2026 Oral</li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/ad6ac52e02e14e0f2ddc0d4587ab47f1-Abstract-Conference.html">GLASS
+Flows: Efficient Inference for Reward Alignment of Flow and Diffusion
+Models</a> — ICLR 2026 Oral</li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/53fe824f289060ce705ed7c01dae59d2-Abstract-Conference.html">Half-order
+Fine-Tuning for Diffusion Model</a> — ICLR 2026 Oral</li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/a224ff18cc99a71751aa2b79118604da-Abstract-Conference.html">NoisePrints:
+Distortion-Free Watermarks for Authorship in Private Diffusion
+Models</a> — ICLR 2026</li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/378dcc0bb9a61a4c1c00e19ad9890425-Abstract-Conference.html">Discrete
+Adjoint Matching</a> — ICLR 2026</li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/ffd4f5a2ea6b93e9bf5af9264d568cf2-Abstract-Conference.html">Disentangled
+Hierarchical VAE for 3D Human-Human Interaction Generation</a> — ICLR
+2026</li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/147117db5bbde42ce9bdf87740bafb9e-Abstract-Conference.html">NatADiff:
+Adversarial Boundary Guidance for Natural Adversarial Diffusion</a> —
+ICLR 2026</li>
+<li><a href="https://arxiv.org/abs/2603.27862">ImagenWorld:
+Stress-Testing Image Generation Models</a> — ICLR 2026 / arXiv</li>
+<li><a
+href="https://papers.neurips.cc/paper_files/paper/2025/hash/174692c52dc84fad2b2e99dd8637ce6a-Abstract-Conference.html">Adjoint
+Schrödinger Bridge Sampler</a> — NeurIPS 2025 Oral</li>
+<li><a
+href="https://papers.nips.cc/paper_files/paper/2025/hash/cb43f46154e750746602faaffd65fbbb-Abstract-Conference.html">Edit
+Flows: Variable Length Discrete Flow Matching with Sequence-Level Edit
+Operations</a> — NeurIPS 2025</li>
+<li><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/efccec15378fba34be92d814a38e89ac-Abstract-Conference.html"><strong>Improving
+Progressive Generation with Decomposable Flow Matching</strong></a> —
+NeurIPS 2025</li>
+<li><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/f4823f831af67a3ef15e41a85434422a-Abstract-Conference.html">Self-Forcing:
+Bridging the Train-Test Gap in Autoregressive Video Diffusion</a> —
+NeurIPS 2025 Spotlight</li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/715f48023c26ad210321a4c0da67f27c-Abstract-Conference.html">Efficient
+Zero-shot Inpainting with Decoupled Diffusion Guidance</a> — ICLR
+2026</li>
+<li><a
+href="https://openreview.net/pdf/8049c6a47793f0babda63c028ea8ef3e70ae36cf.pdf">Subject-driven
+Video Generation Emerges from Experience Replays</a> — ICLR 2026
+公开稿</li>
+<li><a
+href="https://openreview.net/pdf/5f4772d781a45b45fc9f81fa470ad32de4828786.pdf">GenICF:
+Benchmarking Generative Methods</a> — ICLR 2026 公开稿</li>
+<li><a href="https://openreview.net/pdf?id=GraP6A5SUO">E-CommerceVideo:
+A Benchmark and Approach for E-Commerce Video Generation</a> — ICLR 2026
+公开稿</li>
+<li><a href="https://arxiv.org/abs/2509.24702">Enhancing Physical
+Plausibility in Video Generation by Reasoning the Implausibility</a> —
+arXiv</li>
+<li><a href="https://arxiv.org/abs/2505.20984">Generative Image
+Compression by Estimating Gradients of the Rate-variable Feature
+Distribution</a> — arXiv / ICLR 2026 公开稿</li>
+<li><a href="https://openreview.net/pdf?id=IsIYBWFBii">MV-Diffus3R:
+Refining Multi-View Diffusions for Geometric Coherence 3D
+Reconstruction</a> — ICLR 2026 公开稿</li>
+<li><a href="https://arxiv.org/abs/2510.03506">OneFlow: Concurrent
+Mixed-Modal and Interleaved Generation with Edit Flows</a> — arXiv /
+ICLR 2026 公开稿</li>
+</ol>
+</section>
+<section id="实际抽签" class="subsection level3">
+<h3>1.3 实际抽签</h3>
+<pre class="text"><code>$ shuf -i 1-20 -n 1
+11</code></pre>
+<p>第 11 篇有正式 NeurIPS proceedings、35
+页完整稿、项目页、附录、代码与足够的主结果/消融，故<strong>重抽次数为
+0</strong>。选择不依据热度、引用量或作者机构。</p>
+<hr />
+</section>
+</section>
+<section id="motivation渐进生成为什么一直有效但复杂" class="card level2">
+<h2>2. Motivation：渐进生成为什么一直“有效但复杂”？</h2>
+<p>高分辨率视觉生成把结构、布局、纹理和局部边缘同时塞进一个高维连续场。普通
+Flow Matching
+直接学习从高斯噪声到数据的速度场；训练目标简洁，却没有显式强迫网络先解决全局结构。另一条路线是
+cascade：先生成低分辨率，再用第二、第三个模型做超分。它把问题拆开，却带来多套权重、阶段间暴露偏差与部署复杂度。f-DM、Relay
+Diffusion、Edify Image、Pyramidal Flow
+又进一步把降采样、升采样、模糊或重新加噪写入生成过程，因而需要定制
+transition 或 sampler（核心论文第 1–2 页、HTML 行 62–86）。</p>
+<p>DFM
+的动机不是否认这些方法，而是问一个更窄、更工程化的问题：<strong>能否保持标准
+Flow Matching 的线性路径、MSE 速度回归和 Euler ODE
+求解器，只把“时间”从一个标量扩展为每个尺度一个标量？</strong>
+如果可以，渐进生成不再是独立模型范式，而是一个表示分解与调度接口。</p>
+<p>主结果量化了这个动机。ImageNet-1K 512px、cfg=1.5 下，普通 Flow
+Matching 的 FDD 为 <strong>132.5</strong>，DFM 为
+<strong>85.8</strong>，绝对下降 <strong>46.7</strong>、相对下降
+<strong>35.25%</strong>；与同表最优渐进基线 Pyramidal Flow 的
+<strong>116.2</strong> 比，绝对下降 <strong>30.4</strong>、相对下降
+<strong>26.16%</strong>（Table 2，PDF p.8）。项目页进一步写“达到相同 FDD
+所需训练迭代约减半”，但论文没有给壁钟、GPU-hour 或置信区间，所以“2×
+更快收敛”只能理解为曲线上的迭代效率，不能自动等价为端到端成本减半。</p>
+<p>真正的痛点也藏在论文自己的失败案例里：当 coarse stage
+得到过多训练概率或采样步数，植被、毛发、细线与杂乱背景会出现<strong>扁平化高频伪影</strong>；增加第二阶段步数可缓解（Appendix
+G，PDF p.19，HTML 行 421–424）。所以 DFM
+解决的是“如何把结构优先写进标准流”，不是免费获得所有频率的同时最优。</p>
+<hr />
+</section>
+<section id="论文故事线假设与权衡" class="card level2">
+<h2>3. 论文故事线、假设与权衡</h2>
+<section id="故事线" class="subsection level3">
+<h3>3.1 故事线</h3>
+<p>第一步，作者选择 Laplacian pyramid，把一个 latent
+拆成低频近似与高频残差。第二步，为每个分量建立独立的 Flow Matching 时间
+<code>t^s</code>：正在生成的 stage 取随机噪声水平，已经完成的 stage
+偏向低噪声，未来 stage 固定为全噪声并遮掉 loss。第三步，单个 DiT
+共享主干，只为不同尺度复制
+patchification、输出投影与时间嵌入。第四步，推理仍用普通 Euler
+solver，只用阈值 <code>τ</code> 决定何时启动下一 stage。最后，作者用
+ImageNet-1K、Kinetics-700 以及内部数据上的 FLUX
+微调验证从头训练和大模型适配。</p>
+<p>这条故事线建立在三个假设上：</p>
+<ol type="1">
+<li><strong>谱分解是有语义的。</strong> 低频 latent
+主要承载结构，高频残差主要承载细节；若 autoencoder
+把频率彻底混合，阶段划分就失去解释。</li>
+<li><strong>共享骨干有足够容量。</strong> 同一 DiT
+能同时拟合多尺度速度，不需要真正的专家模型；stage-specific
+端口足以解决输入/输出维度差异。</li>
+<li><strong>训练联合分布近似推理轨迹。</strong> 通过 stage 概率和偏移
+logit-normal，训练时看到的跨尺度噪声组合能覆盖推理调度。</li>
+</ol>
+</section>
+<section id="关键权衡" class="subsection level3">
+<h3>3.2 关键权衡</h3>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">设计</th>
+<th scope="col">获得</th>
+<th scope="col">代价</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>单共享 DiT + 尺度专用端口</td>
+<td>避免多模型 cascade；参数主体共享</td>
+<td>仍增加每尺度 patchifier、head、time embedder；不是零改架构</td>
+</tr>
+<tr class="even">
+<td>Laplacian 分解</td>
+<td>可逆、简单、能预览</td>
+<td>论文所谓 decomposition-agnostic 只在 Laplacian 上充分验证；DCT
+直接输入反而失败</td>
+</tr>
+<tr class="odd">
+<td>结构阶段高采样概率</td>
+<td>更快学到全局形状</td>
+<td>细节容量下降；<code>p0</code> 越高越可能牺牲高频</td>
+</tr>
+<tr class="even">
+<td>coarse-first 30/10 步分配</td>
+<td>在固定 40 NFE 下重投资源</td>
+<td>纹理丰富样本需要更多 fine-stage 步；统一配额不是逐样本最优</td>
+</tr>
+<tr class="odd">
+<td>scale-equivariant autoencoder</td>
+<td>让 latent 的频率层次更贴近 RGB</td>
+<td>额外 10k 步内部数据微调；复现依赖隐藏数据与未公开 checkpoint</td>
+</tr>
+</tbody>
+</table>
+</div>
+<hr />
+</section>
+</section>
+<section id="方程级形式化" class="card level2">
+<h2>4. 方程级形式化</h2>
+<section id="标准-flow-matching" class="subsection level3">
+<h3>4.1 标准 Flow Matching</h3>
+<p>对数据样本 <code>X1 ~ p_d</code> 与噪声
+<code>X0 ~ N(0,I)</code>，论文采用线性概率路径：</p>
+<p>[ X_t=tX_1+(1-t)X_0,v_t==X_1-X_0. ]</p>
+<p>生成器 <code>G</code> 通过速度回归训练：</p>
+<p>[ L_{FM}=E_{t,X_1,X_0}|G(X_t,t)-v_t|_2^2. ]</p>
+<p>这是核心论文 Eq. (1)（PDF p.4；HTML 行 103–107）。推理只需积分
+ODE，不需要训练时模拟完整轨迹。</p>
+</section>
+<section id="多尺度表示" class="subsection level3">
+<h3>4.2 多尺度表示</h3>
+<p>给定 <code>S</code> 个分辨率，Laplacian 分量为：</p>
+<p>[ X^1=(X,1), X^s=(X,s)-((X,s-1),s), s&gt;1. ]</p>
+<p>累加到第 <code>s</code> 层可得到中间预览
+<code>\bar X^s=\sum_{k=1}^{s}X^k</code>。这正是“生成可以被中途观看”的数学原因（Eq.
+(2)，PDF p.4；HTML 行 110–116）。</p>
+</section>
+<section id="decomposable-flow-matching" class="subsection level3">
+<h3>4.3 Decomposable Flow Matching</h3>
+<p>DFM 给每个尺度独立时间：</p>
+<p>[ P_{t<sup>1,,t</sup>S}={X<sup>s_{t</sup>s}}_{s=1}^S,
+X<sup>s_{t</sup>s}=t<sup>sX</sup>s_1+(1-t<sup>s)X</sup>s_0. ]</p>
+<p>共享网络同时预测各尺度速度，mask <code>M^s</code> 排除尚未激活
+stage：</p>
+<p>[ L_{DFM}=E<em>{s=1}<sup>{S}M</sup>s
+|G(P</em>{t<sup>1,,t</sup>S},t<sup>1,,t</sup>S)-v^s|_2^2. ]</p>
+<p>这是 Eq. (3)–(4)（PDF p.4；HTML 行
+119–129）。关键不是损失函数换了，而是联合时间分布 <code>p_t</code>
+变成了课程：若当前 stage 为
+<code>k</code>，未来尺度为全噪声且不计损失；过去尺度从向低噪声偏移的
+logit-normal 采样；当前尺度从常规 logit-normal 采样。</p>
+</section>
+<section id="采样伪代码" class="subsection level3">
+<h3>4.4 采样伪代码</h3>
+<pre class="text"><code>输入：噪声金字塔 {X0^s}，共享 DiT G，阈值 τ，总步数 40
+训练：
+  1  X -&gt; Laplacian pyramid {X1^s}
+  2  抽主 stage k ~ Categorical(p_stage)
+  3  对 s&lt;k：t^s ~ LogitNormal(location=1.5, scale=1)
+  4  对 s=k：t^s ~ LogitNormal(location=0, scale=1)
+  5  对 s&gt;k：t^s=0，M^s=0；其余 M^s=1
+  6  用共享 G 预测所有激活尺度速度，最小化 Eq.(4)
+
+推理：
+  1  先积分最粗 stage；达到 τ 后激活下一 stage
+  2  已激活 stage 继续并行积分，各自沿线性时间表前进
+  3  默认 coarse/fine 分配 30/10 Euler steps
+  4  求和 {X^s}，经 autoencoder decoder 得到图像或视频</code></pre>
+</section>
+<section id="架构接口" class="subsection level3">
+<h3>4.5 架构接口</h3>
+<p>对于 256→512 两阶段，作者令低分辨率 patch 为 1×1、高分辨率 patch 为
+2×2，使两者产生相同 token 数；各尺度 patch embedding 相加后进入同一
+Transformer 主干，再由各自投影头输出速度。每尺度时间 MLP
+的输出也相加为统一 conditioning（Section 3.4，PDF p.5；HTML 行
+130–135）。这比“完全不改
+DiT”更准确的说法是：<strong>不改主干块，但改输入/输出端口与调制入口。</strong></p>
+<hr />
+</section>
+</section>
+<section id="工程细节与复现账本" class="card level2">
+<h2>5. 工程细节与复现账本</h2>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">项目</th>
+<th scope="col">论文配置</th>
+<th scope="col">来源</th>
+<th scope="col">复现含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>图像 / 视频 latent</td>
+<td>FLUX autoencoder / CogVideo autoencoder</td>
+<td>Sec. 4.1，PDF p.5</td>
+<td>两模态不共享 tokenizer；视频启用 3D RoPE</td>
+</tr>
+<tr class="even">
+<td>autoencoder 预处理</td>
+<td>FLUX AE 在内部 256² 图像上微调 10k 步，batch 64，×2–4
+scale-equivariance</td>
+<td>Sec. 4.1，PDF p.5</td>
+<td>内部数据与 checkpoint 未公开，是完整复现缺口</td>
+</tr>
+<tr class="odd">
+<td>主干</td>
+<td>消融 DiT-B/2；主结果 DiT-XL/2</td>
+<td>Sec. 4.1 / App. A.2，PDF p.5、15</td>
+<td>消融最优不一定迁移到 XL</td>
+</tr>
+<tr class="even">
+<td>训练</td>
+<td>batch 256；lr 1e-4；warmup 10k；clip 1.0；Adam；EMA 0.9999</td>
+<td>Sec. 4.1，PDF p.5</td>
+<td>Appendix 补充 Adam β=(0.9,0.99)、ε=1e-8、wd=.01</td>
+</tr>
+<tr class="odd">
+<td>步数</td>
+<td>消融 600k；ImageNet 512/1024 为 500k/350k；Kinetics 200k</td>
+<td>Sec. 4.1，PDF p.5</td>
+<td>不同分辨率不按相同步数训练，但对照内部等 compute</td>
+</tr>
+<tr class="even">
+<td>硬件</td>
+<td>512px/消融 8×H100；1024px 与 Kinetics 16×H100</td>
+<td>App. A.2，PDF p.15</td>
+<td>未给 wall-clock、GPU-hour、功耗</td>
+</tr>
+<tr class="odd">
+<td>CFG</td>
+<td>主表 1.0、1.25、1.5；定性图常用 3.0</td>
+<td>Table 2 / Fig. 5，PDF p.8</td>
+<td>选图 guidance 与主表不同，定性不可直接替代表格</td>
+</tr>
+<tr class="even">
+<td>推理</td>
+<td>40-step Euler，linear schedule；coarse/fine 30/10</td>
+<td>Sec. 4.3 / App. A.4，PDF p.7、15</td>
+<td>不是低-NFE 推理加速论文，收益主要是质量/训练收敛</td>
+</tr>
+<tr class="odd">
+<td>训练时间分布</td>
+<td><code>p0=.9</code>；current LN(0,1)，previous LN(1.5,1)</td>
+<td>App. A.5，PDF p.15</td>
+<td>Table 1 的小模型最优其实倾向 <code>p0=.95</code></td>
+</tr>
+<tr class="even">
+<td>stage threshold</td>
+<td>主实验 512px=.7，1024px=.95；附录建议默认 .9</td>
+<td>Sec. 4.3 / App. A.5，PDF p.7、15</td>
+<td>“统一默认值”与主实验最优值并不一致</td>
+</tr>
+<tr class="odd">
+<td>评测样本</td>
+<td>ImageNet512 50k；其余 10k</td>
+<td>Sec. 4.1，PDF p.5</td>
+<td>跨分辨率/视频的估计方差不同</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>公开仓库还有一个不能忽略的声明：它是在 <strong>SiT + REPA</strong>
+配置上的重实现，“architecture does not exactly follow the one used in
+the paper and results might be different”，并给出 SiT-XL/2 FID
+33.24、DFM-SiT-XL/2 FID 18.27；预训练 checkpoint 标为“将发布”（README 行
+193–212）。这些数字不与论文表 2
+合并，因为骨干、分辨率和训练方案不同。</p>
+<hr />
+</section>
+<section id="数据集基准与指标" class="card level2">
+<h2>6. 数据集、基准与指标</h2>
+<section id="imagenet-1k-5121024" class="subsection level3">
+<h3>6.1 ImageNet-1K 512/1024</h3>
+<p>图像实验同时报告 FID、FDD 与 IS。FID 使用 Inception 特征；FDD 使用
+DINOv2 特征，作者认为更贴近语义与结构；IS 兼顾类别置信与多样性。512px 用
+50k 样本，1024px 用 10k 样本，因此两个 FID/FDD
+的采样误差不可直接假设相同。ImageNet 为 research-only、non-commercial
+license（Appendix A.3，PDF p.15）。</p>
+</section>
+<section id="kinetics-700-512" class="subsection level3">
+<h3>6.2 Kinetics-700 512</h3>
+<p>视频报告 frame-FID、FDD 与 FVD。frame-FID/FDD
+把帧当图像衡量视觉质量，FVD 才编码时序特征；三者方向均为越低越好。论文用
+10k 样本、200k 训练步、CogVideo AE，并对 decomposed stage
+做单位方差标准化。Kinetics-700 按 CC BY 4.0 使用（Appendix A.3，PDF
+p.15）。</p>
+</section>
+<section id="内部-flux-微调集" class="subsection level3">
+<h3>6.3 内部 FLUX 微调集</h3>
+<p>FLUX-dev 先用 24k 步适配 scale-equivariant AE，再从同一 checkpoint
+分叉，FLUX-FT 与 FLUX-DFM 各训练 32k 步、batch
+192、1024px、多长宽比；评测 10k 个内部 test prompts（Table 3 与 Appendix
+E.1，PDF p.9、18）。由于训练集、验证 prompts 与 AE checkpoint
+都未公开，这组实验只能证明作者内部域上的相对收敛，不能作为公开基准排名。</p>
+</section>
+<section id="不能硬凑5-基准6-方法" class="subsection level3">
+<h3>6.4 不能硬凑“5 基准×6 方法”</h3>
+<p>论文给出的等算力完整矩阵只有 <strong>3 个数据集/分辨率设置 × 4 种方法
+× 3 个 CFG</strong>；FLUX 又只有 3
+种模型。没有第五公开基准，也没有六个严格可比方法。若补入别的论文数字，会破坏
+backbone、训练预算和评测协议一致性。因此本报告完整转录 Table 2，而不伪造
+5×6 矩阵。</p>
+<hr />
+</section>
+</section>
+<section id="完整主结果数据矩阵" class="card level2">
+<h2>7. 完整主结果数据矩阵</h2>
+<section id="table-2等训练-compute-的-3-组基准-4-方法-3-cfg"
+class="subsection level3">
+<h3>7.1 Table 2：等训练 compute 的 3 组基准 × 4 方法 × 3 CFG</h3>
+<p>所有数值来自核心论文 Table 2（PDF p.8；arXiv HTML 行
+220–240）。粗体表示同一 CFG、同一列最优；<code>↓</code>
+越低越好，<code>↑</code> 越高越好。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table style="width:100%;">
+<colgroup>
+<col style="width: 9%" />
+<col style="width: 6%" />
+<col style="width: 9%" />
+<col style="width: 9%" />
+<col style="width: 9%" />
+<col style="width: 9%" />
+<col style="width: 9%" />
+<col style="width: 9%" />
+<col style="width: 9%" />
+<col style="width: 9%" />
+<col style="width: 9%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">CFG</th>
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">IN-512 FID↓</th>
+<th scope="col" style="text-align: right;">IN-512 FDD↓</th>
+<th scope="col" style="text-align: right;">IN-512 IS↑</th>
+<th scope="col" style="text-align: right;">IN-1024 FID↓</th>
+<th scope="col" style="text-align: right;">IN-1024 FDD↓</th>
+<th scope="col" style="text-align: right;">IN-1024 IS↑</th>
+<th scope="col" style="text-align: right;">K700 FID↓</th>
+<th scope="col" style="text-align: right;">K700 FDD↓</th>
+<th scope="col" style="text-align: right;">K700 FVD↓</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1.0</td>
+<td>Flow Matching</td>
+<td style="text-align: right;">15.89</td>
+<td style="text-align: right;">282.9</td>
+<td style="text-align: right;">58.5</td>
+<td style="text-align: right;">42.18</td>
+<td style="text-align: right;">575.9</td>
+<td style="text-align: right;">26.7</td>
+<td style="text-align: right;">12.60</td>
+<td style="text-align: right;">370.1</td>
+<td style="text-align: right;">304.1</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">1.0</td>
+<td>Cascaded</td>
+<td style="text-align: right;">13.67</td>
+<td style="text-align: right;">260.9</td>
+<td style="text-align: right;">72.7</td>
+<td style="text-align: right;">20.16</td>
+<td style="text-align: right;">318.3</td>
+<td style="text-align: right;">55.0</td>
+<td style="text-align: right;">13.81</td>
+<td style="text-align: right;">346.2</td>
+<td style="text-align: right;">317.2</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">1.0</td>
+<td>Pyramidal Flow</td>
+<td style="text-align: right;">10.98</td>
+<td style="text-align: right;">261.2</td>
+<td style="text-align: right;">77.3</td>
+<td style="text-align: right;">16.90</td>
+<td style="text-align: right;">351.1</td>
+<td style="text-align: right;">64.0</td>
+<td style="text-align: right;">10.51</td>
+<td style="text-align: right;">353.8</td>
+<td style="text-align: right;">265.6</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">1.0</td>
+<td><strong>DFM</strong></td>
+<td style="text-align: right;"><strong>9.77</strong></td>
+<td style="text-align: right;"><strong>200.6</strong></td>
+<td style="text-align: right;"><strong>77.9</strong></td>
+<td style="text-align: right;"><strong>14.11</strong></td>
+<td style="text-align: right;"><strong>277.3</strong></td>
+<td style="text-align: right;"><strong>78.2</strong></td>
+<td style="text-align: right;"><strong>9.98</strong></td>
+<td style="text-align: right;"><strong>336.7</strong></td>
+<td style="text-align: right;"><strong>260.2</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">1.25</td>
+<td>Flow Matching</td>
+<td style="text-align: right;">7.59</td>
+<td style="text-align: right;">185.7</td>
+<td style="text-align: right;">97.2</td>
+<td style="text-align: right;">31.57</td>
+<td style="text-align: right;">405.3</td>
+<td style="text-align: right;">39.4</td>
+<td style="text-align: right;">10.10</td>
+<td style="text-align: right;">312.9</td>
+<td style="text-align: right;">297.0</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">1.25</td>
+<td>Cascaded</td>
+<td style="text-align: right;">6.80</td>
+<td style="text-align: right;">163.0</td>
+<td style="text-align: right;">128.4</td>
+<td style="text-align: right;">11.68</td>
+<td style="text-align: right;">221.9</td>
+<td style="text-align: right;">89.2</td>
+<td style="text-align: right;">11.62</td>
+<td style="text-align: right;">279.9</td>
+<td style="text-align: right;">308.8</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">1.25</td>
+<td>Pyramidal Flow</td>
+<td style="text-align: right;">4.95</td>
+<td style="text-align: right;">164.7</td>
+<td style="text-align: right;">132.0</td>
+<td style="text-align: right;">9.38</td>
+<td style="text-align: right;">245.7</td>
+<td style="text-align: right;">109.3</td>
+<td style="text-align: right;">8.24</td>
+<td style="text-align: right;">292.2</td>
+<td style="text-align: right;">266.3</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">1.25</td>
+<td><strong>DFM</strong></td>
+<td style="text-align: right;"><strong>4.28</strong></td>
+<td style="text-align: right;"><strong>120.0</strong></td>
+<td style="text-align: right;"><strong>135.6</strong></td>
+<td style="text-align: right;"><strong>7.56</strong></td>
+<td style="text-align: right;"><strong>181.7</strong></td>
+<td style="text-align: right;"><strong>130.2</strong></td>
+<td style="text-align: right;"><strong>7.88</strong></td>
+<td style="text-align: right;"><strong>277.5</strong></td>
+<td style="text-align: right;"><strong>257.4</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">1.5</td>
+<td>Flow Matching</td>
+<td style="text-align: right;">4.73</td>
+<td style="text-align: right;">132.5</td>
+<td style="text-align: right;">138.9</td>
+<td style="text-align: right;">24.68</td>
+<td style="text-align: right;">412.5</td>
+<td style="text-align: right;">46.0</td>
+<td style="text-align: right;">8.43</td>
+<td style="text-align: right;">268.4</td>
+<td style="text-align: right;">309.8</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">1.5</td>
+<td>Cascaded</td>
+<td style="text-align: right;">5.68</td>
+<td style="text-align: right;">114.0</td>
+<td style="text-align: right;">118.1</td>
+<td style="text-align: right;">8.23</td>
+<td style="text-align: right;">167.3</td>
+<td style="text-align: right;">126.8</td>
+<td style="text-align: right;">10.39</td>
+<td style="text-align: right;"><strong>235.0</strong></td>
+<td style="text-align: right;">327.1</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">1.5</td>
+<td>Pyramidal Flow</td>
+<td style="text-align: right;">4.57</td>
+<td style="text-align: right;">116.2</td>
+<td style="text-align: right;">191.0</td>
+<td style="text-align: right;">7.68</td>
+<td style="text-align: right;">185.9</td>
+<td style="text-align: right;">152.3</td>
+<td style="text-align: right;">6.98</td>
+<td style="text-align: right;">247.1</td>
+<td style="text-align: right;">280.2</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">1.5</td>
+<td><strong>DFM</strong></td>
+<td style="text-align: right;"><strong>4.28</strong></td>
+<td style="text-align: right;"><strong>85.8</strong></td>
+<td style="text-align: right;"><strong>196.8</strong></td>
+<td style="text-align: right;"><strong>6.42</strong></td>
+<td style="text-align: right;"><strong>132.5</strong></td>
+<td style="text-align: right;"><strong>186.5</strong></td>
+<td style="text-align: right;"><strong>6.85</strong></td>
+<td style="text-align: right;">236.5</td>
+<td style="text-align: right;"><strong>271.7</strong></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="相对同-cfg-最强非-dfm-基线" class="subsection level3">
+<h3>7.2 相对同 CFG 最强非 DFM 基线</h3>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<colgroup>
+<col style="width: 13%" />
+<col style="width: 18%" />
+<col style="width: 18%" />
+<col style="width: 18%" />
+<col style="width: 18%" />
+<col style="width: 13%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">设置（CFG=1.5）</th>
+<th scope="col" style="text-align: right;">最强非 DFM</th>
+<th scope="col" style="text-align: right;">DFM</th>
+<th scope="col" style="text-align: right;">绝对变化</th>
+<th scope="col" style="text-align: right;">相对变化</th>
+<th scope="col">结论</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>IN-512 FID↓</td>
+<td style="text-align: right;">4.57</td>
+<td style="text-align: right;">4.28</td>
+<td style="text-align: right;">-0.29</td>
+<td style="text-align: right;"><strong>-6.35%</strong></td>
+<td>小幅但一致领先</td>
+</tr>
+<tr class="even">
+<td>IN-512 FDD↓</td>
+<td style="text-align: right;">114.0 / 116.2*</td>
+<td style="text-align: right;">85.8</td>
+<td style="text-align: right;">-28.2 / -30.4</td>
+<td style="text-align: right;"><strong>-24.74% / -26.16%</strong></td>
+<td>若按列最优是 Cascaded；摘要“26.4%”显然按 Pyramidal 口径</td>
+</tr>
+<tr class="odd">
+<td>IN-512 IS↑</td>
+<td style="text-align: right;">191.0</td>
+<td style="text-align: right;">196.8</td>
+<td style="text-align: right;">+5.8</td>
+<td style="text-align: right;"><strong>+3.04%</strong></td>
+<td>类别质量/多样性同时提高</td>
+</tr>
+<tr class="even">
+<td>IN-1024 FID↓</td>
+<td style="text-align: right;">7.68</td>
+<td style="text-align: right;">6.42</td>
+<td style="text-align: right;">-1.26</td>
+<td style="text-align: right;"><strong>-16.41%</strong></td>
+<td>分辨率越高，结构拆分更有价值</td>
+</tr>
+<tr class="odd">
+<td>IN-1024 FDD↓</td>
+<td style="text-align: right;">167.3</td>
+<td style="text-align: right;">132.5</td>
+<td style="text-align: right;">-34.8</td>
+<td style="text-align: right;"><strong>-20.80%</strong></td>
+<td>语义结构提升明显</td>
+</tr>
+<tr class="even">
+<td>IN-1024 IS↑</td>
+<td style="text-align: right;">152.3</td>
+<td style="text-align: right;">186.5</td>
+<td style="text-align: right;">+34.2</td>
+<td style="text-align: right;"><strong>+22.46%</strong></td>
+<td>绝对增益最大</td>
+</tr>
+<tr class="odd">
+<td>K700 FID↓</td>
+<td style="text-align: right;">6.98</td>
+<td style="text-align: right;">6.85</td>
+<td style="text-align: right;">-0.13</td>
+<td style="text-align: right;"><strong>-1.86%</strong></td>
+<td>视频单帧收益很小</td>
+</tr>
+<tr class="even">
+<td>K700 FDD↓</td>
+<td style="text-align: right;">235.0</td>
+<td style="text-align: right;">236.5</td>
+<td style="text-align: right;">+1.5</td>
+<td style="text-align: right;"><strong>+0.64%（变差）</strong></td>
+<td>唯一明确败项</td>
+</tr>
+<tr class="odd">
+<td>K700 FVD↓</td>
+<td style="text-align: right;">280.2</td>
+<td style="text-align: right;">271.7</td>
+<td style="text-align: right;">-8.5</td>
+<td style="text-align: right;"><strong>-3.03%</strong></td>
+<td>时序质量领先但幅度有限</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><code>*</code> 论文摘要写相对最佳渐进基线改善 26.4%，Table 2 用
+116.2→85.8 复算为 26.16%；若按该列真正最优非 DFM 值 114.0，则是
+24.74%。这不是结论反转，但需要说明比较口径。</p>
+</section>
+<section id="table-3flux-微调" class="subsection level3">
+<h3>7.3 Table 3：FLUX 微调</h3>
+<p>来源：核心论文 Table 3（PDF p.9；HTML 行 244–253）。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">FID10K↓</th>
+<th scope="col" style="text-align: right;">FDD10K↓</th>
+<th scope="col" style="text-align: right;">CLIPSIM↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>FLUX 原 checkpoint</td>
+<td style="text-align: right;">17.79</td>
+<td style="text-align: right;">172.7</td>
+<td style="text-align: right;">0.3280</td>
+</tr>
+<tr class="even">
+<td>FLUX-FT</td>
+<td style="text-align: right;">12.56</td>
+<td style="text-align: right;">153.6</td>
+<td style="text-align: right;">0.3261</td>
+</tr>
+<tr class="odd">
+<td><strong>FLUX-DFM</strong></td>
+<td style="text-align: right;"><strong>8.83</strong></td>
+<td style="text-align: right;"><strong>116.2</strong></td>
+<td style="text-align: right;"><strong>0.3381</strong></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>相对同训练 compute 的 FLUX-FT，DFM 的 FID 下降 <strong>3.73 /
+29.70%</strong>，FDD 下降 <strong>37.4 / 24.35%</strong>，CLIPSIM 增加
+<strong>0.0120 / 3.68%</strong>。正文行 253 把 FID 改善写为
+<strong>28.7%</strong>，但表格复算为 <strong>29.70%</strong>；引言行 73
+又写 29.7%，因此 28.7% 应视为内部笔误。</p>
+<hr />
+</section>
+</section>
+<section id="逐层消融敏感性与相变" class="card level2">
+<h2>8. 逐层消融、敏感性与相变</h2>
+<section id="训练阶段概率结构优先的收益不是线性的保证" class="subsection level3">
+<h3>8.1 训练阶段概率：结构优先的收益不是线性的保证</h3>
+<p>Table 1(a)（PDF p.6）显示 DiT-B 上 <code>p0</code> 从 .7→.8→.9→.95
+时，FID 为 36.02→32.09→29.56→27.50，FDD 为 676→622→571→540，IS 为
+32.2→36.1→41.0→43.7。<code>.7→.95</code> 的 FID 相对下降
+<strong>23.65%</strong>、FDD 下降 <strong>20.12%</strong>。但主实验仍选
+<code>.9</code>，作者理由是“大模型可能有余力分给非结构细节，并更需要贴合推理轨迹”（Sec.
+4.2，PDF p.6）。这是一项<strong>推测性超参迁移</strong>，不是由 XL sweep
+证明的结论。</p>
+</section>
+<section id="时间解耦是离散相变点" class="subsection level3">
+<h3>8.2 时间解耦是离散相变点</h3>
+<p>第二阶段 previous-stage logit-normal location 从 0、.5、1、1.5、2
+变化时，FID 只在 28.89–29.96 内波动；但把所有 stage 时间直接 tied
+后，FID 从默认 29.56 跳到 <strong>55.49（+87.72%）</strong>，FDD 从 571
+跳到 <strong>885（+54.99%）</strong>，IS 从 41.0 降到
+<strong>21.4（-47.80%）</strong>（Table 1(b)，PDF p.6）。这比“最佳
+location
+是多少”更重要：<strong>多时间轴本身是机制，不是装饰。</strong></p>
+</section>
+<section id="mask标准化与损失权重耦合" class="subsection level3">
+<h3>8.3 Mask、标准化与损失权重耦合</h3>
+<p>移除 mask，FID 29.56→29.90、FDD 571→584，轻微变差；移除 stage
+standardization 反而 FID 29.56→27.13、FDD 571→505（分别改善
+<strong>8.22%</strong>、<strong>11.56%</strong>）。作者解释为第二 stage
+幅值变小，相当于把更多容量给结构阶段。因此标准化不是纯数值稳定器，而在隐式重加权损失。最终
+ImageNet 禁用、Kinetics 启用，说明配置依赖 autoencoder（Table
+1(c)、Appendix A.5，PDF p.6、15）。</p>
+</section>
+<section id="参数专门化最好结果被公平性约束排除" class="subsection level3">
+<h3>8.4 参数专门化：最好结果被公平性约束排除</h3>
+<p>None/Mod/Proj/Cond/Attn/MLP/Full 七种专门化中，Full 的 FID/FDD/IS 为
+<strong>26.63/526/45.5</strong>，相对主基线 29.56/571/41.0 改善
+<strong>9.91% / 7.88% /
+10.98%</strong>；但作者为保持参数量接近基线，主实验不使用 Full（Table
+1(d)，PDF
+p.6）。这很好地区分了两种贡献：主论文证明的是“时间与表示分解”有效，不是“给每尺度更多参数”有效。</p>
+</section>
+<section id="计算分配与分解尺度" class="subsection level3">
+<h3>8.5 计算分配与分解尺度</h3>
+<p>把省下的 compute 用于增大 batch 得到 FID 31.95，而缩小 patch 得到
+29.56；作者因此选择等 token 数的 patch 策略。1024px
+下，512→1024、256→512→1024、256→1024 的 FID 分别
+58.03、50.61、<strong>41.06</strong>；最佳不是 stage 越多越好，而是
+coarse 起点足够低、stage 数不过多。512→1024 相比 256→1024 差
+<strong>41.32%</strong>，提示“第一阶段必须真正只承载结构”（Table
+1(e,f)，PDF p.6）。</p>
+</section>
+<section id="推理阈值与步数" class="subsection level3">
+<h3>8.6 推理阈值与步数</h3>
+<p>主实验 512px 选 <code>τ=.7</code>、1024px 选 <code>.95</code>；固定
+40 步时用 30/10。Figure 4/8
+只给曲线，论文未发布每个阈值/步数组合的完整数表，因此不能安全抄出精确小数。可推出的是：高
+CFG 时 <code>τ</code> 较不敏感；更多 coarse steps 改善结构，更多 fine
+steps 对植被、草地、毛发等复杂纹理有递减但可见的修复（Sec. 4.3、Appendix
+C/G，PDF p.7、17、19）。不能推出“30/10 对所有样本最优”。</p>
+</section>
+<section id="统计显著性" class="subsection level3">
+<h3>8.7 统计显著性</h3>
+<p><strong>论文未报告</strong>主表或消融的多随机种子均值、标准差、置信区间、显著性检验，也没有
+FID/FDD 的 bootstrap。每个设置虽然用 10k/50k
+样本评测，但样本数不能替代训练 seed 方差。因此可相信大幅差异（如 FDD
+132.5→85.8）具有工程意义，却不能判断 Kinetics FID 6.98→6.85 或 FDD
+235.0→236.5 是否超出随机波动。</p>
+<hr />
+</section>
+</section>
+<section id="技术来源链解决什么留下什么dfm-如何接棒" class="card level2">
+<h2>9. 技术来源链：解决什么、留下什么、DFM 如何接棒</h2>
+<section id="flow-matchinglipman-et-al.-iclr-2023" class="subsection level3">
+<h3>9.1 Flow Matching（Lipman et al., ICLR 2023）</h3>
+<p><strong>解决什么：</strong>
+用条件概率路径的向量场回归，避免训练时积分
+CNF，形成可扩展、simulation-free
+的连续生成目标。<strong>遗留缺口：</strong> 一个全分辨率时间
+<code>t</code> 不显式区分结构与纹理。<strong>DFM 如何回应：</strong>
+保留相同线性路径与 MSE，把 <code>t</code> 扩展成 <code>{t^s}</code>
+并改变其联合训练分布。<strong>设计传递：</strong> 标准 ODE
+solver、速度预测与 classifier-free guidance 都原样保留，说明 DFM 是 FM
+的结构化封装而非替代。</p>
+</section>
+<section id="cascaded-diffusion-modelsho-et-al.-jmlr-2022"
+class="subsection level3">
+<h3>9.2 Cascaded Diffusion Models（Ho et al., JMLR 2022）</h3>
+<p><strong>解决什么：</strong> 用低分辨率生成器加一个或多个
+super-resolution
+diffusion，把高维任务拆成阶段。<strong>遗留缺口：</strong> 每 stage
+一套模型，训练/维护成本大，后级面对前级生成误差产生 exposure
+gap。<strong>DFM 如何回应：</strong> 单主干联合训练所有尺度，未来 stage
+以噪声遮蔽、过去 stage 以低噪声条件进入。<strong>设计传递：</strong>
+“低分辨率先行”的课程被保留；DFM 的 <code>p0=.9</code> 与 30/10
+步分配，本质上继承了 cascade 对第一阶段的预算倾斜。</p>
+</section>
+<section id="f-dmgu-et-al.-iclr-2023" class="subsection level3">
+<h3>9.3 f-DM（Gu et al., ICLR 2023）</h3>
+<p><strong>解决什么：</strong> 把 downsampling 等 progressive signal
+transformations
+写进扩散过程，使分辨率随时间改变。<strong>遗留缺口：</strong> 生成过程和
+sampler 与特定变换耦合，stage transition 需要专门处理。<strong>DFM
+如何回应：</strong> 每个分解分量有自己的标准线性流，transition
+从“改变状态空间”变成“改变哪些时间轴开始推进”。<strong>设计传递：</strong>
+f-DM 证明显式渐进信号有益；DFM 则把信号变换移到表示层，把动力学还给普通
+FM。</p>
+</section>
+<section id="matryoshka-diffusion-modelsgu-et-al.-iclr-2024"
+class="subsection level3">
+<h3>9.4 Matryoshka Diffusion Models（Gu et al., ICLR 2024）</h3>
+<p><strong>解决什么：</strong> 用 NestedUNet
+在单模型内联合去噪多个分辨率，并支持从低到高的 progressive
+training。<strong>遗留缺口：</strong> 嵌套网络和 pixel-space
+多尺度设计较重，分解与架构绑定。<strong>DFM 如何回应：</strong> 共享普通
+DiT 主干，仅复制端口与时间嵌入；在 latent space
+中工作。<strong>设计传递：</strong>
+“多尺度输出共同训练、低尺度特征服务高尺度”直接延续，但 DFM
+把嵌套参数共享换成相同 token 数与 embedding 求和。</p>
+</section>
+<section id="pyramidal-flow-matchingjin-et-al.-iclr-2025"
+class="subsection level3">
+<h3>9.5 Pyramidal Flow Matching（Jin et al., ICLR 2025）</h3>
+<p><strong>解决什么：</strong> 在 latent pyramid
+上按空间/时间金字塔生成视频，仅最终阶段运行全分辨率，降低长视频成本。<strong>遗留缺口：</strong>
+stage 间需要升采样、重新加噪与连续性设计，流程仍是特定
+sampler。<strong>DFM 如何回应：</strong> 每个 Laplacian
+分量独立流动，阈值只负责启动，不负责把一个分布人工转换成另一个。<strong>设计传递：</strong>
+coarse-to-fine latent flow、等算力 stage 对照与视频评测直接传入
+DFM；Table 2 把 Pyramidal Flow 作为最强近邻基线。</p>
+</section>
+<section id="非线性技术演进树" class="subsection level3">
+<h3>9.6 非线性技术演进树</h3>
+<pre class="text"><code>                         ┌─ Cascaded Diffusion ── 多模型、超分条件
+Diffusion / Score ───────┼─ f-DM / Relay ─────── 改造动力学与 stage transition
+                         └─ Matryoshka ───────── 单模型嵌套多分辨率
+
+Flow Matching ───────────┬─ Pyramidal Flow ───── latent pyramid + 升采样/重新加噪
+                         └─ DFM ──────────────── 多时间轴 + 任意分解 + 普通 solver
+                                                │
+Scale-equivariant AE ────────────────────────────┘ 让 latent 频率层次可用</code></pre>
+<p>演进动力有三次转折：先从“全分辨率一次解决”转为
+coarse-to-fine；再从“每阶段一个模型”转为共享模型；最后从“阶段改变生成过程”转为“阶段只改变表示与时间调度”。DFM
+的新意主要在第三次转折。</p>
+</section>
+<section id="跨论文对标" class="subsection level3">
+<h3>9.7 跨论文对标</h3>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<colgroup>
+<col style="width: 15%" />
+<col style="width: 21%" />
+<col style="width: 15%" />
+<col style="width: 15%" />
+<col style="width: 15%" />
+<col style="width: 15%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">模型数</th>
+<th scope="col">状态空间</th>
+<th scope="col">stage 动力学</th>
+<th scope="col">专用 transition/sampler</th>
+<th scope="col">DFM 接收/拒绝的设计</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Flow Matching</td>
+<td style="text-align: right;">1</td>
+<td>单尺度连续 latent</td>
+<td>单时间轴</td>
+<td>否</td>
+<td>接收标准目标；补多尺度时间</td>
+</tr>
+<tr class="even">
+<td>Cascaded Diffusion</td>
+<td style="text-align: right;">每 stage 1 个</td>
+<td>多分辨率图像/latent</td>
+<td>多模型条件扩散</td>
+<td>是</td>
+<td>接收预算倾斜；拒绝多模型维护</td>
+</tr>
+<tr class="odd">
+<td>f-DM</td>
+<td style="text-align: right;">1</td>
+<td>随时间变换的信号</td>
+<td>变换耦合扩散</td>
+<td>是</td>
+<td>接收显式渐进；拒绝变换耦合 solver</td>
+</tr>
+<tr class="even">
+<td>Matryoshka DM</td>
+<td style="text-align: right;">1 个嵌套网络</td>
+<td>多分辨率 pixel</td>
+<td>联合多尺度去噪</td>
+<td>架构专门化</td>
+<td>接收联合训练；简化为 DiT 端口</td>
+</tr>
+<tr class="odd">
+<td>Pyramidal Flow</td>
+<td style="text-align: right;">1</td>
+<td>latent pyramid</td>
+<td>分阶段 rectified flow</td>
+<td>升采样+重新加噪</td>
+<td>接收 latent pyramid；拆成独立流</td>
+</tr>
+<tr class="even">
+<td><strong>DFM</strong></td>
+<td style="text-align: right;"><strong>1</strong></td>
+<td><strong>可分解 latent</strong></td>
+<td><strong>每尺度独立 FM 时间</strong></td>
+<td><strong>普通 Euler + 启动阈值</strong></td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+</div>
+<hr />
+</section>
+</section>
+<section id="真正贡献可复用设计与迁移潜力" class="card level2">
+<h2>10. 真正贡献、可复用设计与迁移潜力</h2>
+<section id="真正贡献" class="subsection level3">
+<h3>10.1 真正贡献</h3>
+<ol type="1">
+<li><strong>把“渐进”与“扩散公式”解耦。</strong> 渐进性来自表示
+<code>{X^s}</code> 与时间向量
+<code>{t^s}</code>，不再要求改造单尺度噪声过程。</li>
+<li><strong>给出联合训练分布。</strong> stage
+index、current/previous/future 三类时间采样与 mask
+共同模拟推理状态；tied ablation 证明它是性能核心。</li>
+<li><strong>公平近邻对照。</strong> Flow Matching、cascade、Pyramidal
+Flow 共用 DiT-XL 与等训练 compute；主表覆盖图像、视频、三种 CFG。</li>
+<li><strong>把方法接到 FLUX 微调。</strong> 证明 DFM
+不只适用于从头训练的小型原型，不过证据来自内部域。</li>
+</ol>
+</section>
+<section id="可复用设计" class="subsection level3">
+<h3>10.2 可复用设计</h3>
+<ul>
+<li><strong>stage-specific ports + shared trunk</strong> 可迁移到
+wavelet、DCT（先逆变回空间）或多尺度 learned tokenizer。</li>
+<li><strong>vector timestep conditioning</strong>
+适合任何可分块状态，如时空分块、语义层/纹理层、几何/材质层。</li>
+<li><strong>loss mask 模拟未来未激活分量</strong>
+是通用课程学习工具，能避免纯噪声分支污染共享表示。</li>
+<li><strong>固定总 NFE 的阶段预算</strong> 可变成按样本自适应
+controller：结构复杂时多给 coarse，纹理复杂时多给 fine。</li>
+</ul>
+</section>
+<section id="迁移潜力" class="subsection level3">
+<h3>10.3 迁移潜力</h3>
+<p>对视频，可把空间 Laplacian 与时间金字塔做二维 stage；对 3D，可拆
+occupancy/coarse geometry 与
+texture/material；对音频，可拆低频包络与高频瞬态；对离散生成，可把词法骨架和表面形式分层。不过“每层都能线性插值并共享同一主干”是前提，不能仅凭图像成功就外推。</p>
+<hr />
+</section>
+</section>
+<section id="论文自述限制与独立批判" class="card level2">
+<h2>11. 论文自述限制与独立批判</h2>
+<section id="论文自述限制" class="subsection level3">
+<h3>11.1 论文自述限制</h3>
+<ol type="1">
+<li><strong>额外超参数。</strong> 训练 stage 概率、previous-stage noise
+shift、推理阈值与步数分配共同控制低/高频平衡（Discussion，PDF p.9；HTML
+行 255–259）。</li>
+<li><strong>高频伪影。</strong>
+植被、毛发、细结构与杂乱场景可能扁平化；增加第二阶段步数可缓解但不消除（Appendix
+G，PDF p.19）。</li>
+<li><strong>分解与规模未覆盖。</strong> 正式主结果集中在 Laplacian；DCT
+直接域输入失败，wavelet/多尺度 AE 与更大规模仍留作未来工作（Discussion /
+Appendix F，PDF p.9、18–19）。</li>
+</ol>
+</section>
+<section id="独立批判每点均为证据推论" class="subsection level3">
+<h3>11.2 独立批判（每点均为“证据→推论”）</h3>
+<ol type="1">
+<li><strong>[统计]</strong> 因为 Table 1–3 没有 seed
+数、标准差、置信区间或 bootstrap，所以 Kinetics FID 的
+<strong>0.13</strong> 优势与 FDD 的 <strong>1.5</strong>
+劣势都不能被解释为稳定差异；只能对 46.7 这类大幅 FDD
+差异做工程性判断。</li>
+<li><strong>[复现]</strong> 因为官方仓库明确说是 SiT
+上的重实现、架构不完全等同论文，而且 checkpoint
+仍标“将发布”，所以“代码已开源”不等于论文主表已可复现；当前第三方只能复现概念，不一定复现
+Table 2 数值。</li>
+<li><strong>[数据外推]</strong> 因为 FLUX 的 24k+32k 微调、10k test
+prompts 与 scale-equivariant AE 都使用内部数据，所以 12.56→8.83 的 FID
+改善不能外推到公开 prompt 分布、审美分布或原始 FLUX-dev
+质量；它只支持“更快贴近内部目标域”。</li>
+<li><strong>[归因]</strong> 因为整条管线额外微调 autoencoder 10k
+步，并且 Table 4 中换成 scale-equivariant AE 会让普通 FM 的 FID 从 54.50
+降到 43.16，所以性能不是“只加多时间轴”产生；虽然 DFM 在原 AE 上也从
+54.50 降到 34.00，说明机制独立有效，但 DFM 与 AE
+正则的交互仍未彻底分离。</li>
+<li><strong>[超参选择]</strong> 因为 DiT-B 消融中 <code>p0=.95</code> 的
+FID/FDD/IS <strong>27.5/540/43.7</strong> 全面优于 <code>.9</code> 的
+<strong>29.56/571/41.0</strong>，而主实验改选 <code>.9</code>
+只基于“大模型可能需要更多细节容量”的推测，所以主结果配置不是消融直接支持的最优；需要
+XL 上的等成本 sweep。</li>
+<li><strong>[视频证据]</strong> 因为 cfg=1.5 时 DFM 的 Kinetics FDD
+<strong>236.5</strong> 反而差于 Cascaded <strong>235.0</strong>，且 FVD
+仅比 Pyramidal Flow 低 <strong>8.5 /
+3.03%</strong>，所以“图像和视频都全面领先”应缩为“除 Kinetics FDD
+外多数指标领先”；视频收益明显弱于图像。</li>
+<li><strong>[评价有效性]</strong> 因为公开基准只报告
+FID/FDD/IS/FVD，没有人类结构偏好、局部纹理错误率、prompt
+compositionality
+或安全性，所以论文把改进归因于“更好结构细节”主要依赖定性图与 DINO
+距离；FDD 下降不能证明所有语义关系更正确。</li>
+<li><strong>[数值审计]</strong> 因为 Table 3 的 12.56→8.83 复算为
+<strong>29.70%</strong>，正文却写 <strong>28.7%</strong>；摘要的
+Pyramidal 116.2→85.8 复算 <strong>26.16%</strong> 而非
+26.4%，所以至少两处百分比口径不严谨；幅度不改变主结论，却降低了精确复用的可信度。</li>
+</ol>
+<hr />
+</section>
+</section>
+<section id="开放挑战可执行的-head-to-head-实验空白" class="card level2">
+<h2>12. 开放挑战：可执行的 head-to-head 实验空白</h2>
+<section id="理论" class="subsection level3">
+<h3>理论</h3>
+<ol type="1">
+<li><strong>分解等变性的充分条件。</strong> 固定 DiT、参数量与训练
+FLOPs，对 Laplacian、Haar wavelet、DCT→逆变换、learned spectral
+tokenizer 做 head-to-head；分别测跨尺度互信息、速度场 Lipschitz
+估计、FID/FDD。若低频/高频越解耦越好，应出现可预测相关性，而不只是经验排名。</li>
+<li><strong>训练分布—推理轨迹覆盖。</strong> 比较手工
+logit-normal、从真实 sampler trajectory 拟合的 joint
+<code>p(t^1,…,t^S)</code>、以及 adversarial worst-case timestep
+sampling；以同 500k 步下的 train/inference hidden-state MMD
+与生成指标评估 exposure gap。</li>
+</ol>
+</section>
+<section id="工程与应用" class="subsection level3">
+<h3>工程与应用</h3>
+<ol start="3" type="1">
+<li><strong>等 GPU-hour 而非等迭代。</strong> 在相同
+H100-hour、相同参数量、相同 NFE 下比较 FM、DFM、Cascaded、Pyramidal
+Flow；同时报告训练吞吐、峰值显存、通信量、采样延迟与能耗。只有这样才能验证“半数迭代”是否真是“半数成本”。</li>
+<li><strong>公开 FLUX 适配。</strong> 选公开 LAION-Aesthetics 子集与固定
+10k prompts，发布 AE、24k 起点、32k 两分支 checkpoint；比较
+FLUX-FT/DFM/LoRA-DFM，并做盲人评、GenEval、DPG-Bench、FID/FDD。这样可分离内部数据与方法收益。</li>
+<li><strong>纹理自适应预算。</strong> 用一个轻量 controller 根据 coarse
+preview 的边缘谱/语义复杂度动态分配剩余 NFE，与固定 30/10 在相同平均 40
+NFE 下对比毛发、植被、文字、规则几何四类失败集；指标包括 LPIPS patch
+error、人评与 latency P95。</li>
+</ol>
+</section>
+<section id="新兴方向" class="subsection level3">
+<h3>新兴方向</h3>
+<ol start="6" type="1">
+<li><strong>空间×时间二维分解。</strong> 比较只做空间 DFM、只做时间
+pyramid、二者笛卡尔积 stage 的视频模型；在
+Kinetics、长视频一致性与物理可行性上按相同 token-FLOPs 对比，检验 stage
+数增长是否造成优化稀释。</li>
+<li><strong>3D 几何/材质解耦。</strong> 在同一 3D DiT 中把 coarse
+occupancy、surface detail、texture 设为独立流，和单流、模型
+cascade、triplane pyramid 对比 Chamfer、normal consistency、texture FID
+与可编辑性；特别检查共享主干是否把几何误差传播到材质。</li>
+<li><strong>安全与来源标记。</strong> 将 DFM 的 stage
+端口用于低频语义水印/高频不可见水印，和 NoisePrints、普通 latent
+watermark
+head-to-head；测试裁剪、压缩、再扩散后的检出率与质量损失，判断多尺度生成是否提供新的
+provenance 控制点。</li>
+</ol>
+<hr />
+</section>
+</section>
+<section id="近期工作雷达经验证链接" class="card level2">
+<h2>13. 近期工作雷达（经验证链接）</h2>
+<ol type="1">
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/c919a2b5ec1de69f2629f9119676e336-Abstract-Conference.html">LapFlow:
+Laplacian Multi-scale Flow Matching for Generative Modeling</a>（ICLR
+2026）：与 DFM
+主题直接相邻，值得做严格同骨干对照；重点看它是否给出分解层面的理论或只是另一种工程实现。</li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/41b93c59da0d0f835907fd661d419db2-Abstract-Conference.html">SANA-Video</a>（ICLR
+2026 Oral）：从 attention/缓存侧降视频 DiT 成本，可与 DFM
+的生成阶段分解正交组合，但需要以总 FLOPs 评估叠加收益。</li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/ad6ac52e02e14e0f2ddc0d4587ab47f1-Abstract-Conference.html">GLASS
+Flows</a>（ICLR 2026 Oral）：把内层 flow 用于高效 reward
+alignment；它优化采样转移，DFM 优化表示阶段，两者结合可能形成多尺度
+test-time alignment。</li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/378dcc0bb9a61a4c1c00e19ad9890425-Abstract-Conference.html">Discrete
+Adjoint Matching</a>（ICLR 2026）：把 adjoint matching 延伸到 CTMC
+离散生成，提示“多时间轴”不必局限连续视觉 latent。</li>
+<li><a
+href="https://papers.nips.cc/paper_files/paper/2025/hash/cb43f46154e750746602faaffd65fbbb-Abstract-Conference.html">Edit
+Flows</a>（NeurIPS 2025）：用插入/删除/替换定义可变长离散流；相比 DFM
+的空间 stage，它把结构分解放进序列操作空间。</li>
+<li><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/f4823f831af67a3ef15e41a85434422a-Abstract-Conference.html">Self-Forcing</a>（NeurIPS
+2025 Spotlight）：直接针对自回归视频的 train-test gap；DFM
+也在模拟推理噪声组合，二者共同指向“训练状态分布覆盖”是生成稳定性的核心。</li>
+<li><a href="https://arxiv.org/abs/2603.27862">ImagenWorld</a>（ICLR
+2026 / arXiv）：用可解释人评压力测试开放世界图像生成，正好补 DFM 只依赖
+FID/FDD/IS 的评价盲区。</li>
+</ol>
+<hr />
+</section>
+<section id="结论为什么值得看" class="card level2">
+<h2>14. 结论：为什么值得看</h2>
+<p>DFM 值得看，不是因为又把 FID
+降了一个点，而是它把“渐进生成”重写成四个可复用零件：可逆多尺度表示、每尺度独立时间、共享主干的轻量端口、普通
+ODE sampler 上的启动调度。ImageNet 512px cfg=1.5 的 FDD 从普通 FM
+<strong>132.5</strong> 降到 <strong>85.8</strong>，同等训练 compute
+下相对下降 <strong>35.25%</strong>；1024px 的 IS 又从最强非 DFM
+<strong>152.3</strong> 提到 <strong>186.5</strong>（+22.46%）。</p>
+<p>但论文最关键的负面信息同样重要：结构预算过强会压扁高频纹理；Kinetics
+FDD 并非最佳；FLUX
+结果依赖内部数据；公开仓库并非论文原实现；统计区间缺失。最准确的评价是：<strong>DFM
+已证明“分解 +
+多时间轴”是强而简单的渐进生成接口，但还没有证明它是部署成本、细节保真与公开可复现性上的最终方案。</strong></p>
+<hr />
+</section>
+<section id="脚注检查与索引" class="card level2">
+<h2>脚注：检查与索引</h2>
+<ul>
+<li>报告全文数字均回到核心论文 PDF/HTML 的表、图、正文或官方代码
+README；复算值保留两位小数，未报告项不补造。</li>
+<li>已运行 Warm Editorial 静态校验器；本机未发现
+<code>/usr/bin/chromium</code> 或 <code>/opt/pw-browsers</code> 的
+Chromium 可执行文件，因此无法按要求执行 Playwright
+的浅色、深色与移动端真实浏览器截图。HTML 仍包含响应式
+CSS、横向可滚动表格、深浅主题变量、键盘可聚焦图表 tooltip，并通过静态
+DOM/CSS 检查；此限制不影响 Markdown/TXT 内容。</li>
+<li><code>ml-report-index.md</code> 已追加本期条目。</li>
+</ul>
+</section>
+
+  </main>
+
+  <footer>基于 NeurIPS 2025 正式论文、arXiv v1、官方项目与公开代码，以及五篇技术来源链全文；生成于 2026-09-30。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

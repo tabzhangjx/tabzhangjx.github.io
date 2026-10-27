@@ -1,0 +1,1335 @@
+---
+layout: null
+title: "ScaleSearch"
+date: 2026-09-11
+topic: "llm-systems"
+tags: ["llm-systems", "quantization", "kv-cache"]
+excerpt: "Qwen3-8B MATH-500 improves 15.0 pp over ordinary NVFP4, but SSA ablation attributes only 0.0047 PPL to scale search itself; high-precision boundary KV blocks preserve most fidelity."
+permalink: "/blog/2026/09/11/scalesearch/en/"
+blog_post: false
+lang: "en"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_zh: "/blog/2026/09/11/scalesearch/"
+sitemap: true
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>ScaleSearch: Stop Letting the Absolute Maximum Monopolize FP4 Scaling · 2026-09-11</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" aria-pressed="false">☾ Dark</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ML / AI DAILY DEEP PAPER · MLSYS 2026</p>
+    <h1>ScaleSearch: Stop Letting the Absolute Maximum Monopolize FP4 Scaling</h1>
+    <p class="subtitle">NVFP4 neighborhood scale search × FP4 attention × 4.5-bit KV cache</p>
+    <div class="meta" aria-label="Report metadata">
+      <span class="chip source">MLSys 2026</span>
+      <span class="chip">2026-09-11</span>
+      <span class="chip">Efficiency and Systems / Quantization / Attention</span>
+    </div>
+    <p class="lede">Qwen3-8B MATH-500 improves 15.0 pp over ordinary NVFP4, but SSA ablation attributes only 0.0047 PPL to scale search itself; high-precision boundary KV blocks preserve most fidelity.</p>
+  </header>
+
+  <main>
+<section class="card" aria-labelledby="0-链接验证版本与资源审计"><h2 id="0-链接验证版本与资源审计">0. Link verification, versions, and resource audit</h2>
+<p>The links below were visited on <strong>2026-09-11</strong> actually accessed. Conference identity prioritizes official MLSys/PMLR proceedings; arXiv dates follow submission history. “Not public/not found” means no verifiable entry was found through the official paper page, arXiv Code/Data/Media, GitHub title search, Hugging Face Papers, Papers with Code, Semantic Scholar, or project searches. Core numbers come from the 16-page official MLSys PDF, not web abstracts.</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Conference / official page</th>
+<th scope="col">arXiv version and date</th>
+<th scope="col">Code</th>
+<th scope="col">Data / weights</th>
+<th scope="col">Project page / videos</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Core: ScaleSearch</strong></td>
+<td><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/633b0e871a48d542280c3ad03928e60d-Abstract-Conference.html">Official MLSys 2026 page</a>；<a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/file/633b0e871a48d542280c3ad03928e60d-Paper-Conference.pdf">Official PDF</a>；<a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/file/633b0e871a48d542280c3ad03928e60d-Supplemental-Conference.pdf">Supplement</a></td>
+<td><a
+href="https://arxiv.org/abs/2605.12464v1">2605.12464v1</a>，2026-05-12
+17:50 UTC</td>
+<td><strong>Not public / not found</strong>; the paper only describes modifying ModelOpt and simulating in PyTorch</td>
+<td><strong>Not public / not found</strong></td>
+<td><strong>Not found</strong></td>
+</tr>
+<tr class="even">
+<td>SageAttention3</td>
+<td>Paper PDF says NeurIPS 2025; repository announcement says Spotlight; official proceedings entry not found</td>
+<td><a
+href="https://arxiv.org/abs/2505.11594v3">2505.11594v3</a>, 2026-01-14; v1 dated 2025-05-16</td>
+<td><a
+href="https://github.com/thu-ml/SageAttention">thu-ml/SageAttention</a>, including `sageattention3_blackwell`</td>
+<td>Separate data/weights not applicable; evaluation scripts and examples in the repository</td>
+<td>GitHub doubles as project page; separate video not found</td>
+</tr>
+<tr class="odd">
+<td>QuIP#</td>
+<td><a href="https://proceedings.mlr.press/v235/tseng24a.html">ICML 2024
+/ PMLR 235</a></td>
+<td><a href="https://arxiv.org/abs/2402.04396">2402.04396</a>，v1
+2024-02-06</td>
+<td><a
+href="https://github.com/Cornell-RelaxML/quip-sharp">Cornell-RelaxML/quip-sharp</a></td>
+<td>Quantized models linked in repository; training data not applicable</td>
+<td>Separate project page/video not found</td>
+</tr>
+<tr class="even">
+<td>StreamingLLM</td>
+<td>ICLR 2024; OpenReview triggered a verification page, so arXiv and the official repository provide dual evidence</td>
+<td><a href="https://arxiv.org/abs/2309.17453">2309.17453</a>，v1
+2023-09-29</td>
+<td><a
+href="https://github.com/mit-han-lab/streaming-llm">mit-han-lab/streaming-llm</a></td>
+<td>Code and evaluation configurations public; dedicated weights not applicable</td>
+<td>Project entry in repository; separate video not found</td>
+</tr>
+<tr class="odd">
+<td>NVFP4 technical explanation</td>
+<td><a
+href="https://developer.nvidia.com/blog/introducing-nvfp4-for-efficient-and-accurate-low-precision-inference/">NVIDIA technical blog, 2025-06-24</a></td>
+<td>Not applicable</td>
+<td><a
+href="https://github.com/NVIDIA/TensorRT-Model-Optimizer">TensorRT Model
+Optimizer</a>；<a
+href="https://github.com/vllm-project/llm-compressor">LLM
+Compressor</a></td>
+<td>Blog links several prequantized weights, not ScaleSearch weights</td>
+<td>Blog serves as project explanation; separate video not found</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Version inconsistency alert.</strong> The MLSys PDF lists the author name as
+<strong>Shirley Wu</strong>, while the official webpage and arXiv use <strong>Xiaoxia
+Wu</strong>. The arXiv HTML still contains “Anonymous Authors” and “Under review by MLSys” template text, whereas the final PDF names authors. This report follows the official proceedings identity but does not assume the two English names reflect one person's renaming without an author explanation. Another detail: the proceedings index says <em>Proceedings of Machine Learning and Systems
+8</em>while the PDF footer says “9th MLSys Conference”; one is a volume number, the other the conference edition, so they do not conflict.</p>
+</section><section class="card" aria-labelledby="1-候选池近-14-天排除与随机选择"><h2 id="1-候选池近-14-天排除与随机选择">1. Candidate pool, 14-day exclusions, and random selection</h2>
+<p>First check <code>ml-report-index.md</code>: the past 14 days already covered
+<strong>QServe</strong>(a W4A8KV4 serving system) and
+<strong>Lumos</strong>(training-performance modeling), so those papers were excluded and highly overlapping mixed-precision serving kernels/training predictors avoided. An initial pool of 27 papers from MLSys 2025 was built, and the prescribed draw <code>shuf -i 1-27 -n 1</code>
+selected #23 <strong>APOLLO</strong>. It was then discovered that MLSys 2026 proceedings were already available with 135 accepted papers. Keeping a 2025-only pool would violate the preference for formal papers from the past 12 months, so that draw was invalidated—not because the paper was unpopular or its results unattractive.</p>
+<p>The rebuilt pool primarily used MLSys 2026 proceedings, with arXiv, OpenReview, Hugging Face Daily Papers, Papers with Code, Semantic Scholar, and ACL Anthology title searches checking identities/resources. A systems topic does not require adding ACL papers merely to diversify sources; those auxiliary searches found no extra core-paper code or data. This produced
+<strong>30</strong>eligible candidates, followed by <code>shuf -i 1-30 -n 1</code> and selected
+<strong>#24 ScaleSearch</strong>. Total redraws: <strong>1</strong>, solely because newer official proceedings were discovered.</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">#</th>
+<th scope="col">Candidate paper</th>
+<th scope="col">Formal status</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td>ProfInfer: An eBPF-based Fine-Grained LLM Inference Profiler</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td>SpecDiff-2: Scaling Diffusion Drafter Alignment For Faster
+Speculative Decoding</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td>SuperInfer: SLO-Aware Rotary Scheduling and Memory Management for
+LLM Inference on Superchips</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td>HELIOS: Adaptive Model And Early-Exit Selection for Efficient LLM
+Inference Serving</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td>AccelOpt: A Self-Improving LLM Agentic System for AI Accelerator
+Kernel Optimization</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td>BOOST: Bottleneck-Optimized Scalable Training Framework for Low-Rank
+Large Language Models</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td>Rethinking DVFS for Mobile LLMs: Unified Energy-Aware Scheduling
+with CORE</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">8</td>
+<td>CATWILD: Compiler Autotuning for TPU Workloads in the Wild</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td>Breaking the Ice: Analyzing Cold Start Latency in vLLM</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td>FlashInfer-Bench: Building the Virtuous Cycle for AI-driven LLM
+Systems</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td>CRAFT: Fine-Grained Cost-Aware Expert Replication for Efficient MoE
+Serving</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">12</td>
+<td>Stream2LLM: Overlap Context Streaming and Prefill for Reduced
+Time-to-First-Token</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td>FlexTrain: Scalable Hybrid-Parallel Training with Elastic Resource
+Utilization and Consistent Accuracy</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td>PRISM: Parametrically Refactor Inference for Speculative Decoding
+Draft Models</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td>Efficient Long-Context Language Model Training by Core Attention
+Disaggregation</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">16</td>
+<td>Demystifying the Mixture of Experts Serving Tax</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td>SkipKV: Selective Skipping of KV Generation and Storage for
+Efficient Inference with Large Reasoning Models</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td>Wave: A Symbolic Python DSL And Compiler for High-Performance
+Machine Learning</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">19</td>
+<td>RaidServe: High-performance Resilient Serving</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">20</td>
+<td>Event Tensor: A Unified Abstraction for Compiling Dynamic
+Megakernel</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">21</td>
+<td>Speculative Decoding: Performance or Illusion?</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">22</td>
+<td>ProTrain: Efficient LLM Training via Automatic Memory
+Management</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">23</td>
+<td>BatchLLM: Optimizing Large Batched LLM Inference with Global Prefix
+Sharing and Throughput-oriented Token Batching</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;"><strong>24</strong></td>
+<td><strong>Search Your Block Floating Point Scales!</strong></td>
+<td><strong>MLSys 2026; selected</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">25</td>
+<td>Accelerating Large-Scale Reasoning Model Inference with Sparse
+Self-Speculative Decoding</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">26</td>
+<td>FaaScale: Unlocking Fast LLM Scaling for Serverless Inference</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">27</td>
+<td>TokenWeave: Efficient Compute-Communication Overlap for Distributed
+LLM Inference</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">28</td>
+<td>MTraining: Distributed Dynamic Sparse Attention for Efficient
+Ultra-Long Context Training</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">29</td>
+<td>TeleRAG: Efficient Retrieval-Augmented Generation Inference with
+Lookahead Retrieval</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">30</td>
+<td>MoEBlaze: Breaking the Memory Wall for Efficient MoE Training on
+Modern GPUs</td>
+<td>MLSys 2026</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="2-motivation4-bit-的瓶颈不只在位数太少还在-scale-选错"><h2 id="2-motivation4-bit-的瓶颈不只在位数太少还在-scale-选错">2. Motivation: the 4-bit bottleneck is not only too few bits, but a poor scale</h2>
+<p>NVFP4 represents continuous values using one E2M1 four-bit float per element plus one shared E4M3 eight-bit scale per 16 elements. E2M1 has only</p>
+<p><span
+class="math display">ℛ<sub><em>E</em>2<em>M</em>1</sub> = {0,  ± 0.5,  ± 1,  ± 1.5,  ± 2,  ± 3,  ± 4,  ± 6}.</span></p>
+<p>so each original value can ultimately lie only on <span
+class="math inline"><em>s</em>ℛ<sub><em>E</em>2<em>M</em>1</sub></span>
+. Standard scaling uses the block's absolute maximum <span
+class="math inline"><em>x</em><sub>max</sub></span> :<span
+class="math inline"><em>s</em> = round<sub><em>U</em><em>E</em>4<em>M</em>3</sub>(<em>x</em><sub>max</sub>/6)</span>, roughly mapping the largest magnitude to 6. This heuristic serves one extreme rather than minimizing error across all 16 values. Core §§3–4 (pp.4–5) note that the E4M3 scale has three mantissa bits, so Blackwell directly supports several neighboring non-power-of-two scales. That existing grid permits searching for a lower-MSE point without changing the storage format.</p>
+<p>The hardware motivation is direct. The introduction (p.1) cites Blackwell peak NVFP4/MXFP4 matmul throughput relative to FP8: <strong>2×</strong>on B200 and
+<strong>3×</strong>on B300. NVIDIA's Table 1 and Memory section explain that sharing an E4M3 scale across 16 values averages about <strong>4.5
+bit/value</strong>, with model memory about <strong>1/3.5</strong>of FP16 and
+<strong>1/1.8</strong>of FP8. These are format/hardware limits, not ScaleSearch's own end-to-end gains. Its narrower question is whether the same 4.5-bit representation and Tensor Core instructions can make fewer rounding errors.</p>
+<p>Figure 3 and the text expose an internal inconsistency worth auditing. The y-axis of Figure 3 (PDF p.5) clearly shows MSE falling from approximately <strong>0.0090</strong> to <strong>0.0066</strong>, a relative decrease of
+<span
+class="math inline">(0.0090−0.0066)/0.0090 = 26.67%</span>, broadly consistent with 27% in the abstract and 26% in the contributions list. Yet the text on p.6 gives a starting value of
+<strong>0.0990</strong>while still claiming about 25%. Recomputing from those textual values would give
+<strong>93.33%</strong>. This report therefore adopts the plotted 0.0090 as credible and treats 0.0990 as a tenfold decimal typo, rather than combining mutually inconsistent numbers.</p>
+<p>Downstream pain is uneven. PTQ Table 1 (p.9) shows ordinary NVFP4 reducing DeepSeek-R1-Distill-Qwen-1.5B MATH-500 from 64.6 to 51.6, a loss of <strong>13.0
+pp</strong>; Qwen3-8B GPQA falls from 51.3 to 42.4, losing <strong>8.9
+pp</strong>. Conversely, quantized Qwen3-8B MATH-500 at 73.1 slightly exceeds full precision at 72.8, showing that benchmark/sampling noise intertwines with quantization error. ScaleSearch is most valuable where max-based scaling is clearly mismatched and low-bit errors affect task performance, not necessarily for every tensor.</p>
+</section><section class="card" aria-labelledby="3-论文故事线从一个局部枚举器到完整-fp4-attention"><h2 id="3-论文故事线从一个局部枚举器到完整-fp4-attention">3. Paper narrative: from local enumeration to complete FP4 attention</h2>
+<p>The paper has two nested narratives.</p>
+<p>The first is numerical. Starting from the standard scale's E4M3 bit pattern, the authors reinterpret it as <code>int8</code>, enumerate offsets <span
+class="math inline"><em>f</em></span>, requantize 16 values for each candidate, and select the lowest MSE. Exhaustive enumeration of <span
+class="math inline">[−127,127]</span> can find the globally optimal representation but costs too much. Figure 4 shows bimodal offsets near 0 and 4–5 for both Gaussian data and real Llama 3.1 8B Key states, motivating the fixed range <span
+class="math inline">[−2,6]</span> of nine candidates. The second mode has a discrete-geometric explanation: default scaling encodes the maximum as 6; enlarging the scale by roughly <span class="math inline">6/4 = 1.5</span> encodes it as 4 while potentially aligning the other 15 values better with the grid (pp.5–7).</p>
+<p>The second narrative is systems integration. Search is applied to ModelOpt weight PTQ, SageAttention3 video-diffusion attention, and a new ScaleSearchAttention (SSA). SSA also adds Q/K Hadamard incoherence processing, an SVD-derived magnitude-balancing transform, a sink-aware KV cache retaining high-precision first/latest blocks, and an NVFP4 Tensor Core path through QKᵀ, softmax probabilities P, V, and PV. SSA results in Tables 3/4 therefore cannot be attributed entirely to ScaleSearch; component ablations in Table 5 provide the attribution evidence.</p>
+<p>The assumptions fall into three levels:</p>
+<ol type="1">
+<li><strong>Local-surrogate assumption</strong>: lower per-block MSE improves model function. Often reasonable, but not guaranteed because attention and residual paths differ in sensitivity to error directions.</li>
+<li><strong>Distribution-transfer assumption</strong>: Gaussian blocks and real Key states share bimodal offsets, so a fixed <span class="math inline">[−2,6]</span>
+range transfers to weights, Q/K/V/P, LLMs, and video diffusion. Only one real Key-tensor histogram is shown (Figure 4, p.5), without model/layer coverage checks.</li>
+<li><strong>System-amortization assumption</strong>: scale search can be fused or amortized in offline PTQ, so 1.74× local quantization cost does not destroy end-to-end throughput. Video latency supports roughly 2%–3% extra time, but language models have only attention-kernel TOPS curves, without TTFT, TPOT, or throughput/latency SLOs.</li>
+</ol>
+<p>These levels express the actual tradeoffs: lower MSE costs more candidates; more stable attention costs high-precision boundary caches and offline matrix transforms; stronger hardware efficiency requires Blackwell-only deployment.</p>
+</section><section class="card" aria-labelledby="4-方程级形式化与流程"><h2 id="4-方程级形式化与流程">4. Formalization and procedure</h2>
+<h3 id="41-nvfp4-表示与标准量化">4.1 NVFP4 representation and standard quantization</h3>
+<p>versus <span
+class="math inline"><em>x</em> ∈ ℝ<sup>16</sup></span>, the NVFP4 representable set is</p>
+<p><span
+class="math display">𝒱<sub><em>N</em><em>V</em><em>F</em><em>P</em>4</sub> = {<em>s</em><em>q</em> ∣ <em>q</em> ∈ ℛ<sub><em>E</em>2<em>M</em>1</sub><sup>16</sup>, <em>s</em> ∈ ℛ<sub><em>U</em><em>E</em>4<em>M</em>3</sub>}.</span></p>
+<p>A <span class="math inline"><em>N</em> × <em>D</em></span>
+tensor is represented as <span
+class="math inline">(<em>Q</em>,<em>S</em>)</span>, where <span
+class="math inline"><em>Q</em> ∈ ℛ<sub><em>E</em>2<em>M</em>1</sub><sup><em>N</em> × <em>D</em></sup></span>、<span
+class="math inline"><em>S</em> ∈ ℛ<sub><em>U</em><em>E</em>4<em>M</em>3</sub><sup><em>N</em> × (<em>D</em>/16)</sup></span>and decoded as</p>
+<p><span
+class="math display"><em>X̂</em> = decode(<em>Q</em>) ⊙ Broadcast(<em>S</em>).</span></p>
+<p>These follow core §3 (p.4). Four-bit values plus one eight-bit scale per 16 values average <span class="math inline">4 + 8/16 = 4.5</span>
+bits/value, excluding the per-tensor FP32 global scale.</p>
+<h3 id="42-邻近可表示-scale-的离散优化">4.2 Discrete optimization over nearby representable scales</h3>
+<p>Let the standard scale be <span
+class="math inline"><em>s</em><sup>(0)</sup></span>. Interpret its UE4M3 bit pattern as an integer and add offsets:</p>
+<p><span
+class="math display"><em>s</em><sup>(<em>f</em>)</sup> = reinterpret(reinterpret(<em>s</em><sup>(0)</sup>,int8)+<em>f</em>,UE4M3).</span></p>
+<p>ScaleSearch solves</p>
+<p><span
+class="math display">$$f^*=\arg\min_{f\in[f_{\min},f_{\max}]}\sum_{i=1}^{16}\left(x_i-s^{(f)}\,\mathrm{round}_{E2M1}(x_i/s^{(f)})\right)^2.$$</span></p>
+<p>With the default <span class="math inline">[−2,6]</span> , only nine neighboring scales are evaluated per block. For block length <span
+class="math inline"><em>B</em> = 16</span>and candidate count <span
+class="math inline"><em>K</em> = 9</span>, naive search complexity is <span
+class="math inline"><em>O</em>(<em>K</em><em>B</em>)</span>, with unchanged storage format. Extra cost occurs during quantization, not matmul. Algorithm 1 (p.5) also checks <code>1 ≤ scale_int8 + f ≤ 127</code>to remain within the positive UE4M3 scale range.</p>
+<pre class="text"><code>Input: 16-value block x, offset range [-2, 6]
+1  xmax = max |x_i|; s0 = round_UE4M3(xmax / 6)
+2  best_loss = +∞
+3  For f = -2 ... 6:
+4      sf = E4M3 bit pattern of s0 plus f
+5      qf = round_E2M1(x / sf)
+6      loss = Σ_i (x_i - sf*qf_i)^2
+7      If loss improves, save sf, qf, f
+8  Return optimal block scale and 16 FP4 values</code></pre>
+<h3 id="43-保持-attention-score-的幅值平衡变换">4.3 Magnitude balancing that preserves attention scores</h3>
+<p>SSA first uses a Hadamard transform to reduce outliers, then introduces invertible <span
+class="math inline"><em>R</em></span>：</p>
+<p><span
+class="math display"><em>Q</em>′ = <em>Q</em><em>R</em><sup>−<em>T</em></sup>,   <em>K</em>′ = <em>K</em><em>R</em>,</span></p>
+<p>Thus</p>
+<p><span
+class="math display"><em>Q</em>′<em>K</em>′<sup><em>T</em></sup> = <em>Q</em><em>R</em><sup>−<em>T</em></sup><em>R</em><sup><em>T</em></sup><em>K</em><sup><em>T</em></sup> = <em>Q</em><em>K</em><sup><em>T</em></sup>.</span></p>
+<p>Appendix A (p.16) sets <span
+class="math inline"><em>X</em> = 𝔼[<em>Q</em><sup><em>T</em></sup><em>Q</em>]</span>、<span
+class="math inline"><em>Y</em> = 𝔼[<em>K</em><sup><em>T</em></sup><em>K</em>]</span>and minimizes</p>
+<p><span
+class="math display">min<sub><em>R</em></sub>tr(<em>R</em><sup>−1</sup><em>X</em><em>R</em><sup>−<em>T</em></sup>) ⋅ tr(<em>R</em><sup><em>T</em></sup><em>Y</em><em>R</em>).</span></p>
+<p>If <span
+class="math inline"><em>X</em><sup>1/2</sup><em>Y</em><sup>1/2</sup> = <em>U</em><em>S</em><em>V</em><sup><em>T</em></sup></span>. The paper gives
+<span
+class="math inline"><em>R</em> = <em>Y</em><sup>−1/2</sup><em>V</em><em>S</em><sup>1/2</sup></span>, making both traces equal to <span class="math inline">tr(<em>S</em>)</span>, with minimum product
+<span
+class="math inline">tr(<em>S</em>)<sup>2</sup></span>. This preserves scores and balances second-order energy, but lower energy implying lower quantization error remains a surrogate relationship. The appendix gives no final task-error bound for discrete E2M1 rounding.</p>
+<h3 id="44-混合精度-kv-与-fp4-kernel-路径">4.4 Mixed-precision KV and FP4 kernel path</h3>
+<p>Figure 8 (p.8) splits both QKᵀ and PV into high/low-precision subblocks. The first block and latest incomplete block remain full precision; completed interior blocks become NVFP4. Once new tokens fill the latest block to <span class="math inline"><em>B</em></span>
+, it enters the 4.5-bit KV cache. High-precision storage occupies only <span
+class="math inline"><em>O</em>(<em>B</em>)</span>and does not grow with context; however,
+<span class="math inline"><em>B</em> ≥ 16</span>because V uses groups of 16 along the token dimension. Q/K/V/P all undergo per-row scaling followed by ScaleSearch. NVFP4 MMA uses FP32 accumulators, so the authors claim no explicit dequantization in the matmul path.</p>
+</section><section class="card" aria-labelledby="5-关键机制与工程细节"><h2 id="5-关键机制与工程细节">5. Key mechanisms and engineering details</h2>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Component</th>
+<th scope="col">Paper configuration</th>
+<th scope="col">Function</th>
+<th scope="col">Audit assessment</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Value/scale format</td>
+<td>E2M1 values; one UE4M3 scale per 16 values</td>
+<td class="num">4.5 bits/value, directly consumed by NVFP4 Tensor Cores</td>
+<td>Requires Blackwell; not generic CUDA acceleration</td>
+</tr>
+<tr class="even">
+<td>Search range</td>
+<td>Default <code>[-2,6]</code>, nine candidates (Figure 4, pp.5–6)</td>
+<td>Covers modes near offsets 0 and 4–5</td>
+<td>Chosen from one Gaussian distribution and one type of real Key tensor</td>
+</tr>
+<tr class="odd">
+<td>PTQ integration</td>
+<td>Modified TensorRT Model Optimizer NVFP4 path (§5.1, p.9)</td>
+<td>Offline weight quantization</td>
+<td>Patch and commit unpublished, hindering reproduction</td>
+</tr>
+<tr class="even">
+<td>SSA simulation</td>
+<td>PyTorch FP4 simulator; SA3 also uses a simulated algorithm</td>
+<td>Compare PPL/GPQA</td>
+<td>The paper calls the public SA3 causal path “numerically unstable,” so this is not an on-device, same-stack comparison</td>
+</tr>
+<tr class="odd">
+<td>Incoherence</td>
+<td>Inherits Hadamard ideas from QuIP#</td>
+<td>Suppress outliers</td>
+<td>An important inherited technique, not original to ScaleSearch</td>
+</tr>
+<tr class="even">
+<td>Magnitude balancing</td>
+<td>Constructed using second moments and SVD: <span
+class="math inline"><em>R</em></span>(Appendix A)</td>
+<td>Preserves QKᵀ and balances Q/K energy</td>
+<td>Calibration set, matrix-update frequency, and SVD cost unreported</td>
+</tr>
+<tr class="odd">
+<td>KV cache</td>
+<td>First/latest blocks full precision; interior NVFP4</td>
+<td>Protect sink/local tokens</td>
+<td>Larger ablation contribution than ScaleSearch; real peak memory unreported</td>
+</tr>
+<tr class="even">
+<td>Quant kernel</td>
+<td class="num">2048×2048 Gaussian matrix</td>
+<td>Baseline 0.0258 ms; full search 0.0449 ms</td>
+<td class="num">1.74× applies to the local quantization kernel, not model latency</td>
+</tr>
+<tr class="odd">
+<td>Video evaluation</td>
+<td>Mochi, CogVideoX; 12 prompts (Table 7, p.11)</td>
+<td>End-to-end quality and time</td>
+<td>Very small sample; no variance/confidence intervals</td>
+</tr>
+<tr class="even">
+<td>Throughput evaluation</td>
+<td class="num">At 32K: 98.3% of SA3 TOPS non-causal, 97.5% causal</td>
+<td>Tests fused-search cost</td>
+<td>Figure 9 lacks tabulated points and TTFT/TPOT</td>
+</tr>
+</tbody>
+</table></div>
+<p>Core §5.3 text/tables do not identify the GPU, nor does Figure 9's caption. Since SA3 targets Blackwell, one cannot simply label these results B200, B300, or RTX 5090. SageAttention3 itself reports 1038 TOPS on RTX 5090 (pp.1,7), but that does not establish ScaleSearch used the same device.</p>
+</section><section class="card" aria-labelledby="6-数据集基准与指标"><h2 id="6-数据集基准与指标">6. Datasets, benchmarks, and metrics</h2>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Evaluation dimension</th>
+<th scope="col">Model/data</th>
+<th scope="col">Metric</th>
+<th scope="col">Samples/repeats</th>
+<th scope="col">What it does and does not establish</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Weight PTQ</td>
+<td>DeepSeek-R1-Distill-Qwen-1.5B、Qwen3-8B</td>
+<td>GPQA、MATH-500、AIME-120、MMLU accuracy↑</td>
+<td>Five runs except MMLU, which uses one (Table 1, p.9)</td>
+<td>Shows task retention under offline weight quantization, not online activation/KV performance</td>
+</tr>
+<tr class="even">
+<td>Video attention</td>
+<td>Mochi、CogVideoX-2B；SA3 evaluation set</td>
+<td>VQA-a/t、FScore、CLIPSIM、CLIP-T↑</td>
+<td>Table 2 omits sample count; latency Table 7 uses 12 prompts</td>
+<td>Measures generation-quality proxies, not human preference or large-scale video quality</td>
+</tr>
+<tr class="odd">
+<td>Language PPL</td>
+<td>Llama 3.1 8B/70B、Qwen3 4B/8B；WikiText-2 test</td>
+<td>perplexity↓</td>
+<td>Seeds/standard deviations unreported</td>
+<td>Task-agnostic next-token likelihood, not real serving quality</td>
+</tr>
+<tr class="even">
+<td>Language capability</td>
+<td>Llama 3.1 8B Instruct；GPQA Diamond</td>
+<td>accuracy↑</td>
+<td>Shots, sampling, runs unreported</td>
+<td>One reasoning benchmark; insufficient for universally lossless capability</td>
+</tr>
+<tr class="odd">
+<td>Numerical error</td>
+<td>Standard Gaussian tensors, real Key-state offsets</td>
+<td>MSE↓, offset distribution</td>
+<td>Tensor dimensions unreported; Figure 4 omits layer/head/sequence</td>
+<td>Supports the local scale mechanism, not distributional uniformity across all model layers</td>
+</tr>
+<tr class="even">
+<td>System performance</td>
+<td class="num">2048×2048 Gaussian matrix; attention kernels; video generation</td>
+<td>quantization time、TOPS、E2E latency↓</td>
+<td>Latency uses 12 prompts; other repetition counts unreported</td>
+<td>Shows local overhead can be small; no concurrent serving, energy, or peak memory</td>
+</tr>
+</tbody>
+</table></div>
+<p>The paper claims five general-capability benchmarks, but Table 1 actually has
+<strong>four columns</strong>: GPQA, MATH-500, AIME-120, and MMLU (§5.1, p.9). This is a text/table counting inconsistency, not a transcription omission. AIME-120's composition by year/question is also unclear, affecting reproducibility.</p>
+</section><section class="card" aria-labelledby="7-完整主结果矩阵与逐项复算"><h2 id="7-完整主结果矩阵与逐项复算">7. Complete main-results matrices and recomputation</h2>
+<h3 id="71-权重-ptq表-1-全量转录">7.1 Weight PTQ: full Table 1 transcription</h3>
+<p>From core Table 1 (p.9). Parentheses give reported five-run dispersion, but the caption does not define standard deviation versus standard error. MMLU has one run and no parentheses. Bold marks each model's best.</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Model</th>
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">GPQA↑</th>
+<th scope="col" style="text-align: right;">MATH-500↑</th>
+<th scope="col" style="text-align: right;">AIME-120↑</th>
+<th scope="col" style="text-align: right;">MMLU↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DeepSeek-R1-Distill-Qwen-1.5B</td>
+<td>Baseline</td>
+<td style="text-align: right;"><strong>32.6 (3.2)</strong></td>
+<td style="text-align: right;"><strong>64.6 (1.4)</strong></td>
+<td style="text-align: right;"><strong>24.5 (2.3)</strong></td>
+<td style="text-align: right;"><strong>48.0</strong></td>
+</tr>
+<tr class="even">
+<td></td>
+<td>NVFP4</td>
+<td style="text-align: right;">30.4 (4.2)</td>
+<td style="text-align: right;">51.6 (2.9)</td>
+<td style="text-align: right;">18.7 (1.4)</td>
+<td style="text-align: right;">45.2</td>
+</tr>
+<tr class="odd">
+<td></td>
+<td>ScaleSearch</td>
+<td style="text-align: right;">31.3 (1.8)</td>
+<td style="text-align: right;">62.1 (1.9)</td>
+<td style="text-align: right;">19.8 (1.9)</td>
+<td style="text-align: right;">45.4</td>
+</tr>
+<tr class="even">
+<td>Qwen3-8B</td>
+<td>Baseline</td>
+<td style="text-align: right;"><strong>51.3 (3.8)</strong></td>
+<td style="text-align: right;">72.8 (3.4)</td>
+<td style="text-align: right;"><strong>71.0 (3.0)</strong></td>
+<td style="text-align: right;"><strong>79.7</strong></td>
+</tr>
+<tr class="odd">
+<td></td>
+<td>NVFP4</td>
+<td style="text-align: right;">42.4 (5.5)</td>
+<td style="text-align: right;">73.1 (4.3)</td>
+<td style="text-align: right;"><strong>63.7 (1.3)</strong></td>
+<td style="text-align: right;">77.7</td>
+</tr>
+<tr class="even">
+<td></td>
+<td>ScaleSearch</td>
+<td style="text-align: right;">49.9 (1.6)</td>
+<td style="text-align: right;"><strong>88.1 (0.6)</strong></td>
+<td style="text-align: right;">63.0 (2.2)</td>
+<td style="text-align: right;">79.4</td>
+</tr>
+</tbody>
+</table></div>
+<p>ScaleSearch versus ordinary NVFP4 is recomputed below. Absolute changes use percentage points (pp); relative change is
+<code>(ScaleSearch-NVFP4)/NVFP4</code>：</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Model/metric</th>
+<th scope="col" style="text-align: right;">NVFP4→ScaleSearch</th>
+<th scope="col" style="text-align: right;">Absolute change</th>
+<th scope="col" style="text-align: right;">Relative change</th>
+<th scope="col">Win?</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td class="num">1.5B GPQA</td>
+<td style="text-align: right;">30.4→31.3</td>
+<td style="text-align: right;">+0.9 pp</td>
+<td style="text-align: right;">+2.96%</td>
+<td>Yes</td>
+</tr>
+<tr class="even">
+<td class="num">1.5B MATH-500</td>
+<td style="text-align: right;">51.6→62.1</td>
+<td style="text-align: right;"><strong>+10.5 pp</strong></td>
+<td style="text-align: right;"><strong>+20.35%</strong></td>
+<td>Yes</td>
+</tr>
+<tr class="odd">
+<td class="num">1.5B AIME-120</td>
+<td style="text-align: right;">18.7→19.8</td>
+<td style="text-align: right;">+1.1 pp</td>
+<td style="text-align: right;">+5.88%</td>
+<td>Yes</td>
+</tr>
+<tr class="even">
+<td class="num">1.5B MMLU</td>
+<td style="text-align: right;">45.2→45.4</td>
+<td style="text-align: right;">+0.2 pp</td>
+<td style="text-align: right;">+0.44%</td>
+<td>Yes; single run only</td>
+</tr>
+<tr class="odd">
+<td class="num">8B GPQA</td>
+<td style="text-align: right;">42.4→49.9</td>
+<td style="text-align: right;"><strong>+7.5 pp</strong></td>
+<td style="text-align: right;">+17.69%</td>
+<td>Yes</td>
+</tr>
+<tr class="even">
+<td class="num">8B MATH-500</td>
+<td style="text-align: right;">73.1→88.1</td>
+<td style="text-align: right;"><strong>+15.0 pp</strong></td>
+<td style="text-align: right;"><strong>+20.52%</strong></td>
+<td>Yes</td>
+</tr>
+<tr class="odd">
+<td class="num">8B AIME-120</td>
+<td style="text-align: right;"><strong>63.7→63.0</strong></td>
+<td style="text-align: right;"><strong>−0.7 pp</strong></td>
+<td style="text-align: right;">−1.10%</td>
+<td><strong>No</strong></td>
+</tr>
+<tr class="even">
+<td class="num">8B MMLU</td>
+<td style="text-align: right;">77.7→79.4</td>
+<td style="text-align: right;">+1.7 pp</td>
+<td style="text-align: right;">+2.19%</td>
+<td>Yes; single run only</td>
+</tr>
+</tbody>
+</table></div>
+<p>Thus “across all benchmarks” is not strictly true: among eight model×metric cells,
+<strong>7/8</strong> improve, while Qwen3-8B AIME-120 falls 0.7 pp. Being within one standard deviation is a reasonable qualitative explanation, but without paired tests, CIs, or the five raw runs, “not significantly worse” cannot be rewritten as equivalent. More unusually, 8B MATH-500 rises from 72.8 at full precision to 88.1 with ScaleSearch,<strong>15.3 pp higher</strong>. This likely includes decoding/evaluation randomness, but no configuration is available to verify it.</p>
+<h3 id="72-视频-diffusion表-2-全量转录">7.2 Video diffusion: full Table 2 transcription</h3>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Model</th>
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">VQA-a↑</th>
+<th scope="col" style="text-align: right;">VQA-t↑</th>
+<th scope="col" style="text-align: right;">FScore↑</th>
+<th scope="col" style="text-align: right;">CLIPSIM↑</th>
+<th scope="col" style="text-align: right;">CLIP-T↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Mochi</td>
+<td>Full-Precision</td>
+<td style="text-align: right;"><strong>62.919</strong></td>
+<td style="text-align: right;">70.216</td>
+<td style="text-align: right;"><strong>2.466</strong></td>
+<td style="text-align: right;"><strong>0.1834</strong></td>
+<td style="text-align: right;"><strong>0.9991</strong></td>
+</tr>
+<tr class="even">
+<td></td>
+<td>SageAttention3</td>
+<td style="text-align: right;">49.635</td>
+<td style="text-align: right;">55.738</td>
+<td style="text-align: right;">1.874</td>
+<td style="text-align: right;">0.1829</td>
+<td style="text-align: right;">0.9988</td>
+</tr>
+<tr class="odd">
+<td></td>
+<td>SA3 + ScaleSearch</td>
+<td style="text-align: right;">57.424</td>
+<td style="text-align: right;"><strong>70.362</strong></td>
+<td style="text-align: right;">2.143</td>
+<td style="text-align: right;">0.1826</td>
+<td style="text-align: right;">0.9989</td>
+</tr>
+<tr class="even">
+<td>CogVideoX</td>
+<td>Full-Precision</td>
+<td style="text-align: right;">74.969</td>
+<td style="text-align: right;">75.345</td>
+<td style="text-align: right;"><strong>5.969</strong></td>
+<td style="text-align: right;"><strong>0.1850</strong></td>
+<td style="text-align: right;"><strong>0.9976</strong></td>
+</tr>
+<tr class="odd">
+<td></td>
+<td>SageAttention3</td>
+<td style="text-align: right;">72.915</td>
+<td style="text-align: right;">74.912</td>
+<td style="text-align: right;">5.118</td>
+<td style="text-align: right;">0.1845</td>
+<td style="text-align: right;">0.9973</td>
+</tr>
+<tr class="even">
+<td></td>
+<td>SA3 + ScaleSearch</td>
+<td style="text-align: right;"><strong>75.753</strong></td>
+<td style="text-align: right;"><strong>75.873</strong></td>
+<td style="text-align: right;">5.402</td>
+<td style="text-align: right;">0.1833</td>
+<td style="text-align: right;">0.9974</td>
+</tr>
+</tbody>
+</table></div>
+<p>From core Table 2 (p.10). Relative to SA3, Mochi VQA-a/t/FScore changes are
+<strong>+7.789 pp（+15.69%）</strong>、<strong>+14.624
+pp（+26.24%）</strong>、<strong>+0.269（+14.35%）</strong>; for CogVideoX, <strong>+2.838 pp（+3.89%）</strong>、<strong>+0.961
+pp（+1.28%）</strong>、<strong>+0.284（+5.55%）</strong>. However, CLIPSIM changes in the two models are
+<strong>−0.0003（−0.16%）</strong>、<strong>−0.0012（−0.65%）</strong>, so “matching” means nearly unchanged, not nondecreasing on every metric. Without standard deviations, 0.0001-level CLIP-T differences should especially not decide winners.</p>
+<h3 id="73-wikitext-2-ppl六种精度路径">7.3 WikiText-2 PPL: six precision paths</h3>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">Llama 3.1 8B↓</th>
+<th scope="col" style="text-align: right;">Llama 3.1 70B↓</th>
+<th scope="col" style="text-align: right;">Qwen3 4B↓</th>
+<th scope="col" style="text-align: right;">Qwen3 8B↓</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Full Prec</td>
+<td style="text-align: right;"><strong>5.4837</strong></td>
+<td style="text-align: right;"><strong>2.5554</strong></td>
+<td style="text-align: right;"><strong>11.1327</strong></td>
+<td style="text-align: right;"><strong>8.3013</strong></td>
+</tr>
+<tr class="even">
+<td>Naive-FP4</td>
+<td style="text-align: right;">5.9988</td>
+<td style="text-align: right;">3.4000</td>
+<td style="text-align: right;">11.5258</td>
+<td style="text-align: right;">8.4429</td>
+</tr>
+<tr class="odd">
+<td>Naive-FP4 + ScaleSearch</td>
+<td style="text-align: right;">5.8330</td>
+<td style="text-align: right;">3.3441</td>
+<td style="text-align: right;">11.3618</td>
+<td style="text-align: right;">8.4378</td>
+</tr>
+<tr class="even">
+<td>SA3</td>
+<td style="text-align: right;">5.9542</td>
+<td style="text-align: right;">3.3899</td>
+<td style="text-align: right;">11.3672</td>
+<td style="text-align: right;">8.4575</td>
+</tr>
+<tr class="odd">
+<td>SA3 + ScaleSearch</td>
+<td style="text-align: right;">5.8060</td>
+<td style="text-align: right;">3.2972</td>
+<td style="text-align: right;">11.2441</td>
+<td style="text-align: right;">8.4181</td>
+</tr>
+<tr class="even">
+<td><strong>ScaleSearchAttention</strong></td>
+<td style="text-align: right;"><strong>5.4977</strong></td>
+<td style="text-align: right;"><strong>2.6348</strong></td>
+<td style="text-align: right;"><strong>11.2088</strong></td>
+<td style="text-align: right;"><strong>8.3018</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>From core Table 3 (p.10). SSA's PPL reductions versus Naive-FP4 are, respectively,
+<strong>0.5011（8.35%）</strong>、<strong>0.7652（22.51%）</strong>、<strong>0.3170（2.75%）</strong>、<strong>0.1411（1.67%）</strong>. The “up to about 22%” claim holds for Llama 70B, but SSA remains 0.0794 (+3.11%) above full precision. Qwen3-8B differs by only 0.0005 (+0.006%), closest to near-zero loss. Relative gains range from 1.67% to 22.51% across four models, so larger scale does not guarantee more benefit: Llama and Qwen differ substantially even at 8B.</p>
+<p>The paper cannot supply the requested unified five-benchmark×six-method matrix: PTQ has three methods×four columns, PPL six methods×four models, and video three methods×five metrics. Combining accuracy, PPL, and video scores would create false comparisons. This report therefore preserves the complete original tables without inventing a fifth benchmark.</p>
+<h3 id="74-gpqa-diamond-与系统代价">7.4 GPQA Diamond and system costs</h3>
+<p>Core Table 4 (p.10), on Llama 3.1 8B Instruct, reports Full Prec
+<strong>31.81</strong>、SA3 <strong>26.26</strong>、SSA
+<strong>32.32</strong>. SSA versus SA3 is <strong>+6.06
+pp（+23.08%）</strong>, not the introduction's generic “+5 points.” It also exceeds full precision by 0.51 pp, but superiority cannot be established without variance.</p>
+<p>Core Tables 6–7 (p.11) report costs:</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Test</th>
+<th scope="col" style="text-align: right;">Baseline</th>
+<th scope="col" style="text-align: right;">ScaleSearch</th>
+<th scope="col" style="text-align: right;">Absolute/relative cost</th>
+<th scope="col" style="text-align: right;">Net gain over full precision</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td class="num">2048² FP32→NVFP4 quant</td>
+<td style="text-align: right;">0.0258 ms</td>
+<td style="text-align: right;">0.0449 ms <code>[-2,6]</code></td>
+<td style="text-align: right;">+0.0191 ms；<strong>+74.03% /
+1.74×</strong></td>
+<td style="text-align: right;">Not applicable</td>
+</tr>
+<tr class="even">
+<td>Mochi E2E</td>
+<td style="text-align: right;">SA3 353.40 s</td>
+<td style="text-align: right;">364.68 s</td>
+<td style="text-align: right;">+11.28 s；<strong>+3.19%</strong></td>
+<td style="text-align: right;">27.55% below FP's 503.38 s; 1.38× speedup</td>
+</tr>
+<tr class="odd">
+<td>CogVideoX E2E</td>
+<td style="text-align: right;">SA3 61.72 s</td>
+<td style="text-align: right;">63.09 s</td>
+<td style="text-align: right;">+1.37 s；<strong>+2.22%</strong></td>
+<td style="text-align: right;">31.18% below FP's 91.67 s; 1.45× speedup</td>
+</tr>
+</tbody>
+</table></div>
+<p>The narrower <code>[-1,1]</code> search takes 0.0328 ms, or 1.27×. Its MSE, PPL, and task accuracy are unreported, preventing a quality-per-extra-0.01-ms Pareto curve. Calling 1.74× minimal overhead is justified only for offline PTQ or when large matmuls amortize it end to end. Per-token dynamic quantization requires kernel-fusion and batch/sequence-distribution evidence.</p>
+</section><figure class="figure" aria-labelledby="ablation-chart-title">
+<p class="fig-title" id="ablation-chart-title">SSA ablation: ScaleSearch is not the largest source of fidelity</p>
+<p class="fig-sub">WikiText-2 / Llama 3.1 8B; vertical axis is PPL (lower is better), truncated to 5.49–5.59 to reveal small differences.</p>
+<div class="legend"><span><span class="swatch" style="background:#2a78d6"></span>Full system</span><span><span class="swatch" style="background:#eb6834"></span>Removed component</span></div>
+<svg class="chart" viewBox="0 0 860 380" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>WikiText-2 perplexity in component-wise ScaleSearchAttention ablations</title>
+<desc>Full system: 5.4977; without ScaleSearch: 5.5024; without incoherence and magnitude reduction: 5.5283; without high-precision boundary KV: 5.5768.</desc>
+<line x1="85" y1="310" x2="810" y2="310" stroke="var(--grid)"/>
+<line x1="85" y1="65" x2="85" y2="310" stroke="var(--grid)"/>
+<line x1="85" y1="187.5" x2="810" y2="187.5" stroke="var(--grid)" stroke-dasharray="4 5"/>
+<line x1="85" y1="65" x2="810" y2="65" stroke="var(--grid)" stroke-dasharray="4 5"/>
+<text x="74" y="314" text-anchor="end" font-size="12">5.49</text>
+<text x="74" y="191" text-anchor="end" font-size="12">5.54</text>
+<text x="74" y="69" text-anchor="end" font-size="12">5.59</text>
+<rect x="145" y="291.1" width="70" height="18.9" rx="5" fill="#2a78d6" tabindex="0" data-tip="Full SSA: PPL 5.4977"/><text x="180" y="337" text-anchor="middle" font-size="12">Full SSA</text><rect x="320" y="279.6" width="70" height="30.4" rx="5" fill="#eb6834" tabindex="0" data-tip="Without ScaleSearch: PPL 5.5024"/><text x="355" y="337" text-anchor="middle" font-size="12">Without ScaleSearch</text><rect x="495" y="216.2" width="70" height="93.8" rx="5" fill="#eb6834" tabindex="0" data-tip="Without IP + magnitude reduction: PPL 5.5283"/><text x="530" y="337" text-anchor="middle" font-size="12">Without IP + magnitude reduction</text><rect x="670" y="97.3" width="70" height="212.7" rx="5" fill="#eb6834" tabindex="0" data-tip="Without high-precision boundary KV: PPL 5.5768"/><text x="705" y="337" text-anchor="middle" font-size="12">Without high-precision boundary KV</text>
+</svg>
+<figcaption>Source: core Table 5, final version p.10. Hover or keyboard-focus bars for exact values. Removing high-precision boundary KV hurts about 16.8× more than removing ScaleSearch.</figcaption>
+</figure><section class="card" aria-labelledby="8-逐层消融敏感性与相变"><h2 id="8-逐层消融敏感性与相变">8. Ablations, sensitivity, and transitions</h2>
+<p>Core Table 5 (p.10) ablates SSA only on Llama 3.1 8B PPL:</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Configuration</th>
+<th scope="col" style="text-align: right;">PPL↓</th>
+<th scope="col" style="text-align: right;">Degradation versus full SSA</th>
+<th scope="col">Attribution</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Full SSA</td>
+<td style="text-align: right;"><strong>5.4977</strong></td>
+<td style="text-align: right;">—</td>
+<td>All components</td>
+</tr>
+<tr class="even">
+<td>Without ScaleSearch</td>
+<td style="text-align: right;">5.5024</td>
+<td style="text-align: right;">+0.0047（+0.086%）</td>
+<td>Small independent scale-search contribution</td>
+</tr>
+<tr class="odd">
+<td>Without incoherence + magnitude reduction</td>
+<td style="text-align: right;">5.5283</td>
+<td style="text-align: right;">+0.0306（+0.557%）</td>
+<td>About 6.5× the effect of removing ScaleSearch</td>
+</tr>
+<tr class="even">
+<td>Without mixed-precision KV</td>
+<td style="text-align: right;">5.5768</td>
+<td style="text-align: right;">+0.0791（+1.439%）</td>
+<td>Largest fidelity contributor, about 16.8× removing ScaleSearch</td>
+</tr>
+</tbody>
+</table></div>
+<p>This table shifts the paper's center of gravity:<strong>ScaleSearch is an elegant, general, format-preserving local improvement, but nearly lossless FP4 attention mainly depends on high-precision boundary KV and transforms.</strong> No full factorial ablation isolates mixed precision alone, IP alone, or magnitude-transform removal while retaining Hadamard, so their interactions remain unknown.</p>
+<p>Two sensitivity analyses provide plots without raw tables. Figure 3 (p.5) shows MSE dropping rapidly with candidate count and plateauing near <strong>ten candidates</strong>; the default nine lies near the elbow. Figure 7 (p.6) shows the MSE gap with/without ScaleSearch shrinking as block size grows through 1, 2, 4, 8, 16, and 32, explaining why 16-value NVFP4 suits search better than 32-value MXFP4. Figure 5 (pp.6–7) reports MSE reductions around 27% for NVFP4, 11% for MXFP6 E2M3, and 8% for MXFP4, with some hypothetical formats approaching 80%. These format-level transitions suggest finer scale mantissas and smaller blocks make neighborhood search more valuable.</p>
+<p>The paper<strong>Not reported</strong>: layer/head sensitivity;<code>[-1,1]</code> with
+<code>[-2,6]</code> quality comparisons; real-model results beyond B=16; calibration-set size; magnitude-transform regularization; number of high-precision boundary blocks; and end-to-end latency percentiles across batch/sequence settings. The default lies near the synthetic-MSE elbow, but is not established as the globally optimal system configuration for all models.</p>
+</section><section class="card" aria-labelledby="9-统计显著性与证据等级"><h2 id="9-统计显著性与证据等级">9. Statistical significance and evidence strength</h2>
+<p>Only PTQ Table 1 explicitly averages, except MMLU, over <strong>5
+runs</strong>, but its parenthesized statistic is undefined. Explaining the 8B AIME −0.7 pp as within one standard deviation suggests that interpretation without formally specifying it in the caption. There are no paired seeds, t-tests, bootstrap CIs, or multiple-comparison corrections. MMLU is single-run; video Table 2, PPL Table 3, GPQA Table 4, ablation Table 5, kernel Table 6, and latency Table 7 all lack standard deviations.</p>
+<p>Evidence therefore falls into three tiers:</p>
+<ul>
+<li><strong>Stronger</strong>: synthetic MSE within the same format and an explicit discrete objective. Because the candidate set includes the default scale, per-block MSE on the evaluated samples cannot exceed the default.</li>
+<li><strong>Moderate</strong>: seven of eight PTQ cells and PPL on all four models improve; direction is consistent, but randomness is inadequately described.</li>
+<li><strong>Weaker</strong>: video quality/latency on 12 prompts, one GPQA setting, single-curve 98.3%/97.5% points, and extending nearly lossless claims to production serving.</li>
+</ul>
+<p>Candidate-set monotonicity must be distinguished from model-quality monotonicity: ScaleSearch's chosen MSE on the same block cannot exceed <span
+class="math inline"><em>f</em> = 0</span>, yet task accuracy can decline, as Qwen3-8B AIME demonstrates. Minimizing local L2 error does not guarantee monotonic improvement in discrete problem-solving outputs.</p>
+</section><section class="card" aria-labelledby="10-真正贡献可复用设计与迁移潜力"><h2 id="10-真正贡献可复用设计与迁移潜力">10. Contributions, reusable designs, and transfer potential</h2>
+<p>The first genuine contribution formulates BFP scale calibration as<strong>hardware-compatible discrete neighborhood optimization</strong>rather than training a new quantizer. It preserves the checkpoint's 4.5-bit layout, adds no inference-time codebook, includes the default scale, and integrates readily into PTQ. For any microscaling format with mantissa scales, define neighborhoods by bit patterns, then narrow them using real-tensor offset histograms.</p>
+<p>The second contribution shows that mapping the maximum to the largest codeword is not always optimal. Offsets 4–5 encode the maximum as 4 rather than 6, sacrificing one extreme's codeword utilization for better grid alignment of the remaining values. This transfers to nonuniform codebooks, per-group integer quantization, and KV caches: candidates may vary zero-points, clipping ratios, or a few codebook temperatures rather than scales alone.</p>
+<p>The third contribution assembles SSA: FP4 QKᵀ/PV, 4.5-bit KV, FP32 accumulation, high-precision boundary blocks, and magnitude balancing form an executable path. The reusable lesson is:<strong>theoretical quantization-kernel throughput requires outlier transforms, protection of sensitive tokens, and cache layout to become practical performance</strong>. This matters more than any single PPL value.</p>
+<p>Transfer should use task-sensitive error objectives: Hessian-weighted block loss for weight PTQ, QKᵀ/PV output errors for attention, and noise-stage/layer-specific ranges for generative models. Online search becomes more expensive; a compromise is learning per-layer offset priors offline and evaluating only two or three likely candidates.</p>
+</section><section class="card" aria-labelledby="11-技术来源链问题如何传递又在哪里转折"><h2 id="11-技术来源链问题如何传递又在哪里转折">11. Technical lineage: how problems propagate and where the direction changes</h2>
+<h3 id="111-nvfp4给-scalesearch-留出可搜索的-scale-网格">11.1 NVFP4: providing a searchable scale grid</h3>
+<p><strong>Problem solved.</strong> NVIDIA's NVFP4 explanation combines E2M1 values, 16-value microblocks, E4M3 scales, and per-tensor FP32 scales to balance 4-bit compute and accuracy on Blackwell. Table 1 explicitly contrasts MXFP4's 32-value, power-of-two scales.<br />
+<strong>Remaining gap.</strong> The format permits fine-grained E4M3 scales but retains the single-point amax/6 heuristic, leaving neighboring mantissa points unused.<br />
+<strong>Core response.</strong> ScaleSearch turns existing but unused scale resolution into a candidate space without changing the format.<br />
+<strong>Design transfer.</strong> Small 16-value blocks and non-power-of-two E4M3 steps directly enable offset search. With MXFP4 E8M0, Figure 6 shows mostly offsets 0/1 and smaller gains.</p>
+<h3 id="112-quip从降低权重-incoherence-到降低-qk-outlier">11.2 QuIP#: from weight incoherence reduction to Q/K outlier reduction</h3>
+<p><strong>Problem solved.</strong> QuIP# uses randomized Hadamard transforms to improve incoherence, followed by E8 lattice codebooks and fine-tuning for ≤4-bit weight PTQ. The final ICML paper's Figure 2/Algorithm 1 (pp.2–3) specifies the pipeline; Tables 5–6 (pp.10–11) show generation throughput with quantized weights.<br />
+<strong>Remaining gap.</strong> It primarily quantizes weights. Hadamard transforms neither select NVFP4 block scales nor handle causal KV/P.<br />
+<strong>Core response.</strong> SSA transfers Hadamard IP to Q/K, then adds scale search and a QKᵀ-preserving <span class="math inline"><em>R</em></span>
+transform.<br />
+<strong>Design transfer.</strong>
+The inherited principle is to make distributions more uniform before low-bit discretization. Table 5 attributes about 6.5× more PPL benefit to IP+magnitude transforms than to scale search, so prior work deserves appropriate credit.</p>
+<h3 id="113-streamingllm从保留-attention-sink-到高精度首尾-kv">11.3 StreamingLLM: from retaining attention sinks to high-precision boundary KV</h3>
+<p><strong>Problem solved.</strong> StreamingLLM finds that retaining only a recent window causes PPL to explode beyond cache size, while retaining <strong>four initial tokens</strong>
+restores stability. Figure 3, Tables 1–2 (pp.4–5), and Figure 10 (p.11) report scaling to 4M tokens and up to 22.2× speedup over recomputation.<br />
+<strong>Remaining gap.</strong> It addresses token eviction/streaming, not interior-KV numerical precision, and has no NVFP4 Tensor Core path.<br />
+<strong>Core response.</strong> SSA retains interior tokens but quantizes their blocks to NVFP4, keeping the first/latest blocks high precision.<br />
+<strong>Design transfer.</strong> The insight that initial tokens are structurally sensitive becomes a mixed-precision policy. However, SSA does not report exact retained-token counts, model-specific sink widths, or long-context needle/reasoning results.</p>
+<h3
+id="114-sageattention3从第一条-fp4-attention-内核到更稳的-scale-与-causal-cache">11.4 SageAttention3: from the first FP4 attention kernel to better scales and causal caches</h3>
+<p><strong>Problem solved.</strong> SageAttention3 uses 1×16 microscaling FP4 for QKᵀ/PV and two-level P quantization. Table 1 (p.6) reports NVFP4 CosSim 99.52%; p.1 reports RTX 5090 throughput of 1038 TOPS, about 5× its fastest FlashAttention baseline.<br />
+<strong>Remaining gap.</strong> The core paper calls SA3's public algorithm numerically unstable in causal settings (ScaleSearch §5.2, p.9), and SA3 is not a complete 4.5-bit causal KV-cache solution.<br />
+<strong>Core response.</strong> ScaleSearch is added directly to SA3 for video. Language attention is reorganized as SSA with IP, magnitude balancing, and high-precision boundary caches.<br />
+<strong>Design transfer.</strong> SA3's 1×16 blocks, FP4 P path, and hardware optimizations provide the system foundation. Video results are SA3 plus a better scale chooser; SSA results combine several components anew.</p>
+<h3 id="115-非线性技术演进树">11.5 Nonlinear technical evolution tree</h3>
+<pre class="text"><code>                         ┌─ QuIP / QuIP#: Hadamard incoherence ─┐
+Traditional BFP: shared exponent ─┤                            ├─→ Q/K distribution shaping
+                         └─ MX: 32 values + power-of-two scale ─┐
+                                                               ├─→ NVFP4: 16 values + E4M3 scale
+NVIDIA Blackwell Tensor Core ───────────────────────────────────┘             │
+                                                                             ├─→ ScaleSearch: discrete neighborhood MSE search
+FlashAttention: online softmax / IO-aware ─→ SageAttention3: FP4 QKᵀ + PV ──┤
+                                                                             │
+StreamingLLM: initial tokens are sinks ─→ high-precision boundary blocks ─────┤
+                                                                             ↓
+                SVD magnitude balancing + ScaleSearch + FP4 MMA + 4.5-bit KV = SSA
+                                      │
+                                      ├─ mixed-precision KV preserves most accuracy
+                                      └─ scale search supplies small, stable local corrections</code></pre>
+<p>Evolution is driven first by<strong>hardware-format changes</strong>: scales gain mantissas rather than exponents alone, enabling fine-grid search; then by<strong>bottleneck migration</strong>: faster FP4 matmul makes quantization, softmax, and KV layout system bottlenecks; finally by<strong>changes in error location</strong>: static weight-PTQ errors become dynamic Q/K/P/V errors in causal attention, requiring mixed precision and distribution transforms. The turning point is not another bit removed, but a format that makes scale selection an optimization variable.</p>
+<h3 id="116-跨论文对标">11.6 Cross-paper comparison</h3>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Primary target</th>
+<th scope="col">Bitwidth/format</th>
+<th scope="col">Key fidelity mechanism</th>
+<th scope="col">Hardware path</th>
+<th scope="col">ScaleSearch response</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>NVFP4</td>
+<td>Weight/activation format</td>
+<td class="num">4-bit E2M1 + E4M3/16</td>
+<td>Two-level scaling, smaller blocks</td>
+<td>Blackwell NVFP4 MMA</td>
+<td>Search neighboring E4M3 scales instead of only amax</td>
+</tr>
+<tr class="even">
+<td>QuIP#</td>
+<td>LLM weight PTQ</td>
+<td class="num">2–4 bit codebook</td>
+<td>RHT incoherence + E8 lattice</td>
+<td>Custom decode kernel</td>
+<td>Borrow Hadamard, but target attention tensors</td>
+</tr>
+<tr class="odd">
+<td>StreamingLLM</td>
+<td>KV token retention</td>
+<td>Original-precision window</td>
+<td>Initial sinks + recent tokens</td>
+<td>Rolling KV cache</td>
+<td>From retaining tokens to retaining high-precision blocks</td>
+</tr>
+<tr class="even">
+<td>SageAttention3</td>
+<td>QKᵀ/PV</td>
+<td>NVFP4</td>
+<td>Microblocks + two-level P quantization</td>
+<td>RTX5090 FP4 kernel</td>
+<td>Improve scales; add causal caches and transforms</td>
+</tr>
+<tr class="odd">
+<td>ScaleSearch/SSA</td>
+<td>PTQ、Q/K/P/V、KV</td>
+<td>NVFP4 4.5 bit</td>
+<td>Neighborhood search + IP + SVD + mixed precision</td>
+<td>Claims direct NVFP4 MMA</td>
+<td>Integrated approach; implementation unpublished</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="12-论文自述限制与边界条件"><h2 id="12-论文自述限制与边界条件">12. Stated limitations and boundary conditions</h2>
+<p>The paper has no separate <strong>Limitations</strong> or Broader Impact section, so two or three author-stated limitations cannot be invented. Three explicit boundaries can be extracted from the text:</p>
+<ol type="1">
+<li><strong>Format boundary.</strong> The authors mainly implement NVFP4 because it is, to their knowledge, the only format with floating-point scales and modern hardware acceleration (§4, p.5). Other formats appear only in Figure 5 simulations. Architecture-agnostic describes the algorithm, not existing cross-hardware kernels.</li>
+<li><strong>Causal-baseline boundary.</strong> The authors explicitly call public SA3 code numerically unstable in causal settings, so Table 3 implements SA3's algorithm in their FP4 simulator (§5.2, p.9). Language quality therefore compares simulated numerical paths, not two public kernels end to end on hardware.</li>
+<li><strong>Mixed-precision boundary.</strong> The mixed-precision cache requires <span
+class="math inline"><em>B</em> ≥ 16</span>and permanently retains <span
+class="math inline"><em>O</em>(<em>B</em>)</span>
+full-precision boundary storage (§4.2, p.8). “All-FP4 attention/KV” is therefore not literal: most blocks are FP4, sensitive blocks full precision.</li>
+</ol>
+<p>The authors do not discuss missing code, the 12-prompt sample, statistical significance, or conflicting main-text numbers. Those are independent audit findings, not stated limitations.</p>
+</section><section class="card" aria-labelledby="13-独立批判证据到推论的八条链"><h2 id="13-独立批判证据到推论的八条链">13. Independent critique: eight evidence-to-inference chains</h2>
+<ol type="1">
+<li><strong>[Attribution]</strong> Because removing ScaleSearch in Table 5 changes PPL only to
+<strong>5.4977→5.5024（+0.086%）</strong>, while removing mixed-precision KV changes it to <strong>5.5768（+1.439%）</strong>, nearly lossless SSA cannot primarily be credited to its named component. Contributions should separate local scale optimization from the integrated attention system.</li>
+<li><strong>[Internal consistency]</strong> Because p.6 states <strong>0.0990→0.0066
+≈25%</strong>while Figure 3 actually shows about <strong>0.0090→0.0066
+=26.67%</strong>, at least one tenfold decimal error exists. The figure supports the abstract's 27%, but the textual numbers cannot be cited directly.</li>
+<li><strong>[Statistics]</strong> Because only PTQ reports five runs, parentheses are undefined, other main tables lack variance, and quantized 8B MATH exceeds full precision by
+<strong>15.3 pp</strong>, evaluation randomness may change several conclusions. Without raw seeds and unified decoding, task performance cannot be claimed to track MSE monotonically.</li>
+<li><strong>[Baseline fairness]</strong> Because the authors simulate SA3 for language PPL due to unstable public causal code, and SSA includes extra high-precision caches and SVD transforms, Table 3 is not a head-to-head changing only scales in one hardware kernel. It establishes a better numerical recipe than a simulated baseline, not a superior production kernel.</li>
+<li><strong>[System extrapolation]</strong> Because 98.3%/97.5% comes only from 32K attention TOPS, language models lack TTFT, TPOT, batch sweeps, concurrent requests, or P99, and video uses only 12 prompts, negligible system overhead applies only to tested kernels/generation scripts, not online-serving SLOs.</li>
+<li><strong>[Distribution coverage]</strong> Because <code>[-2,6]</code>
+is selected from standard Gaussian data and one Llama 3.1 8B Key-state histogram yet applied to weights, Q/K/V/P, four LLMs, and two video models. Evidence for a universal fixed range is insufficient; if P or V offsets lie outside those modes, nine candidates may not be the best budget.</li>
+<li><strong>[Reproducibility]</strong> Because core code, ModelOpt patches, the PyTorch simulator, GPU model, calibration examples, and full hyperparameters are unpublished, readers cannot verify 0.0449 ms, Table 3, or Figure 9. Public SageAttention/ModelOpt reproduce source components, not the paper's method.</li>
+<li><strong>[Objective mismatch]</strong> Because the algorithm minimizes unweighted per-block MSE yet AIME shows <strong>−0.7 pp</strong>and CLIPSIM declines for both models, local Euclidean error is not sufficient for task risk. The next step should compare Hessian/attention-output-weighted search rather than merely enlarge the same MSE candidate set.</li>
+</ol>
+</section><section class="card" aria-labelledby="14-开放挑战可操作的-head-to-head-实验空白"><h2 id="14-开放挑战可操作的-head-to-head-实验空白">14. Open challenges: actionable head-to-head experiments</h2>
+<h3 id="141-理论">14.1 Theory</h3>
+<ul>
+<li><strong>MSE versus functional error.</strong> Fix one NVFP4 checkpoint and nine candidates; compare four choosers: block MSE, Hessian-weighted MSE,<span
+class="math inline">∥<em>Q</em><em>K</em><sup><em>T</em></sup> − <em>Q̂</em><em>K̂</em><sup><em>T</em></sup>∥<sub><em>F</em></sub><sup>2</sup></span>
+with <span
+class="math inline">∥<em>P</em><em>V</em> − <em>P̂</em><em>V̂</em>∥<sub><em>F</em></sub><sup>2</sup></span>
+. Evaluate WikiText-2, LongBench, GPQA, and AIME with identical seeds. Stronger correlation between weighted objectives and task gains would test critique eight.</li>
+<li><strong>Search-range optimality.</strong> Record exhaustive
+<code>[-127,127]</code> oracle offsets for each layer/head, then compare
+<code>[-1,1]</code>、<code>[-2,6]</code>, a learned top-three prior, and adaptive early stopping. Plot oracle coverage, quantization time, and PPL together. The current paper gives costs without quality curves.</li>
+<li><strong>Error-propagation bounds.</strong> Within one attention block, quantize Q, K, V, P separately and jointly; estimate Lipschitz bounds from local MSE to output error/softmax KL. Separate sink-heavy and uniform heads to identify conditions under which lower block MSE improves stability.</li>
+</ul>
+<h3 id="142-工程与应用">14.2 Engineering and applications</h3>
+<ul>
+<li><strong>Real Blackwell end-to-end evaluation.</strong> Using public commits on B200/B300/RTX 5090, compare BF16 FlashAttention-4, SA3, SA3+ScaleSearch, and SSA. Control batch and prompt/output lengths; report TTFT, TPOT, tokens/s, P50/P99, HBM, and power. Current evidence covers only TOPS and two video-script timings.</li>
+<li><strong>Memory-matched KV comparison.</strong> At equal average bits per token, compare SSA, KIVI, KVQuant, Kitty, and FP8 on Llama 3.1/Qwen3 over 4K–128K contexts with needle, LongBench, reasoning, and PPL tests. SSA's 4.5-bit interior plus full-precision boundaries cannot be directly compared with nominal 4-bit/2-bit methods.</li>
+<li><strong>Offline versus online quantization.</strong> Measure search costs separately for one-time weight PTQ, prefill K/V writes, and single-token decode writes; compare LUT/learned-offset selection. A 0.0449-ms 2048² Gaussian matrix does not resolve small-batch decode launch/branch costs.</li>
+</ul>
+<h3 id="143-新兴方向">14.3 Emerging directions</h3>
+<ul>
+<li><strong>Cross-format search.</strong> On the same Blackwell/AMD platforms, compare NVFP4 E4M3, MXFP4 E8M0, MXFP6 E2M3, and FP8 while controlling total bits and hardware peaks. Use identical oracle/neighborhood search to separate mantissa-scale benefits from small-block benefits. Figure 5 is only software simulation.</li>
+<li><strong>Generation-stage adaptation.</strong> Dynamically choose search ranges/precision by video-diffusion timestep or LLM prefill/decode phase and token uncertainty. Compare with fixed <code>[-2,6]</code> at equal average quantization FLOPs and measure the quality–latency Pareto frontier. Ambient/staged-precision ideas may suit this better than fixed search throughout.</li>
+<li><strong>Safety boundaries for learned choosers.</strong> Predict offsets with a small classifier while retaining <span class="math inline"><em>f</em> = 0</span> and a local MSE verifier. Compare errors, fallback rate, and P99 with exhaustive nine-way search. The aim is to reduce 1.74× cost without losing the noninferiority guarantee from including the default candidate.</li>
+</ul>
+</section><section class="card" aria-labelledby="15-近期工作雷达"><h2 id="15-近期工作雷达">15. Recent-work radar</h2>
+<p>The following official MLSys 2026 paper pages were accessed; they are not sources for core-paper numbers.</p>
+<ol type="1">
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/37e44c4b5321605735be9761f9b758fc-Abstract-Conference.html">FlashInfer-Bench</a>: connects agent-generated kernels, real traces, correctness/performance evaluation, and deployment replacement into a loop. It supplies the public kernel-benchmark/reproducibility framework missing from ScaleSearch.</li>
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/ae8b0b5838ba510daff1198474e7b984-Abstract-Conference.html">FlashAttention-4</a>: Blackwell asynchronous MMA, softmax rescaling, and TMA pipelines, reaching 1613 TFLOPs/s BF16 on B200. This is a strong full-precision baseline SSA must test on the same hardware.</li>
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/e4d8d1b5120be349d3fff8878650cf45-Abstract-Conference.html">Kitty</a>: dynamic channel-wise precision boosts for nearly 2-bit KV, reporting seven tasks and 2.1×–4.1× throughput. It directly exposes a missing comparison with SSA's token-block mixed precision.</li>
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/a66caa1703fe34705a4368c3014c1966-Abstract-Conference.html">MixLLM</a>: global mixed precision across output features, with two-step dequantization/kernel pipelines realizing efficiency. Bit allocation remains a major optimization axis beyond scale search.</li>
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/45c1f6a8cbf2da59ebf2c802b4f742cd-Abstract-Conference.html">SkipKV</a>: jointly suppresses redundant long-CoT generation and KV storage at sentence level, with up to 1.7× throughput. Reducing tokens may outperform saving a few more bits per token; compare at equal quality and answer length.</li>
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/42a452cbafa9dd64e9ba4aa95cc1ef21-Abstract-Conference.html">Demystifying
+the MoE Serving Tax</a>: finds FLOP-equivalent MoE can be 2–3× slower than dense models, with load imbalance affecting prefill/decode oppositely. System evaluation should decompose workload phases, not stop at one kernel.</li>
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/9032e5c9ec394ce768a2fa9bdc56af6c-Abstract-Conference.html">MoEBlaze</a>: addresses the MoE memory wall through token dispatch, buffer materialization, and checkpoint co-design, claiming use in Meta recommendation production. Its real deployment context is valuable relative to ScaleSearch, though workload and baseline fairness still require reading the full paper.</li>
+</ol>
+<h2
+id="16-结论值得复用的是搜索-scale不该过度归因的是近乎无损-attention">16. Conclusion: reuse scale search, but do not overattribute nearly lossless attention</h2>
+<p>ScaleSearch's insight is simple: NVFP4 E4M3 offers finer scales than E8M0, so amax/6 need not be the sole answer. Choose among nine neighboring representable scales by MSE for each 16-value block; preserve the format and default candidate while integrating easily into offline PTQ. Its strongest quantitative evidence is PTQ <strong>7/8</strong>
+cells outperforming ordinary NVFP4, Qwen3-8B MATH-500 <strong>+15.0
+pp</strong>, and approximately <strong>26.67%</strong> synthetic MSE reduction in Figure 3.</p>
+<p>Nearly lossless ScaleSearchAttention is an integrated-system result. Llama 70B PPL improving 3.4000→2.6348 is striking, but removing ScaleSearch worsens PPL only 0.0047 versus 0.0791 for high-precision boundary KV. With unpublished implementation, simulated causal SA3, no real language-serving latency, and the paper's 0.0990 decimal/five-benchmark counting errors, the most defensible conclusion is:<strong>scale-neighborhood search is a low-risk component worth transferring; SSA is a promising prototype still lacking a complete chain of reproducible hardware evidence.</strong></p>
+<hr />
+<h3 id="证据与制作说明">Evidence and production notes</h3>
+<ul>
+<li>The official MLSys PDF was read page by page, pp.1–16. Main results come from Tables 1–7, Figures 3–9, Algorithm 1, and Appendix A, cited in the relevant sections.</li>
+<li>Related works read page by page: SageAttention3 (especially pp.1–8), QuIP# (pp.1–11), and StreamingLLM (pp.1–12); NVIDIA's NVFP4 technical explanation was read in full.</li>
+<li>Relative percentages and pp changes were recomputed from paper tables to two decimal places; unreadable plot points were not invented as tabulated values.</li>
+<li>Missing statistics, unpublished code/data, and unspecified hardware are marked explicitly; web abstracts were not substituted for paper numbers.</li>
+<li>HTML passed the Warm Editorial structural validator (0 warnings), with static responsive-CSS checks for light/dark themes, 640-px mobile, and print rules. The runtime lacks a
+<code>/usr/bin/chromium</code>、<code>chromium-browser</code> or
+<code>/opt/pw-browsers</code> executable, so the installed Playwright module could not launch a browser. Screenshot-based visual QA is therefore not claimed. Tables use horizontally scrollable containers, SVGs use responsive
+<code>viewBox</code>, and theme/text colors come from dual-theme variables.</li>
+<li><code>ml-report-index.md</code> This issue's entry has been appended.</li>
+</ul>
+</section>
+  </main>
+
+  <footer>Core sources: MLSys 2026 final paper and supplement, arXiv v1; technical lineage readings: SageAttention3, QuIP#, StreamingLLM, NVIDIA NVFP4 explanation. Generated 2026-09-11.</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ Light' : '☾ Dark';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

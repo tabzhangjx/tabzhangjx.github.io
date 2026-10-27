@@ -1,0 +1,972 @@
+---
+layout: null
+title: "Lumos"
+date: 2026-09-04
+topic: "llm-systems"
+tags: ["llm-systems", "distributed-training", "performance-modeling"]
+excerpt: "Lumos reduces mean replay error from 14.0% to 3.3%, but its unpublished kernel-latency model and missing TP/OOM modeling limit independent reproduction and global planning."
+permalink: "/blog/2026/09/04/lumos/en/"
+blog_post: false
+lang: "en"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_zh: "/blog/2026/09/04/lumos/"
+sitemap: true
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Lumos: Can One Real Iteration Replace Trial and Error on 512 H100s? · 2026-09-04</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" aria-pressed="false">☾ Dark</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ML / AI DAILY DEEP PAPER · MLSys 2025</p>
+    <h1>Lumos: Can One Real Iteration Replace Trial and Error on 512 H100s?</h1>
+    <p class="subtitle">Kineto traces × causal execution graphs × counterfactual configuration replay</p>
+    <div class="meta" aria-label="Report metadata">
+      <span class="chip source">MLSys 2025 · arXiv v1</span>
+      <span class="chip">2026-09-04</span>
+      <span class="chip">Efficiency and systems</span>
+    </div>
+    <p class="lede">Lumos reduces mean replay error from 14.0% to 3.3%, but its unpublished kernel-latency model and missing TP/OOM modeling limit independent reproduction and global planning.</p>
+  </header>
+
+  <main>
+<section class="card" aria-labelledby="0-链接验证表与证据口径"><h2 id="0-链接验证表与证据口径">0. Verified links and evidence conventions</h2>
+<p>These links were visited on 2026-09-04. Experimental numbers come only from PDFs read page by page; web pages verify versions, venues, and resource availability. No values were guessed from curve pixels: Figure 7 prints values directly on stacked bars; unlabeled bars and curves elsewhere support only qualitative judgments.</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Conference / paper</th>
+<th scope="col">arXiv version and date</th>
+<th scope="col">Code</th>
+<th scope="col">Data / weights</th>
+<th scope="col">Project page / videos</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Lumos</strong></td>
+<td><a
+href="https://proceedings.mlsys.org/paper_files/paper/2025/hash/a66caa1703fe34705a4368c3014c1966-Abstract-Conference.html">MLSys 2025 paper page</a>；<a
+href="https://proceedings.mlsys.org/paper_files/paper/2025/file/a66caa1703fe34705a4368c3014c1966-Paper-Conference.pdf">Final PDF</a></td>
+<td><a
+href="https://arxiv.org/abs/2504.09307">2504.09307</a>, **v1, 2025-04-12**, currently the only version</td>
+<td><strong>Not public / not found</strong>; same-named GitHub repositories found in search are unrelated to this paper</td>
+<td>Training traces, internal kernel models, and generated graphs are all<strong>Not public / not found</strong></td>
+<td>Standalone project page and author videos<strong>Not found</strong></td>
+</tr>
+<tr class="even">
+<td>TraceSim</td>
+<td><a
+href="https://mingyu-liang.github.io/files/mlarchsys24-tracesim.pdf">MLArchSys
+@ ISCA 2024 PDF</a>；<a
+href="https://openreview.net/forum?id=nWPq6s35Rr">OpenReview</a>(redirected to browser verification when accessed)</td>
+<td>No separate arXiv record found</td>
+<td><strong>Not found</strong></td>
+<td><strong>Not found</strong></td>
+<td>A video link was previously indexed, but the page failed to load during this check, so it is marked<strong>unverified</strong></td>
+</tr>
+<tr class="odd">
+<td>dPRO</td>
+<td><a
+href="https://proceedings.mlsys.org/paper_files/paper/2022/hash/b422680f3db0986ddd7f8f126baaf0fa-Abstract.html">MLSys 2022 paper page</a>；<a
+href="https://proceedings.mlsys.org/paper_files/paper/2022/file/b422680f3db0986ddd7f8f126baaf0fa-Paper.pdf">PDF</a></td>
+<td><a href="https://arxiv.org/abs/2205.02473">2205.02473</a>，v1
+2022-05-05</td>
+<td>The Artifact Appendix declares public source code and sample traces; a stable repository entry was<strong>Not found</strong></td>
+<td>The artifact includes a 2×8-V100 Horovod+TensorFlow+TCP trace (dPRO PDF p.14)</td>
+<td>Standalone project page / videos<strong>Not found</strong></td>
+</tr>
+<tr class="even">
+<td>Daydream</td>
+<td><a
+href="https://www.usenix.org/conference/atc20/presentation/zhu-hongyu">USENIX ATC 2020 page / PDF</a></td>
+<td>No arXiv version found</td>
+<td><strong>Not found</strong></td>
+<td><strong>Not found</strong></td>
+<td>The conference page links to the talk video and slides</td>
+</tr>
+<tr class="odd">
+<td>ASTRA-sim 2.0</td>
+<td><a href="https://arxiv.org/abs/2303.14006">ISPASS 2023 /
+arXiv</a></td>
+<td><strong>v1，2023-03-24</strong></td>
+<td><a
+href="https://github.com/astra-sim/astra-sim">GitHub，MIT</a></td>
+<td>Example workloads/topologies are public in the repository; model weights are not applicable</td>
+<td><a
+href="https://astra-sim.github.io/">Project page</a>; video not independently verified</td>
+</tr>
+<tr class="even">
+<td>Calculon</td>
+<td><a
+href="https://sc23.supercomputing.org/proceedings/tech_paper/tech_paper_pages/pap552.html">SC
+2023 proceedings</a>; the ACM DOI page returned 403 during this check and is not listed as an available link</td>
+<td>No arXiv version found</td>
+<td><a
+href="https://github.com/calculon-ai/calculon">Calculon</a>，Apache-2.0</td>
+<td><a href="https://github.com/calculon-ai/sc23">SC'23 reproduction experiments</a>Publicly available</td>
+<td>Separate video<strong>Not found</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Evidence labels</strong>：<code>Reported by the paper</code>
+means the authors' text or table/figure labels;<code>recalculated in this report</code>
+means only sums, differences, and percentages;<code>not reported by the paper</code>
+is never filled in with speculation. HTML, Markdown, and plain-text versions were generated from one Markdown source and contain the same content.</p>
+</section><section class="card" aria-labelledby="1-候选池排重与真实随机选择"><h2 id="1-候选池排重与真实随机选择">1. Candidate pool, deduplication, and actual random selection</h2>
+<p>First consult <code>ml-report-index.md</code>: QServe (quantized serving), PARQ (quantization training), and the nearby generation-system topic LongLive were covered in depth within the past 14 days. They and near-duplicate low-bit topics were excluded. Candidates came from cross-searches of MLSys 2025 proceedings, OSDI 2025, arXiv, OpenReview, Hugging Face Daily Papers, Papers with Code, and Semantic Scholar. The latter four support discovery or verification, rather than replacing papers with secondary summaries.</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">#</th>
+<th scope="col">Candidate paper</th>
+<th scope="col">Topic / source</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td>Youmu: Efficient Columnar Data Pipeline for LLM Training</td>
+<td>Data pipelines, MLSys 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td>LeanAttention</td>
+<td>decode attention，MLSys 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td>Rethinking KV Cache Compression</td>
+<td>KV cache，MLSys 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td>SampleAttention</td>
+<td>Long-context inference, MLSys 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td>ReaL</td>
+<td>RLHF training resource redistribution, MLSys 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td>APOLLO</td>
+<td>Optimizer memory, MLSys 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td>PipeFill</td>
+<td>Reclaiming pipeline bubbles, MLSys 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">8</td>
+<td>HyC-LoRA</td>
+<td>Activation compression, MLSys 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td>XGrammar</td>
+<td>Structured generation engines, MLSys 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td>FlexAttention</td>
+<td>Attention compilation, MLSys 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td>NEO</td>
+<td>CPU offload，MLSys 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">12</td>
+<td>Context Parallelism for Million-Token Inference</td>
+<td>Context parallelism, MLSys 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td>Marconi</td>
+<td>prefix cache，MLSys 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td>FastTree</td>
+<td>tree attention/runtime，MLSys 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td>Scaling Training with MPMD Pipeline Parallelism</td>
+<td>Training parallelism, MLSys 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;"><strong>16</strong></td>
+<td><strong>Lumos</strong></td>
+<td><strong>Training performance modeling, MLSys 2025</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td>Dynamic Input Pruning and Cache-Aware Masking</td>
+<td>Inference pruning, MLSys 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td>Optimizing LLM Queries in Relational Analytics</td>
+<td>Data systems, MLSys 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">19</td>
+<td>SOLA</td>
+<td>SLO scheduling, MLSys 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">20</td>
+<td>ThunderServe</td>
+<td>Heterogeneous cloud serving, MLSys 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">21</td>
+<td>Seesaw</td>
+<td>model resharding，MLSys 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">22</td>
+<td>LServe</td>
+<td>Sparse long-sequence serving, MLSys 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">23</td>
+<td>FlashInfer</td>
+<td>attention engine，MLSys 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">24</td>
+<td>WaferLLM</td>
+<td>Wafer-scale inference, OSDI 2025</td>
+</tr>
+</tbody>
+</table></div>
+<p>Locally running <code>date +%u</code> returned
+<strong>5</strong>confirmed Friday; running <code>shuf -i 1-24 -n 1</code> returned
+<strong>16</strong>selected Lumos as the core paper.<strong>Redraws: 0</strong>. The main text, appendix-level discussion, conference final version, and nine numerically labeled scale-out decompositions support an in-depth review. Published about 17 months before the report date, it remains within the 24-month limit. Main-conference systems papers were prioritized, and the random draw did not select for popularity.</p>
+</section><section class="card" aria-labelledby="2-motivation最难预测的不是-flops而是什么时候真的能跑"><h2 id="2-motivation最难预测的不是-flops而是什么时候真的能跑">2. Motivation: predicting when work can actually run is harder than counting FLOPs</h2>
+<p>Large-model training configurations form a Cartesian product of model architecture and system choices: layers, hidden size, FFN width, and micro-batches, multiplied by TP, PP, DP, pipeline schedules, collectives, and network topology. Simple analytical models add component times but cannot determine computation/communication overlap. Coarse trace simulators may miss causal edges between host threads, CUDA runtime calls, and streams.</p>
+<p>The paper illustrates this with one GPT-3 175B iteration using<code>TP=8, PP=4, DP=8</code>
+. Figure 1 (PDF p.2; extracted web p.1, lines 60–65) gives dPRO/measured values for four components, beginning with exposed compute: <strong>3235/4287
+ms</strong>、overlapped <strong>1691/885 ms</strong>、exposed
+communication <strong>1417/2261 ms</strong>、other <strong>81/178
+ms</strong>. These sum to <strong>6424 vs 7611 ms</strong>, meaning dPRO underestimates total duration by
+<strong>1187 ms（15.60%）</strong>. More importantly, it underestimates genuinely exposed compute by <strong>24.54%</strong>while overestimating overlap by
+<strong>91.07%</strong>(recalculated here). An incorrect total can sometimes be patched with calibration; an incorrect decomposition directs engineers toward the wrong bottleneck.</p>
+<p>This defines Lumos's problem: given one or a few real traces, construct a sufficiently faithful execution graph <code>G=(V,E)</code>that replays end-to-end makespan while retaining compute, communication, overlap, host/runtime behavior, and timing gaps. Then modify only the nodes, edges, and durations affected by a new configuration to obtain counterfactual estimates far more cheaply than deploying it.</p>
+<p>The key assumptions and costs are:</p>
+<ol type="1">
+<li><strong>Iteration stability</strong>: one or a few traces represent long-running training. The paper therefore calls profiling overhead negligible across training, but reports no overhead percentage (§5, PDF p.10, lines 760–767).</li>
+<li><strong>Transferable dependency patterns</strong>: local dependency templates from the original trace remain valid after changing layer count or PP (§3.4, PDF p.5, lines 360–383). This enables cheap transformations but may miss compiler choices, fusion, and congestion transitions.</li>
+<li><strong>Externally supplied durations</strong>: new GEMM/collective timings come from an internal model trained on fleet traces. The kernel predictor is explicitly outside the paper's scope (§5, PDF p.10, lines 783–797). Thus, the public method addresses when work can be scheduled, without fully disclosing how long new work takes.</li>
+</ol>
+</section><section class="card" aria-labelledby="3-故事线从-profile-到反事实执行图"><h2 id="3-故事线从-profile-到反事实执行图">3. Argument: from profiles to counterfactual execution graphs</h2>
+<p>Lumos has a tightly connected design: Kineto observes; dependency recovery restores causality; graph transformations propose counterfactuals; and discrete-event simulation executes them.</p>
+<p><strong>Layer 1: minimally intrusive collection.</strong> Kineto records PyTorch operators, CUDA runtime events, and GPU kernels, including start times, durations, stream/thread IDs, and correlation IDs. The paper says integration needs about <strong>10 lines of hooks</strong>; the system contains approximately
+<strong>5200 LoC</strong>of Python, and converting an original trace into a predicted trace takes seconds to minutes (§4, PDF p.6, lines 437–445). This is easier to deploy than older tools requiring framework/model modifications, but inserting hooks into source code is still integration work.</p>
+<p><strong>Layer 2: restoring four dependency classes.</strong> There are only CPU-task and GPU-task nodes, but edges cover all four combinations (§3.3, PDF pp.4–5, lines 252–318):</p>
+<ul>
+<li>CPU→CPU: sequential edges within a thread and cross-thread blocking edges inferred from significant execution gaps;</li>
+<li>CPU→GPU: correlation IDs connect
+<code>cudaLaunchKernel</code>/<code>cudaMemsetAsync</code> to the corresponding kernel;</li>
+<li>GPU→CPU：<code>cudaDeviceSync</code>/<code>cudaStreamSync</code>
+connects completed kernels back to blocked host tasks;</li>
+<li>GPU→GPU: sequential edges within a stream; across streams, pair
+<code>cudaEventRecord</code> with <code>cudaStreamWaitEvent</code>。</li>
+</ul>
+<p>The substantive advance over dPRO is explicit preservation of cross-stream happens-before relations. LLM training frequently uses independent streams to overlap NCCL and GEMM. Missing a wait edge makes the simulator assume simultaneous execution, inflating overlap as in Figure 1.</p>
+<p><strong>Layer 3: graph transformation.</strong> For DP changes, local computation stays fixed and only collective durations change. For PP changes, layers are reassigned to stages under a 1F1B schedule, communication nodes inserted, and adjacent dependencies rebuilt. Changing depth duplicates layer subgraphs; changing hidden/FFN widths updates tensor shapes and critical GEMM/communication durations (§3.4 and §4.3.2, PDF pp.5,9, lines 360–383 and 717–726). The paper<strong>does not support changing TP</strong>, arguing that TP is usually fixed within a node in practice and leaving it for future work (PDF p.5, lines 370–373).</p>
+</section><section class="card" aria-labelledby="4-方程级形式化伪代码与流程"><h2 id="4-方程级形式化伪代码与流程">4. Formalization, pseudocode, and workflow</h2>
+<p>Let each task <code>v∈V</code> have processor <code>p(v)</code>(a CPU thread or CUDA stream), duration <code>d(v)</code>, fixed predecessors
+<code>Pred_f(v)</code> , and runtime predecessors
+<code>Pred_r(v,t)</code>. Its simulated start time can be written as:</p>
+<pre><code>s(v) = max( A[p(v)],  max_{u∈Pred_f(v)∪Pred_r(v,t)} (s(u)+d(u)) )
+f(v) = s(v)+d(v)
+A[p(v)] ← f(v)
+T_iter = max_v f(v) − min_v s(v)</code></pre>
+<p><code>A[p]</code> is the processor's next available time. Fixed edges count toward indegree at initialization; runtime edges are resolved only when a task is selected. For example,
+<code>cudaStreamSync</code> must wait for the last kernel in that stream at that moment, which need not be known before simulation. Algorithm 1 (PDF p.6, lines 384–417) can be rewritten as:</p>
+<pre><code>R ← all tasks with fixed indegree 0; A[p] ← 0
+while R is nonempty:
+    v ← pick(R)
+    Discover v's runtime dependencies and attach v to its predecessors' dependents
+    if v currently has indegree 0:
+        s(v) ← max(A[p(v)], known earliest start time)
+        A[p(v)] ← s(v)+d(v)
+        for c in dependents(v):
+            indegree(c) -= 1
+            earliest(c) ← max(earliest(c), A[p(v)])
+            if indegree(c)=0: R.add(c)
+Output a new trace with every task's start/end times</code></pre>
+<p>This is more than measuring once and multiplying by a scaling factor:</p>
+<pre><code>                                       ┌─ CPU thread order / blocking ─┐
+Kineto trace ─parse─┼─ Launch / synchronization edges ┼─→ G=(V,E)
+                   └─ CUDA stream / event edges ───┘       │
+                                                           ├─ Original replay → accuracy audit
+New DP/PP/depth/width → Copy/split graphs, add edges, update durations
+                                                           └─ Event simulation → predicted trace
+                                                                            ├─ Makespan
+                                                                            ├─ Exposed compute/communication
+                                                                            └─ Overlap/activity timeline</code></pre>
+</section><section class="card" aria-labelledby="5-关键机制与工程细节"><h2 id="5-关键机制与工程细节">5. Key mechanisms and engineering details</h2>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Mechanism</th>
+<th scope="col">Input signals</th>
+<th scope="col">Graph operation / implementation</th>
+<th scope="col">Benefit</th>
+<th scope="col">Explicit boundary</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Kineto trace extraction</td>
+<td>Operators, runtime, kernels, IDs, durations</td>
+<td>CPU/GPU node layers</td>
+<td>Low integration cost; preserves host launches</td>
+<td>Only PyTorch was tested; TensorFlow adaptability is discussed, not demonstrated</td>
+</tr>
+<tr class="even">
+<td>Four-class dependency recovery</td>
+<td>thread/stream/correlation/event</td>
+<td>Fixed + runtime edges</td>
+<td>Captures computation–communication overlap</td>
+<td>Some cross-thread edges rely on a significant-gap heuristic</td>
+</tr>
+<tr class="odd">
+<td>DP graph manipulation</td>
+<td>New DP setting, collective metadata</td>
+<td>Keep compute; update communication durations</td>
+<td>Scale-out estimation</td>
+<td>Uses unpublished internal network/performance models</td>
+</tr>
+<tr class="even">
+<td>PP graph manipulation</td>
+<td>New PP setting, layer map, 1F1B</td>
+<td>Split layers, move stages, insert communication, reorder</td>
+<td>No real deployment needed to test new stage counts</td>
+<td>Only a specific schedule is shown; uneven/dynamic pipelines are unsupported</td>
+</tr>
+<tr class="odd">
+<td>Architecture manipulation</td>
+<td>layer、hidden、FFN</td>
+<td>Duplicate layers; change shapes and critical kernel durations</td>
+<td>Width/depth what-if analysis</td>
+<td>Assumes only a few GEMMs/communications change significantly</td>
+</tr>
+<tr class="even">
+<td>Discrete-event simulator</td>
+<td>Execution graph, durations</td>
+<td>ready set + processor availability</td>
+<td>Produces a complete predicted trace</td>
+<td>Does not model OOM, power, bandwidth, or FLOPS utilization</td>
+</tr>
+<tr class="odd">
+<td>Implementation scale</td>
+<td>Python, approximately 5200 LoC</td>
+<td>About 10 hook lines; seconds to minutes</td>
+<td>Suitable for interactive design-space exploration</td>
+<td>Code, traces, and predictor are unpublished, preventing independent reproduction</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="6-数据集平台基准与指标"><h2 id="6-数据集平台基准与指标">6. Data, platform, benchmarks, and metrics</h2>
+<p>This is a systems-trace study, not a downstream ML dataset evaluation. Models use the open-source NVIDIA/MLPerf Training GPT-3 implementation. Table 1 (PDF p.7, lines 467–471) specifies four architectures: 15B=<code>48 layers / 6144 hidden / 12288 FFN / 48 heads</code>，44B=<code>48/12288/24576/48</code>，117B=<code>96/12288/24576/96</code>，175B=<code>96/12288/49152/96</code>, all with head dimension 128.</p>
+<p>The platform supports up to <strong>512 H100 GPUs, 32 servers, 8×400 Gbps per host, and a RoCE data-center network</strong>. Software versions are CUDA 12.4, PyTorch 2.5, Transformer Engine 0.12.0, and PyTorch Lightning 1.9.4 (§4.1, PDF p.6, lines 456–460). This is substantial scale, but one GPU/network generation leaves extrapolation to A100, Blackwell, InfiniBand, or congested shared clusters untested.</p>
+<p>The main metric is absolute relative iteration-time error:<code>Err=|T_pred−T_real|/T_real×100%</code>. Time is decomposed into exposed compute, overlapped time, exposed communication, and other. The paper also uses the term SM utilization, but defines it as the fraction of time within each <strong>1 ms</strong> window during which at least one CUDA stream executes a task (§4.2.3, PDF p.8, lines 615–622). This is not CUPTI active warps, SM occupancy, tensor-core utilization, or achieved FLOPS. A more accurate term is <strong>stream-active duty
+cycle</strong>; this report does not interpret it as hardware SM saturation.</p>
+</section><section class="card" aria-labelledby="7-完整主结果数据矩阵"><h2 id="7-完整主结果数据矩阵">7. Complete main-results matrices</h2>
+<h3 id="71-重放lumos-对-dpro">7.1 Replay: Lumos versus dPRO</h3>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">Mean iteration-time error</th>
+<th scope="col">Maximum / typical description</th>
+<th scope="col" style="text-align: right;">Absolute change versus dPRO</th>
+<th scope="col" style="text-align: right;">Relative change</th>
+<th scope="col">Source</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>dPRO</td>
+<td style="text-align: right;">14.0%</td>
+<td>Maximum 21.8%</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td>Figure 5, §4.2.1, PDF p.7, lines 559–563</td>
+</tr>
+<tr class="even">
+<td><strong>Lumos</strong></td>
+<td style="text-align: right;"><strong>3.3%</strong></td>
+<td>Below 5% for most configurations</td>
+<td style="text-align: right;"><strong>−10.7 pp</strong></td>
+<td style="text-align: right;"><strong>−76.43%</strong></td>
+<td>Figure 5, §4.2.1, PDF p.7, lines 559–565; differences recalculated here</td>
+</tr>
+</tbody>
+</table></div>
+<p>To avoid misinterpretation: mean error falls to about <strong>0.236 times</strong>dPRO's error. Training is not 4.24× faster: Lumos is a predictor, and the paper does not accelerate the training job itself.</p>
+<h3 id="72-九个反事实-scale-out-配置--四项时间分解">7.2 Nine counterfactual scale-out configurations × four time components</h3>
+<p>The table transcribes every labeled value in Figure 7 (PDF p.8, web lines 629–675), in ms;<code>P/A</code> denotes Lumos predicted/actual values. Total errors are recalculated from printed integers and may differ slightly from averages computed using unrounded data.</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Transformation</th>
+<th scope="col">TP×PP×DP</th>
+<th scope="col" style="text-align: right;">exposed compute P/A</th>
+<th scope="col" style="text-align: right;">overlap P/A</th>
+<th scope="col" style="text-align: right;">exposed comm P/A</th>
+<th scope="col" style="text-align: right;">other P/A</th>
+<th scope="col" style="text-align: right;">Total duration P/A</th>
+<th scope="col" style="text-align: right;">Absolute error</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DP expansion only</td>
+<td class="num">2×2×8</td>
+<td style="text-align: right;">353/329</td>
+<td style="text-align: right;">123/148</td>
+<td style="text-align: right;">291/287</td>
+<td style="text-align: right;">30/38</td>
+<td style="text-align: right;">797/802</td>
+<td style="text-align: right;"><strong>0.62%</strong></td>
+</tr>
+<tr class="even">
+<td>DP expansion only</td>
+<td class="num">2×2×16</td>
+<td style="text-align: right;">364/337</td>
+<td style="text-align: right;">112/138</td>
+<td style="text-align: right;">307/330</td>
+<td style="text-align: right;">30/33</td>
+<td style="text-align: right;">813/838</td>
+<td style="text-align: right;"><strong>2.98%</strong></td>
+</tr>
+<tr class="odd">
+<td>DP expansion only</td>
+<td class="num">2×2×32</td>
+<td style="text-align: right;">352/321</td>
+<td style="text-align: right;">124/156</td>
+<td style="text-align: right;">358/370</td>
+<td style="text-align: right;">30/32</td>
+<td style="text-align: right;">864/879</td>
+<td style="text-align: right;"><strong>1.71%</strong></td>
+</tr>
+<tr class="even">
+<td>PP expansion only</td>
+<td class="num">2×4×4</td>
+<td style="text-align: right;">386/403</td>
+<td style="text-align: right;">60/56</td>
+<td style="text-align: right;">378/408</td>
+<td style="text-align: right;">48/46</td>
+<td style="text-align: right;">872/913</td>
+<td style="text-align: right;"><strong>4.49%</strong></td>
+</tr>
+<tr class="odd">
+<td>PP expansion only</td>
+<td class="num">2×8×4</td>
+<td style="text-align: right;">405/421</td>
+<td style="text-align: right;">49/46</td>
+<td style="text-align: right;">927/1008</td>
+<td style="text-align: right;">65/77</td>
+<td style="text-align: right;">1446/1552</td>
+<td style="text-align: right;"><strong>6.83%</strong></td>
+</tr>
+<tr class="even">
+<td>PP expansion only</td>
+<td class="num">2×16×4</td>
+<td style="text-align: right;">422/452</td>
+<td style="text-align: right;">49/44</td>
+<td style="text-align: right;">853/865</td>
+<td style="text-align: right;">461/477</td>
+<td style="text-align: right;">1785/1838</td>
+<td style="text-align: right;"><strong>2.88%</strong></td>
+</tr>
+<tr class="odd">
+<td>DP+PP expansion</td>
+<td class="num">2×4×8</td>
+<td style="text-align: right;">359/379</td>
+<td style="text-align: right;">96/80</td>
+<td style="text-align: right;">378/415</td>
+<td style="text-align: right;">55/39</td>
+<td style="text-align: right;">888/913</td>
+<td style="text-align: right;"><strong>2.74%</strong></td>
+</tr>
+<tr class="even">
+<td>DP+PP expansion</td>
+<td class="num">2×8×8</td>
+<td style="text-align: right;">399/414</td>
+<td style="text-align: right;">63/53</td>
+<td style="text-align: right;">481/547</td>
+<td style="text-align: right;">67/81</td>
+<td style="text-align: right;">1010/1095</td>
+<td style="text-align: right;"><strong>7.76%</strong></td>
+</tr>
+<tr class="odd">
+<td>DP+PP expansion</td>
+<td class="num">2×4×16</td>
+<td style="text-align: right;">371/387</td>
+<td style="text-align: right;">87/72</td>
+<td style="text-align: right;">823/813</td>
+<td style="text-align: right;">55/44</td>
+<td style="text-align: right;">1336/1316</td>
+<td style="text-align: right;"><strong>1.52%</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>Per-group results are more informative than the mean 3.3% headline. Errors for the three DP-only points are
+<strong>0.62%–2.98%</strong>; for the three PP points,
+<strong>2.88%–6.83%</strong>; among joint expansions, <code>2×8×8</code> reaches
+<strong>7.76%</strong>. The authors separately report a mean error for simultaneous DP+PP scaling of
+<strong>4.2%</strong>(§4.3.1, PDF p.9, lines 697–700), versus <strong>4.01%</strong>when recalculated from the three printed bars. The difference of
+<strong>0.19 pp</strong> likely reflects rounding and does not establish a contradiction.</p>
+<p>Component errors can be large even when the total is close:<code>2×4×8</code> has predicted other time of 55 versus measured 39, a relative component overestimate of
+<strong>41.03%</strong>. Because it is a small component, total error is still only 2.74%. Lumos's strongest evidence concerns makespan prediction. Claiming equal accuracy for every bottleneck requires a component-wise error matrix, which the paper does not summarize.</p>
+<h3 id="73-模型架构变化">7.3 Model-architecture changes</h3>
+<p>Table 2 (PDF p.9, lines 703–709) derives four variants from GPT-3 15B: V1 20B (64 layers), V2 30B (96 layers), V3 28B (hidden 9216 / FFN 18432), and V4 44B (hidden 12288 / FFN 24576), all using <code>TP=2,PP=2,DP=4</code>. Figure 8 shows similar actual and predicted decompositions, but<strong>the bars have no exact labels, and the text reports neither mean nor maximum error</strong>. This report therefore supplies no missing numbers and cannot establish whether changing depth or width is more reliable.</p>
+</section><figure class="figure" aria-labelledby="fig-error-title">
+<p class="fig-title" id="fig-error-title">Mean iteration-time replay error: dPRO versus Lumos</p>
+<p class="fig-sub">Lower is better. Lumos reduces error by 10.7 percentage points, or 76.43% relatively.</p>
+<svg class="chart" viewBox="0 0 760 310" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>Mean iteration-time replay error for dPRO and Lumos</title><desc>dPRO: 14%; Lumos: 3.3%.</desc>
+<line x1="90" y1="250" x2="700" y2="250" stroke="var(--grid)"/><line x1="90" y1="40" x2="90" y2="250" stroke="var(--grid)"/>
+<line x1="90" y1="110" x2="700" y2="110" stroke="var(--grid)" stroke-dasharray="4 5"/>
+<text x="76" y="254" text-anchor="end" font-size="12">0%</text><text x="76" y="184" text-anchor="end" font-size="12">5%</text><text x="76" y="114" text-anchor="end" font-size="12">10%</text><text x="76" y="44" text-anchor="end" font-size="12">15%</text>
+<rect x="205" y="54" width="150" height="196" rx="7" fill="#eb6834" tabindex="0" data-tip="dPRO：14.0%"/><text x="280" y="44" text-anchor="middle" font-size="14">14.0%</text><text x="280" y="276" text-anchor="middle" font-size="13">dPRO</text>
+<rect x="470" y="204" width="150" height="46" rx="7" fill="#2a78d6" tabindex="0" data-tip="Lumos：3.3%"/><text x="545" y="194" text-anchor="middle" font-size="14">3.3%</text><text x="545" y="276" text-anchor="middle" font-size="13">Lumos</text>
+</svg><figcaption>Source: Lumos Figure 5 and §4.2.1 (PDF p.7). The adjacent table also lists the values. Hover over or keyboard-focus a bar to see its value.</figcaption></figure><section class="card" aria-labelledby="8-逐层消融超参敏感性与相变"><h2 id="8-逐层消融超参敏感性与相变">8. Layered ablations, hyperparameter sensitivity, and transitions</h2>
+<h3 id="81-逐层消融">8.1 Layered ablations</h3>
+<p>The paper<strong>does not report a standard component-ablation table</strong>: it does not separately remove CPU→GPU correlations, GPU→CPU synchronization, inter-stream events, or runtime dependencies. Figure 6 presents only one Actual/Lumos/dPRO
+<code>GPT-3 15B, TP2-PP2-DP4</code>
+activity timeline without a numerical distance metric. Thus, the complete system outperforms dPRO, but the 10.7 pp decrease cannot be quantitatively assigned to one edge class.</p>
+<p>Figure 1 supports a mechanism-consistency check: dPRO overestimates overlap by 806 ms, and Lumos explicitly restores inter-stream happens-before relations. This supports the causal narrative but is not a controlled ablation. The most valuable missing experiment would remove each dependency class within Lumos and report makespan, component L1 error, and critical-path edge recall across nine configurations.</p>
+<h3 id="82-超参敏感性与相变">8.2 Hyperparameter sensitivity and transitions</h3>
+<p>The paper<strong>Not reported</strong>: sensitivity to the gap threshold, number of profiled iterations, the 1 ms utilization bin, ready-task <code>pick</code> selection rules, or kernel-predictor errors. Two potential transitions are particularly important:</p>
+<ul>
+<li>If communication-predictor error changes collective completion order, the critical path may switch discretely; end-to-end error need not grow linearly with single-kernel error.</li>
+<li>If changing PP stages triggers different kernels, fusion, or memory strategies, copying an existing layer subgraph may leave its transferable regime.</li>
+</ul>
+<p>The paper tests DP/PP changes from a 16-GPU baseline to 32/64/128 GPUs (§4.3.1, PDF p.9, lines 678–700), without reverse scale-down, different GPU models, or congested workloads. It supports a low-error local neighborhood around the tested H100/RoCE implementation, rather than a smooth global configuration space.</p>
+<h3 id="83-统计显著性">8.3 Statistical significance</h3>
+<p>The paper<strong>Not reported</strong>: repetition counts, standard deviations, confidence intervals, significance tests, or variance over time. Neither cluster-contention distributions nor profiler run-to-run variation are given. Thus, 3.3% and 4.2% are descriptive statistics on selected configurations, not probabilistic guarantees before deployment. If iteration times fluctuate by 3%–5%, single-point prediction error may be comparable to measurement noise; the paper cannot separate modeling error from system noise.</p>
+</section><section class="card" aria-labelledby="9-真正贡献可复用设计与迁移潜力"><h2 id="9-真正贡献可复用设计与迁移潜力">9. Contributions, reusable designs, and transfer potential</h2>
+<p><strong>Contribution 1: representing host, runtime, and streams in one causal execution graph.</strong> This abstraction is reusable: an optimizer can modify DAG nodes, edges, or durations without understanding all of PyTorch. It also explains why simply adding operator and NCCL times fails.</p>
+<p><strong>Contribution 2: predictions remain traces.</strong>
+The output is not an isolated iteration-time number: it supports further analysis of exposed communication, overlap, and activity timelines. This enables a diagnostic loop: identify the critical path, propose kernel/parallelism changes, replay them on the graph, and implement only the most promising candidates.</p>
+<p><strong>Contribution 3: replacing redeployment with local graph modification for configuration exploration.</strong>
+DP modifies communication; PP reorganizes layers/stages; width/depth changes replace affected key kernels. This is faster than building analytical models from scratch and cheaper than dedicating hundreds of GPUs to each candidate.</p>
+<p>Transfer to inference, MoE, heterogeneous accelerators, or elastic training requires three conditions: a profiler exposing both host and device events, formalizable dependency templates for new schedules, and a public calibrated source of kernel/network durations. Without all three, framework independence describes postprocessing code rather than end-to-end usability.</p>
+</section><section class="card" aria-labelledby="10-相关工作问题来源与技术来源链"><h2 id="10-相关工作问题来源与技术来源链">10. Related work: problem and technical lineage</h2>
+<h3 id="101-daydream图变换的源头">10.1 Daydream: the origin of graph transformations</h3>
+<p><strong>Problem addressed</strong>: Daydream constructs kernel dependency graphs from low-level CUPTI traces and uses domain knowledge plus transformation primitives to predict optimization effects before implementation, as its USENIX page explicitly states. Presentation materials report five optimization classes on five DNNs, with mean estimation error around
+<strong>8%</strong>（presentation p.3）。</p>
+<p><strong>Remaining gap</strong>: framework/model instrumentation is required, and the focus is single-machine / earlier-DNN optimization rather than complex host/runtime and cross-stream relations in modern distributed LLMs.<strong>Lumos's response</strong>: retain trace→DAG→graph transform→simulate, replace collection with Kineto, and restore four edge classes.<strong>Transferred design</strong>: Daydream's principle of modifying the graph before modifying the system directly precedes Lumos's what-if interface.</p>
+<h3 id="102-dpro全局分布式图与可比较基线">10.2 dPRO: global distributed graphs and a comparable baseline</h3>
+<p><strong>Problem addressed</strong>: dPRO merges fine-grained communication traces from multiple workers into a global data-flow graph and searches computation/communication/memory optimizations. Its paper reports prediction error in most settings of <code>&lt;5%</code>and optimization gains up to
+<strong>3.48×</strong>(arXiv abstract; MLSys 2022 PDF p.1).<strong>Remaining gap</strong>: it targets the TensorFlow/MXNet and AllReduce/parameter-server era. Lumos identifies missing concurrent-/inter-stream dependencies, producing 14% mean error on new LLM configurations.</p>
+<p><strong>Lumos's response</strong>: explicitly recover cross-stream causality using event pairs and runtime synchronization, reducing mean error to 3.3% in the same study.<strong>Transferred design</strong>: dPRO's global graph, topological simulation, and optimization hooks remain; Lumos primarily upgrades trace granularity and dependency semantics. Note that dPRO's original <code>&lt;5%</code> and Lumos's remeasured 14% use different models, frameworks, and hardware; they do not make the earlier paper self-contradictory.</p>
+<h3 id="103-tracesimlumos-的直接原型">10.3 TraceSim: Lumos's direct prototype</h3>
+<p><strong>Problem addressed</strong>: TraceSim, from the same author lineage, already uses Kineto to preserve operators, runtime calls, and kernels together. On GPT-3 with 256 H100s, it reports mean replay accuracy of <strong>95.6%</strong>and scale-up accuracy up to
+<strong>99.5%</strong>（PDF p.1 lines 13–19；p.5 lines
+423–432）。<strong>Remaining gap</strong>: the five-page workshop paper is a proof of concept, with limited treatment of PP/architecture transformations, dynamic-dependency algorithms, and limitations.</p>
+<p><strong>Lumos's response</strong>: expand to 512 H100s, four GPT-3 sizes, an explicit Algorithm 1, nine DP/PP counterfactuals, and architecture variants.<strong>Transferred design</strong>: multilayer Kineto traces, four dependency classes, and predicted-trace output transfer almost unchanged. Lumos is therefore better understood as a mature, systematized, more extensively validated version than an entirely different method.</p>
+<h3 id="104-astra-sim-20通信与硬件空间的互补供应器">10.4 ASTRA-sim 2.0: a complementary source for communication and hardware exploration</h3>
+<p><strong>Problem addressed</strong>: ASTRA-sim 2.0 supports arbitrary parallelism with a graph-based training loop and models multidimensional heterogeneous topologies, collectives, in-network computation, and disaggregated memory (arXiv v1, pp.1–2).<strong>Remaining gap</strong>: it requires workload and system abstractions rather than automatically recovering complete host/CUDA happens-before relations from one PyTorch run.</p>
+<p><strong>Lumos's response</strong>: Lumos extracts workload execution graphs from real traces. Conversely, it uses internal models for unseen collective durations and explicitly proposes future integration with ASTRA-sim (§4.3.1/§5, PDF pp.9–10).<strong>Transferred design</strong>: ideally Lumos supplies real causal structure and ASTRA-sim supplies communication durations under new topologies. They are complementary rather than substitutes.</p>
+<h3 id="105-calculon解析搜索的另一条支线">10.5 Calculon: the analytical-search branch</h3>
+<p><strong>Problem addressed</strong>: Calculon parameterizes models, hardware, and implementation strategies to explore joint LLM software/hardware spaces rapidly under constraints such as memory. Its open-source README gives approximately <strong>1 second</strong>per configuration; its execution optimizer for 5128 A100 GPUs takes about <strong>1 minute</strong>。<strong>Remaining gap</strong>: analytical models rely on idealized decompositions and struggle to preserve dynamic host launches, stream waits, and real runtime gaps.</p>
+<p><strong>Lumos's response</strong>: anchor dynamic behavior in measured traces, sacrificing zero-shot prediction for entirely new hardware.<strong>Transferred design</strong>: Calculon suits coarse global screening, while Lumos suits precise local ranking near a deployed stack. Calculon can narrow the search before Lumos replays candidates.</p>
+<h3 id="106-非线性技术演进树">10.6 Nonlinear technical evolution</h3>
+<pre><code>Hardware / analytical models ─ Calculon ─────────┐
+                                                 ├─ Coarse screening of new hardware / global designs
+Network / collective simulation ─ ASTRA-sim 2.0 ─┤
+                                                 └─ Duration supplier ─┐
+                                                                       │
+CUPTI kernel DAG ─ Daydream ─┐                                          │
+                            ├─ Global distributed graph ─ dPRO         │
+                            │                         │                │
+                            └─ Graph transformations  │                │
+                                                      ▼                ▼
+                                    Kineto operator+runtime+kernel
+                                                      │
+                                    TraceSim: cross-stream dependency prototype
+                                                      │  Scale / graph transforms / dynamic edges
+                                                      ▼
+                                         Lumos: local counterfactual replay
+                                                      │
+                            ┌─────────────────────────┴────────────────┐
+                            ▼                                          ▼
+                 Open kernel/network predictors              Probabilistic noise and OOM/energy</code></pre>
+<p><strong>Drivers and turning points</strong>: Daydream first shifts profiling from explaining past execution to predicting unimplemented optimizations. dPRO then expands single-device graphs into global distributed graphs. Multistream computation/communication overlap in LLMs subsequently invalidates coarse edge semantics, prompting TraceSim/Lumos to model operator/runtime/kernel causality. The next step should be public duration models and uncertainty propagation; otherwise private latency estimates still constrain accurate local graphs.</p>
+<h3 id="107-跨论文对标">10.7 Cross-paper comparison</h3>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Core abstraction</th>
+<th scope="col">Anchored in real traces</th>
+<th scope="col">Network / new-hardware modeling</th>
+<th scope="col">Cross-stream causality</th>
+<th scope="col">Configuration counterfactuals</th>
+<th scope="col">Public implementation</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Daydream</td>
+<td>kernel DAG</td>
+<td>Yes, CUPTI</td>
+<td>Weak</td>
+<td>Modern patterns not covered</td>
+<td>Optimization graph transformations</td>
+<td>Not found</td>
+</tr>
+<tr class="even">
+<td>dPRO</td>
+<td>global data-flow graph</td>
+<td>Yes, multiple workers</td>
+<td>Communication traces / rules</td>
+<td>Lumos identifies limitations</td>
+<td>Optimization search</td>
+<td>Declared in artifact; entry not verified</td>
+</tr>
+<tr class="odd">
+<td>Calculon</td>
+<td>Parameterized analytical equations</td>
+<td>No</td>
+<td><strong>Strong</strong></td>
+<td>No</td>
+<td><strong>Global</strong>Software/hardware space</td>
+<td><strong>Yes</strong></td>
+</tr>
+<tr class="even">
+<td>ASTRA-sim 2.0</td>
+<td>workload+system simulation</td>
+<td>Can consume traces</td>
+<td><strong>Strong</strong>, topology / collectives / memory</td>
+<td>Framework runtime is not the focus</td>
+<td><strong>Global</strong>System space</td>
+<td><strong>Yes</strong></td>
+</tr>
+<tr class="odd">
+<td>TraceSim</td>
+<td>Multilayer execution graph</td>
+<td><strong>Yes, Kineto</strong></td>
+<td>External</td>
+<td><strong>Yes</strong></td>
+<td>Preliminary scale-out</td>
+<td>Not found</td>
+</tr>
+<tr class="even">
+<td><strong>Lumos</strong></td>
+<td>Transformable multilayer execution graph</td>
+<td><strong>Yes, Kineto</strong></td>
+<td>Internal models / external integration possible</td>
+<td><strong>Yes</strong></td>
+<td>Local DP, PP, width, and depth space</td>
+<td><strong>No</strong></td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="11-论文自述限制"><h2 id="11-论文自述限制">11. Limitations acknowledged by the paper</h2>
+<ol type="1">
+<li><strong>Feasibility blind spots</strong>: counterfactual configurations are assumed to run successfully; OOM is not predicted. FLOPS utilization, memory, bandwidth, and energy are also outside scope (§5, Limitations, PDF p.10, lines 808–816). The fastest predicted configuration may not fit in memory.</li>
+<li><strong>New-kernel durations are outside scope</strong>: the current system relies on internal fleet-trace models. Communication could use ASTRA-sim/analytical models and computation could use microbenchmarks, but the paper does not integrate these or propagate their errors (§5, PDF p.10, lines 783–797).</li>
+<li><strong>TP cannot be changed</strong>: only DP/PP and model width/depth are supported, because the authors regard TP as generally fixed within a node (§3.4, PDF p.5, lines 370–373). This omits a key training-configuration search dimension.</li>
+</ol>
+</section><section class="card" aria-labelledby="12-独立批判因为-x所以-y"><h2 id="12-独立批判因为-x所以-y">12. Independent critique: evidence and implications</h2>
+<ol type="1">
+<li><strong>[Reproducibility]</strong> The paper describes roughly 5200 LoC but publishes neither code, traces, nor its internal kernel predictor. External researchers cannot reproduce 3.3% or distinguish graph-structure accuracy from private duration-model accuracy.</li>
+<li><strong>[Metric validity]</strong> SM utilization is defined as any-stream-active time within 1 ms (PDF p.8), so even low-occupancy kernels count as active. Figure 6 therefore establishes similar active/idle timelines, not efficient SM/Tensor Core utilization.</li>
+<li><strong>[External validity]</strong> All main experiments use H100s, RoCE, one GPT-3 implementation, and one software stack. The 3.3% error cannot be generalized to A100/Blackwell, InfiniBand, MoE, or different compilers.</li>
+<li><strong>[Ablation attribution]</strong> Without edge-class removal ablations, comparing full Lumos with dPRO cannot attribute the entire −10.7 pp mean-error change to inter-stream events. Profiler, parsing, and duration-predictor changes may also contribute.</li>
+<li><strong>[Statistical reliability]</strong> Without repeated runs, standard deviations, or intervals,
+<code>2×2×8</code> 's 0.62% and <code>2×8×8</code> 's 7.76% cannot be separated from natural cluster variation, leaving deployment risk unbounded.</li>
+<li><strong>[Search completeness]</strong> TP is fixed, PP examples use 1F1B/regular layer assignment, and layers are assumed uniform. Lumos is therefore a local configuration estimator, not a complete automatic 3D-parallelism planner.</li>
+<li><strong>[Feasibility / objective mismatch]</strong> OOM, energy, training costs, and throughput variation are unmodeled. Fastest predicted does not mean runnable, cheapest, or most energy-efficient, and cannot directly justify procurement decisions.</li>
+<li><strong>[Component credibility]</strong> Because <code>2×4×8</code> predicts the other component as 55 ms rather than 39 ms (+41.03%) while total error is only 2.74%, low makespan error can hide large relative errors in small components. Bottleneck diagnosis requires component-wise error reporting.</li>
+</ol>
+</section><section class="card" aria-labelledby="13-开放挑战可操作的-head-to-head-实验空白"><h2 id="13-开放挑战可操作的-head-to-head-实验空白">13. Open challenges: actionable head-to-head experiments</h2>
+<h3 id="理论">Theory</h3>
+<ul>
+<li><strong>Dependency-edge error propagation</strong>: compare full Lumos, event-edge removal, host-sync removal, and random removal of 1/5/10% of edges on the same trace. Evaluate critical-path precision/recall, makespan error, and component L1 error to bound the impact of missing each edge class.</li>
+<li><strong>Uncertainty propagation</strong>: compare point-estimate Lumos with probabilistic Lumos assigning a duration distribution to each kernel. Across 30 real runs on different days, evaluate 50/90/95% prediction-interval coverage rather than only mean absolute error.</li>
+</ul>
+<h3 id="工程应用">Engineering applications</h3>
+<ul>
+<li><strong>Public duration suppliers</strong>: hold the Lumos graph fixed and connect microbenchmark lookup, Calculon/AMPeD, ASTRA-sim, or learned kernel predictors. Compare them with the internal model on the same nine configurations, reporting accuracy, calibration cost, simulation time, and required real GPU-hours.</li>
+<li><strong>Budget-matched configuration search</strong>: give Lumos, Calculon, and Megatron empirical grid search the same 24-hour wall-clock / H100-hour budget to find the fastest non-OOM configuration over TP×PP×DP×microbatch. Reevaluate the top five on real hardware, measuring best-found throughput and failure rate.</li>
+<li><strong>Cross-platform transfer</strong>: collect source traces for the same model on H100-RoCE, A100-InfiniBand, and B200-NVLink, then predict the other two platforms. Compare with reprofiling on every platform to quantify trace transferability and cold-start cost.</li>
+</ul>
+<h3 id="新兴方向">Emerging directions</h3>
+<ul>
+<li><strong>Dynamic MoE routing</strong>: compare static single-iteration Lumos with a stochastic simulator retaining token-routing distributions on an MoE with controllable expert imbalance. Increase skew progressively and measure p50/p95 iteration times and straggler attribution.</li>
+<li><strong>Compiler transitions</strong>: vary hidden size to trigger different Triton/cuBLAS kernels or fusion choices. Compare old-graph copying plus duration updates with recompilation plus reprofiling, identifying thresholds at which graph topology changes.</li>
+<li><strong>Joint training–energy objectives</strong>: attach NVML power traces to candidates with equal throughput. Compare makespan-only optimization with Pareto search over time, peak memory, and kWh, testing whether 3.3% timing error preserves Pareto rankings.</li>
+</ul>
+</section><section class="card" aria-labelledby="14-近期工作雷达非核心证据"><h2 id="14-近期工作雷达非核心证据">14. Recent-work radar (not core evidence)</h2>
+<ol type="1">
+<li><a
+href="https://arxiv.org/abs/2312.12391">vTrain</a>(2023/2024): simulates cost and compute-optimal LLM training; useful for comparing cold-start costs of beginning with abstract workloads versus Lumos's real traces.</li>
+<li><a href="https://arxiv.org/abs/2306.02267">Proteus</a>(EuroSys 2024): expresses complex parallelism using strategy trees, complementing Lumos's fixed TP. Compare budget-matched searches over the same Megatron space.</li>
+<li><a
+href="https://www.bsg.ai/papers/Peng_ReaLLM_ASAP_2025.pdf">ReaLLM</a>(ASAP 2025): connects chip-level kernel libraries to trace-driven system inference, reporting 9.1% mean latency error on 4×H100. Its scope is inference rather than training.</li>
+<li><a
+href="https://arxiv.org/abs/2510.15596">PRISM</a>(2025): represents system variation as distributions rather than fixed durations, directly addressing Lumos's lack of confidence intervals. Public implementation status remains subject to the authors' stated release plans.</li>
+<li><a href="https://arxiv.org/abs/2508.05370">Simulating LLM training
+workloads for heterogeneous compute</a>(2025): introduces nonuniform workload partitioning, useful for testing when Lumos's uniform layer/stage assumptions fail in heterogeneous clusters.</li>
+<li><a href="https://arxiv.org/abs/2607.22432">TileSight</a>(2026): models GPUs from tile-first principles, reconnecting low-level analysis with high-level systems. New-kernel durations remain its central complement to Lumos.</li>
+<li><a href="https://arxiv.org/abs/2605.17164">Charon</a>(MLSys 2026): unifies training and inference through compiler-style layer-by-layer lowering for fine-grained simulation. The authors report overall error below 5.35% and large-training error below 3.74%, making it a recent direct head-to-head comparator for Lumos.</li>
+<li><a href="https://arxiv.org/abs/2605.11333">MLCommons
+Chakra</a>(MLSys 2026 Industry Track): defines an open execution-trace exchange format for compute, memory, communication, control/data dependencies, and resource constraints. It may remove proprietary-format barriers between Lumos traces and other simulators.</li>
+</ol>
+</section><section class="card" aria-labelledby="15-结论值得看什么不该相信什么"><h2 id="15-结论值得看什么不该相信什么">15. Conclusion: what merits attention and what remains unsupported</h2>
+<p>Lumos's most reusable idea is<strong>local counterfactual analysis grounded in real happens-before relations</strong>. It shows that modern LLM training prediction errors often arise from lost causal edges among hosts, runtimes, CUDA streams, and synchronization, rather than insufficiently precise FLOPs equations. Reducing mean replay error from 14.0% to 3.3% (−10.7 pp, −76.43%) is strong evidence. Yet the nine scale-out cases span 0.62%–7.76% error, rather than guaranteeing 3.3% universally.</p>
+<p>The deployment assessment must remain measured. Around the authors' H100/RoCE/PyTorch/GPT-3 stack, Lumos is a promising configuration sandbox. Without a public implementation and kernel predictor, TP transformations, OOM/memory/energy models, and statistical intervals, it is not an independently reproducible full-stack capacity planner. The most useful next step is a verifiable integration of Lumos graphs, ASTRA-sim communication, public kernel predictors, and probabilistic error propagation, rather than simply adding a more complex DAG.</p>
+<hr />
+<p><strong>Verification notes</strong>: this report read the 13-page Lumos arXiv v1 / MLSys final paper and five-page TraceSim paper, and visited conference, arXiv, code, and project entries for related work. The original candidate table is saved as
+<code>2026-09-04_efficiency_candidates.tsv</code>; the random draw returned 16, with no redraw. Missing ablations, standard deviations, significance tests, exact Figure 8 values, and profiling overhead remain explicitly unreported.<code>ml-report-index.md</code>
+was updated with this entry. The HTML passed the Warm Editorial structural validator (0 warnings) and static DOM/responsive checks. Playwright is installed, but the environment lacks a browser executable at
+<code>/usr/bin/chromium</code> or <code>/opt/pw-browsers</code>
+; as instructed,
+<code>playwright install</code>was not run. Browser screenshot checks in light, dark, and mobile views<strong>could not be performed in this run</strong>and are not claimed complete.</p>
+</section>
+  </main>
+
+  <footer>Core sources: MLSys 2025 final paper, arXiv v1, TraceSim, dPRO, Daydream, ASTRA-sim 2.0, and Calculon; generated on 2026-09-04.</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ Light' : '☾ Dark';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

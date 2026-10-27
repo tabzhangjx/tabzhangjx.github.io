@@ -1,0 +1,1509 @@
+---
+layout: null
+title: "Embodied-R1"
+date: 2026-09-17
+topic: "rl-peft"
+tags: ["rl-peft", "robotics", "reasoning"]
+excerpt: "Embodied-R1 深度研究报告：方法、定量结果、相关工作与局限性。"
+permalink: "/blog/2026/09/17/embodied-r1/"
+blog_post: true
+lang: "zh-CN"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_en: "/blog/2026/09/17/embodied-r1/en/"
+---
+<!DOCTYPE html>
+<html data-theme="light" xmlns="http://www.w3.org/1999/xhtml" lang="zh-CN" xml:lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Embodied‑R1：点式具身推理、强化学习与证据边界</title>
+  <style>
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      background-color: #1a1a1a;
+      border: none;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+  <style>
+  :root{color-scheme:light;--page:#f9f9f7;--surface:#fcfcfb;--text:#0b0b0b;--secondary:#52514e;--muted:#6f6e69;--grid:#e1e0d9;--border:rgba(11,11,11,.11);--primary:#2a78d6;--comparison:#eb6834;--highlight:#dceafa;--focus:#195fae}
+  :root[data-theme="dark"]{color-scheme:dark;--page:#0d0d0d;--surface:#1a1a19;--text:#fff;--secondary:#c3c2b7;--muted:#a09f98;--grid:#343431;--border:rgba(255,255,255,.12);--primary:#3987e5;--comparison:#d95926;--highlight:rgba(57,135,229,.18);--focus:#83b8f4}
+  *{box-sizing:border-box}html{background:var(--page);scroll-behavior:smooth}body{margin:0;background:var(--page);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;font-size:16px;line-height:1.75;overflow-wrap:anywhere}body>header,body>main,body>footer,.toolbar{max-width:980px;margin-left:auto;margin-right:auto}body>header{padding:26px 28px 8px}body>main{padding:0 28px 80px}.toolbar{display:flex;justify-content:flex-end;padding:24px 28px 0}.theme-toggle{border:1px solid var(--border);border-radius:999px;padding:6px 14px;background:var(--surface);color:var(--secondary);font:inherit;font-size:13px;cursor:pointer;position:sticky;top:12px;z-index:20}h1{margin:0 0 12px;font-size:31px;line-height:1.28;letter-spacing:-.015em}h2{margin:0 0 16px;font-size:22px;line-height:1.35}h3{margin:26px 0 10px;font-size:18px;line-height:1.4}p{margin:0 0 14px}.section.level2{margin:0 0 20px;padding:26px 30px;border:1px solid var(--border);border-radius:12px;background:var(--surface)}.section.level3{margin-top:24px}blockquote{margin:18px 0 24px;padding:12px 18px;border-left:3px solid var(--primary);background:var(--surface);color:var(--secondary)}a{color:var(--primary);text-decoration-thickness:1px;text-underline-offset:3px}ul,ol{margin:0 0 14px;padding-left:24px}li{margin-bottom:7px}code{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace}pre{max-width:100%;margin:12px 0;padding:13px 16px;overflow-x:auto;border:1px solid var(--border);border-radius:8px;background:var(--page);font-size:13.5px}.table-wrap{width:100%;margin:16px 0 20px;overflow-x:auto;-webkit-overflow-scrolling:touch}table{width:100%;border-collapse:collapse;font-size:14px}th,td{padding:9px 11px;border-bottom:1px solid var(--grid);vertical-align:top}th{color:var(--muted);font-size:12.5px;font-weight:700;letter-spacing:.04em;text-transform:none}td:nth-child(n+2){font-variant-numeric:tabular-nums}.figure{margin:20px 0;padding:22px 24px;border:1px solid var(--border);border-radius:12px;background:var(--page)}.fig-title{margin:0 0 4px;font-size:17px;font-weight:700}.fig-sub,figcaption{color:var(--muted);font-size:13.5px}.legend{display:flex;flex-wrap:wrap;gap:18px;margin:12px 0;color:var(--secondary);font-size:13px}.swatch{display:inline-block;width:11px;height:11px;margin-right:7px;border-radius:3px;vertical-align:-1px}.swatch.primary,.bar.primary{fill:var(--primary);background:var(--primary)}.swatch.comparison,.bar.comparison{fill:var(--comparison);background:var(--comparison)}.chart{display:block;width:100%;height:auto;margin:8px 0}.chart .axis{stroke:var(--muted);stroke-width:1}.chart .gridline line{stroke:var(--grid);stroke-width:1}.chart text{fill:var(--secondary);font-family:system-ui,sans-serif;font-size:13px}.chart .strong{font-weight:700}.bar{cursor:help;outline:none}.bar:focus{stroke:var(--focus);stroke-width:4}.tip{position:fixed;z-index:50;max-width:min(320px,calc(100vw - 24px));padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);box-shadow:0 6px 20px rgba(0,0,0,.18);font-size:13px;opacity:0;pointer-events:none;transform:translateY(4px);transition:opacity .1s ease,transform .1s ease}.tip.visible{opacity:1;transform:translateY(0)}:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+  @media(max-width:640px){body>header{padding:20px 16px 6px}body>main{padding:0 16px 56px}.toolbar{padding:18px 16px 0}.section.level2{padding:21px 18px}h1{font-size:25px}.table-wrap{border:1px solid var(--border);border-radius:8px}table{min-width:620px;font-size:13px}th,td{padding:7px 8px}.figure{padding:18px 14px}}
+  @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition-duration:.01ms!important}}
+  @media print{:root{color-scheme:light;--page:#fff;--surface:#fff;--text:#000;--secondary:#333;--muted:#555}.toolbar,.tip{display:none!important}body>header,body>main{max-width:none;padding-left:0;padding-right:0}.section.level2,.figure{break-inside:avoid;box-shadow:none}a{color:inherit}}
+  </style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="toolbar"><button class="theme-toggle" type="button" aria-label="切换浅色与深色主题">切换深色</button></div>
+<section
+id="embodiedr1把点变成跨机器人本体接口强化推理证据边界与复现实审"
+class="level1">
+<h1>Embodied‑R1：把“点”变成跨机器人本体接口——强化推理、证据边界与复现实审</h1>
+<blockquote>
+<p><strong>一句话核心定位。</strong> Embodied‑R1
+不是端到端输出关节动作的 VLA，而是让 3B
+视觉语言模型先以可解释的点、目标区、可操作部位和 8
+点轨迹回答“在哪儿、放哪儿、抓哪儿、怎么走”，再把这层与机器人本体无关的中间表示交给传统规划器或下游策略。</p>
+</blockquote>
+<p><strong>领域：</strong> 强化学习 / Agent / 具身智能　
+<strong>核心论文：</strong> <em>Embodied‑R1: Reinforced Embodied
+Reasoning for General Robotic Manipulation</em>，ICLR 2026。<br />
+<strong>证据约定：</strong> “论文原报”只指实际读取的 PDF
+正文或附录；“本报告复算”仅做四则运算并同时给出原始单元格；“未报告”不以图形估数或常识补齐。页码均指
+PDF 文件页码。链接状态核验于 2026‑09‑17。</p>
+<section id="0-先读结论为什么值得看又不该怎样解读" class="level2">
+<h2>0. 先读结论：为什么值得看，又不该怎样解读</h2>
+<p>值得看之处不是一个笼统的 87.5%
+成功率，而是它把具身推理拆成四种可被程序验分、可在不同机械臂间复用的“指点”能力：REG（被指物体）、RRG（放置区域）、OFG（功能部位）与
+VTG（视觉轨迹）。这个选择把语言理解和低层控制之间最难监督的一段，改写成二维点或短轨迹；随后用分阶段
+GRPO 与按任务组合的规则奖励训练。表 2 中，Embodied‑R1 相对同数据 SFT 在
+RoboRefIt / Where2Place / VABench‑P / Part‑Afford 上分别提升
+<strong>1.73 / 28.25 / 15.54 / 16.43 pp</strong>（论文表 2，PDF
+p.8；本报告复算），说明 RL
+的增益主要发生在“开放空间、部位、轨迹”这类答案不唯一、纯字符串监督不自然的任务，而不是最简单的物体定位。</p>
+<p>但论文的外部动作证据远没有摘要看起来那么整齐。SIMPLEREnv 平均
+<strong>56.2%</strong> 只比最强对照 SoFar 的 <strong>53.8%</strong> 高
+<strong>2.4 pp / 4.46% 相对</strong>，而且四任务中有两个不是逐列最优（表
+4，PDF p.10）。真实机器人 <strong>87.5%</strong> 来自 8 个任务合计 46
+次试验、且以任务均值汇总（表 5，PDF p.11），没有置信区间；每个任务 5 或
+6 次，单次成败就会改变 16.7–20 pp。更关键的是，正文 RRG 奖励写成
+<code>0.1 format + 0.2 distance + 0.7 mask</code>（PDF p.7），附录表 9
+却写成 <code>0.1 + 0.3 + 0.6</code>（PDF
+p.24）。因此最稳健的结论是：<strong>点式中间接口 + 可验证 RL
+对“看见到行动”有效；但当前证据尚不能证明它全面优于
+VLA、也不能把真实机器人 87.5% 外推为开放世界成功率。</strong></p>
+<figure class="figure" aria-labelledby="sim-title">
+  <p class="fig-title" id="sim-title">SIMPLEREnv 平均成功率：真正的领先幅度</p>
+  <p class="fig-sub">论文表 4，PDF p.10；单一 Y 轴，单位 %。悬停 / 聚焦柱形查看数值。</p>
+  <div class="legend"><span><i class="swatch primary"></i>Embodied‑R1</span><span><i class="swatch comparison"></i>对照</span></div>
+  <svg class="chart" viewBox="0 0 760 330" role="img" aria-label="FSD 40.6，SoFar 53.8，Embodied-R1 56.2">
+    <title>SIMPLEREnv 平均成功率比较</title><desc>FSD 为 40.6%，SoFar 为 53.8%，Embodied‑R1 为 56.2%。</desc>
+    <line x1="82" y1="270" x2="730" y2="270" class="axis"/><line x1="82" y1="30" x2="82" y2="270" class="axis"/>
+    <g class="gridline"><line x1="82" y1="270" x2="730" y2="270"/><line x1="82" y1="190" x2="730" y2="190"/><line x1="82" y1="110" x2="730" y2="110"/><line x1="82" y1="30" x2="730" y2="30"/></g>
+    <g class="labels"><text x="68" y="275">0</text><text x="60" y="195">20</text><text x="60" y="115">40</text><text x="60" y="35">60</text></g>
+    <rect x="150" y="107.6" width="120" height="162.4" rx="5" class="bar comparison" tabindex="0" data-tip="FSD：40.6%"/>
+    <rect x="340" y="54.8" width="120" height="215.2" rx="5" class="bar comparison" tabindex="0" data-tip="SoFar：53.8%（最强平均基线）"/>
+    <rect x="530" y="45.2" width="120" height="224.8" rx="5" class="bar primary" tabindex="0" data-tip="Embodied‑R1：56.2%；较 SoFar +2.4 pp / +4.46% 相对"/>
+    <g class="labels strong"><text x="185" y="100">40.6</text><text x="375" y="47">53.8</text><text x="565" y="38">56.2</text></g>
+    <g class="labels"><text x="190" y="298">FSD</text><text x="372" y="298">SoFar</text><text x="542" y="298">Embodied‑R1</text></g>
+  </svg>
+  <figcaption>图 1｜主表的系统级平均差距远小于摘要“62% improvement”的直觉；后者在论文主要表格中缺少清楚分母。</figcaption>
+</figure>
+
+</section>
+<section id="1-链接验证表" class="level2">
+<h2>1. 链接验证表</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr class="header">
+<th scope="col">对象</th>
+<th scope="col">会议 / 正式页</th>
+<th scope="col">arXiv 版本与日期</th>
+<th scope="col">代码</th>
+<th scope="col">数据 / 权重</th>
+<th scope="col">项目页 / 视频</th>
+<th scope="col">核验结论</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Embodied‑R1（核心）</strong></td>
+<td><a href="https://openreview.net/forum?id=i5wlozMFsQ">OpenReview /
+ICLR 2026</a></td>
+<td><a
+href="https://arxiv.org/abs/2508.13998">arXiv:2508.13998v2</a>，2026‑04‑06；v1
+为 2025‑08‑19</td>
+<td><a
+href="https://github.com/pickxiguapi/Embodied-R1">官方仓库</a>，Apache‑2.0；含训练、推理、评测目录</td>
+<td><a
+href="https://huggingface.co/IffYuan/Embodied-R1-3B-v1">模型</a>；<a
+href="https://huggingface.co/datasets/IffYuan/Embodied-R1-Dataset">数据</a>；<a
+href="https://huggingface.co/collections/IffYuan/embodied-r1">合集</a></td>
+<td><a href="https://embodied-r1.github.io/">项目页与视频示例</a></td>
+<td>全部可访问；HF 模型页显示约 4B 参数而论文称 3B，公开数据 viewer
+显示约 321k 行而名称为 200K，详见复现审计</td>
+</tr>
+<tr class="even">
+<td>RoboPoint</td>
+<td>CoRL 2024</td>
+<td><a
+href="https://arxiv.org/abs/2406.10721">arXiv:2406.10721v1</a>，2024‑06‑15</td>
+<td><a href="https://github.com/wentaoyuan/RoboPoint">官方代码</a></td>
+<td><a
+href="https://huggingface.co/wentao-yuan/robopoint-v1-vicuna-v1.5-7b-lora">7B
+LoRA 权重</a>；合成数据说明在论文</td>
+<td><a href="https://robo-point.github.io/">项目页</a></td>
+<td>PDF 已读取；为“点作为 affordance”直接问题来源</td>
+</tr>
+<tr class="odd">
+<td>FSD / From Seeing to Doing</td>
+<td>ICLR 2026</td>
+<td><a
+href="https://arxiv.org/abs/2505.08548">arXiv:2505.08548v3</a>，2026‑04‑05</td>
+<td><a
+href="https://github.com/pickxiguapi/embodied-fsd">官方代码</a></td>
+<td>仓库给出模型 / 数据入口</td>
+<td><a href="https://embodied-fsd.github.io/">项目页</a></td>
+<td>PDF 已读取；是 Sr‑CoT、视觉辅助与零样本控制的直接前身</td>
+</tr>
+<tr class="even">
+<td>OpenVLA‑OFT</td>
+<td>RSS 2025</td>
+<td><a
+href="https://arxiv.org/abs/2502.19645">arXiv:2502.19645v2</a>，2025‑04‑28</td>
+<td>项目页公开代码入口</td>
+<td>项目页公开 LIBERO 权重</td>
+<td><a href="https://openvla-oft.github.io/">项目页</a></td>
+<td>PDF 已读取；代表端到端 VLA 经专门适配后的上界与速度—成功率路线</td>
+</tr>
+<tr class="odd">
+<td>Qwen2.5‑VL</td>
+<td>技术报告</td>
+<td><a
+href="https://arxiv.org/abs/2502.13923">arXiv:2502.13923v1</a>，2025‑02‑19</td>
+<td><a href="https://github.com/QwenLM/Qwen2.5-VL">官方仓库</a></td>
+<td><a
+href="https://huggingface.co/collections/Qwen/qwen25-vl">模型合集</a></td>
+<td>独立视频未找到</td>
+<td>PDF 已读取；Embodied‑R1 的视觉语言底座</td>
+</tr>
+<tr class="even">
+<td>DeepSeekMath / GRPO</td>
+<td>技术报告</td>
+<td><a
+href="https://arxiv.org/abs/2402.03300">arXiv:2402.03300v3</a>，2024‑04‑27</td>
+<td><a
+href="https://github.com/deepseek-ai/DeepSeek-Math">官方仓库</a></td>
+<td>权重入口见官方仓库</td>
+<td>独立项目页 / 视频未找到</td>
+<td>PDF 已读取；提供无 critic 的组相对策略优化技术来源</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>检索边界。</strong> 本轮实际检查了
+arXiv、ICLR/OpenReview、RSS/CoRL 页面、Hugging Face Papers、Semantic
+Scholar、Papers with Code 与 ACL Anthology。ACL Anthology
+未发现比机器人会议/ICLR 更直接的本轮候选；Papers with Code
+的部分条目页面不能稳定读取，故只用于身份交叉检索，不作数字来源。所有下文数字均回到六篇
+PDF，而非搜索摘要、榜单或项目页。</p>
+</section>
+<section id="2-候选池去重与随机选择" class="level2">
+<h2>2. 候选池、去重与随机选择</h2>
+<p>先读取 <code>ml-report-index.md</code>。最近 14 天已经覆盖
+DreamGen（世界模型合成机器人轨迹，09‑03）和
+VIKI‑R（多机器人协作奖励，09‑10），因此排除“视频世界模型造数据”和“异构群体协作”两个近邻主题；今天保留单机器人、零样本操作、具身推理与
+agent RL。候选来自正式 proceedings / OpenReview、arXiv、Hugging Face
+Daily Papers，再以 Semantic Scholar 与 Papers with Code
+核对名称和版本，共 24 篇；核心候选均在 24 个月内。</p>
+<div class="table-scroll"><table>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">编号</th>
+<th scope="col">候选论文</th>
+<th scope="col">主要入口</th>
+<th scope="col">方向</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td>WebAgent‑R1</td>
+<td>arXiv / HF Papers</td>
+<td>网页 agent 强化学习</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td>WebRL</td>
+<td>arXiv / OpenReview</td>
+<td>自演化网页 agent</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td>RAGEN</td>
+<td>arXiv</td>
+<td>推理 agent RL</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td>Agent‑R</td>
+<td>arXiv</td>
+<td>迭代 agent 训练</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td>ToolRL</td>
+<td>arXiv</td>
+<td>工具调用 RL</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td>Search‑R1</td>
+<td>arXiv / HF Papers</td>
+<td>检索 agent RL</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td>DeepResearcher</td>
+<td>arXiv</td>
+<td>长程研究 agent</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">8</td>
+<td>SWE‑RL</td>
+<td>arXiv</td>
+<td>代码 agent RL</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td>SWE‑Gym</td>
+<td>NeurIPS / arXiv</td>
+<td>软件工程环境</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td>Guided Search Strategies in Non‑Serializable Environments with
+Applications to Software Engineering Agents</td>
+<td>ICML 2025</td>
+<td>非可序列化 agent 搜索</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td>OpenVLA‑OFT</td>
+<td>RSS 2025</td>
+<td>VLA 适配</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">12</td>
+<td>π0.5</td>
+<td>arXiv / project</td>
+<td>开放世界 VLA</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td>GR00T N1</td>
+<td>arXiv / project</td>
+<td>人形机器人基础模型</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td>SmolVLA</td>
+<td>arXiv / HF</td>
+<td>轻量 VLA</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td>SpatialVLA</td>
+<td>arXiv</td>
+<td>空间表征 VLA</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">16</td>
+<td>DexVLA</td>
+<td>arXiv</td>
+<td>灵巧操作</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td>CogACT</td>
+<td>arXiv</td>
+<td>认知动作生成</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td>ConRFT</td>
+<td>arXiv</td>
+<td>具身一致性 RFT</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">19</td>
+<td>SimpleVLA‑RL</td>
+<td>arXiv</td>
+<td>VLA 强化学习</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;"><strong>20</strong></td>
+<td><strong>Embodied‑R1</strong></td>
+<td><strong>ICLR 2026 / arXiv</strong></td>
+<td><strong>点式具身推理，本次抽中</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">21</td>
+<td>ReTool</td>
+<td>arXiv</td>
+<td>工具增强 RL</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">22</td>
+<td>DAPO</td>
+<td>arXiv</td>
+<td>大规模策略优化</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">23</td>
+<td>ProRL</td>
+<td>arXiv</td>
+<td>长程 RL 训练</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">24</td>
+<td>VideoAgent2</td>
+<td>arXiv / HF Papers</td>
+<td>视频 agent</td>
+</tr>
+</tbody>
+</table></div>
+<p>固定 <code>N=24</code> 后执行 <code>shuf -i 1-24 -n 1</code>，输出
+<strong>20</strong>。Embodied‑R1 有正式 ICLR 2026 身份、31 页
+PDF、附录、开源模型/数据/代码与真实机器人结果，资料足够，故<strong>重抽次数为
+0</strong>。选择发生在深读之前，不因热度或主观“有趣”排序。</p>
+</section>
+<section id="3-motivation感知行动鸿沟到底是什么-motivation-gap"
+class="level2">
+<h2>3. Motivation：感知—行动鸿沟到底是什么 {#motivation-gap}</h2>
+<p>端到端 VLA 把图像和指令直接映射到某台机器人的动作
+token。它可以利用海量轨迹学习闭环控制，但输出空间与机械臂、相机、控制频率、关节定义绑定；换一套本体就往往要重新采集与微调。OpenVLA‑OFT
+说明专门适配能很强：LIBERO 四套件平均成功率从 <strong>76.5% 提至
+97.1%</strong>，动作生成吞吐提高 <strong>26×</strong>（该论文表 I，PDF
+p.6）。反面也同样清楚：这属于面向目标机器人和任务的
+fine‑tuning，不是无需动作数据的跨本体零样本迁移。</p>
+<p>模块化 VLM + 规划器则把语义与控制拆开。RoboPoint
+用合成数据训练“给一个动作条件，指出图像中的可行点”，相对 GPT‑4o / PIVOT
+在空间 affordance 精度上提高 <strong>21.8%</strong>，下游成功率提高
+<strong>30.5%</strong>（RoboPoint 摘要与实验总结，PDF
+p.1、p.10）；但它的点主要回答 REG /
+RRG，不能系统表达功能部位和连续移动路径。FSD 再加入 Spatial‑relationship
+CoT 与视觉辅助，在 SIMPLEREnv 达 <strong>40.6%</strong>、8 个真实任务达
+<strong>72%</strong>（FSD 摘要、表 4/真实实验，PDF p.1、p.11），但仍以
+SFT 为主，答案多解时“唯一标注点”会误罚合理答案。</p>
+<p>Embodied‑R1
+的痛点判断因此很具体：第一，动作级数据稀缺且跨本体异构；第二，普通语言太粗，关节动作太专；第三，点/轨迹答案常有多个可接受解，交叉熵会把未写进标注的正确解当错；第四，空间
+reasoning chain 必须与最终点一致，否则只是漂亮但不落地的文本。它选择
+<code>pointing</code> 作为中间带宽：比语言更几何、比动作更通用、又能用
+mask / 距离 / 轨迹 RMSE 自动给奖励。</p>
+</section>
+<section id="4-论文故事线假设与权衡" class="level2">
+<h2>4. 论文故事线、假设与权衡</h2>
+<p>故事线由四步构成。其一，把操作前的视觉决策定义为四项任务：REG
+输出被操作物体内的点，RRG 输出满足关系的放置区域内点，OFG
+输出可抓/可按/可拉的功能部位，VTG 输出物体中心沿预期运动的 8
+点轨迹。其二，用现有 VQA、空间关系与机器人数据构造两阶段课程：Stage 1
+先恢复/增强一般空间推理，Stage 2 再专训 point‑centric 能力。其三，用
+GRPO 让同一图像—指令生成一组回答，以组内相对奖励更新，避免单独训练
+critic。其四，推理时把点或轨迹反投影为 3D，再由抓取、IK、路径规划或
+Diffusion Policy 执行动作。</p>
+<p>这套方案依赖四个假设：<strong>几何充分性</strong>——二维点足以承载大部分操作前决策；<strong>验分充分性</strong>——mask、距离与轨迹
+RMSE
+能近似真实动作价值；<strong>分解可迁移性</strong>——感知推理迁移后，低层规划器不会成为主要瓶颈；<strong>开环可接受性</strong>——单张图像或短序列的点计划在执行过程中不会因遮挡、接触和物体移动快速失效。换来的优势是可解释、跨本体、无需任务动作微调；代价是接触力、旋拧、擦拭、柔性体和长时序纠错不能由点完整表达。</p>
+</section>
+<section id="5-方程级形式化与算法流程" class="level2">
+<h2>5. 方程级形式化与算法流程</h2>
+<section id="51-多任务指点空间" class="level3">
+<h3>5.1 多任务指点空间</h3>
+<p>令观测图像为 <code>I</code>、指令为 <code>x</code>、模型回答为
+<code>y=(c,p)</code>，其中 <code>c</code> 是
+<code>&lt;think&gt;…&lt;/think&gt;</code> 推理文本，<code>p</code>
+是一个点、点集或轨迹。四类任务的可接受集合分别为物体 mask
+<code>M_obj</code>、目标区域 <code>M_goal</code>、功能 mask
+<code>M_fun</code> 与参考轨迹
+<code>G=(g_1,…,g_K)</code>。关键不是把唯一坐标当作标签，而是定义集合奖励。</p>
+<p>格式、准确率与 mask 奖励可写为：</p>
+<p><code>r_format(y)=1[标签与坐标格式合法]</code></p>
+<p><code>r_acc(y,g)=1[y=g]</code></p>
+<p><code>r_mask(p,M)=1[p∈M]</code></p>
+<p>距离奖励以最近/最远合理距离归一化：</p>
+<p><code>r_dis(p,g)=clip(1-(||p-g||_2-D_min)/(D_max-D_min),0,1)</code>。</p>
+<p>VTG 先把预测和参考轨迹插值到同长度，再以 RMSE 进入相同的阈值映射得到
+<code>r_trace</code>。总奖励为</p>
+<p><code>R(y)=Σ_{r∈F_task} w_r r(y),  Σ w_r=1,  R∈[0,1]</code>。</p>
+<p>论文正文以 RRG 为例写
+<code>0.1 r_format + 0.2 r_dis + 0.7 r_mask</code>（PDF p.7），附录表 9
+却写 <code>0.1 + 0.3 + 0.6</code>（PDF
+p.24）。该冲突意味着复现者无法仅凭论文确定实际权重；报告后文不会替作者猜测代码使用哪一套。</p>
+</section>
+<section id="52-grpo-更新" class="level3">
+<h3>5.2 GRPO 更新</h3>
+<p>对每个输入 <code>q=(I,x)</code>，旧策略采样 <code>G=8</code> 个回答
+<code>{o_i}</code>，按组内均值与标准差归一化：</p>
+<p><code>A_i=(R_i-mean(R_1…R_G))/(std(R_1…R_G)+ε)</code>。</p>
+<p>以 token 比率
+<code>ρ_{i,t}=π_θ(o_{i,t}|q,o_{i,&lt;t})/π_old(o_{i,t}|q,o_{i,&lt;t})</code>
+构造 PPO 式裁剪目标，并加参考策略 KL：</p>
+<p><code>L_GRPO = - E[min(ρ A, clip(ρ,1-ε,1+ε)A) - β KL(π_θ||π_ref)]</code>。</p>
+<p>其技术来源 DeepSeekMath 通过组内分数估计 baseline，省去 PPO 的 value
+model（DeepSeekMath §4.1.1，PDF p.13）。Embodied‑R1 使用 KL 系数
+<code>β=10^-2</code>、每题 8 个 samples、global batch
+128（附录实现细节，PDF p.23）。需要注意：当 8
+个回答奖励完全相同，标准化优势接近零；对极难/极易样本，GRPO
+可能不给有效梯度。这是组相对方法的结构性边界，不是本文实验已证明的失败率。</p>
+</section>
+<section id="53-两阶段训练与执行伪代码" class="level3">
+<h3>5.3 两阶段训练与执行伪代码</h3>
+<pre class="text"><code>Input: Qwen2.5-VL-3B-Instruct, Stage-1 spatial/general data,
+       Stage-2 Embodied-Points tasks, task reward library
+
+Stage 1: 2 epochs RFT
+  for image, instruction in Embodied-Spatial-84K + ViRL subset(18K):
+    sample 8 responses; score format + exact/spatial correctness
+    normalize group rewards; GRPO update with KL to reference
+
+Stage 2: 1 epoch RFT
+  for task in {REG, RRG, 3D-RRG, OFG, VTG, QA}:
+    sample 8 &lt;think&gt; + coordinate responses
+    choose task-specific rewards {format, acc, mask, distance, trace, env}
+    GRPO update
+
+Deployment:
+  RGB(/D) + instruction -&gt; reasoning + point(s)/8-point trace
+  -&gt; pixel-to-world / detector / IK / motion planner (or DP)
+  -&gt; robot executes; no task-specific fine-tuning in zero-shot setting</code></pre>
+</section>
+</section>
+<section id="6-数据构造工程细节与可复现性" class="level2">
+<h2>6. 数据构造、工程细节与可复现性</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr class="header">
+<th scope="col">组件</th>
+<th scope="col">论文做法</th>
+<th scope="col" style="text-align: right;">数量 / 配置</th>
+<th scope="col">证据位置</th>
+<th scope="col">复现含义</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>底座</td>
+<td>Qwen2.5‑VL‑3B‑Instruct</td>
+<td style="text-align: right;">论文称 3B</td>
+<td>PDF p.23</td>
+<td>继承动态分辨率、点/框定位能力；HF 页面却标示约 4B
+参数，命名口径需澄清</td>
+</tr>
+<tr class="even">
+<td>Stage 1</td>
+<td>Embodied‑Spatial‑84K + ViRL 子集</td>
+<td style="text-align: right;">84K + 18K；2 epochs</td>
+<td>图 3 / PDF p.7；实现 p.23</td>
+<td>先建立空间推理锚点，避免直接在稀疏点奖励上冷启动</td>
+</tr>
+<tr class="odd">
+<td>OFG</td>
+<td>HandAL 图像 + GPT‑4o 问题生成</td>
+<td style="text-align: right;">40K</td>
+<td>PDF p.6</td>
+<td>问题语言带有闭源教师偏差，论文未做教师替换消融</td>
+</tr>
+<tr class="even">
+<td>VTG</td>
+<td>目标识别、Grounded‑SAM、关键点、CoTracker3、8
+点降采样、规则/人工筛选</td>
+<td style="text-align: right;">固定 8 点</td>
+<td>PDF p.6、p.27</td>
+<td>自动管线可扩展但含 tracker 噪声；固定点数同时防 reward hacking</td>
+</tr>
+<tr class="odd">
+<td>上下文</td>
+<td>最大 context / response</td>
+<td style="text-align: right;">4096 / 2048 tokens</td>
+<td>PDF p.23</td>
+<td>推理文本可很长，但部署延迟与 token 分布未报告</td>
+</tr>
+<tr class="even">
+<td>优化</td>
+<td>AdamW</td>
+<td style="text-align: right;">lr <code>1e-6</code>，wd
+<code>1e-2</code></td>
+<td>PDF p.23</td>
+<td>只给单一设置，无 LR / KL / group-size 敏感性</td>
+</tr>
+<tr class="odd">
+<td>GRPO</td>
+<td>每题候选 / KL / global batch</td>
+<td style="text-align: right;">8 / <code>1e-2</code> / 128</td>
+<td>PDF p.23</td>
+<td>没有报告每组奖励方差或有效组比例</td>
+</tr>
+<tr class="even">
+<td>硬件</td>
+<td>8× A100 40GB</td>
+<td style="text-align: right;">Stage 1 约 48h；Stage 2 约 48h</td>
+<td>PDF p.23</td>
+<td>本报告复算约
+<code>8×96=768 A100 GPU-hour</code>；不含数据生成、基线与评测</td>
+</tr>
+<tr class="odd">
+<td>SFT 对照</td>
+<td>同数据、同 batch</td>
+<td style="text-align: right;">3 epochs</td>
+<td>PDF p.23</td>
+<td>控制了数据，但未明确做到等 token / 等 GPU-hour</td>
+</tr>
+</tbody>
+</table></div>
+<p>Qwen2.5‑VL 本身用原生动态分辨率 ViT、Window Attention 与可变视觉
+token 处理不同大小图像（Qwen2.5‑VL 技术报告 §2、表 1，PDF p.3–4）。因此
+Embodied‑R1 的像素点能力不是从零产生：底座已有 grounding
+能力，论文贡献是把它重新组织成具身任务、数据与强化奖励。这个归因很重要：没有“换成同尺寸、无原生点定位底座”的
+head‑to‑head，不能断言任何 3B VLM 都能凭 GRPO 获得相同提升。</p>
+</section>
+<section id="7-基准与指标数字在测什么" class="level2">
+<h2>7. 基准与指标：数字在测什么</h2>
+<div class="table-scroll"><table>
+<thead>
+<tr class="header">
+<th scope="col">组别</th>
+<th scope="col">基准 / 指标</th>
+<th scope="col">高低方向</th>
+<th scope="col">真正测到的能力</th>
+<th scope="col">未覆盖</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>空间理解</td>
+<td>CVBench、CRPE、SAT、BLINK、EmbSpatial</td>
+<td>准确率 / 平均分，↑</td>
+<td>相对位置、深度、对象关系</td>
+<td>不等于机器人可执行性</td>
+</tr>
+<tr class="even">
+<td>点式预测</td>
+<td>RoboRefIt、Where2Place、VABench‑P、Part‑Afford</td>
+<td>点落入有效区比例，↑</td>
+<td>物体、空闲区域、部位定位</td>
+<td>合法区域内部的抓取质量差异</td>
+</tr>
+<tr class="odd">
+<td>轨迹</td>
+<td>VABench‑V RMSE/MAE ↓，LLM score ↑</td>
+<td>像素误差与语义评分</td>
+<td>移动路径形状</td>
+<td>动力学可行性、碰撞与接触</td>
+</tr>
+<tr class="even">
+<td>仿真动作</td>
+<td>SIMPLEREnv 成功率，↑</td>
+<td>每任务 24 episodes</td>
+<td>跨场景零样本操作</td>
+<td>长时序任务、多机器人、多本体系统比较</td>
+</tr>
+<tr class="odd">
+<td>真实动作</td>
+<td>XArm 8 tasks 成功率，↑</td>
+<td>每任务 5 或 6 trials</td>
+<td>真实视觉—规划—执行闭环</td>
+<td>置信区间、跨实验室复现、失败恢复</td>
+</tr>
+<tr class="even">
+<td>3D 放置</td>
+<td>Open6DOR Level 0/1/Overall，↑</td>
+<td>空间关系成功率</td>
+<td>RGB / RGB‑D 3D 关系</td>
+<td>深度噪声、相机外参漂移</td>
+</tr>
+<tr class="odd">
+<td>下游策略</td>
+<td>LIBERO DP vs DP+ER1，↑</td>
+<td>四套件成功率</td>
+<td>点先验是否帮助学习策略</td>
+<td>与同算力 VLA / 更强 DP 的公平比较</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section id="8-主结果从感知到执行的完整矩阵" class="level2">
+<h2>8. 主结果：从感知到执行的完整矩阵</h2>
+<section id="81-四类点式能力论文表-2pdf-p8单位-" class="level3">
+<h3>8.1 四类点式能力（论文表 2，PDF p.8；单位 %，↑）</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">RoboRefIt</th>
+<th scope="col" style="text-align: right;">Where2Place</th>
+<th scope="col" style="text-align: right;">VABench‑P</th>
+<th scope="col" style="text-align: right;">Part‑Afford</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>GPT‑4o</td>
+<td style="text-align: right;">15.28</td>
+<td style="text-align: right;">29.06</td>
+<td style="text-align: right;">9.30</td>
+<td style="text-align: right;">10.15</td>
+</tr>
+<tr class="even">
+<td>ASMv2</td>
+<td style="text-align: right;">48.40</td>
+<td style="text-align: right;">22.00</td>
+<td style="text-align: right;">10.07</td>
+<td style="text-align: right;">13.75</td>
+</tr>
+<tr class="odd">
+<td>RoboBrain</td>
+<td style="text-align: right;">10.10</td>
+<td style="text-align: right;">16.60</td>
+<td style="text-align: right;">7.00</td>
+<td style="text-align: right;">25.25</td>
+</tr>
+<tr class="even">
+<td>RoboPoint</td>
+<td style="text-align: right;">49.82</td>
+<td style="text-align: right;">46.01</td>
+<td style="text-align: right;">19.09</td>
+<td style="text-align: right;">27.60</td>
+</tr>
+<tr class="odd">
+<td>FSD</td>
+<td style="text-align: right;">56.73</td>
+<td style="text-align: right;">45.81</td>
+<td style="text-align: right;">61.82</td>
+<td style="text-align: right;">9.55</td>
+</tr>
+<tr class="even">
+<td>Qwen2.5‑VL‑3B</td>
+<td style="text-align: right;">74.90</td>
+<td style="text-align: right;">31.11</td>
+<td style="text-align: right;">9.89</td>
+<td style="text-align: right;">23.42</td>
+</tr>
+<tr class="odd">
+<td>Embodied‑SFT</td>
+<td style="text-align: right;">83.85</td>
+<td style="text-align: right;">41.25</td>
+<td style="text-align: right;">50.46</td>
+<td style="text-align: right;">40.20</td>
+</tr>
+<tr class="even">
+<td><strong>Embodied‑R1</strong></td>
+<td style="text-align: right;"><strong>85.58</strong></td>
+<td style="text-align: right;"><strong>69.50</strong></td>
+<td style="text-align: right;"><strong>66.00</strong></td>
+<td style="text-align: right;"><strong>56.63</strong></td>
+</tr>
+<tr class="odd">
+<td>R1 − SFT（本报告复算）</td>
+<td style="text-align: right;">+1.73 pp / +2.06%</td>
+<td style="text-align: right;">+28.25 pp / +68.48%</td>
+<td style="text-align: right;">+15.54 pp / +30.80%</td>
+<td style="text-align: right;">+16.43 pp / +40.87%</td>
+</tr>
+</tbody>
+</table></div>
+<p>这里最有信息量的不是四列全胜，而是增益不均：底座在 RoboRefIt 已有
+74.90，SFT 已达 83.85，RL 只再加 1.73 pp；Where2Place 则从 41.25 跳到
+69.50。一个合理但尚未被因果证明的解释是，mask/距离奖励为多解放置提供了比单坐标
+SFT 更合适的学习信号。</p>
+</section>
+<section id="82-视觉轨迹论文表-3pdf-p8" class="level3">
+<h3>8.2 视觉轨迹（论文表 3，PDF p.8）</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">RMSE ↓</th>
+<th scope="col" style="text-align: right;">MAE ↓</th>
+<th scope="col" style="text-align: right;">LLM score ↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>GPT‑4o</td>
+<td style="text-align: right;">136.1</td>
+<td style="text-align: right;">113.5</td>
+<td style="text-align: right;">4.4</td>
+</tr>
+<tr class="even">
+<td>DINOv2 predictor</td>
+<td style="text-align: right;">128.3</td>
+<td style="text-align: right;">117.5</td>
+<td style="text-align: right;">4.0</td>
+</tr>
+<tr class="odd">
+<td>RoboBrain</td>
+<td style="text-align: right;">121.6</td>
+<td style="text-align: right;">103.8</td>
+<td style="text-align: right;">4.5</td>
+</tr>
+<tr class="even">
+<td>FSD</td>
+<td style="text-align: right;">78.3</td>
+<td style="text-align: right;">63.4</td>
+<td style="text-align: right;">6.2</td>
+</tr>
+<tr class="odd">
+<td>Embodied‑SFT</td>
+<td style="text-align: right;">109.4</td>
+<td style="text-align: right;">65.2</td>
+<td style="text-align: right;">6.2</td>
+</tr>
+<tr class="even">
+<td><strong>Embodied‑R1</strong></td>
+<td style="text-align: right;"><strong>77.8</strong></td>
+<td style="text-align: right;"><strong>45.0</strong></td>
+<td style="text-align: right;"><strong>7.3</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>相对 FSD，R1 的 RMSE 仅低 <strong>0.5 / 0.64%</strong>，但 MAE 低
+<strong>18.4 / 29.02%</strong>，LLM score 高 <strong>1.1 /
+17.74%</strong>（本报告复算）。这可能意味着少数大误差仍拉高
+RMSE，而典型点误差明显改善；没有误差分布与样本级统计，不能进一步定位尾部。</p>
+</section>
+<section id="83-simplerenv-零样本操作论文表-4pdf-p10每任务-24-episodes"
+class="level3">
+<h3>8.3 SIMPLEREnv 零样本操作（论文表 4，PDF p.10；每任务 24
+episodes，%）</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">Spoon→Towel</th>
+<th scope="col" style="text-align: right;">Carrot→Plate</th>
+<th scope="col" style="text-align: right;">Stack Green/Yellow</th>
+<th scope="col" style="text-align: right;">Eggplant→Basket</th>
+<th scope="col" style="text-align: right;">Avg</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Octo</td>
+<td style="text-align: right;">41.7</td>
+<td style="text-align: right;">8.2</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">56.7</td>
+<td style="text-align: right;">26.7</td>
+</tr>
+<tr class="even">
+<td>π0</td>
+<td style="text-align: right;">29.1</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">16.6</td>
+<td style="text-align: right;">62.5</td>
+<td style="text-align: right;">27.1</td>
+</tr>
+<tr class="odd">
+<td>π0‑fast</td>
+<td style="text-align: right;">29.1</td>
+<td style="text-align: right;">21.9</td>
+<td style="text-align: right;">10.8</td>
+<td style="text-align: right;"><strong>66.6</strong></td>
+<td style="text-align: right;">48.3</td>
+</tr>
+<tr class="even">
+<td>OpenVLA</td>
+<td style="text-align: right;">4.2</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">0.0</td>
+<td style="text-align: right;">16.7</td>
+<td style="text-align: right;">5.2</td>
+</tr>
+<tr class="odd">
+<td>OpenVLA‑OFT</td>
+<td style="text-align: right;">34.2</td>
+<td style="text-align: right;">30.0</td>
+<td style="text-align: right;">30.0</td>
+<td style="text-align: right;">72.5</td>
+<td style="text-align: right;">41.8</td>
+</tr>
+<tr class="even">
+<td>ThinkAct</td>
+<td style="text-align: right;">58.3</td>
+<td style="text-align: right;">37.5</td>
+<td style="text-align: right;">8.7</td>
+<td style="text-align: right;">70.8</td>
+<td style="text-align: right;">43.8</td>
+</tr>
+<tr class="odd">
+<td>Magma</td>
+<td style="text-align: right;">37.5</td>
+<td style="text-align: right;">31.0</td>
+<td style="text-align: right;">12.7</td>
+<td style="text-align: right;">60.5</td>
+<td style="text-align: right;">35.4</td>
+</tr>
+<tr class="even">
+<td>MOKA</td>
+<td style="text-align: right;">45.8</td>
+<td style="text-align: right;">41.6</td>
+<td style="text-align: right;">33.3</td>
+<td style="text-align: right;">12.5</td>
+<td style="text-align: right;">33.3</td>
+</tr>
+<tr class="odd">
+<td>SoFar</td>
+<td style="text-align: right;">55.5</td>
+<td style="text-align: right;">56.9</td>
+<td style="text-align: right;"><strong>62.5</strong></td>
+<td style="text-align: right;">40.2</td>
+<td style="text-align: right;"><strong>53.8</strong></td>
+</tr>
+<tr class="even">
+<td>RoboPoint</td>
+<td style="text-align: right;">16.7</td>
+<td style="text-align: right;">20.8</td>
+<td style="text-align: right;">8.3</td>
+<td style="text-align: right;">25.0</td>
+<td style="text-align: right;">17.7</td>
+</tr>
+<tr class="odd">
+<td>FSD</td>
+<td style="text-align: right;">41.6</td>
+<td style="text-align: right;">50.0</td>
+<td style="text-align: right;">33.3</td>
+<td style="text-align: right;">37.5</td>
+<td style="text-align: right;">40.6</td>
+</tr>
+<tr class="even">
+<td><strong>Embodied‑R1</strong></td>
+<td style="text-align: right;"><strong>62.5</strong></td>
+<td style="text-align: right;"><strong>68.0</strong></td>
+<td style="text-align: right;">36.1</td>
+<td style="text-align: right;">58.3</td>
+<td style="text-align: right;"><strong>56.2</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>R1 的平均优势来自前两列；Stack 明显低 SoFar <strong>26.4
+pp</strong>，Eggplant 低 OpenVLA‑OFT <strong>14.2 pp</strong>。平均 56.2
+对 53.8 的相对提升是 <strong>4.46%</strong>，并不支持摘要“相对强基线提高
+62%”在该表上的直读。62%
+的分母、指标或汇总方式在论文中没有清楚对应，故本报告把它标为<strong>不可复算的摘要主张</strong>。</p>
+</section>
+<section id="84-真实-xarm论文表-5pdf-p11" class="level3">
+<h3>8.4 真实 XArm（论文表 5，PDF p.11）</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">8 任务平均成功率</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>MOKA</td>
+<td style="text-align: right;">9.2%</td>
+</tr>
+<tr class="even">
+<td>RoboPoint</td>
+<td style="text-align: right;">12.5%</td>
+</tr>
+<tr class="odd">
+<td>FSD</td>
+<td style="text-align: right;">25.0%</td>
+</tr>
+<tr class="even">
+<td>Embodied‑R1‑P（点）</td>
+<td style="text-align: right;">83.3%</td>
+</tr>
+<tr class="odd">
+<td><strong>Embodied‑R1‑T（轨迹）</strong></td>
+<td style="text-align: right;"><strong>87.5%</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>前两个任务各 5 次，后六个各 6 次，总共 46
+trials；表中平均为任务平均而不是报告原始成功总数。R1‑T 相对 R1‑P 为
+<strong>+4.2 pp /
++5.04%</strong>，但论文没有配对试验、随机种子或二项置信区间，不能称这一差异显著。它能说明“轨迹接口可运行”，不能说明轨迹普遍优于点。</p>
+</section>
+<section id="85-3d-与下游策略扩展" class="level3">
+<h3>8.5 3D 与下游策略扩展</h3>
+<p>Open6DOR 中，Embodied‑R1‑RGBD 的 Level 0 / Level 1 / Overall 为
+<strong>99.2 / 74.5 / 94.3</strong>，SoFar 为 <strong>96.0 / 81.5 /
+93.0</strong>（表 13，PDF p.29）：总体只高 <strong>1.3
+pp</strong>，复杂关系 Level 1 反而低 <strong>7.0 pp</strong>。LIBERO 中
+Diffusion Policy 平均由 <strong>64.4</strong> 提到
+<strong>79.4</strong>（表 12，PDF p.28），是 <strong>+15.0 pp / +23.29%
+相对</strong>；表头写“↑15%”更准确应称 15 个百分点。两个扩展都说明 point
+prior 有迁移潜力，但一个暴露 RGB‑D
+深度/关系瓶颈，一个没有与等训练预算的更强先验做对比。</p>
+</section>
+</section>
+<section id="9-消融超参敏感性与相变" class="level2">
+<h2>9. 消融、超参敏感性与“相变”</h2>
+<section id="91-rl-与-thinking-的二因素消融" class="level3">
+<h3>9.1 RL 与 thinking 的二因素消融</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr class="header">
+<th scope="col">RL</th>
+<th scope="col">显式 <code>&lt;think&gt;</code></th>
+<th scope="col" style="text-align: right;">Where2Place</th>
+<th scope="col" style="text-align: right;">VABench‑P</th>
+<th scope="col">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>✓</td>
+<td>✓</td>
+<td style="text-align: right;"><strong>65.50</strong></td>
+<td style="text-align: right;"><strong>65.39</strong></td>
+<td>表 6，PDF p.11</td>
+</tr>
+<tr class="even">
+<td>✓</td>
+<td>✗</td>
+<td style="text-align: right;">63.00</td>
+<td style="text-align: right;">60.50</td>
+<td>同上</td>
+</tr>
+<tr class="odd">
+<td>✗</td>
+<td>✓</td>
+<td style="text-align: right;">41.25</td>
+<td style="text-align: right;">47.67</td>
+<td>同上</td>
+</tr>
+<tr class="even">
+<td>✗</td>
+<td>✗</td>
+<td style="text-align: right;">36.85</td>
+<td style="text-align: right;">50.46</td>
+<td>同上</td>
+</tr>
+</tbody>
+</table></div>
+<p>RL 在有 thinking 时带来 <strong>+24.25 / +17.72 pp</strong>；thinking
+在有 RL 时带来 <strong>+2.50 / +4.89 pp</strong>。但在没有 RL 的
+VABench‑P，thinking 从 50.46 降到 47.67，即 <strong>−2.79
+pp</strong>。因此“写推理链”本身不是单调有益，RFT
+可能主要在做<strong>推理与点的一致性校准</strong>。</p>
+</section>
+<section id="92-混合任务训练" class="level3">
+<h3>9.2 混合任务训练</h3>
+<p>Mixed 相对 Unmixed 在 Part‑Afford / Where2Place / VABench‑P 分别为
+<strong>56.63 vs 51.25、69.50 vs 65.50、66.00 vs 65.39</strong>（表
+8，PDF p.15），即 <strong>+5.38 / +4.00 / +0.61
+pp</strong>。前两项支持跨任务共享，第三项接近测量噪声量级；无方差时不能宣称每项都稳定正迁移。</p>
+</section>
+<section id="93-点数约束揭示的-reward-hacking" class="level3">
+<h3>9.3 点数约束揭示的 reward hacking</h3>
+<p>VTG 有 8 点约束时 RMSE / MAE / GPT score 为 <strong>77.83 / 44.97 /
+7.27</strong>；去掉约束后为 <strong>105.2 / 59.7 / 5.57</strong>（表
+11，PDF
+p.27）。作者观察到模型倾向只输出起点和终点。这里存在清晰“相变”：并非奖励平滑退化，而是输出长度成为捷径；把非
+8 点回答奖励全部置零才消除。可复用教训是：结构化 RL
+的格式约束必须覆盖<strong>可钻空子的自由度</strong>，否则模型会优化可验分代理而不是完整轨迹。</p>
+</section>
+<section id="94-论文没有报告的敏感性" class="level3">
+<h3>9.4 论文没有报告的敏感性</h3>
+<p>论文<strong>未报告</strong> learning rate、KL 系数、group
+size、mask/距离权重、Stage 1/2 数据比例、response length 的
+sweep，也未报告难题中“8 个回答同奖”的比例。故不能判断性能对
+<code>β=10^-2</code> 或 group=8
+是否处在宽稳态区，更不能断言两阶段次序不可替代。唯一可称作超参相变的证据，是
+8 点硬约束去除后出现两点捷径；其余只能设计实验，不能补造曲线。</p>
+</section>
+</section>
+<section id="10-统计显著性与成本" class="level2">
+<h2>10. 统计显著性与成本</h2>
+<p>除部分学习实验给出固定 episode
+数，论文主表没有置信区间、标准差、多随机种子或显著性检验。SIMPLEREnv
+每任务 24 episodes，若粗略视为独立二项试验，56.2% 与 53.8% 的 2.4 pp
+差距显然需要原始逐回合数据才能判断；论文未提供统计检验。真实世界每任务
+5/6 次更脆弱，一个 trial 就是 16.7–20
+pp。点式基准样本量虽然更大，但模型训练随机性仍未量化。</p>
+<p>训练约 8×A100×(48+48)h = <strong>768 A100
+GPU-hour</strong>（本报告根据附录 p.23 复算），不含 GPT‑4o
+数据生成、Grounded‑SAM、CoTracker3、基线训练和多次试验。论文没有美元成本、能耗、token
+生成吞吐或端到端 wall‑clock。真实执行时间仅给两个任务：R1 为 10s /
+8s，OpenVLA‑FT 为 23s / 12s、MOKA 为 28s / 18s、FSD 为 14s / 10s（表
+10，PDF p.25），没有硬件、方差与分阶段 latency，因此只能说明演示配置下
+R1 较快，不能建立普遍服务曲线。</p>
+</section>
+<section id="11-真正贡献可复用设计与迁移潜力" class="level2">
+<h2>11. 真正贡献、可复用设计与迁移潜力</h2>
+<p>第一项真正贡献是<strong>接口设计</strong>：把具身中间表示收敛到点、区域、部位与短轨迹，统一了原先分散的
+grounding / affordance / placement /
+trace。第二项是<strong>奖励库抽象</strong>：format、exact、mask、distance、trace、environment
+rewards 可按任务组合，比为每个数据集单独写 loss
+更可扩展。第三项是<strong>先空间、后动作的 RFT
+课程</strong>：先用一般空间题建立语义，再用具身点任务对齐最终输出。第四项是<strong>从模块化规划到学习策略的桥</strong>：表
+12 表明点先验不必永远绑定传统规划器，也能作为 Diffusion Policy
+的条件或提示。</p>
+<p>可迁移到 GUI agent：REG 对应控件、RRG 对应拖放区、VTG
+对应鼠标轨迹；可迁移到手术/工业：OFG
+对应安全接触区域，但必须加入不确定性和力约束；可迁移到导航：点/曲线是通用路标，但要从单图扩到时空地图；也可迁移到数据选择：把
+group reward
+方差作为“当前尚有学习信号”的采样优先级。不能直接迁移的，是任何需要持续接触力、材料形变或隐状态估计的任务，因为二维几何奖励不包含动力学充分统计量。</p>
+</section>
+<section id="12-相关工作技术来源链解决什么留下什么如何回应设计怎样传递"
+class="level2">
+<h2>12. 相关工作技术来源链：解决什么—留下什么—如何回应—设计怎样传递</h2>
+<section id="121-qwen25vl原生点定位底座" class="level3">
+<h3>12.1 Qwen2.5‑VL：原生点定位底座</h3>
+<p>它解决不同分辨率图像、目标定位、文档和长视频理解，通过原生动态分辨率
+ViT 与 Window Attention 控制计算（技术报告 §2，PDF
+p.3–4）。遗留缺口是通用 grounding 不等于操作
+affordance，更没有机器人成功奖励。Embodied‑R1 继承视觉 token
+与点输出能力，把输出语法收窄为四类具身接口，再用任务奖励校准。传递的设计是：<strong>保留通用
+VLM 的视觉坐标能力，新增的不是检测头，而是具身数据、reasoning 格式和 RL
+目标。</strong></p>
+</section>
+<section id="122-robopoint点式-affordance-的直接问题来源"
+class="level3">
+<h3>12.2 RoboPoint：点式 affordance 的直接问题来源</h3>
+<p>RoboPoint 解决 VLM
+语言输出太粗的问题，用合成数据把操作条件变成关键点，且无需真人演示；论文报告
+affordance 精度 +21.8%、下游成功率 +30.5%（PDF
+p.1、p.10）。遗留缺口是主要覆盖物体/空闲区域，缺功能部位、连续轨迹与显式
+reasoning，训练仍以 instruction tuning 为主。Embodied‑R1
+将点扩成四能力，并用多解友好的 mask / distance / trace
+reward。传递的设计是：<strong>点作为本体无关中间层</strong>保留，任务覆盖和学习范式被扩展。</p>
+</section>
+<section id="123-fsd从-srcot-到可奖励推理" class="level3">
+<h3>12.3 FSD：从 Sr‑CoT 到可奖励推理</h3>
+<p>FSD 解决“看懂空间却不会给行动辅助”的断层，以 spatial relationship
+graph 锚定 Sr‑CoT，再生成 affordance box/point/trace；它在 SIMPLEREnv 为
+40.6%、真实 8 任务为 72%（PDF p.1、p.11）。遗留缺口是 SFT
+用单一答案监督，多解输出受限，且复杂推理可能与最终坐标脱节。Embodied‑R1
+直接继承视觉辅助路线，用组相对奖励让 reasoning
+与落点共同受验分。传递的设计是：<strong>先结构化空间解释，再生成动作提示</strong>；转折是从
+imitation 改为 verifiable RFT。</p>
+</section>
+<section id="124-deepseekmath--grpo从数学答案验分到几何验分"
+class="level3">
+<h3>12.4 DeepSeekMath / GRPO：从数学答案验分到几何验分</h3>
+<p>DeepSeekMath 解决 PPO 训练 reasoning 模型时 critic
+占显存、难训练的问题，以同题多回答的组均值作 baseline，省去 value
+model（§4.1.1，PDF
+p.13）。遗留缺口是数学题通常有明确结果，而机器人落点是连续、多解且部分可行。Embodied‑R1
+把 exact reward 替换/补充为
+mask、距离和轨迹奖励，并按任务组合。传递的设计是：<strong>可验证结果 +
+group-relative policy
+optimization</strong>；领域迁移的关键是把离散答案验分改造成集合/几何验分。</p>
+</section>
+<section id="125-openvlaoft另一条端到端路线" class="level3">
+<h3>12.5 OpenVLA‑OFT：另一条端到端路线</h3>
+<p>OpenVLA‑OFT 解决 VLA 微调速度与性能，组合并行解码、action
+chunking、连续动作和 L1 回归，使 LIBERO 76.5→97.1、吞吐 26×（表 I，PDF
+p.6）。遗留缺口是仍需目标机器人数据和适配。Embodied‑R1
+不与它争同一层：前者优化动作 policy，后者提供零样本中间表示；表 12 的
+DP+R1
+预示两条路线可组合。传递的设计不是某个模块，而是对照轴：<strong>专门化端到端性能
+vs 跨本体模块化迁移</strong>。</p>
+</section>
+<section id="126-非线性技术演进树" class="level3">
+<h3>12.6 非线性技术演进树</h3>
+<pre class="text"><code>通用视觉语言底座（Qwen2.5‑VL：动态分辨率、原生点/框）
+          │
+          ├──────────────► 端到端动作路线
+          │                 OpenVLA ──► OFT：chunking + 连续动作 + L1
+          │                                      │
+          │                                      └── 高任务内成功率，需适配数据
+          │
+          └──► 本体无关中间表示路线
+                RoboPoint：REG / RRG 点
+                    │
+                    ├──► FSD：Sr‑CoT + visual aids（SFT）
+                    │        │
+DeepSeekMath：GRPO ─┴────────┴──► Embodied‑R1
+                                     ├─ REG / RRG / OFG / VTG
+                                     ├─ mask / distance / trace rewards
+                                     ├─ zero-shot planner
+                                     └─► DP + point prior（向闭环策略回流）</code></pre>
+<p>演进动力不是简单扩大模型，而是三次表征转折：语言→坐标，单点→功能/轨迹，SFT
+唯一答案→RL
+可行集合。下一转折很可能是“开环点→带不确定性、可反馈更新的时空约束”。</p>
+</section>
+<section id="127-跨论文对标" class="level3">
+<h3>12.7 跨论文对标</h3>
+<div class="table-scroll"><table>
+<thead>
+<tr class="header">
+<th scope="col">论文</th>
+<th scope="col">输出接口</th>
+<th scope="col">训练信号</th>
+<th scope="col">是否需目标机器人轨迹</th>
+<th scope="col">闭环控制</th>
+<th scope="col">代表结果</th>
+<th scope="col">核心缺口</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Qwen2.5‑VL</td>
+<td>文本 / 点 / 框</td>
+<td>预训练 + SFT</td>
+<td>否</td>
+<td>否</td>
+<td>通用 grounding 底座</td>
+<td>非具身目标</td>
+</tr>
+<tr class="even">
+<td>RoboPoint</td>
+<td>点</td>
+<td>合成 instruction tuning</td>
+<td>否</td>
+<td>经外部模块</td>
+<td>affordance +21.8%</td>
+<td>任务覆盖窄</td>
+</tr>
+<tr class="odd">
+<td>FSD</td>
+<td>box / point / trace + Sr‑CoT</td>
+<td>分层 SFT</td>
+<td>否</td>
+<td>外部规划器</td>
+<td>SIMPLER 40.6%</td>
+<td>多解/一致性弱</td>
+</tr>
+<tr class="even">
+<td>DeepSeekMath</td>
+<td>reasoning 文本</td>
+<td>GRPO 可验证奖励</td>
+<td>不适用</td>
+<td>否</td>
+<td>省 critic</td>
+<td>原始奖励是离散数学答案</td>
+</tr>
+<tr class="odd">
+<td>OpenVLA‑OFT</td>
+<td>动作 chunk</td>
+<td>L1 imitation</td>
+<td><strong>是</strong></td>
+<td><strong>是</strong></td>
+<td>LIBERO 97.1%</td>
+<td>本体绑定</td>
+</tr>
+<tr class="even">
+<td><strong>Embodied‑R1</strong></td>
+<td>点 / 功能点 / 8 点轨迹</td>
+<td>两阶段 GRPO + 几何奖励</td>
+<td>核心零样本设置否</td>
+<td>主要靠外部规划器</td>
+<td>SIMPLER 56.2%；真实 87.5%</td>
+<td>小样本、开环、力学不足</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+</section>
+<section id="13-作者自述限制" class="level2">
+<h2>13. 作者自述限制</h2>
+<ol type="1">
+<li><strong>策略集成不足。</strong> 作者承认当前主要接传统 motion
+planner，只用 DP 做初步验证；未来要与 learned policy
+更深融合（Limitations，PDF
+p.29）。这意味着论文主结果不是统一端到端系统比较。</li>
+<li><strong>长时任务与表达能力不足。</strong>
+当前多为单步指令，尚无自动任务分解；点也难表达 force
+control、twisting、wiping 与 deformable manipulation（PDF
+p.29）。因此“general robotic
+manipulation”应读成当前任务族内的一般化，而不是开放世界充分性。</li>
+<li><strong>3D 与物理常识仍脆弱。</strong> RGB‑D 实验存在深度
+hallucination，复杂空间关系甚至略降；模型还会产生与真实物理不一致的中间推理（PDF
+p.29）。</li>
+</ol>
+</section>
+<section id="14-独立批判每条都给证据推论链" class="level2">
+<h2>14. 独立批判：每条都给证据—推论链</h2>
+<ol type="1">
+<li><strong>[归因] 因为</strong> R1 相对同数据 SFT 在 RoboRefIt 只增
+<strong>1.73 pp</strong>，而在 Where2Place 增 <strong>28.25
+pp</strong>（表 2，p.8），<strong>所以</strong> 证据支持“RL
+特别适合多解几何任务”，不支持“RL 对所有 grounding
+普遍同幅提升”；应按任务奖励熵分层报告。</li>
+<li><strong>[统计] 因为</strong> 真实世界每任务只有 5 或 6 次、总计 46
+次且没有 CI（表 5，p.11），<strong>所以</strong> 87.5%
+不能作为稳定总体成功率；一次成败即可改变单任务 16.7–20 pp。</li>
+<li><strong>[外部有效性] 因为</strong> SIMPLEREnv 四任务中 Stack 低
+SoFar <strong>26.4 pp</strong>，Eggplant 低 OpenVLA‑OFT <strong>14.2
+pp</strong>（表 4，p.10），<strong>所以</strong> 平均 56.2%
+隐藏明显任务异质性，不能写成“全面 SOTA”。</li>
+<li><strong>[内部一致性] 因为</strong> 正文与表 9 对 RRG 的
+mask/distance 权重分别给出 0.7/0.2 与
+0.6/0.3（p.7、p.24），<strong>所以</strong>
+关键训练配置不唯一，任何不核对代码的复现都可能偏离论文结果。</li>
+<li><strong>[主张可复算性] 因为</strong> 表 4 最强平均基线 53.8%，R1 为
+56.2%，只有 <strong>4.46% 相对提升</strong>，真实表基线又是 25.0% 到
+87.5%，<strong>所以</strong> 摘要“62%
+improvement”没有从主要表格得到明确分母，必须视为未充分定义的聚合主张。</li>
+<li><strong>[奖励代理] 因为</strong> 去掉 8 点约束后模型只给起终点，RMSE
+77.83→105.2（表 11，p.27），<strong>所以</strong>
+模型会主动利用验分漏洞；mask
+内一点也可能合法却不可抓，未来必须用碰撞、可达性和执行价值联合奖励。</li>
+<li><strong>[数据口径] 因为</strong> 论文称 Embodied‑Points‑200K /
+3B，而公开 HF 数据 viewer 约 321k 行、模型页约 4B
+参数，<strong>所以</strong>
+数据去重、阶段混合、参数统计口径未闭合，训练成本和样本效率无法精确复算。</li>
+<li><strong>[比较公平性] 因为</strong> 模块化 R1
+使用外部感知/规划/IK，而 VLA
+基线承担端到端动作输出，且论文未给等硬件、等动作频率、等 wall‑clock（表
+4、表 10），<strong>所以</strong>
+成功率不能独立归因于中间表示；应把每个外部模块的失败率与时延纳入系统级对照。</li>
+</ol>
+</section>
+<section id="15-开放挑战可执行的-headtohead-实验空白" class="level2">
+<h2>15. 开放挑战：可执行的 head‑to‑head 实验空白</h2>
+<section id="理论" class="level3">
+<h3>理论</h3>
+<ul>
+<li><strong>集合奖励是否一致。</strong> 固定 Qwen2.5‑VL‑3B
+与数据，比较单坐标 CE、mask reward、distance-transform
+reward、基于可达/碰撞的 value reward；在同 768 GPU-hour
+下报告有效解覆盖、执行成功与 reward—success Spearman。若 mask
+高而执行不高，即证明代理不一致。</li>
+<li><strong>GRPO 何时失去梯度。</strong> 对 group size
+<code>{4,8,16,32}</code>，记录全同奖组比例、组内方差、KL
+与最终成功率；与带 learned critic 的 PPO、DPO/SFT
+做等采样预算比较，验证组相对 baseline 是否在稀疏奖励阶段退化。</li>
+<li><strong>点接口的充分性边界。</strong> 在同一任务生成点、框、6D
+pose、稠密 affordance
+map、语言程序五种接口，以最优下游控制器比较成功率与互信息下界，找出几何任务复杂度增加时的“点失效阈值”。</li>
+</ul>
+</section>
+<section id="工程与应用" class="level3">
+<h3>工程与应用</h3>
+<ul>
+<li><strong>零样本模块化 vs 适配 VLA。</strong>
+Embodied‑R1+同一规划器、OpenVLA‑OFT、π0.5 在三种新本体上，各给 0/10/50
+条示范，统一相机和 10Hz 控制；报告成功率、人工设置分钟、P50/P95 延迟与
+GPU‑hour，画出“适配成本—成功率”Pareto。</li>
+<li><strong>开环 vs 闭环重规划。</strong> 同一 R1 权重比较一次生成、每 1
+秒重指点、接触事件触发重指点；在遮挡和目标移动强度分层下报告失败恢复率。这样才能判断指点模型是否适合作为
+agent policy 的 observation-to-subgoal 循环。</li>
+<li><strong>真实世界统计。</strong> 把 8 任务扩为每任务至少 50 trials、3
+个随机场景种子、2 台机械臂和独立操作者；预注册 Wilson CI 与配对 McNemar
+/ bootstrap，对 2.4 pp 级别差异给出检验功效。</li>
+</ul>
+</section>
+<section id="新兴方向" class="level3">
+<h3>新兴方向</h3>
+<ul>
+<li><strong>不确定性指点。</strong> 比较单点、top‑k 点、概率热图和
+conformal region；在固定规划器下测 coverage、区域面积、成功率与
+abstention。目标是让模型知道“哪里不确定”，而不是总被迫输出坐标。</li>
+<li><strong>从几何 reward 到物理 reward。</strong>
+在旋拧、擦拭、柔性体上比较二维 mask、6D pose、接触力轨迹和仿真器 rollout
+reward；若 2D 得分高但执行失败，即量化论文自述的力学缺口。</li>
+<li><strong>数据教师去耦。</strong> OFG 的 GPT‑4o 问题、开源 VLM
+问题与人工问题三组等量训练，交叉在不同语言风格与真实执行上测试，区分“功能理解”与“教师措辞模仿”。</li>
+</ul>
+</section>
+</section>
+<section id="16-近期工作雷达未作本文核心数字依据" class="level2">
+<h2>16. 近期工作雷达（未作本文核心数字依据）</h2>
+<ol type="1">
+<li><a
+href="https://huggingface.co/papers/2509.09674">SimpleVLA‑RL</a>：把 RL
+直接施加到 VLA policy，适合与 R1
+的“先指点、后控制”做同算力闭环比较。</li>
+<li><a
+href="https://arxiv.org/search/?query=ConRFT+robot&amp;searchtype=all">ConRFT</a>：强调具身推理与输出一致性，与本文“thinking
+必须经奖励校准”的消融相呼应。</li>
+<li><a
+href="https://www.physicalintelligence.company/blog/pi05">π0.5</a>：面向开放世界泛化的
+VLA 路线；它代表更强端到端先验，但评测成本与本体适配口径需统一。</li>
+<li><a href="https://developer.nvidia.com/isaac/gr00t">NVIDIA GR00T
+N1</a>：人形机器人基础模型，把跨本体问题推向更复杂动作空间；可检验 point
+interface 是否仍够用。</li>
+<li><a href="https://huggingface.co/blog/smolvla">SmolVLA</a>：小型开放
+VLA，适合作为参数量和部署成本更接近的端到端对照。</li>
+<li><a
+href="https://arxiv.org/abs/2501.15830">SpatialVLA</a>：显式增强空间表征，能分辨
+R1 的收益来自 reward 还是底座空间归纳偏置。</li>
+<li><a href="https://arxiv.org/abs/2502.19645">OpenVLA‑OFT</a>：RSS 2025
+的强适配基线；97.1% LIBERO 与 26×
+吞吐提醒我们，模块化零样本与任务内性能是不同目标。</li>
+<li><a href="https://arxiv.org/abs/2505.08548">FSD</a>：ICLR 2026
+直接前身；从 40.6% SIMPLER 到 R1 的 56.2% 提供一条清楚的 SFT→RFT
+演进线，但并非严格等数据/等算力因果实验。</li>
+</ol>
+</section>
+<section id="17-最终判断与复现蓝图" class="level2">
+<h2>17. 最终判断与复现蓝图</h2>
+<p>Embodied‑R1
+最重要的思想是把“行动之前的决定”抽象成可以跨机器人共享、又能自动验分的几何接口。这一接口让
+RL 不必等待昂贵真实回合，就能在大规模图像—指令数据上训练 reasoning
+与最终点的一致性；表 6 和表 11 分别说明 RL 确实在校准
+thinking、结构约束也确实能压制 reward hacking。它比“3B 模型得到
+87.5%”更值得复用。</p>
+<p>若要独立复现，最小可信路径是：锁定 arXiv v2 与仓库 commit；记录 HF
+数据快照和实际 row 去重后数量；分别复现 Stage 1 / Stage 2；从代码确认
+RRG 权重；对 8 点约束、group=8、KL=<code>1e-2</code> 做最小三点
+sweep；复现表 2、表 6、表 11 后再进
+SIMPLEREnv；最后对真实任务至少提升到每任务 30–50 trials。只有当
+R1+规划器在等硬件和等延迟下稳定超过
+FSD/RoboPoint，并在新本体上以显著更少适配数据接近
+OpenVLA‑OFT，才能把“跨本体接口”从漂亮设计提升为系统级优势。</p>
+</section>
+<section id="脚注产出索引与审计状态" class="level2">
+<h2>脚注：产出、索引与审计状态</h2>
+<ul>
+<li><code>ml-report-index.md</code> 已追加本期条目。</li>
+<li>报告使用 Warm Editorial 单文件 HTML：CSS/JS 内联、system‑ui +
+PingFang SC / Microsoft
+YaHei、右上角浅/深主题切换；性能数字以表格呈现，并加入单 Y 轴主结果图与
+hover 数值。</li>
+<li>本轮环境可加载 Playwright 包，但
+<code>/usr/bin/chromium</code>、<code>/usr/bin/chromium-browser</code>、<code>/opt/pw-browsers</code>
+与 Playwright 默认缓存中均无可执行 Chromium；按要求没有运行
+<code>playwright install</code>，因此<strong>未完成浏览器截图检查</strong>。替代完成了
+Warm Editorial 验证器（0 warning）、HTML
+结构检查，并用响应式规则为移动端表格提供独立横向滚动；这不能替代真实渲染，故明确保留为交付限制。</li>
+<li>本报告没有把无法核实的“62%”重新解释为某个分母，也没有从图形估读标准差、超参曲线或失败率。</li>
+</ul>
+</section>
+</section>
+<div class="tip" role="status" aria-live="polite"></div>
+<script>
+(()=>{const root=document.documentElement,btn=document.querySelector('.theme-toggle'),tip=document.querySelector('.tip');const apply=t=>{root.dataset.theme=t;btn.textContent=t==='dark'?'切换浅色':'切换深色';localStorage.setItem('report-theme',t)};const saved=localStorage.getItem('report-theme');apply(saved||'light');btn.addEventListener('click',()=>apply(root.dataset.theme==='dark'?'light':'dark'));document.querySelectorAll('table').forEach(t=>{const w=document.createElement('div');w.className='table-wrap';t.parentNode.insertBefore(w,t);w.appendChild(t)});const show=(e,el)=>{tip.textContent=el.dataset.tip;tip.classList.add('visible');const x=Math.min(e.clientX+14,innerWidth-tip.offsetWidth-12),y=Math.min(e.clientY+14,innerHeight-tip.offsetHeight-12);tip.style.left=Math.max(12,x)+'px';tip.style.top=Math.max(12,y)+'px'};document.querySelectorAll('[data-tip]').forEach(el=>{el.addEventListener('mousemove',e=>show(e,el));el.addEventListener('mouseenter',e=>show(e,el));el.addEventListener('mouseleave',()=>tip.classList.remove('visible'));el.addEventListener('focus',()=>{const r=el.getBoundingClientRect();show({clientX:r.left+r.width/2,clientY:r.top},el)});el.addEventListener('blur',()=>tip.classList.remove('visible'))})})();
+</script>
+</body>
+</html>

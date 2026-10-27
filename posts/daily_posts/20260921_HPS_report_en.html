@@ -1,0 +1,1198 @@
+---
+layout: null
+title: "HPS"
+date: 2026-09-21
+topic: "rl-peft"
+tags: ["rl-peft", "preference-optimization", "negative-sampling"]
+excerpt: "HPS samples the rejected response most similar to the preferred one using an external ranker, widening implicit reward margins and saving training time while preserving external quality scores. But margin metrics closely mirror the objective; safety still needs independent red teaming and single-sample deployment evaluation."
+permalink: "/blog/2026/09/21/hps/en/"
+blog_post: false
+lang: "en"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_zh: "/blog/2026/09/21/hps/"
+sitemap: true
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>HPS: Turning Hard Negatives into a Preference-Alignment Sampling Distribution · 2026-09-21</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #246fca;
+    --chart-comparison: #c95224;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  :root{--page:#f7f3ea;--surface-1:#fffaf1;--chart-primary:#2a78d6;--chart-comparison:#eb6834;--highlight-row:#e7f0fb}
+  :root[data-theme="dark"]{--page:#16130f;--surface-1:#211d18;--chart-primary:#3987e5;--chart-comparison:#d95926}
+  .card{overflow-wrap:anywhere}.card>h2{scroll-margin-top:70px}.card table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .card th,.card td{min-width:92px}.card td:nth-child(n+2),.card th:nth-child(n+2){font-variant-numeric:tabular-nums}
+  .card blockquote{margin:18px 0;padding:14px 18px;border-left:3px solid var(--chart-comparison);border-radius:0 8px 8px 0;background:var(--page);color:var(--text-secondary)}
+  .card .math.display,.card pre{max-width:100%;overflow-x:auto}.card code{overflow-wrap:anywhere}.report-body>p:first-of-type{font-size:1.05rem}
+  @media(max-width:640px){.chart{min-width:620px}.figure{overflow-x:auto}.card table{font-size:13px}.hero{padding-top:74px}}
+
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" aria-pressed="false">☾ Dark</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ICML 2025 · LLM/NLP</p>
+    <h1>HPS: Turning Hard Negatives into a Preference-Alignment Sampling Distribution</h1>
+    <p class="subtitle">Theory, evidence, and safety implications of Hard Preference Sampling</p>
+    <div class="meta" aria-label="Report metadata">
+      <span class="chip source">ICML 2025 / PMLR 267</span>
+      <span class="chip">2026-09-21</span>
+      <span class="chip">Preference Optimization · Alignment · Negative Sampling</span>
+    </div>
+    <p class="lede">HPS samples the rejected response most similar to the preferred one using an external ranker, widening implicit reward margins and saving training time while preserving external quality scores. But margin metrics closely mirror the objective; safety still needs independent red teaming and single-sample deployment evaluation.</p>
+  </header>
+
+  <main>
+<div class="report-body">
+<blockquote>
+<p><strong>Core positioning in one sentence.</strong> Hard Preference Sampling is a plug-in negative sampler, not a DPO replacement. External scalar rewards turn 99 rejected answers into an increasingly sharp distribution; one hardest-to-reject answer enters DPO/EXO/IPO/SPPO/NCA. Training falls from PL's 168.4 to 64.4 GPU-hours; HH-RLHF DPO implicit margin rises 0.349→2.723, while external Reward barely changes, 0.431→0.430.</p>
+</blockquote>
+<p><strong>Versions and conventions.</strong> This report reads arXiv:2502.14400
+<strong>v5（2026-03-20）</strong>and uses final ICML 2025/PMLR 267 for conference identity. Numbers come from tables/text/public data cards; gains are recomputed, absolute differences in pp/points and relative changes against the comparator. A later arXiv v5 is treated as a version risk rather than automatically as conference evidence.</p>
+<section id="链接验证表" class="card level2">
+<h2>Link verification</h2>
+<table style="width:100%;">
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Material</th>
+<th scope="col">Conference / official page</th>
+<th scope="col">arXiv version and date</th>
+<th scope="col">Code</th>
+<th scope="col">Data / weights</th>
+<th scope="col">Project page / videos</th>
+<th scope="col">Verification result</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>HPS (core)</td>
+<td><a href="https://proceedings.mlr.press/v267/zou25c.html">ICML 2025 /
+PMLR 267</a>，80822–80845</td>
+<td><a href="https://arxiv.org/abs/2502.14400">2502.14400v5</a>，v1
+2025-02-20；v5 2026-03-20</td>
+<td><a href="https://github.com/LVLab-SMU/HPS">LVLab-SMU/HPS</a>: PMLR Software link resolved; direct page timed out</td>
+<td><a
+href="https://huggingface.co/datasets/yqcca/HH-RLHF">HH-RLHF</a>；<a
+href="https://huggingface.co/datasets/yqcca/PKU-Safety">PKU-Safety</a>; HPS fine-tuned weights not found</td>
+<td>Separate project page/video not found</td>
+<td>PMLR, arXiv, and both data cards accessed; OpenReview encountered a challenge page</td>
+</tr>
+<tr class="even">
+<td>DPO</td>
+<td>NeurIPS 2023；<a href="https://arxiv.org/abs/2305.18290">arXiv</a>
+Provides final-version information</td>
+<td>2305.18290v3，2024-07-29</td>
+<td><a
+href="https://github.com/eric-mitchell/direct-preference-optimization">Official code</a></td>
+<td>Task data released separately; unified weights not found</td>
+<td>Separate video not found</td>
+<td>arXiv accessed, lines 8–29</td>
+</tr>
+<tr class="odd">
+<td>PRO</td>
+<td>AAAI 2024；<a href="https://arxiv.org/abs/2306.17492">arXiv</a> Marked accepted</td>
+<td>2306.17492v2，2024-02-27</td>
+<td>Stable official repository not verified from paper page</td>
+<td>Unified data/weights page not found</td>
+<td>Not found</td>
+<td>arXiv accessed, lines 8–28</td>
+</tr>
+<tr class="even">
+<td>LiPO</td>
+<td>NAACL 2025；<a href="https://arxiv.org/abs/2402.01878">arXiv</a>
+Marked accepted</td>
+<td>2402.01878v3，2025-01-24</td>
+<td>Stable official code entry not found</td>
+<td>Unified weights page not found</td>
+<td>Not found</td>
+<td>arXiv accessed, lines 8–30</td>
+</tr>
+<tr class="odd">
+<td>KTO</td>
+<td><a href="https://proceedings.mlr.press/v235/ethayarajh24a.html">ICML
+2024 / PMLR 235</a></td>
+<td>2402.01306v5，2026-09-08</td>
+<td>Separate verified entry not found</td>
+<td>Unified weights page not found</td>
+<td>Not found</td>
+<td>PMLR and arXiv accessed</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Unverified items.</strong> PMLR's Software link confirms the GitHub destination, but direct retrieval timed out, so latest commit, license, and added weights were not independently checked. OpenReview's destination was confirmed but content blocked. Links remain without claiming full reproducibility.</p>
+</section>
+<section id="轮转去重候选池与随机抽签" class="card level2">
+<h2>Rotation, deduplication, candidate pool, and random draw</h2>
+<p><code>date +%u</code> returned <strong>1</strong>, selecting Monday's LLM/NLP category. First checked <code>ml-report-index.md</code>and excluded recently covered <strong>ATLANTIS</strong>(SFT data weighting, 2026-09-07) and
+<strong>ThinkSLM</strong>(small-model reasoning evaluation, 2026-09-14), also avoiding MM-RLHF (09-15). ICML 2025 PMLR supplied the pool, cross-searched through arXiv, OpenReview, Hugging Face Papers, Semantic Scholar, and Papers with Code; official proceedings resolve missing aggregator pages.</p>
+<table style="width:100%;">
+<colgroup>
+<col style="width: 30%" />
+<col style="width: 23%" />
+<col style="width: 23%" />
+<col style="width: 23%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">#</th>
+<th scope="col">Candidate paper</th>
+<th scope="col">Topic</th>
+<th scope="col">Priority/source</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td>LMRL Gym: Benchmarks for Multi-Turn Reinforcement Learning with
+Language Models</td>
+<td>Multiturn RL evaluation</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td>Grokking in the Wild: Data Augmentation for Real-World Multi-Hop
+Reasoning with Transformers</td>
+<td>Multihop reasoning</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td>AlphaVerus: Bootstrapping Formally Verified Code Generation through
+Self-Improving Translation and Treefinement</td>
+<td>Formal code reasoning</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td>The Missing Alignment Link of In-context Learning on Sequences</td>
+<td>In-context learning</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td>The Surprising Effectiveness of Test-Time Training for Few-Shot
+Learning</td>
+<td>Test-time training</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td>A Reasoning-Based Approach to Cryptic Crossword Clue Solving</td>
+<td>Language reasoning</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td>Policy-labeled Preference Learning: Is Preference Enough for
+RLHF?</td>
+<td>RLHF</td>
+<td>ICML 2025 Main / PMLR+arXiv</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">8</td>
+<td>AMPO: Active Multi Preference Optimization for Self-play Preference
+Selection</td>
+<td>Multiple-preference optimization</td>
+<td>ICML 2025 Main / PMLR+OpenReview</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td>Energy-Based Preference Model Offers Better Offline Alignment than
+the Bradley-Terry Preference Model</td>
+<td>Preference models</td>
+<td>ICML 2025 Main / PMLR+arXiv</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td>Right Now, Wrong Then: Non-Stationary Direct Preference Optimization
+under Preference Drift</td>
+<td>Preference drift</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td>T1: Advancing Language Model Reasoning through Reinforcement
+Learning and Inference Scaling</td>
+<td>Reasoning scaling</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">12</td>
+<td>Reasoning-as-Logic-Units: Scaling Test-Time Reasoning Through Logic
+Unit Alignment</td>
+<td>test-time scaling</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td>Premise-Augmented Reasoning Chains Improve Error Identification in
+Math Reasoning</td>
+<td>Mathematics evaluation</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td>Flow of Reasoning: Training LLMs for Divergent Reasoning with
+Minimal Examples</td>
+<td>Divergent reasoning</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td>VersaPRM: Multi-Domain Process Reward Model via Synthetic Reasoning
+Data</td>
+<td>Process rewards</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">16</td>
+<td>PARM: Multi-Objective Test-Time Alignment via Preference-Aware
+Autoregressive Reward Model</td>
+<td>Test-time alignment</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td>ZebraLogic: On the Scaling Limits of LLMs for Logical Reasoning</td>
+<td>Logical reasoning evaluation</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td>ReVISE: Learning to Refine at Test-Time via Intrinsic
+Self-Verification</td>
+<td>Self-verification</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">19</td>
+<td>Beyond Bradley-Terry Models: A General Preference Model for Language
+Model Alignment</td>
+<td>General preference models</td>
+<td>ICML 2025 Main / PMLR+arXiv</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">20</td>
+<td>BRiTE: Bootstrapping Reinforced Thinking Process to Enhance Language
+Model Reasoning</td>
+<td>Reinforced reasoning</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">21</td>
+<td>Accelerating Large Language Model Reasoning via Speculative
+Search</td>
+<td>Reasoning acceleration</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">22</td>
+<td>RE-Bench: Evaluating Frontier AI R&amp;D Capabilities of Language
+Model Agents against Human Experts</td>
+<td>Agent evaluation</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">23</td>
+<td>PoisonBench: Assessing Language Model Vulnerability to Poisoned
+Preference Data</td>
+<td>Trustworthy preference data</td>
+<td>ICML 2025 Main / PMLR</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">24</td>
+<td>HPS: Hard Preference Sampling for Human Preference Alignment</td>
+<td>Preference optimization/safety</td>
+<td>ICML 2025 Main / PMLR+arXiv+HF</td>
+</tr>
+</tbody>
+</table>
+<p>After freezing candidates, executed <code>shuf -i 1-24 -n 1</code>returned
+<strong>24</strong>, selecting HPS. Paper, final version, tables, code entry, and two datasets provided sufficient material, so<strong>no redraw was needed</strong>. Random selection determines the core paper but does not replace evidence requirements; this draw meets the recent-main-conference priority.</p>
+</section>
+<section id="motivation真正的痛点不是没有负例而是负例怎样进入损失"
+class="level2">
+<h2>Motivation: not missing negatives, but how negatives enter the loss</h2>
+<p>Preference training commonly compresses in two ways. BT reduces candidates to binary wins/losses against one rejected answer. PL preserves ranking but recursively prefers second over third and third over fourth. In safety contexts, if both are harmful, this temporarily places harmful content on the positive side. PL also forwards
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>n</mi><annotation encoding="application/x-tex">n</annotation></semantics></math>
+candidates and constructs
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>n</mi><annotation encoding="application/x-tex">n</annotation></semantics></math>
+sublosses, scaling cost linearly (§4.1, HTML lines 144–153).</p>
+<p>Evidence has three layers. Compute: PL/BT/HPS fine-tuning times are
+<strong>168.4±1.9、62.8±1.1、64.4±0.8 GPU-hour</strong>; HPS saves
+<strong>104.0 GPU-hour / 61.76%</strong>over PL but costs <strong>1.6
+GPU-hour / 2.55%</strong>more than BT (§6, lines 314–316). Internal margin: HH-RLHF DPO-BT→DPO-HPS changes RM_DPO <strong>0.349→2.723</strong>, +2.374/+680.23%; RM_R-DPO changes <strong>−0.455→2.040</strong>, crossing zero so percentage change is uninterpretable (Table 2, lines 240–242). External quality barely changes: Reward values are
+<strong>0.431→0.430（−0.001，−0.23%）</strong>and BLEU
+<strong>0.230→0.232（+0.002，+0.87%）</strong>. The strongest conclusion is greater internal separation at lower PL cost, not much higher external scores.</p>
+<p>Data generation matters: each original prompt has only two human-ranked answers; RLHFlow/Llama3-v2-DPO expands this to <strong>100</strong> , ranked by Skywork-Reward-Llama3 (setup, lines 305–313). Rich candidates partly convert human preferences into reward-model-labeled synthetic preferences. Ranker errors, such as undervaluing safe refusals, are amplified more by HPS than random/uniform negatives.</p>
+</section>
+<section id="论文故事线核心假设与权衡" class="card level2">
+<h2>Narrative, assumptions, and tradeoffs</h2>
+<p>Four steps summarize the approach:</p>
+<ol type="1">
+<li><strong>Redefine informational value.</strong> Rejected answers closest to preferred ones are hardest to distinguish and potentially most informative.</li>
+<li><strong>Turn rankings into distributions.</strong> Fixed estimated rewards
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>r</mi><mrow><mi>e</mi><mi>s</mi><mi>t</mi></mrow></msub><annotation encoding="application/x-tex">r_{est}</annotation></semantics></math>
+pass through temperature
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>g</mi><mi>a</mi><mi>m</mi><mi>m</mi><mi>a</mi></mrow><annotation encoding="application/x-tex">gamma</annotation></semantics></math>
+softmax to form
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>q</mi><annotation encoding="application/x-tex">q</annotation></semantics></math>；<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>g</mi><mi>a</mi><mi>m</mi><mi>m</mi><mi>a</mi></mrow><annotation encoding="application/x-tex">gamma</annotation></semantics></math>
+; larger values approach hardest-negative sampling.</li>
+<li><strong>Sample one negative.</strong>
+Rather than backpropagating through every candidate, draw from
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>q</mi><annotation encoding="application/x-tex">q</annotation></semantics></math>
+and pair it with the top response for ordinary pairwise optimization.</li>
+<li><strong>Explain the limit.</strong> When
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>g</mi><mi>a</mi><mi>m</mi><mi>m</mi><mi>a</mi><mo>→</mo><mi>∞</mi></mrow><annotation encoding="application/x-tex">gamma\to\infty</annotation></semantics></math>Sampling approaches worst-case negatives, and the limiting objective maximizes the minimum margin against the strongest rejected answer (Theorems 2–3, lines 207–227).</li>
+</ol>
+<p>Assumptions span three areas: bounded implicit rewards, gradients, Hessians, and optimal parameters within radius
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>B</mi><annotation encoding="application/x-tex">B</annotation></semantics></math>
+(Assumption 1, lines 187–192); ranking by
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>r</mi><mrow><mi>e</mi><mi>s</mi><mi>t</mi></mrow></msub><annotation encoding="application/x-tex">r_{est}</annotation></semantics></math>
+must align with true hardness; safety assumes every candidate in
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>j</mi><mo>≥</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">j\ge2</annotation></semantics></math>
+should be downweighted. Real preferences include equally safe styles, weak/nontransitive orders, and conflicting objectives; rejected is not synonymous with harmful.</p>
+<p>The tradeoff is clear: HPS exchanges<strong>offline candidate generation and external labeling cost</strong>for lower<strong>training-time backpropagation cost</strong>. Only one negative is backpropagated, but generating 100 answers and labeling on 8×L40S remains expensive; training uses 4×L40S (Appendix D.1, lines 732–736). The 61.76% reduction concerns fine-tuning duration, not total data-production-plus-training cost.</p>
+</section>
+<section id="方程级形式化与流程" class="card level2">
+<h2>Equation-level formalization and workflow</h2>
+<p>For prompt
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>x</mi><annotation encoding="application/x-tex">x</annotation></semantics></math>
+and ranked candidates
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>y</mi><mrow><mi>τ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo stretchy="true" form="postfix">)</mo></mrow></mrow></msub><mo>≻</mo><mi>⋯</mi><mo>≻</mo><msub><mi>y</mi><mrow><mi>τ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>n</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></msub></mrow><annotation encoding="application/x-tex">y_{\tau(1)}\succ\cdots\succ y_{\tau(n)}</annotation></semantics></math>, DPO-style implicit reward is</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>r</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mi>β</mi><mo>log</mo><mfrac><mrow><msub><mi>π</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>y</mi><mo>∣</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow><mrow><msub><mi>π</mi><mrow><mi>r</mi><mi>e</mi><mi>f</mi></mrow></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>y</mi><mo>∣</mo><mi>x</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></mfrac><mi>.</mi></mrow><annotation encoding="application/x-tex">r_\theta(x,y)=\beta\log\frac{\pi_\theta(y\mid x)}{\pi_{ref}(y\mid x)}.</annotation></semantics></math></p>
+<p>HPS defines a hardness distribution over rejected candidates (Eq.9, lines 173–178):</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>q</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo>=</mo><mfrac><mrow><mo>exp</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>γ</mi><msub><mi>r</mi><mrow><mi>e</mi><mi>s</mi><mi>t</mi></mrow></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">)</mo></mrow></mrow><mrow><munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>2</mn></mrow><mi>n</mi></munderover><mo>exp</mo><mrow><mo stretchy="true" form="prefix">(</mo><mi>γ</mi><msub><mi>r</mi><mrow><mi>e</mi><mi>s</mi><mi>t</mi></mrow></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><msub><mi>y</mi><mrow><mi>τ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>i</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">)</mo></mrow></mrow></mfrac><mo>,</mo><mspace width="2.0em"></mspace><mi>y</mi><mo>∈</mo><mo stretchy="false" form="prefix">{</mo><msub><mi>y</mi><mrow><mi>τ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>2</mn><mo stretchy="true" form="postfix">)</mo></mrow></mrow></msub><mo>,</mo><mi>…</mi><mo>,</mo><msub><mi>y</mi><mrow><mi>τ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>n</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></msub><mo stretchy="false" form="postfix">}</mo><mi>.</mi></mrow><annotation encoding="application/x-tex">q(x,y)=\frac{\exp(\gamma r_{est}(x,y))}{\sum_{i=2}^{n}\exp(\gamma r_{est}(x,y_{\tau(i)}))},\qquad y\in\{y_{\tau(2)},\ldots,y_{\tau(n)}\}.</annotation></semantics></math></p>
+<p>Substitute it into the preferred-versus-weighted-negatives objective (Eq.10):</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>ℒ</mi><mrow><mi>H</mi><mi>P</mi><mi>S</mi></mrow></msub><mo>=</mo><msub><mi>𝔼</mi><mrow><mi>d</mi><mo>∼</mo><mi>𝒟</mi></mrow></msub><mo>−</mo><mo>log</mo><mfrac><msup><mi>e</mi><mrow><msub><mi>r</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><msub><mi>y</mi><mrow><mi>τ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo stretchy="true" form="postfix">)</mo></mrow></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow></msup><mrow><msup><mi>e</mi><mrow><msub><mi>r</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><msub><mi>y</mi><mrow><mi>τ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo stretchy="true" form="postfix">)</mo></mrow></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow></mrow></msup><mo>+</mo><mi>N</mi><mspace width="0.167em"></mspace><msub><mi>𝔼</mi><mrow><mi>y</mi><mo>∼</mo><mi>p</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></msub><mrow><mo stretchy="true" form="prefix">[</mo><msup><mi>e</mi><mrow><msub><mi>r</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></msup><mi>q</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><mi>y</mi><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">]</mo></mrow></mrow></mfrac><mo>,</mo><mspace width="1.0em"></mspace><mi>N</mi><mo>=</mo><mi>n</mi><mo>−</mo><mn>1</mn><mi>.</mi></mrow><annotation encoding="application/x-tex">\mathcal L_{HPS}=\mathbb E_{d\sim\mathcal D}-\log\frac{e^{r_\theta(x,y_{\tau(1)})}}{e^{r_\theta(x,y_{\tau(1)})}+N\,\mathbb E_{y\sim p(y)}[e^{r_\theta(x,y)}q(x,y)]},\quad N=n-1.</annotation></semantics></math></p>
+<p>The implementation does not calculate the inner expectation exactly, instead using
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>y</mi><mo>−</mo></msup><mo>∼</mo><mi>q</mi></mrow><annotation encoding="application/x-tex">y^-\sim q</annotation></semantics></math>
+single-sample Monte Carlo, retaining a DPO-like paired update. Theorem 3 gives the limiting objective</p>
+<p><math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mi>θ</mi><mo>*</mo></msup><mo>=</mo><mo>arg</mo><munder><mo>max</mo><mi>θ</mi></munder><mrow><mo stretchy="true" form="prefix">[</mo><msub><mi>r</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><msub><mi>y</mi><mrow><mi>τ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mn>1</mn><mo stretchy="true" form="postfix">)</mo></mrow></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo>−</mo><munder><mo>max</mo><mrow><mn>1</mn><mo>&lt;</mo><mi>j</mi><mo>≤</mo><mrow><mo stretchy="true" form="prefix">|</mo><mi>τ</mi><mo stretchy="true" form="postfix">|</mo></mrow></mrow></munder><msub><mi>r</mi><mi>θ</mi></msub><mrow><mo stretchy="true" form="prefix">(</mo><mi>x</mi><mo>,</mo><msub><mi>y</mi><mrow><mi>τ</mi><mrow><mo stretchy="true" form="prefix">(</mo><mi>j</mi><mo stretchy="true" form="postfix">)</mo></mrow></mrow></msub><mo stretchy="true" form="postfix">)</mo></mrow><mo stretchy="true" form="postfix">]</mo></mrow><mo>,</mo></mrow><annotation encoding="application/x-tex">\theta^*=\arg\max_\theta\left[r_\theta(x,y_{\tau(1)})-\max_{1&lt;j\le|\tau|}r_\theta(x,y_{\tau(j)})\right],</annotation></semantics></math></p>
+<p>as maximin margin (Eq.14, lines 224–227). Larger internal margins do not automatically lower real harmfulness; calibrated independent safety measures without shared model biases are missing.</p>
+<pre class="text"><code>for each prompt x:
+    generate / retrieve n candidate responses
+    keep y+ = rank-1 response
+    score every rejected y_i with frozen r_est
+    gamma &lt;- linear schedule(-5, -3, -1, 1, 3, 5) at 20% intervals
+    q_i &lt;- softmax(gamma * r_est_i)
+    sample one y- ~ q
+    update chosen preference optimizer on (x, y+, y-)</code></pre>
+<p>Note the method states<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>g</mi><mi>a</mi><mi>m</mi><mi>m</mi><mi>a</mi><mo>&gt;</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">gamma&gt;1</annotation></semantics></math>, while experiments increase from
+<strong>−5 to 5 linearly</strong>(§4.2 line 176; implementation line 315). Negative
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>g</mi><mi>a</mi><mi>m</mi><mi>m</mi><mi>a</mi></mrow><annotation encoding="application/x-tex">gamma</annotation></semantics></math>
+preferentially samples<strong>low-reward, easy-to-reject</strong>answers, opposite hard-negative sampling. This can be read as an easy-to-hard curriculum, but the transition is not integrated into the definition/theory.</p>
+</section>
+<section id="关键机制与工程细节" class="card level2">
+<h2>Key mechanisms and engineering details</h2>
+<table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Component</th>
+<th scope="col">Paper setting</th>
+<th scope="col">Role</th>
+<th scope="col">Reusable elements</th>
+<th scope="col">Risks/evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Candidate expansion</td>
+<td>From 2 to 100 candidates per prompt</td>
+<td>Expand the negative support set</td>
+<td>Any generator can be substituted</td>
+<td>A single generator may induce mode bias; HTML lines 305–313</td>
+</tr>
+<tr class="even">
+<td>Hardness estimation</td>
+<td>Skywork-Reward-Llama3 scalar score</td>
+<td>Definition
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>q</mi><annotation encoding="application/x-tex">q</annotation></semantics></math></td>
+<td>Replaceable with a domain RM/rules</td>
+<td>Amplifies ranker bias</td>
+</tr>
+<tr class="odd">
+<td>Temperature schedule</td>
+<td>−5→5, updated every 20%</td>
+<td>Transition from easy to hard negatives</td>
+<td>Curriculum learning interface</td>
+<td>Conflicts with the theoretical condition “<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>g</mi><mi>a</mi><mi>m</mi><mi>m</mi><mi>a</mi><mo>&gt;</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">gamma&gt;1</annotation></semantics></math>”; lines
+176, 315</td>
+</tr>
+<tr class="even">
+<td>Single-sample MC</td>
+<td>Sample one rejected response per prompt</td>
+<td>BT-level backpropagation cost</td>
+<td>Direct wrapper for DPO/EXO/IPO/SPPO/NCA</td>
+<td>Gradient variance not reported</td>
+</tr>
+<tr class="odd">
+<td>Policy/reference model</td>
+<td>RLHFlow/Llama3-SFT-v2.0</td>
+<td>Shared initialization</td>
+<td>Enables comparisons within the same architecture</td>
+<td>Only one 8B family</td>
+</tr>
+<tr class="even">
+<td>Parameter-efficient training</td>
+<td>LoRA rank 8，alpha 16</td>
+<td>Reduces GPU memory use</td>
+<td>Easy to reproduce</td>
+<td>Generalization to full-parameter training unknown</td>
+</tr>
+<tr class="odd">
+<td>Regularization/training</td>
+<td>beta=0.1；2 epochs；AdamW；lr 5e−7；cosine</td>
+<td>Stabilizes preference training</td>
+<td>Standard recipe</td>
+<td>Random seeds, warmup, and the exact wording “over 2” are unclear</td>
+</tr>
+<tr class="even">
+<td>Context/sampling</td>
+<td>2048 tokens；temperature 0.9</td>
+<td>Standardized generation</td>
+<td>Directly transferable to deployment</td>
+<td>Long-context behavior unknown</td>
+</tr>
+<tr class="odd">
+<td>Hardware</td>
+<td>Expansion/annotation: 8×L40S; training: 4×L40S; batch 64</td>
+<td>Cost baseline</td>
+<td>Enables resource estimates</td>
+<td>End-to-end energy consumption not reported</td>
+</tr>
+<tr class="even">
+<td>Evaluation sampling</td>
+<td>Sample 5 responses per prompt per method; report the highest score for each metric</td>
+<td>Reduces the impact of occasional poor responses</td>
+<td>Explores an upper bound</td>
+<td>Not single-sample deployment quality; systematically inflates all methods</td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="数据集基准与指标" class="card level2">
+<h2>Datasets, benchmarks, and metrics</h2>
+<p><strong>HH-RLHF</strong> contains multi-turn helpful/harmless
+dialogues; the public expanded dataset card used by the authors lists train <strong>161k
+rows</strong>, with a response sequence length of 3 per entry (dataset card lines
+72–80).<strong>PKU-SafeRLHF / PKU-Safety</strong>
+is a single-turn safety preference dataset. Each prompt originally has two responses in this paper, subsequently expanded to 100. Thus, “sample count” includes both the number of prompts and candidates per prompt; 100 times as many candidates must not be treated as 100 times as many independent human annotations.</p>
+<p>Four metric types: BLEU measures lexical overlap with reference answers and is only a weak proxy for open-ended dialogue; Reward comes from external ArmoRM-Llama3; RM_DPO is the difference in implicit log-ratios between preferred and rejected responses; RM_R-DPO additionally subtracts
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0.01</mn><mrow><mo stretchy="true" form="prefix">(</mo><mrow><mo stretchy="true" form="prefix">|</mo><msup><mi>y</mi><mo>+</mo></msup><mo stretchy="true" form="postfix">|</mo></mrow><mo>−</mo><mrow><mo stretchy="true" form="prefix">|</mo><msup><mi>y</mi><mo>−</mo></msup><mo stretchy="true" form="postfix">|</mo></mrow><mo stretchy="true" form="postfix">)</mo></mrow></mrow><annotation encoding="application/x-tex">0.01(|y^+|-|y^-|)</annotation></semantics></math>
+to correct for length (Table 1, HTML lines 228–232). Human evaluation samples
+<strong>15</strong> prompts from each of the two test sets, totaling 30 questions and 4 system responses, rated by<strong>20</strong> raters on a 1–5 Likert scale, anonymously and in randomized order (Section 6.1, lines 321–323). Qwen2.5-72B-Instruct provides 0–5 scores and pairwise win rates.</p>
+</section>
+<section id="完整主结果矩阵" class="card level2">
+<h2>Complete main-results matrix</h2>
+<p>Table 2 covers fine-tuning. For completeness, the table below lists SFT and 5 optimizers×3 ranking models, totaling <strong>16 rows×8 numerical columns</strong>; bold indicates only the maximum in each column, without treating implicit margins across incomparable optimizers as an absolute safety scale. Source: Table 2, arXiv HTML lines 233–254.</p>
+<table>
+<colgroup>
+<col style="width: 8%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">HH BLEU↑</th>
+<th scope="col" style="text-align: right;">HH Reward↑</th>
+<th scope="col" style="text-align: right;">HH RM_DPO↑</th>
+<th scope="col" style="text-align: right;">HH RM_R-DPO↑</th>
+<th scope="col" style="text-align: right;">PKU BLEU↑</th>
+<th scope="col" style="text-align: right;">PKU Reward↑</th>
+<th scope="col" style="text-align: right;">PKU RM_DPO↑</th>
+<th scope="col" style="text-align: right;">PKU RM_R-DPO↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>SFT</td>
+<td style="text-align: right;">0.220</td>
+<td style="text-align: right;">0.425</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">0.294</td>
+<td style="text-align: right;">0.406</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+</tr>
+<tr class="even">
+<td>DPO-PL</td>
+<td style="text-align: right;">0.230</td>
+<td style="text-align: right;">0.430</td>
+<td style="text-align: right;">−0.795</td>
+<td style="text-align: right;">−1.448</td>
+<td style="text-align: right;">0.305</td>
+<td style="text-align: right;">0.412</td>
+<td style="text-align: right;">−6.852</td>
+<td style="text-align: right;">−5.961</td>
+</tr>
+<tr class="odd">
+<td>DPO-BT</td>
+<td style="text-align: right;">0.230</td>
+<td style="text-align: right;">0.431</td>
+<td style="text-align: right;">0.349</td>
+<td style="text-align: right;">−0.455</td>
+<td style="text-align: right;">0.306</td>
+<td style="text-align: right;">0.417</td>
+<td style="text-align: right;">−5.441</td>
+<td style="text-align: right;">−6.167</td>
+</tr>
+<tr class="even">
+<td><strong>DPO-HPS</strong></td>
+<td style="text-align: right;"><strong>0.232</strong></td>
+<td style="text-align: right;">0.430</td>
+<td style="text-align: right;"><strong>2.723</strong></td>
+<td style="text-align: right;"><strong>2.040</strong></td>
+<td style="text-align: right;">0.306</td>
+<td style="text-align: right;">0.407</td>
+<td style="text-align: right;">−5.359</td>
+<td style="text-align: right;">−5.851</td>
+</tr>
+<tr class="odd">
+<td>EXO-PL</td>
+<td style="text-align: right;"><strong>0.232</strong></td>
+<td style="text-align: right;"><strong>0.432</strong></td>
+<td style="text-align: right;">−0.724</td>
+<td style="text-align: right;">−1.406</td>
+<td style="text-align: right;">0.303</td>
+<td style="text-align: right;">0.409</td>
+<td style="text-align: right;">−5.455</td>
+<td style="text-align: right;">−6.128</td>
+</tr>
+<tr class="even">
+<td>EXO-BT</td>
+<td style="text-align: right;">0.231</td>
+<td style="text-align: right;">0.430</td>
+<td style="text-align: right;">0.816</td>
+<td style="text-align: right;">0.215</td>
+<td style="text-align: right;"><strong>0.324</strong></td>
+<td style="text-align: right;">0.421</td>
+<td style="text-align: right;">−5.553</td>
+<td style="text-align: right;">−6.164</td>
+</tr>
+<tr class="odd">
+<td>EXO-HPS</td>
+<td style="text-align: right;"><strong>0.232</strong></td>
+<td style="text-align: right;"><strong>0.432</strong></td>
+<td style="text-align: right;">1.079</td>
+<td style="text-align: right;">0.410</td>
+<td style="text-align: right;">0.314</td>
+<td style="text-align: right;">0.425</td>
+<td style="text-align: right;">−5.495</td>
+<td style="text-align: right;">−6.031</td>
+</tr>
+<tr class="even">
+<td>IPO-PL</td>
+<td style="text-align: right;">0.223</td>
+<td style="text-align: right;">0.429</td>
+<td style="text-align: right;">−5.199</td>
+<td style="text-align: right;">−5.264</td>
+<td style="text-align: right;">0.309</td>
+<td style="text-align: right;">0.401</td>
+<td style="text-align: right;">−66.337</td>
+<td style="text-align: right;">−66.946</td>
+</tr>
+<tr class="odd">
+<td>IPO-BT</td>
+<td style="text-align: right;"><strong>0.232</strong></td>
+<td style="text-align: right;">0.428</td>
+<td style="text-align: right;">−0.382</td>
+<td style="text-align: right;">−1.254</td>
+<td style="text-align: right;">0.310</td>
+<td style="text-align: right;">0.405</td>
+<td style="text-align: right;">−23.070</td>
+<td style="text-align: right;">−23.678</td>
+</tr>
+<tr class="even">
+<td>IPO-HPS</td>
+<td style="text-align: right;">0.231</td>
+<td style="text-align: right;">0.424</td>
+<td style="text-align: right;">−0.321</td>
+<td style="text-align: right;">−0.926</td>
+<td style="text-align: right;">0.308</td>
+<td style="text-align: right;">0.406</td>
+<td style="text-align: right;">−21.607</td>
+<td style="text-align: right;">−22.215</td>
+</tr>
+<tr class="odd">
+<td>SPPO-PL</td>
+<td style="text-align: right;">0.225</td>
+<td style="text-align: right;">0.430</td>
+<td style="text-align: right;">−7.630</td>
+<td style="text-align: right;">−7.674</td>
+<td style="text-align: right;">0.297</td>
+<td style="text-align: right;">0.413</td>
+<td style="text-align: right;">−67.474</td>
+<td style="text-align: right;">−68.082</td>
+</tr>
+<tr class="even">
+<td>SPPO-BT</td>
+<td style="text-align: right;">0.231</td>
+<td style="text-align: right;"><strong>0.432</strong></td>
+<td style="text-align: right;">−0.978</td>
+<td style="text-align: right;">−1.411</td>
+<td style="text-align: right;">0.297</td>
+<td style="text-align: right;">0.433</td>
+<td style="text-align: right;">−13.442</td>
+<td style="text-align: right;">−14.050</td>
+</tr>
+<tr class="odd">
+<td>SPPO-HPS</td>
+<td style="text-align: right;">0.231</td>
+<td style="text-align: right;"><strong>0.432</strong></td>
+<td style="text-align: right;">−0.969</td>
+<td style="text-align: right;">−1.302</td>
+<td style="text-align: right;">0.298</td>
+<td style="text-align: right;"><strong>0.435</strong></td>
+<td style="text-align: right;">−5.273</td>
+<td style="text-align: right;">−5.881</td>
+</tr>
+<tr class="even">
+<td>NCA-PL</td>
+<td style="text-align: right;">0.221</td>
+<td style="text-align: right;">0.431</td>
+<td style="text-align: right;">−5.760</td>
+<td style="text-align: right;">−5.819</td>
+<td style="text-align: right;">0.300</td>
+<td style="text-align: right;">0.411</td>
+<td style="text-align: right;">−70.910</td>
+<td style="text-align: right;">−71.518</td>
+</tr>
+<tr class="odd">
+<td>NCA-BT</td>
+<td style="text-align: right;">0.229</td>
+<td style="text-align: right;"><strong>0.432</strong></td>
+<td style="text-align: right;">−1.702</td>
+<td style="text-align: right;">−3.121</td>
+<td style="text-align: right;">0.305</td>
+<td style="text-align: right;">0.410</td>
+<td style="text-align: right;">−5.135</td>
+<td style="text-align: right;">−5.644</td>
+</tr>
+<tr class="even">
+<td>NCA-HPS</td>
+<td style="text-align: right;">0.231</td>
+<td style="text-align: right;"><strong>0.432</strong></td>
+<td style="text-align: right;">−0.822</td>
+<td style="text-align: right;">−1.268</td>
+<td style="text-align: right;">0.304</td>
+<td style="text-align: right;">0.411</td>
+<td style="text-align: right;">−5.109</td>
+<td style="text-align: right;">−5.318</td>
+</tr>
+</tbody>
+</table>
+<p>The matrix shows both a consistent direction and exceptions. On HH, HPS generally improves both margins over the corresponding BT/PL variants for each optimizer; external Reward, however, does not systematically improve: DPO falls by 0.001, and IPO drops from BT’s 0.428 to 0.424. Under PKU fine-tuning, EXO-HPS Reward of 0.425 and SPPO-HPS of 0.435 improve over their respective families, but DPO-HPS Reward of 0.407 is below DPO-BT’s 0.417, an absolute −0.010 or relative −2.40%. A “larger margin” therefore cannot be summarized as “better on every external dimension.”</p>
+<p><strong>Human evaluation.</strong> Table 3 quality scores: SFT 3.63, DPO-BT 3.82, DPO-PL 3.69, DPO-HPS <strong>3.93</strong>. HPS gains +0.11 (+2.88%) over BT, +0.24 (+6.50%) over PL, and +0.30 (+8.26%) over SFT; the paper provides no standard deviations or significance tests. Table 4 Qwen judge: HPS win rates against SFT / BT / PL on HH are
+<strong>63.875/58.712/57.612%</strong>, and on PKU are
+<strong>67.100/56.100/57.650%</strong>; corresponding loss rates reach as low as 5.150%. These are meaningful external evidence, but the judge and training annotators belong to the same public LLM/RM ecosystem and may still share biases.</p>
+<p><strong>Transfer setting.</strong> In Table 5, DPO-HPS has PKU RM_DPO of
+<strong>5.725</strong>versus DPO-BT’s 1.346, an absolute +4.379 or relative +325.33%; RM_R-DPO is 5.116 vs 1.738, +3.378 or +194.36%. Yet both have Reward of 0.407, and BLEU is only 0.310 vs 0.308. In other words, the transfer experiment reinforces a “steeper internal boundary” without showing a corresponding rise in external reward.</p>
+</section>
+
+<figure class="figure" aria-labelledby="margin-chart-title">
+  <p class="fig-title" id="margin-chart-title">DPO family: implicit reward margins on HH-RLHF</p>
+  <p class="fig-sub">HPS substantially enlarges the margin it directly optimizes; external Reward is essentially unchanged, so these two types of evidence require separate interpretations.</p>
+  <div class="legend" aria-label="Legend"><span><span class="swatch" style="background:#2a78d6"></span>RM_DPO</span><span><span class="swatch" style="background:#eb6834"></span>External Reward (×5, for visualization only)</span></div>
+  <div style="overflow-x:auto">
+  <svg class="chart" viewBox="0 0 900 390" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>Implicit reward margins and external rewards for DPO-PL, DPO-BT, and DPO-HPS</title>
+    <desc>RM_DPO values are −0.795, 0.349, and 2.723; external Reward values are 0.430, 0.431, and 0.430. External Reward bar heights are multiplied by 5 solely for comparison within one chart.</desc>
+    <g stroke="var(--grid)" stroke-width="1"><line x1="100" y1="310" x2="850" y2="310"/><line x1="100" y1="235" x2="850" y2="235"/><line x1="100" y1="160" x2="850" y2="160"/><line x1="100" y1="85" x2="850" y2="85"/></g>
+    <g font-size="13"><text x="88" y="315" text-anchor="end">−1</text><text x="88" y="240" text-anchor="end">0</text><text x="88" y="165" text-anchor="end">1</text><text x="88" y="90" text-anchor="end">2</text></g>
+    <g>
+      <rect x="160" y="235" width="70" height="59.6" rx="5" fill="#2a78d6" tabindex="0" data-tip="DPO-PL RM_DPO：−0.795"><title>DPO-PL RM_DPO −0.795</title></rect>
+      <rect x="240" y="78.8" width="70" height="156.2" rx="5" fill="#eb6834" tabindex="0" data-tip="DPO-PL Reward: 0.430 (plotted ×5)"><title>DPO-PL Reward 0.430</title></rect>
+      <rect x="380" y="208.8" width="70" height="26.2" rx="5" fill="#2a78d6" tabindex="0" data-tip="DPO-BT RM_DPO：0.349"><title>DPO-BT RM_DPO 0.349</title></rect>
+      <rect x="460" y="78.4" width="70" height="156.6" rx="5" fill="#eb6834" tabindex="0" data-tip="DPO-BT Reward: 0.431 (plotted ×5)"><title>DPO-BT Reward 0.431</title></rect>
+      <rect x="600" y="30.8" width="70" height="204.2" rx="5" fill="#3987e5" tabindex="0" data-tip="DPO-HPS RM_DPO：2.723"><title>DPO-HPS RM_DPO 2.723</title></rect>
+      <rect x="680" y="78.8" width="70" height="156.2" rx="5" fill="#d95926" tabindex="0" data-tip="DPO-HPS Reward: 0.430 (plotted ×5)"><title>DPO-HPS Reward 0.430</title></rect>
+    </g>
+    <g font-size="13" text-anchor="middle"><text x="235" y="335">DPO-PL</text><text x="455" y="335">DPO-BT</text><text x="675" y="335">DPO-HPS</text></g>
+    <text x="475" y="373" text-anchor="middle" font-size="12">Blue bars: original RM_DPO; orange bars: external Reward×5. The scales differ; see the numerical table in the text.</text>
+  </svg></div>
+  <figcaption>Data: HPS Table 2, arXiv HTML lines 233–254. The chart shows only the three DPO rows; external Reward is multiplied by 5 solely for visibility.</figcaption>
+</figure>
+
+<section id="逐层消融超参敏感性与相变" class="card level2">
+<h2>Layered ablations, hyperparameter sensitivity, and phase transitions</h2>
+<p><strong>Candidate count.</strong> In the HH ablation of Table 6, DPO-HPS RM_DPO changes from
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi><mo>=</mo><mn>5</mn></mrow><annotation encoding="application/x-tex">n=5</annotation></semantics></math>
+interval's <strong>0.600</strong> without JVP to
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi><mo>=</mo><mn>100</mn></mrow><annotation encoding="application/x-tex">n=100</annotation></semantics></math>
+interval's <strong>2.723</strong>, +2.123 or relative +353.83%; DPO-BT rises from 0.166 to 0.349, +0.183 or +110.24%. BLEU and Reward remain essentially flat. Expanding the support set mainly changes the rejection boundary, rather than the preferred answer’s wording or external RM quality. This also constitutes a phase transition: larger candidate pools are more likely to contain “high-scoring but incorrect/harmful” hard negatives, and HPS benefits grow with extreme-value statistics.</p>
+<p><strong>Transfer ablation.</strong> Appendix Table 7 gives PKU HPS RM_DPO values of 1.191, 1.620, 2.164, and 5.725 (<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi><mo>=</mo><mn>5</mn><mo>,</mo><mn>20</mn><mo>,</mo><mn>50</mn><mo>,</mo><mn>100</mn></mrow><annotation encoding="application/x-tex">n=5,20,50,100</annotation></semantics></math>). However, the
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi><mo>=</mo><mn>50</mn></mrow><annotation encoding="application/x-tex">n=50</annotation></semantics></math>
+HPS row lists BLEU/Reward as <strong>0.230/0.307</strong>, sharply inconsistent with neighboring rows around 0.31/0.407 (HTML lines 704–713), suggesting a typesetting or transcription error. No trend is inferred from these two cells until the authors clarify them.</p>
+<p><strong>Beta sensitivity.</strong> Appendix Table 8 gives
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>β</mi><mo>=</mo><mn>0.1</mn><mo>,</mo><mn>0.25</mn><mo>,</mo><mn>0.5</mn><mo>,</mo><mn>0.75</mn><mo>,</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">\beta=0.1,0.25,0.5,0.75,1</annotation></semantics></math>. HPS RM_R-DPO values are <strong>2.040, −0.828, −0.911, −0.925,
+−1.178</strong>; the value is positive only at 0.1. HPS exceeds BT at every beta, but “higher” does not mean “absolutely safe”: moving from 0.1 to 0.25 changes HPS RM_DPO from 2.723 to −0.146, a clear sign reversal. KL also falls from 11.767 to 6.972, indicating that the largest margin accompanies the greatest policy drift. The paper summarizes this as “all KL values outperform BT” (lines 730–731), without discussing this threshold.</p>
+<p><strong>gamma。</strong> The paper provides only the −5→5 schedule and reports no ablations of fixed
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>γ</mi><annotation encoding="application/x-tex">\gamma</annotation></semantics></math>, schedule direction, or update frequency, nor tests of numerical stability for
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>g</mi><mi>a</mi><mi>m</mi><mi>m</mi><mi>a</mi><mo>→</mo><mi>∞</mi></mrow><annotation encoding="application/x-tex">gamma\to\infty</annotation></semantics></math>
+. Thus, experiments do not establish that “sharper hardness is always better”; the gap between the theoretical limit and the best engineering setting remains unexplored.</p>
+<p><strong>Gaps in component attribution.</strong> Key controls are missing: “100 candidates + uniform single sampling,” “deterministic top-1 from the same pool,” “easy-to-hard schedule alone,” and “oracle human hardness.” The observed gains therefore cannot be fully decomposed into five components: multiple candidates, external RM ranking, single sampling, temperature curriculum, and the HPS loss.</p>
+</section>
+<section id="统计显著性" class="card level2">
+<h2>Statistical significance</h2>
+<p>The paper reports a mean±variation only for training time: PL <strong>168.4±1.9</strong>、BT
+<strong>62.8±1.1</strong>、HPS <strong>64.4±0.8 GPU-hour</strong>. Main-table BLEU, Reward, margins, and human evaluation are point estimates; random-seed counts, standard deviations, confidence intervals, bootstrap estimates, paired tests, and multiple-comparison corrections are not reported. Although human evaluation includes 20 raters and 30 prompts, inter-rater agreement, question-level variance, and effect intervals are also absent. One can therefore say HPS scores higher in this run, but cannot rigorously claim that +0.11 Likert is statistically significant.</p>
+<p>Three decimal places in Qwen win rates do not imply high precision. Without total sample counts, paired repetition structure, and judge position-bias estimates, the difference between 63.875% and 58.712% cannot be interpreted at the displayed precision. Best practice would apply paired bootstrap over prompts and separately report judge seeds, swapped response positions, and single-sample versus best-of-5 results.</p>
+</section>
+<section id="真正贡献可复用设计与迁移潜力" class="card level2">
+<h2>Actual contributions, reusable designs, and transfer potential</h2>
+<p>The actual contribution is not another preference loss, but decomposing “listwise information” into<strong>an offline ranking distribution + online single-negative updates</strong>. This lets any trainer accepting only
+<code>(prompt, chosen, rejected)</code> exploit 100 candidates without paying PL’s full backpropagation cost. A second contribution formalizes the hardest-negative max-margin intuition in alignment theory; a third demonstrates orthogonal plug-in use across DPO/EXO/IPO/SPPO/NCA.</p>
+<p>Reusable designs include replacing
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>q</mi><annotation encoding="application/x-tex">q</annotation></semantics></math>
+with a safety classifier, factuality verifier, or multi-objective Pareto distribution; caching sampling probabilities with a small RM; setting
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>g</mi><mi>a</mi><mi>m</mi><mi>m</mi><mi>a</mi></mrow><annotation encoding="application/x-tex">gamma</annotation></semantics></math>by domain or user group; and adding newly failed responses to the candidate pool online. In code generation,<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>r</mi><mrow><mi>e</mi><mi>s</mi><mi>t</mi></mrow></msub><annotation encoding="application/x-tex">r_{est}</annotation></semantics></math>
+can use unit tests; mathematical reasoning can use a process verifier; medical QA can use a multi-objective score combining guideline consistency and refusal quality. In any high-risk domain, however, the definition of a hard negative must be calibrated with external empirical evidence; a “high model score” cannot directly mean “most dangerous.”</p>
+</section>
+<section id="论文自述限制" class="card level2">
+<h2>Limitations stated by the paper</h2>
+<ol type="1">
+<li><strong>Evaluator budget (Section 7, HTML lines 337–340).</strong>
+The authors explicitly say budget constraints led them to estimate win rates with an open-source LLM; stronger GPT-4/Claude models might be more reliable. This limits the judge’s external validity.</li>
+<li><strong>Compute constraints (Implementation, HTML lines 313–316).</strong>
+Compute limits restrict experiments to LoRA rank 8; conclusions for full-parameter training, larger models, and other architectures are therefore unverified.</li>
+<li><strong>Not explicitly stated in Limitations, but directly bounded by the setup.</strong> Only HH-RLHF and PKU-SafeRLHF, one Llama3 reference family, and 2048-token contexts are used, leaving long contexts, multilingual use, and production red-teaming uncovered. The paper’s limitations section lists only one item; the additional two above are attributed to the main-text setup rather than presented as the authors’ own limitation statements.</li>
+</ol>
+</section>
+<section id="独立批判" class="card level2">
+<h2>Independent critique</h2>
+<ol type="1">
+<li><strong>[Construct validity]</strong> Because RM_DPO is derived directly from
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>l</mi><mi>o</mi><mi>g</mi><msub><mi>π</mi><mi>θ</mi></msub><mi>/</mi><msub><mi>π</mi><mrow><mi>r</mi><mi>e</mi><mi>f</mi></mrow></msub></mrow><annotation encoding="application/x-tex">log\pi_\theta/\pi_{ref}</annotation></semantics></math>
+and HPS Theorem 3 and its training objective directly maximize that margin, part of the large margin increase reflects an objective–metric equivalence; it demonstrates successful optimization but cannot alone establish reduced real-world harmful generation.</li>
+<li><strong>[External validity]</strong> Because all 100 candidates per prompt are expanded by one DPO model and ranked by Skywork RM, the actual human information still comes mainly from the original binary pairs. “Hard human preference” is thus more accurately “hard reward-model preference,” which may fail to transfer across generators or cultural groups.</li>
+<li><strong>[Evaluation bias]</strong> Because each method samples 5 responses and reports the highest value for each metric (HTML line 313), whereas production usually returns one sample, Table 2 is a best-of-5 upper bound and cannot directly represent a single-sample deployment safety rate.</li>
+<li><strong>[Hyperparameter robustness]</strong> Because HPS RM_R-DPO is 2.040 at
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>β</mi><mo>=</mo><mn>0.1</mn></mrow><annotation encoding="application/x-tex">\beta=0.1</annotation></semantics></math>
+but becomes −0.828 at 0.25, and the largest margin corresponds to KL=11.767, the main conclusion depends on a narrow hyperparameter region. “Robust rejection” therefore needs comparison at fixed KL or fixed external quality.</li>
+<li><strong>[Theory–implementation consistency]</strong> Because the method definition specifies
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>g</mi><mi>a</mi><mi>m</mi><mi>m</mi><mi>a</mi><mo>&gt;</mo><mn>1</mn></mrow><annotation encoding="application/x-tex">gamma&gt;1</annotation></semantics></math>but implementation starts at −5, negative temperature reverses the ranking and initially samples easy negatives. The hardest-distribution limit of Theorem 2 therefore does not cover the full training path, so the theory cannot explain gains during the first half of the curriculum.</li>
+<li><strong>[Attribution]</strong> Because uniform single sampling, deterministic top-1, fixed gamma, and oracle ranking controls are absent, single-sample efficiency is not separated from hard weighting. The 64.4 GPU-hour cost and margin gains therefore cannot all be attributed to “hard sampling.”</li>
+<li><strong>[Statistics]</strong> Because the main table and human evaluation lack variance/confidence intervals, human evaluation includes only 30 prompts, and DPO-HPS exceeds BT by just 0.11 Likert, the direction can be reported but the effect cannot be declared stable or significant.</li>
+<li><strong>[Data consistency]</strong> Because Appendix Table 7’s
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>n</mi><mo>=</mo><mn>50</mn></mrow><annotation encoding="application/x-tex">n=50</annotation></semantics></math>
+HPS BLEU/Reward of 0.230/0.307 is inconsistent with neighboring values of 0.31/0.407, at least two cells may contain transcription errors. Any “smooth scaling law” based on this point is therefore unreliable.</li>
+</ol>
+</section>
+<section id="相关工作问题来源与技术来源链" class="card level2">
+<h2>Related work: origins of the problem and technical lineage</h2>
+<section id="dpo把-rlhf-化成二元分类" class="level3">
+<h3>DPO: reducing RLHF to binary classification</h3>
+<p>DPO addresses the complexity of “learn a reward, then run PPO” by directly optimizing chosen/rejected pairs through a closed-form reward parameterization; its arXiv abstract explicitly describes it as stable, lightweight, and requiring no LM sampling during training (2305.18290v3, lines 16–19). The remaining gap is that each update sees only one rejected response and assumes BT’s scalar, transitive preferences. HPS retains DPO’s implicit reward and trainer but compresses multiple rejected responses into an informative sampling distribution; DPO’s pairwise interface thus becomes HPS’s engineering entry point.</p>
+</section>
+<section id="pro把二元偏好扩成完整排序" class="level3">
+<h3>PRO: extending binary preferences to full rankings</h3>
+<p>PRO addresses pairwise feedback’s loss of global order through recursive comparisons of arbitrary-length rankings; its AAAI 2024 arXiv abstract describes aligning probability rankings with human rankings (2306.17492v2, lines 16–19). The remaining gap is precisely HPS’s starting point: PL/PRO requires a suboptimal harmful response to beat an even worse harmful response, and backpropagates through every candidate. HPS retains the information supplied by multiple candidates but rejects recursive ranking, constructing one-vs-hard-rest comparisons only around the preferred response.</p>
+</section>
+<section id="lipo用-learning-to-rank-重新加权列表" class="level3">
+<h3>LiPO: reweighting lists through learning-to-rank</h3>
+<p>LiPO systematizes preference optimization as listwise learning-to-rank and uses
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>λ</mi><annotation encoding="application/x-tex">\lambda</annotation></semantics></math>
+weights to distinguish preference pairs; its abstract reports outperforming DPO variants on multiple tasks (2402.01878v3, lines 16–20). The remaining gap is that full-list cost and the choice of negatives most worth updating remain embedded in the loss. HPS moves weighting into sampling, at the cost of retaining only one negative per step and potentially increasing gradient variance.</p>
+</section>
+<section id="kto二元-desirable-标签也能对齐" class="level3">
+<h3>KTO: alignment from binary desirability labels</h3>
+<p>KTO explains preference optimization through prospect theory’s loss aversion and needs only desirable/undesirable labels; its ICML 2024 arXiv abstract emphasizes matching pairwise methods at 1B–30B, while explicitly noting that no HALO is universally best (2402.01306v5, lines 16–19). Its remaining gap is not exploiting relative hardness among rejected responses for the same prompt. HPS takes the opposite route: it leaves the optimizer’s behavioral-economic assumptions unchanged and modifies only the negative-data distribution. Combining them into HPS-KTO is a testable proposal.</p>
+<pre class="text"><code>                         Human/AI preference data
+                                |
+               +----------------+----------------+
+               |                                 |
+          Binary chosen/rejected            Multi-response rankings
+               |                                 |
+         DPO / KTO (2023–24)          PRO / LiPO (2024–25)
+               |                                 |
+               |                    More information, but costly full-list backprop
+               |                                 |
+               +---------------+-----------------+
+                               |
+                  HPS: rankings only construct q
+                               |
+              +----------------+----------------+
+              |                                 |
+      Single-negative updates: BT-level cost    γ→∞: maximin margin
+              |                                 |
+     Plug-in DPO/EXO/IPO/SPPO/NCA       Safety implications need external validation</code></pre>
+<p>Progress is not a monotonic “more ranking is better,” but movement within three constraints: preference information, backpropagation cost, and bias amplification. DPO reduces cost; PRO/LiPO recover information; HPS balances the two through importance sampling. The real shift moves listwise structure from inside the loss to the data-sampling layer.</p>
+<table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Feedback format</th>
+<th scope="col">Use of multiple negatives</th>
+<th scope="col">Training cost per prompt</th>
+<th scope="col">Core inductive bias</th>
+<th scope="col">How HPS inherits/changes it</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DPO</td>
+<td>Binary</td>
+<td>No</td>
+<td>O(1)</td>
+<td>BT, implicit reward</td>
+<td>Inherits pairwise training and implicit reward</td>
+</tr>
+<tr class="even">
+<td>PRO</td>
+<td>Full ranking</td>
+<td>Uses all recursively</td>
+<td>O(n)</td>
+<td>PL order consistency</td>
+<td>Rejects rejected–rejected ranking</td>
+</tr>
+<tr class="odd">
+<td>LiPO-<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>λ</mi><annotation encoding="application/x-tex">\lambda</annotation></semantics></math></td>
+<td>List</td>
+<td>Weighted pairs/lists</td>
+<td>O(n) or more</td>
+<td>LTR weights</td>
+<td>Converts weights into sampling probabilities</td>
+</tr>
+<tr class="even">
+<td>KTO</td>
+<td>Binary desirability</td>
+<td>No</td>
+<td>O(1)</td>
+<td>Prospect-theoretic loss aversion</td>
+<td>Can combine with HPS, but untested in the paper</td>
+</tr>
+<tr class="odd">
+<td>HPS</td>
+<td>List + external scalar</td>
+<td>Samples one hard negative</td>
+<td>O(1) training, O(n) offline scoring</td>
+<td>hard-negative / maximin</td>
+<td>Information compressed into
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>q</mi><annotation encoding="application/x-tex">q</annotation></semantics></math>in exchange for low backpropagation cost</td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
+<section id="开放挑战可操作的-head-to-head-实验空白" class="card level2">
+<h2>Open challenges: actionable gaps for head-to-head experiments</h2>
+<section id="理论" class="level3">
+<h3>Theory</h3>
+<ol type="1">
+<li><strong>Consistency under noisy hardness.</strong> Fix generated candidates and the optimizer; compare oracle human rankings, Skywork RM, and RMs with 5/10/20% pair flips. Primary metrics should be actual human-rated unsafe rate, margin calibration error, and effective sample count in the theoretical bound. Test whether HPS becomes worse than uniform sampling beyond a noise threshold.</li>
+<li><strong>Finite gamma rather than its limit.</strong> Compare fixed
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>g</mi><mi>a</mi><mi>m</mi><mi>m</mi><mi>a</mi><mo>∈</mo><mo stretchy="false" form="prefix">{</mo><mo>−</mo><mn>5</mn><mo>,</mo><mo>−</mo><mn>1</mn><mo>,</mo><mn>0</mn><mo>,</mo><mn>1</mn><mo>,</mo><mn>3</mn><mo>,</mo><mn>5</mn><mo>,</mo><mn>10</mn><mo stretchy="false" form="postfix">}</mo></mrow><annotation encoding="application/x-tex">gamma\in\{-5,-1,0,1,3,5,10\}</annotation></semantics></math>, the −5→5 schedule, and the reversed 5→−5 schedule; plot risk–quality Pareto frontiers at fixed KL to test whether
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>g</mi><mi>a</mi><mi>m</mi><mi>m</mi><mi>a</mi><mo>→</mo><mi>∞</mi></mrow><annotation encoding="application/x-tex">gamma\to\infty</annotation></semantics></math>
+is truly optimal rather than merely overfitting the RM.</li>
+</ol>
+</section>
+<section id="工程与应用" class="level3">
+<h3>Engineering and applications</h3>
+<ol start="3" type="1">
+<li><strong>Fair end-to-end cost comparison.</strong> Under the same 8×L40S budget, compare PL-20, HPS-100, uniform-100, and online hard-negative mining. Total cost must include generation, RM annotation, caching, and training, with wall-clock time, GPU-hours, energy, and peak memory reported.</li>
+<li><strong>Single-sample deployment safety.</strong> Sample only 1 response per prompt and report alongside the paper’s best-of-5. Use an independent safety classifier plus human red-teaming; report jailbreak success, over-refusal, helpfulness, and P95 latency. Only then can one assess whether margins translate into actual refusal capability.</li>
+<li><strong>Scale transfer.</strong> Run head-to-head comparisons with the same candidate pool across 7B/13B/70B, LoRA/full-parameter training, and 2048/32k contexts. If HPS’s advantage disappears with model scale, it may be a small-model data-efficiency technique rather than a general alignment principle.</li>
+</ol>
+</section>
+<section id="新兴方向" class="level3">
+<h3>Emerging directions</h3>
+<ol start="6" type="1">
+<li><strong>Multi-objective hard negatives.</strong> Use safety, factuality, and style RMs to construct three methods: scalar weighting, Pareto-front sampling, and random-objective sampling. Compare worst-group utility across population preferences to test whether a single
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>r</mi><mrow><mi>e</mi><mi>s</mi><mi>t</mi></mrow></msub><annotation encoding="application/x-tex">r_{est}</annotation></semantics></math>
+flattens incommensurable preferences.</li>
+<li><strong>Cyclic/intransitive preferences.</strong> Compare HPS, GPM/GPO, and BT-DPO on synthetic rock-paper-scissors preferences and real multi-user data. Measure cycle recovery, group Condorcet regret, and individual win rates to directly test HPS’s scalar-ranking assumption.</li>
+</ol>
+</section>
+</section>
+<section id="近期工作速览" class="card level2">
+<h2>Recent-work overview</h2>
+<ol type="1">
+<li><a href="https://arxiv.org/abs/2505.06273">Policy-labeled Preference
+Learning</a>(ICML 2025) incorporates behavior-policy labels into a regret-based likelihood, addressing behavior-policy mismatch in offline preference data. It reminds us that HPS’s 100 candidates come from a specific generation policy and that generator information should not be discarded.</li>
+<li><a
+href="https://proceedings.mlr.press/v267/gupta25c.html">AMPO</a>(ICML 2025) uses active subset selection to cover reward extremes and semantic clusters. A direct comparison with HPS should fix subset size and distinguish “sampling only the hardest” from “also preserving diversity.”</li>
+<li><a
+href="https://proceedings.mlr.press/v267/hong25i.html">Energy-Based
+Preference Model / EPA</a>(ICML 2025) notes that BT MLE may be non-unique and approximates energy models using strong negatives plus many free weak negatives. It challenges the scalar ranking underlying HPS from the perspective of preference-model identifiability.</li>
+<li><a href="https://proceedings.mlr.press/v267/zhang25de.html">Beyond
+Bradley-Terry Models / GPM</a>(ICML 2025) represents cyclic preferences with vector embeddings while retaining O(K) query complexity. It is suitable for testing whether HPS incorrectly forces a linear ordering on intransitive preferences.</li>
+<li><a href="https://proceedings.mlr.press/v267/">Right Now, Wrong
+Then</a>(ICML 2025 PMLR volume contents) studies nonstationary DPO under preference drift. For HPS, cached
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>q</mi><annotation encoding="application/x-tex">q</annotation></semantics></math>
+can become invalid across populations or over time; timestamps and online re-estimation should be added.</li>
+<li><a href="https://proceedings.mlr.press/v267/">PoisonBench</a>(ICML 2025 PMLR volume contents) evaluates preference-data poisoning. HPS’s concentrated sampling of high-scoring hard negatives may amplify attacks; test whether a few poisoned responses dominate
+<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>q</mi><annotation encoding="application/x-tex">q</annotation></semantics></math>。</li>
+</ol>
+</section>
+<section id="结论" class="card level2">
+<h2>Conclusion</h2>
+<p>HPS’s most valuable design takeaway is:<strong>Use multi-candidate information for sampling without sending every candidate through backpropagation.</strong>
+Under the same 8B/LoRA setup, it reduces PL fine-tuning time by 61.76% and enlarges implicit margins across multiple optimizers; its human rating of 3.93 also exceeds BT’s 3.82, indicating that it is more than a purely numerical exercise.</p>
+<p>The key caution is equally clear: DPO-HPS HH Reward is 0.430, almost identical to BT’s 0.431; the largest numerical jump occurs in a margin directly shaped by the objective. Together with best-of-5, a narrow beta phase transition,<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>g</mi><mi>a</mi><mi>m</mi><mi>m</mi><mi>a</mi></mrow><annotation encoding="application/x-tex">gamma</annotation></semantics></math>
+definition–implementation inconsistency, and missing significance tests, HPS should be positioned as<strong>an efficient hard-negative alignment framework</strong>, rather than a solution with a completed real-world safety validation loop.</p>
+<hr />
+<p><strong>Index and production footnotes.</strong> The date 2026-09-21, LLM/NLP, HPS, ICML 2025, and a one-sentence conclusion have been appended to <code>ml-report-index.md</code>. The HTML uses single-file inline CSS/JS, system-ui + PingFang SC/Microsoft YaHei, a warm paper-like palette, light/dark theme switching, responsive wide tables, and keyboard-focusable SVG tooltips; its content matches the Markdown/plain text. The Warm Editorial structure validator passed with 0 warnings; this machine lacks
+<code>/usr/bin/chromium</code>，<code>/opt/pw-browsers</code>
+and an executable Chromium, so actual Playwright light/dark/mobile screenshot checks could not be completed. Static checks of responsiveness, themes, and dependencies were substituted; browser pixel-level acceptance testing cannot be claimed. All URLs were actually visited in this round; unavailable or missing items are explicitly marked.</p>
+</section>
+</div>
+
+  </main>
+
+  <footer>Sources: ICML 2025 / PMLR 267, arXiv:2502.14400v5, OpenReview, author software links, and public dataset cards; generated: 2026-09-21.</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ Light' : '☾ Dark';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1357 @@
+---
+layout: null
+title: "I2Mole"
+date: 2026-09-27
+topic: "ai4science"
+tags: ["ai4science", "drug-interactions", "out-of-distribution"]
+excerpt: "显式跨分子边找到相互作用核心，离散环境重组检验预测能否跨药物迁移。 Transductive ACC 只领先最强基线 0.42–0.66 pp，但去掉 VQ 环境模块会损失 14.12 pp；最严格 Zhang Type 2 的 F1 仍仅 39.95。"
+permalink: "/blog/2026/09/27/i2mole/"
+blog_post: true
+lang: "zh-CN"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_en: "/blog/2026/09/27/i2mole/en/"
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>I2Mole 深度研究报告 · 2026-09-27</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  main { display: grid; gap: 22px; min-width: 0; }
+  .card.level2 { margin: 0; min-width: 0; }
+  .subsection { margin-top: 24px; }
+  .subsection h3 { margin-top: 0; }
+  h4 { margin: 18px 0 8px; font-size: 16px; }
+  blockquote { margin: 14px 0; padding: 10px 14px; border-left: 4px solid var(--chart-primary); background: var(--surface-2); color: var(--text-secondary); }
+  pre { overflow-x: auto; padding: 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); font-size: 12.5px; line-height: 1.55; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  p code, li code, td code { padding: .08em .3em; border-radius: 4px; background: var(--surface-2); }
+  ol, ul { padding-left: 1.35em; }
+  li + li { margin-top: .38em; }
+  .table-scroll { margin: 15px 0 22px; }
+  table { min-width: 760px; }
+  .figure { margin: 0; min-width: 0; max-width: 100%; }
+  p, li, td, th, a { overflow-wrap: anywhere; }
+  .chart rect { outline: none; }
+  .chart rect:focus { stroke: var(--text-primary); stroke-width: 2; }
+  @media (max-width: 640px) {
+    .toolbar { position: static; justify-content: flex-end; margin-bottom: 10px; }
+    .hero { margin-top: 0; }
+    .chart { width: 700px; max-width: none; }
+    .figure { overflow-x: auto; }
+  }
+
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ICLR 2026 · AI4Science · 分子关系学习</p>
+    <h1>I2Mole：把“分子对”变成可干预的关系图</h1>
+    <p class="subtitle">显式跨分子边找到相互作用核心，离散环境重组检验预测能否跨药物迁移。</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">每日深度论文追踪</span>
+      <span class="chip">2026-09-27</span>
+      <span class="chip">ICLR 2026</span>
+    </div>
+    <p class="lede">Transductive ACC 只领先最强基线 0.42–0.66 pp，但去掉 VQ 环境模块会损失 14.12 pp；最严格 Zhang Type 2 的 F1 仍仅 39.95。</p>
+  </header>
+
+  <main>
+
+<blockquote>
+<p><strong>一句话核心定位：</strong> I2Mole
+不再把两个药物各自编码后才做匹配，而是先显式建立跨分子原子关系，再用信息瓶颈抽取相互作用核心、用离散环境码做反事实重组，以提升新药与新药对上的
+DDI 泛化。</p>
+</blockquote>
+<p><strong>日期：</strong> 2026-09-27<br />
+<strong>轮转领域：</strong> AI4Science
+与跨界（药物—药物相互作用、分子关系学习、图 OOD）<br />
+<strong>核心论文：</strong> <em>I2Mole: Interaction-Aware Invariant
+Molecular Relational Learning for Generalizable Drug-Drug Interaction
+Prediction</em><br />
+<strong>正式收录：</strong> ICLR 2026 Conference<br />
+<strong>核读版本：</strong> ICLR 2026 正式论文，30 页。论文首页标题比
+proceedings 摘要页更完整；本报告以 PDF 标题为准。</p>
+<section id="0-链接验证表" class="card level2">
+<h2>0. 链接验证表</h2>
+<p>验证日期均为 2026-09-27。所谓“已访问”是指本次运行实际打开了页面或
+PDF；“未找到”不是断言资源绝对不存在，而是指在论文、正式会议页、OpenReview、arXiv、作者页与代码检索中没有得到可核实入口。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">会议 / 正式页</th>
+<th scope="col">arXiv（版本与日期）</th>
+<th scope="col">代码</th>
+<th scope="col">数据 / 权重</th>
+<th scope="col">项目页 / 视频</th>
+<th scope="col">本次状态</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>I2Mole（核心）</strong></td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/03e04426e80332d1d99f023aa493df04-Abstract-Conference.html">ICLR
+2026 正式页</a>；<a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/file/03e04426e80332d1d99f023aa493df04-Paper-Conference.pdf">正式
+PDF</a>；<a
+href="https://openreview.net/forum?id=IqwF00TCmf">OpenReview</a></td>
+<td><strong>未找到</strong></td>
+<td>论文给出 <a
+href="https://anonymous.4open.science/r/I2Mol-C616">anonymous.4open</a>，但本次访问失败，故记为**无法核实可用性**</td>
+<td>使用 ZhangDDI、ChChMiner、DeepDDI
+等公开基准；未找到独立打包的数据或权重页</td>
+<td>未找到</td>
+<td>正式页/PDF已访问；OpenReview 可检索但直开受挑战页限制</td>
+</tr>
+<tr class="even">
+<td>MoleOOD</td>
+<td><a
+href="https://proceedings.neurips.cc/paper_files/paper/2022/hash/547108084f0c2af39b956f8eadb75d1b-Abstract-Conference.html">NeurIPS
+2022 正式页</a>；<a
+href="https://openreview.net/forum?id=2nWUNTnFijm">OpenReview</a></td>
+<td>未找到可确认的 arXiv 版本</td>
+<td><a href="https://github.com/yangnianzu0515/MoleOOD">GitHub</a></td>
+<td>仓库列 OGB 与 DrugOOD 数据入口；无模型权重说明</td>
+<td>未找到</td>
+<td>正式页、代码已访问</td>
+</tr>
+<tr class="odd">
+<td>CGIB</td>
+<td><a href="https://proceedings.mlr.press/v202/lee23e.html">ICML 2023 /
+PMLR</a>；<a
+href="https://proceedings.mlr.press/v202/lee23e/lee23e.pdf">PDF</a></td>
+<td><a
+href="https://arxiv.org/abs/2305.01520">arXiv:2305.01520</a>，v1：2023-04-29</td>
+<td><a href="https://github.com/Namkyeong/CGIB">GitHub</a></td>
+<td>仓库按 DDI、分子相互作用、相似度任务提供脚本；未找到权重</td>
+<td>未找到</td>
+<td>正式 PDF、arXiv、代码已访问</td>
+</tr>
+<tr class="even">
+<td>CMRL</td>
+<td><a href="https://arxiv.org/pdf/2305.18451">KDD 2023 论文 PDF</a>；<a
+href="https://dl.acm.org/doi/10.1145/3580305.3599462">ACM DOI</a></td>
+<td><a
+href="https://arxiv.org/abs/2305.18451">arXiv:2305.18451</a>，v1：2023-05-29</td>
+<td><a href="https://github.com/Namkyeong/CMRL">GitHub</a></td>
+<td>仓库按 DDI/MI/SL/synthetic 提供脚本；未找到权重</td>
+<td>未找到</td>
+<td>PDF、arXiv、代码已访问</td>
+</tr>
+<tr class="odd">
+<td>IGIB-ISE</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2025/hash/9f989633ffbd47a83caddacad0f0261f-Abstract-Conference.html">ICLR
+2025 正式页</a>；<a
+href="https://proceedings.iclr.cc/paper_files/paper/2025/file/9f989633ffbd47a83caddacad0f0261f-Paper-Conference.pdf">PDF</a>；<a
+href="https://openreview.net/forum?id=3kiZ5S5WkY">OpenReview</a></td>
+<td>未找到</td>
+<td><a
+href="https://github.com/congcijueqi/IGIB-ISE">GitHub</a>（论文与作者页给出；本次抓取受限）</td>
+<td>未找到独立数据/权重页</td>
+<td>未找到</td>
+<td>正式页/PDF已访问；代码 URL 已核对但页面未成功抓取</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="1-候选池排重与随机选择" class="card level2">
+<h2>1. 候选池、排重与随机选择</h2>
+<p>轮转按用户时区的 2026-09-27（周日）执行，因此领域为 AI4Science
+与跨界。本地索引显示近 14 天已经深读
+PemNN（单分子力谱）、MolJO（基于结构的分子优化）等；本次排除这些论文及其直接主题，也排除过去两周已覆盖的生成模型、具身、KV
+压缩等非本领域主题。候选主要来自 <a
+href="https://proceedings.iclr.cc/paper_files/paper/2026">ICLR 2026 正式
+proceedings</a>，并用
+OpenReview、arXiv、作者/代码页和公开检索交叉核对。候选均在最近 12
+个月的优先窗口内。</p>
+<p>候选池共 <strong>24 篇</strong>：</p>
+<ol type="1">
+<li>AntigenLM: Structure-Aware DNA Language Modeling for Influenza</li>
+<li>SubDyve: Subgraph-Driven Dynamic Propagation for Virtual Screening
+Enhancement Controlling False Positive</li>
+<li>CryoNet.Refine: A One-step Diffusion Model for Rapid Refinement of
+Structural Models with Cryo-EM Density Map Restraints</li>
+<li>Histopathology-Genomics Multi-modal Structural Representation
+Learning for Data-Efficient Precision Oncology</li>
+<li>GeoFAR: Geography-Informed Frequency-Aware Super-Resolution for
+Climate Data</li>
+<li><strong>I2Mole: Interaction-aware Invariant Molecular Learning for
+Generalizable Property Prediction</strong></li>
+<li>Glance and Focus Reinforcement for Pan-cancer Screening</li>
+<li>SC-Arena: A Natural Language Benchmark for Single-Cell Reasoning
+with Knowledge-Augmented Evaluation</li>
+<li>BioTamperNet: Affinity-Guided State-Space Model Detecting Tampered
+Biomedical Images</li>
+<li>PoinnCARE: Hyperbolic Multi-Modal Learning for Enzyme
+Classification</li>
+<li>CMPhysBench: A Benchmark for Evaluating LLMs in Condensed Matter
+Physics</li>
+<li>Learning residue level protein dynamics with multiscale
+Gaussians</li>
+<li>Efficient Prediction of Large Protein Complexes via Subunit-Guided
+Hierarchical Refinement</li>
+<li>Riemannian Variational Flow Matching for Material and Protein
+Design</li>
+<li>ProTDyn: A Foundation Protein Language Model for Thermodynamics and
+Dynamics Generation</li>
+<li>SAIR: Enabling Deep Learning for Protein-Ligand Interactions with a
+Synthetic Structural Dataset</li>
+<li>Fast and Interpretable Protein Substructure Alignment via Optimal
+Transport</li>
+<li>Protein Structure Tokenization via Geometric Byte Pair Encoding</li>
+<li>Rigidity-Aware Geometric Pretraining for Protein Design and
+Conformational Ensembles</li>
+<li>Fast Proteome-Scale Protein Interaction Retrieval via Residue-Level
+Factorization</li>
+<li>SigmaDock: Untwisting Molecular Docking with Fragment-Based SE(3)
+Diffusion</li>
+<li>MoMa: A Simple Modular Learning Framework for Material Property
+Prediction</li>
+<li>GeomMotif: A Benchmark for Arbitrary Geometric Preservation in
+Protein Generation</li>
+<li>One protein is all you need</li>
+</ol>
+<p>在固定候选顺序后实际执行 <code>shuf -i 1-24 -n 1</code>，输出
+<strong>6</strong>，因此核心论文为 I2Mole。该论文有完整正式
+PDF、主结果、归纳/OOD、消融、显著性、复杂度与额外回归任务，资料足以深读，故<strong>未重抽（0
+次）</strong>。随机选择不是热度排序；选择后才进行可用性检查。</p>
+</section>
+<section id="2-motivation真正的痛点不是同分布分数还不够高"
+class="card level2">
+<h2>2. Motivation：真正的痛点不是“同分布分数还不够高”</h2>
+<p>DDI
+预测最常见的隐含捷径，是让每个药物先产生一个身份化向量，再在训练集中记住哪些药物或骨架经常与标签共现。若随机拆分的是“药物对”，同一个药物仍可能同时出现在训练与测试中；此时模型可以利用药物身份和骨架频率，而不是学习可迁移的相互作用机制。论文将测试拆成三层：transductive
+中两药均见过；inductive Type 1 中只有一个药物见过；Type 2
+中两个药物均未见。难度升级在数字上非常清楚：I2Mole 在 ZhangDDI 的 ACC 从
+transductive <strong>88.64</strong> 降为 Type 1 的
+<strong>69.12</strong>，再降为 Type 2 的 <strong>61.35</strong>，总落差
+<strong>27.29 pp</strong>（Table 1–2，PDF
+p.6）。这说明“随机药物对拆分”远不能代表新药部署。</p>
+<p>第二个痛点是相互作用本身具有条件性。同一官能团与不同配对分子相遇时，可能通过氢键、疏水作用或范德华力表现出不同贡献。CGIB
+已提出“核心子图依赖配对图”，CMRL 将其改写为条件干预，IGIB-ISE 再以 EM
+迭代收紧交互子结构；但 I2Mole
+认为它们依然没有在图构造层面把<strong>跨分子原子—原子关系</strong>变成可传播的边。也就是说，过去方法多在“从各自图里找核心”上精进，却没有先搭建一个足够具体的关系空间。</p>
+<p>第三个痛点是环境变化的处理。只压缩出核心子图并不自动保证不变性：剩余部分可能携带骨架、大小、药物身份等伪相关。I2Mole
+不是简单丢弃环境，而是把非核心表示量化到一个离散 VQ
+codebook，再随机替换/重组环境码，要求同一核心在不同环境下保持预测。这一设计把“不要依赖环境”转化为可训练的数据增广。</p>
+<p>量化证据也显示任务并未解决：在最严格的 ZhangDDI Type 2 上，I2Mole 的
+F1 只有 <strong>39.95</strong>（Table 2，p.6）；即使相对 IGIB-ISE 的
+38.62 有 <strong>+1.33 pp /
++3.44%</strong>，绝对表现仍低。论文的强项是小而稳定的泛化改进，不应被描述成
+DDI 已达到临床可用。</p>
+</section>
+<section id="3-故事线核心假设与权衡" class="card level2">
+<h2>3. 故事线、核心假设与权衡</h2>
+<p>论文故事可以压缩为四步。</p>
+<ol type="1">
+<li><strong>先允许一切关系存在。</strong> 对两个分子图
+(G_1,G_2)，将所有跨分子原子对连成关系边，形成合并图
+(G_m)。这样氢键或近程相互作用至少有表示通道，而不是在两个独立图向量合并后才被间接猜测。</li>
+<li><strong>再学习哪些关系值得保留。</strong>
+关系边经注意力/门控得到权重，低权重边截断，默认保留约
+20%；这把全连接关系图收缩为“候选相互作用骨架”。</li>
+<li><strong>从候选骨架中分离核心与环境。</strong> GIB
+模块采样任务充分、输入压缩的 rationale (G_{sub})，其余部分为
+(G_{env})。</li>
+<li><strong>用离散环境重组训练不变性。</strong> 将环境编码到 VQ
+codebook，采样环境码与核心表示拼接，迫使分类器在环境变动时保持标签。</li>
+</ol>
+<p>其核心假设是：给定关系核心后，标签与环境条件独立，即 (Y \perp
+G_{env}\mid
+G_{sub})。这比“药物属性只由某个固定子结构决定”更合理，因为核心是对特定配对关系抽取的；但它仍然是建模假设，不是由实验直接证明的因果事实。</p>
+<p>权衡也非常明确。全跨分子连边带来二次复杂度；VQ
+重组增强了环境覆盖，却可能生成化学上从未出现的核心—环境组合；信息瓶颈提高稳健性，但强度过大时会丢掉任务信息。论文自己给出的相变证据是：β
+从最佳 (10^{-4}) 增至 0.1，ZhangDDI ACC 从 <strong>88.64</strong> 崩至
+<strong>56.46</strong>，下降 <strong>32.18 pp</strong>（Table
+5，p.8）。</p>
+</section>
+<section id="4-方程级形式化与流程" class="card level2">
+<h2>4. 方程级形式化与流程</h2>
+<p>设分子图 (G_i=(V_i,E_i,X_i))，标签为
+(Y\in{0,1})。合并图加入跨分子候选边</p>
+<p>[ E_{12}={(u,v):u\in V_1,v\in V_2},\qquad G_m=(V_1\cup V_2,E_1\cup
+E_2\cup E_{12}). ]</p>
+<p>局部键内信息由 GatedConv 传播，跨分子关系由 GAT 更新；关系边 (e_{uv})
+产生重要度 (a_{uv})，再按比例 ρ 保留。论文的主配置为 ρ=20%，但 Table
+9（p.22）显示 5%–30% 的 ACC 仅在 <strong>88.52–88.64</strong>
+间波动，这意味着阈值并不尖锐。</p>
+<p>GIB 的理论目标（Eq. 1，p.2）为</p>
+<p>[ \min_{G_{sub}} -I(Y;G_{sub})+\beta I(G_m;G_{sub}), ]</p>
+<p>即保留对标签有用的信息，同时压缩对原图的依赖。论文进一步以</p>
+<p>[ Y\perp G_{env}\mid G_{sub} ]</p>
+<p>表达不变性条件（Eq. 2–3，p.2）。环境编码 (z_e=f_{env}(G_{env}))
+被指派到最近的码字</p>
+<p>[ q(z_e)=e_{k^<em>},\quad k^</em>=\arg\min_k|z_e-e_k|_2^2, ]</p>
+<p>再从 codebook 采样环境码 (e_j)，与核心表示 (z_c) 拼接后预测
+ŷ。总损失（Eq. 24，p.6）是</p>
+<p>[ \mathcal L_{total}=\mathcal L_{inv}+\mathcal L_{pre}+\beta\mathcal
+L_{MI}+\gamma\mathcal L_{vq}. ]</p>
+<p>其中 ℒpre 是原样本 BCE，ℒinv 是环境重组样本的预测约束，ℒMI
+实现瓶颈，ℒvq 更新离散码本。</p>
+<pre class="text"><code>输入：药物图 G1,G2；标签 y；保留比例 ρ；环境采样数 θ
+1  在 G1、G2 内分别运行 3 层 GatedConv
+2  加入所有跨分子原子对关系边，并运行 3 层 GAT
+3  估计跨分子边权；仅保留 top-ρ 关系边
+4  GIB 采样核心子图 G_sub；其余视作 G_env
+5  将 G_env 编码并量化到 VQ codebook
+6  从 codebook 采样 θ 个环境码，与同一核心表示重组
+7  同时最小化原样本预测、重组不变性、互信息与 VQ 损失
+输出：DDI 概率与可解释的核心关系子图</code></pre>
+</section>
+<section id="5-关键机制与工程细节" class="card level2">
+<h2>5. 关键机制与工程细节</h2>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">组件</th>
+<th scope="col">具体实现</th>
+<th scope="col">作用</th>
+<th scope="col">代价 / 风险</th>
+<th scope="col">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>分子内传播</td>
+<td>3 层 GatedConv</td>
+<td>聚合共价键邻域</td>
+<td>深度固定，未证明最优</td>
+<td>Appendix E.3，p.21–22</td>
+</tr>
+<tr class="even">
+<td>分子间传播</td>
+<td>3 层 GAT；跨分子原子全连接后剪边</td>
+<td>显式表达配对依赖</td>
+<td>初始边数 (O(</td>
+<td>V_1</td>
+</tr>
+<tr class="odd">
+<td>图级读出</td>
+<td>Set2Set</td>
+<td>将可变节点集压成定长向量</td>
+<td>增加迭代开销</td>
+<td>Appendix E.3，p.21</td>
+</tr>
+<tr class="even">
+<td>核心抽取</td>
+<td>GIB 随机掩码/瓶颈</td>
+<td>找任务充分且压缩的 rationale</td>
+<td>β 过大直接崩溃</td>
+<td>Table 5，p.8</td>
+</tr>
+<tr class="odd">
+<td>环境建模</td>
+<td>VQ codebook，主搜索 5–30 个码字</td>
+<td>离散化伪相关环境</td>
+<td>码字未对应可验证化学语义</td>
+<td>Table 7，p.22；Fig. 3</td>
+</tr>
+<tr class="even">
+<td>环境重组</td>
+<td>每核心采样 θ 个环境；θ=4 最优</td>
+<td>构造近似干预样本</td>
+<td>组合可能不具化学可实现性</td>
+<td>Table 10，p.23</td>
+</tr>
+<tr class="odd">
+<td>优化</td>
+<td>Adam，初始 LR (10^{-4})，batch 32，BCE</td>
+<td>标准二分类训练</td>
+<td>正文另出现“LR increased to 0.5”的可疑表述</td>
+<td>Appendix E.3，p.21–22</td>
+</tr>
+<tr class="even">
+<td>停止</td>
+<td>最多 300 epochs，patience 150</td>
+<td>防止过拟合</td>
+<td>patience 很长；未报告 wall-clock 波动</td>
+<td>Appendix E.3，p.21</td>
+</tr>
+<tr class="odd">
+<td>硬件</td>
+<td>单卡 Tesla A100 40GB</td>
+<td>可运行主实验</td>
+<td>仍显著慢于轻量基线</td>
+<td>Table 14，p.25</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="6-数据集切分与指标" class="card level2">
+<h2>6. 数据集、切分与指标</h2>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">数据集</th>
+<th scope="col" style="text-align: right;">药物数</th>
+<th scope="col" style="text-align: right;">DDI 对数</th>
+<th scope="col">任务角色</th>
+<th scope="col">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>ZhangDDI</td>
+<td style="text-align: right;">548</td>
+<td style="text-align: right;">48,548</td>
+<td>二分类；主消融与敏感性</td>
+<td>Appendix E.1，p.20</td>
+</tr>
+<tr class="even">
+<td>ChChMiner</td>
+<td style="text-align: right;">1,514</td>
+<td style="text-align: right;">48,514</td>
+<td>二分类；规模更大的药物集合</td>
+<td>Appendix E.1，p.20</td>
+</tr>
+<tr class="odd">
+<td>DeepDDI</td>
+<td style="text-align: right;">1,704</td>
+<td style="text-align: right;">192,284</td>
+<td>二分类；最大配对集合</td>
+<td>Appendix E.1，p.20</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Transductive 采用 60/20/20 划分；归纳评测区分 Type
+1（只含一个未见药物）与 Type 2（两个药物均未见）。每种设置重复 <strong>8
+次</strong>并报告均值与标准差（实验 Sec. 5，p.6；Appendix J，p.22）。ACC
+受类别比例影响；AUROC 衡量排序；F1
+更关注正类精确率/召回率平衡。论文没有报告
+PR-AUC、校准误差、灵敏度/特异度或决策曲线，因此不能由这些表推断临床报警质量。</p>
+</section>
+<section id="7-主结果完整数据矩阵" class="card level2">
+<h2>7. 主结果：完整数据矩阵</h2>
+<section id="71-transductive三数据集--六方法--三指标" class="subsection level3">
+<h3>7.1 Transductive：三数据集 × 六方法 × 三指标</h3>
+<p>数值均为百分数，括号内标准差为论文报告值；为控制宽度只展示六个代表方法。<strong>粗体</strong>为本表最优。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">Zhang ACC</th>
+<th scope="col" style="text-align: right;">Zhang AUROC</th>
+<th scope="col" style="text-align: right;">Zhang F1</th>
+<th scope="col" style="text-align: right;">ChCh ACC</th>
+<th scope="col" style="text-align: right;">ChCh AUROC</th>
+<th scope="col" style="text-align: right;">ChCh F1</th>
+<th scope="col" style="text-align: right;">Deep ACC</th>
+<th scope="col" style="text-align: right;">Deep AUROC</th>
+<th scope="col" style="text-align: right;">Deep F1</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DeepDDI</td>
+<td style="text-align: right;">83.35</td>
+<td style="text-align: right;">91.13</td>
+<td style="text-align: right;">80.24</td>
+<td style="text-align: right;">90.34</td>
+<td style="text-align: right;">95.71</td>
+<td style="text-align: right;">91.83</td>
+<td style="text-align: right;">92.39</td>
+<td style="text-align: right;">95.10</td>
+<td style="text-align: right;">91.32</td>
+</tr>
+<tr class="even">
+<td>SSI-DDI</td>
+<td style="text-align: right;">86.97</td>
+<td style="text-align: right;">93.76</td>
+<td style="text-align: right;">82.99</td>
+<td style="text-align: right;">93.26</td>
+<td style="text-align: right;">97.81</td>
+<td style="text-align: right;">93.11</td>
+<td style="text-align: right;">94.27</td>
+<td style="text-align: right;">97.42</td>
+<td style="text-align: right;">95.41</td>
+</tr>
+<tr class="odd">
+<td>DSN-DDI</td>
+<td style="text-align: right;">87.65</td>
+<td style="text-align: right;">94.63</td>
+<td style="text-align: right;">84.30</td>
+<td style="text-align: right;">94.25</td>
+<td style="text-align: right;">98.31</td>
+<td style="text-align: right;">95.34</td>
+<td style="text-align: right;">95.74</td>
+<td style="text-align: right;">98.06</td>
+<td style="text-align: right;">96.71</td>
+</tr>
+<tr class="even">
+<td>CGIB</td>
+<td style="text-align: right;">87.32</td>
+<td style="text-align: right;">94.43</td>
+<td style="text-align: right;">84.53</td>
+<td style="text-align: right;">94.37</td>
+<td style="text-align: right;">98.38</td>
+<td style="text-align: right;">95.44</td>
+<td style="text-align: right;">95.76</td>
+<td style="text-align: right;">98.08</td>
+<td style="text-align: right;">96.53</td>
+</tr>
+<tr class="odd">
+<td>IGIB-ISE</td>
+<td style="text-align: right;">88.08</td>
+<td style="text-align: right;">94.71</td>
+<td style="text-align: right;">85.39</td>
+<td style="text-align: right;">94.92</td>
+<td style="text-align: right;">98.24</td>
+<td style="text-align: right;">95.84</td>
+<td style="text-align: right;">95.85</td>
+<td style="text-align: right;">98.02</td>
+<td style="text-align: right;">96.71</td>
+</tr>
+<tr class="even">
+<td><strong>I2Mole</strong></td>
+<td style="text-align: right;"><strong>88.64</strong></td>
+<td style="text-align: right;"><strong>95.12</strong></td>
+<td style="text-align: right;"><strong>85.87</strong></td>
+<td style="text-align: right;"><strong>95.34</strong></td>
+<td style="text-align: right;"><strong>98.84</strong></td>
+<td style="text-align: right;"><strong>96.21</strong></td>
+<td style="text-align: right;"><strong>96.51</strong></td>
+<td style="text-align: right;"><strong>99.04</strong></td>
+<td style="text-align: right;"><strong>97.53</strong></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>来源：Table 1，PDF p.6。相对最强非 I2Mole 的
+ACC，三数据集绝对提升分别为 <strong>+0.56、+0.42、+0.66
+pp</strong>；相对提升分别为
+<strong>+0.64%、+0.44%、+0.69%</strong>。这是一致但不大的收益。Table 1
+中 MDF-SA-DDI 的 DeepDDI AUROC 印为 <strong>88.84</strong>，与其 ACC
+94.12、F1 96.13
+及其他基线明显不协调；本报告不擅自更正，只将其标为论文内部可疑值。</p>
+</section>
+<section id="72-最严格归纳-type-2三数据集--六方法" class="subsection level3">
+<h3>7.2 最严格归纳 Type 2：三数据集 × 六方法</h3>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">Zhang ACC</th>
+<th scope="col" style="text-align: right;">Zhang AUROC</th>
+<th scope="col" style="text-align: right;">Zhang F1</th>
+<th scope="col" style="text-align: right;">ChCh ACC</th>
+<th scope="col" style="text-align: right;">ChCh AUROC</th>
+<th scope="col" style="text-align: right;">ChCh F1</th>
+<th scope="col" style="text-align: right;">Deep ACC</th>
+<th scope="col" style="text-align: right;">Deep AUROC</th>
+<th scope="col" style="text-align: right;">Deep F1</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DeepDDI</td>
+<td style="text-align: right;">58.62</td>
+<td style="text-align: right;">56.34</td>
+<td style="text-align: right;">25.19</td>
+<td style="text-align: right;">63.78</td>
+<td style="text-align: right;">66.71</td>
+<td style="text-align: right;">71.37</td>
+<td style="text-align: right;">61.68</td>
+<td style="text-align: right;">65.17</td>
+<td style="text-align: right;">66.74</td>
+</tr>
+<tr class="even">
+<td>SSI-DDI</td>
+<td style="text-align: right;">57.24</td>
+<td style="text-align: right;">59.34</td>
+<td style="text-align: right;">37.16</td>
+<td style="text-align: right;">65.61</td>
+<td style="text-align: right;">68.39</td>
+<td style="text-align: right;">74.95</td>
+<td style="text-align: right;">65.53</td>
+<td style="text-align: right;">69.37</td>
+<td style="text-align: right;">62.18</td>
+</tr>
+<tr class="odd">
+<td>CGIB</td>
+<td style="text-align: right;">58.39</td>
+<td style="text-align: right;">57.24</td>
+<td style="text-align: right;">28.83</td>
+<td style="text-align: right;">68.78</td>
+<td style="text-align: right;">69.82</td>
+<td style="text-align: right;">78.46</td>
+<td style="text-align: right;">68.26</td>
+<td style="text-align: right;">68.78</td>
+<td style="text-align: right;">75.75</td>
+</tr>
+<tr class="even">
+<td>CMRL</td>
+<td style="text-align: right;">60.78</td>
+<td style="text-align: right;">60.02</td>
+<td style="text-align: right;">38.73</td>
+<td style="text-align: right;">67.09</td>
+<td style="text-align: right;">69.62</td>
+<td style="text-align: right;">75.76</td>
+<td style="text-align: right;">68.29</td>
+<td style="text-align: right;">73.38</td>
+<td style="text-align: right;">73.91</td>
+</tr>
+<tr class="odd">
+<td>IGIB-ISE</td>
+<td style="text-align: right;">59.96</td>
+<td style="text-align: right;">59.71</td>
+<td style="text-align: right;">38.62</td>
+<td style="text-align: right;">68.92</td>
+<td style="text-align: right;">69.94</td>
+<td style="text-align: right;">79.32</td>
+<td style="text-align: right;">68.41</td>
+<td style="text-align: right;">74.10</td>
+<td style="text-align: right;">75.60</td>
+</tr>
+<tr class="even">
+<td><strong>I2Mole</strong></td>
+<td style="text-align: right;"><strong>61.35</strong></td>
+<td style="text-align: right;"><strong>62.02</strong></td>
+<td style="text-align: right;"><strong>39.95</strong></td>
+<td style="text-align: right;"><strong>69.23</strong></td>
+<td style="text-align: right;"><strong>70.02</strong></td>
+<td style="text-align: right;"><strong>79.67</strong></td>
+<td style="text-align: right;"><strong>69.92</strong></td>
+<td style="text-align: right;"><strong>74.27</strong></td>
+<td style="text-align: right;"><strong>75.83</strong></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>来源：Table 2，PDF p.6。对 IGIB-ISE，I2Mole 的 ACC 提升为 Zhang
+<strong>+1.39 pp / +2.32%</strong>、ChCh <strong>+0.31 pp /
++0.45%</strong>、Deep <strong>+1.51 pp / +2.21%</strong>。但是 Zhang F1
+仍只有 39.95，所以“新药对”情境远未解决。</p>
+</section>
+<section id="73-五基准--六方法溶剂化自由能回归" class="subsection level3">
+<h3>7.3 五基准 × 六方法：溶剂化自由能回归</h3>
+<p>MAE 越低越好；此表满足五基准横向对标，但它是额外回归任务，不应与 DDI
+百分数混合。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">FreeSolv</th>
+<th scope="col" style="text-align: right;">CompSolv</th>
+<th scope="col" style="text-align: right;">Abraham</th>
+<th scope="col" style="text-align: right;">CompSolv-Exp</th>
+<th scope="col" style="text-align: right;">MNSol</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>D-MPNN</td>
+<td style="text-align: right;">0.684</td>
+<td style="text-align: right;">0.179</td>
+<td style="text-align: right;">0.454</td>
+<td style="text-align: right;">0.442</td>
+<td style="text-align: right;">0.459</td>
+</tr>
+<tr class="even">
+<td>SolvBERT</td>
+<td style="text-align: right;">0.588</td>
+<td style="text-align: right;">0.167</td>
+<td style="text-align: right;">0.467</td>
+<td style="text-align: right;">0.382</td>
+<td style="text-align: right;">0.354</td>
+</tr>
+<tr class="odd">
+<td>GROVER</td>
+<td style="text-align: right;">0.623</td>
+<td style="text-align: right;"><strong>0.155</strong></td>
+<td style="text-align: right;">0.307</td>
+<td style="text-align: right;">0.382</td>
+<td style="text-align: right;">0.354</td>
+</tr>
+<tr class="even">
+<td>CIGIN</td>
+<td style="text-align: right;">0.564</td>
+<td style="text-align: right;">0.164</td>
+<td style="text-align: right;">0.254</td>
+<td style="text-align: right;">0.241</td>
+<td style="text-align: right;">0.347</td>
+</tr>
+<tr class="odd">
+<td><strong>CGIB</strong></td>
+<td style="text-align: right;"><strong>0.531</strong></td>
+<td style="text-align: right;">0.156</td>
+<td style="text-align: right;">0.195</td>
+<td style="text-align: right;">0.203</td>
+<td style="text-align: right;">0.321</td>
+</tr>
+<tr class="even">
+<td><strong>I2Mole</strong></td>
+<td style="text-align: right;">0.535</td>
+<td style="text-align: right;">0.158</td>
+<td style="text-align: right;"><strong>0.189</strong></td>
+<td style="text-align: right;"><strong>0.175</strong></td>
+<td style="text-align: right;"><strong>0.282</strong></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>来源：Table 15，PDF p.26。I2Mole 对 CGIB 在
+Abraham、CompSolv-Exp、MNSol 的绝对 MAE 改善为
+<strong>0.006、0.028、0.039</strong>，相对降低
+<strong>3.08%、13.79%、12.15%</strong>；但在 FreeSolv 与 CompSolv 分别差
+<strong>0.004、0.002</strong>。因此它展示可迁移性，但不是五项全胜。</p>
+</section>
+<section id="74-跨域泛化" class="subsection level3">
+<h3>7.4 跨域泛化</h3>
+<p>以 ZhangDDI 训练、在 ChChMiner 和 DeepDDI 测试时，I2Mole 的 ACC 为
+<strong>59.25 / 58.12</strong>，IGIB-ISE 为 <strong>57.06 /
+57.21</strong>，绝对提升 <strong>+2.19 / +0.91 pp</strong>（Table
+3，p.7）。论文报告平均 ACC 提升
+2.71%，但跨数据集标签构造、负样本采样与药物重叠可能不一致；这更像“数据源迁移”，不等于跨医院或前瞻临床外推。</p>
+</section>
+</section>
+<figure class="figure" aria-labelledby="ablation-chart-title">
+      <p class="fig-title" id="ablation-chart-title">ZhangDDI 消融：最大贡献来自 VQ 环境模块</p>
+      <p class="fig-sub">去掉 VQ 的 ACC 损失为 14.12 pp，是去掉跨分子交互的 3.42 倍。</p>
+      <svg class="chart" viewBox="0 0 880 345" role="img" xmlns="http://www.w3.org/2000/svg">
+        <title>I2Mole 在 ZhangDDI 上的消融 ACC</title>
+        <desc>完整模型、去跨交互、去 GIB、去 VQ 的准确率分别为 88.64、84.51、84.72、74.52。</desc>
+        <line x1="70" x2="820" y1="285.0" y2="285.0" stroke="var(--border)" stroke-width="1" /><text x="58" y="289.0" text-anchor="end" font-size="12">70</text><line x1="70" x2="820" y1="226.2" y2="226.2" stroke="var(--border)" stroke-width="1" /><text x="58" y="230.2" text-anchor="end" font-size="12">75</text><line x1="70" x2="820" y1="167.5" y2="167.5" stroke="var(--border)" stroke-width="1" /><text x="58" y="171.5" text-anchor="end" font-size="12">80</text><line x1="70" x2="820" y1="108.8" y2="108.8" stroke="var(--border)" stroke-width="1" /><text x="58" y="112.8" text-anchor="end" font-size="12">85</text><line x1="70" x2="820" y1="50.0" y2="50.0" stroke="var(--border)" stroke-width="1" /><text x="58" y="54.0" text-anchor="end" font-size="12">90</text><rect x="125" y="66.0" width="82" height="219.0" rx="6" fill="var(--chart-primary)" tabindex="0" data-tip="完整模型：88.64 ACC" /><rect x="305" y="114.5" width="82" height="170.5" rx="6" fill="var(--chart-comparison)" tabindex="0" data-tip="去跨交互：84.51 ACC" /><rect x="485" y="112.0" width="82" height="173.0" rx="6" fill="var(--chart-comparison)" tabindex="0" data-tip="去 GIB：84.72 ACC" /><rect x="665" y="231.9" width="82" height="53.1" rx="6" fill="var(--chart-comparison)" tabindex="0" data-tip="去 VQ：74.52 ACC" /><text x="166" y="318" text-anchor="middle" font-size="13">完整模型</text><text x="166" y="58.0" text-anchor="middle" font-size="13" font-weight="700">88.64</text><text x="346" y="318" text-anchor="middle" font-size="13">去跨交互</text><text x="346" y="106.5" text-anchor="middle" font-size="13" font-weight="700">84.51</text><text x="526" y="318" text-anchor="middle" font-size="13">去 GIB</text><text x="526" y="104.0" text-anchor="middle" font-size="13" font-weight="700">84.72</text><text x="706" y="318" text-anchor="middle" font-size="13">去 VQ</text><text x="706" y="223.9" text-anchor="middle" font-size="13" font-weight="700">74.52</text>
+      </svg>
+      <figcaption>数据源：核心论文 Table 4（PDF p.8）。纵轴截断为 70–90，仅用于突出模块差异；悬停或聚焦柱体可查看精确值。</figcaption>
+    </figure>
+<section id="8-逐层消融谁真正贡献了收益" class="card level2">
+<h2>8. 逐层消融：谁真正贡献了收益？</h2>
+<p>ZhangDDI 消融（ACC/AUROC/F1，Table 4，p.8）：</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">版本</th>
+<th scope="col" style="text-align: right;">ACC</th>
+<th scope="col" style="text-align: right;">AUROC</th>
+<th scope="col" style="text-align: right;">F1</th>
+<th scope="col" style="text-align: right;">相对完整模型 ACC 损失</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>去掉 VQ 环境建模</td>
+<td style="text-align: right;">74.52</td>
+<td style="text-align: right;">83.61</td>
+<td style="text-align: right;">74.01</td>
+<td style="text-align: right;"><strong>−14.12 pp</strong></td>
+</tr>
+<tr class="even">
+<td>去掉跨分子交互</td>
+<td style="text-align: right;">84.51</td>
+<td style="text-align: right;">87.21</td>
+<td style="text-align: right;">80.21</td>
+<td style="text-align: right;">−4.13 pp</td>
+</tr>
+<tr class="odd">
+<td>去掉 GIB</td>
+<td style="text-align: right;">84.72</td>
+<td style="text-align: right;">87.21</td>
+<td style="text-align: right;">81.07</td>
+<td style="text-align: right;">−3.92 pp</td>
+</tr>
+<tr class="even">
+<td>完整 I2Mole</td>
+<td style="text-align: right;"><strong>88.64</strong></td>
+<td style="text-align: right;"><strong>95.12</strong></td>
+<td style="text-align: right;"><strong>85.87</strong></td>
+<td style="text-align: right;">—</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>第一结论：最大贡献来自 VQ
+环境模块，而不是论文标题最强调的跨分子边。VQ 被移除造成的 ACC
+损失是去掉跨交互损失的 <strong>3.42 倍</strong>。第二结论：跨分子交互与
+GIB
+的边际量级相近。第三结论：这些是“去掉一个模块”的联合系统消融，模块间可能互补；不能把
+14.12、4.13、3.92 直接相加当作独立贡献。</p>
+<p>Table 11（p.23）把 VQ 环境重组换成随机噪声：Random Distribution 在
+Zhang/ChCh/Deep 的 ACC 为
+<strong>87.21/93.47/92.39</strong>，In-distribution noise 为
+<strong>88.02/94.27/94.56</strong>，完整 VQ 为
+<strong>88.64/95.34/96.51</strong>。这说明“任何噪声正则”解释不了全部收益，尤其
+DeepDDI 上 VQ 对随机噪声有 <strong>+4.12
+pp</strong>；但仍未与同参数量、可学习连续环境模型 head-to-head。</p>
+</section>
+<section id="9-超参敏感性规模相变与统计显著性" class="card level2">
+<h2>9. 超参敏感性、规模相变与统计显著性</h2>
+<p><strong>瓶颈强度 β：</strong> (0,10^{-5},10^{-4},10^{-3},0.1) 的
+Zhang ACC 分别为
+<strong>85.71、85.84、88.64、86.83、56.46</strong>（Table
+5，p.8）。(10^{-4}) 是窄峰，0.1
+发生灾难性压缩。这不是“越强越不变”，而是典型的信息保留—去伪相关相变。</p>
+<p><strong>VQ 权重 γ：</strong> (2\times10^{-5}) 到 (10^{-3}) 的 ACC
+只在 <strong>88.21–88.64</strong> 范围内（Table 5，p.8），说明性能对 γ
+相对平坦。论文未给 codebook size 图的精确逐点数字，只说明 10
+个码字最佳；本报告不从图像猜读数值。</p>
+<p><strong>关系边比例：</strong> 5%、10%、20%、30%、50% 的 ACC 为
+<strong>88.52、88.60、88.64、88.54、88.34</strong>（Table 9，p.22）。20%
+最好，但 5% 仅低 0.12 pp；这提示关系边排序可能比保留精确比例更重要。</p>
+<p><strong>环境采样数 θ：</strong> Table 10（p.23）比较 2–6
+个环境样本，θ=4
+最优；收益不是单调，过多重组可能引入不合理组合。论文报告均值/标准差，但未为该超参曲线做多重比较校正。</p>
+<p><strong>模型规模：</strong> 23.4M 到 49.0M 参数时 ACC 依次为
+<strong>83.61、85.94、87.43、88.27、88.64、88.64、88.35、87.91、86.87</strong>（Tables
+12–13，p.24）。性能在 35.4–38.4M 达平台，继续增大反而下降；训练时间从
+<strong>7.4h</strong> 增至
+<strong>22.3h</strong>。这是一条明确的过参数化拐点，而不是缩放律。</p>
+<p><strong>显著性：</strong> Appendix Table 8（p.22）给出与第二名的独立
+t 检验：Zhang 88.08±0.26 vs 88.64±0.24，(p=3.52\times10^{-4})；ChCh
+94.92±0.21 vs 95.34±0.19，(p=2.13\times10^{-3})；Deep 95.85±0.19 vs
+96.51±0.14，(p=8.74\times10^{-5})。三项均小于
+0.01，但论文未说明正态性、方差齐性、配对与否，也未对多数据集/多指标做校正。统计显著不代表部署意义大：ACC
+绝对增量仍只有 0.42–0.66 pp。</p>
+</section>
+<section id="10-效率与复现现实" class="card level2">
+<h2>10. 效率与复现现实</h2>
+<p>Table 14（p.25）显示 I2Mole 为 <strong>35.4M</strong> 参数，在
+ZhangDDI 上训练 <strong>13.23h</strong>、占
+<strong>17.0GB</strong>；CGIB 为
+<strong>11M、1.50h、5.1GB</strong>。因此 I2Mole 参数约
+<strong>3.22×</strong>、训练约 <strong>8.82×</strong>、显存约
+<strong>3.33×</strong>，换取 transductive ACC <strong>+1.32
+pp</strong>。在 DeepDDI 上 I2Mole 训练 <strong>33.07h</strong>，CGIB
+<strong>3.73h</strong>，同样约 8.87×。</p>
+<p>Table 16（p.26）用更轻骨干替换主网络：GIN 达到 ACC
+<strong>91.35</strong>，训练 <strong>188.10s</strong>、测试
+<strong>19.27s</strong>；主配置为
+<strong>95.34</strong>、1020.62s、90.61s。GIN 训练快
+<strong>5.43×</strong>、测试快 <strong>4.70×</strong>，代价为
+<strong>−3.99
+pp</strong>。这说明方法不是只能搭配重骨干，但实际应用应画“准确率—延迟—显存”帕累托前沿，而非只报主配置。</p>
+</section>
+<section id="11-真正贡献可复用设计与迁移潜力" class="card level2">
+<h2>11. 真正贡献、可复用设计与迁移潜力</h2>
+<p><strong>真正贡献一：关系先验前移。</strong>
+过去模型在各自分子图编码后才交互，I2Mole
+让跨分子关系进入消息传递。该设计可迁移到溶质—溶剂、药物—靶标、材料组分配对，但必须用几何或距离先验控制全连接边数。</p>
+<p><strong>真正贡献二：把环境从“要丢掉的残差”变为“可采样的变量”。</strong>
+VQ codebook
+给出了可操作的环境替换接口。更一般地，任何存在核心—背景分解的图任务，都可尝试对背景做离散量化，再进行受约束的反事实重组。</p>
+<p><strong>真正贡献三：证据链较完整。</strong> 主结果、Type
+1/2、跨域、消融、β/γ、关系比例、采样数、噪声替代、规模、效率、额外回归任务以及
+t 检验同时出现，允许读者识别“收益来自哪里、代价是什么”。</p>
+<p>可复用设计不是“照搬所有模块”，而是三条原则：先显式建模对象间关系；把可能的伪相关环境显式参数化；用严格实体不相交划分验证关系是否可迁移。对蛋白—配体可将全连接边换成半径图；对材料混合物可将环境码限定为温度、浓度或晶相条件；对临床多药场景则需从二元图推广到超图。</p>
+</section>
+<section id="12-论文自述限制" class="card level2">
+<h2>12. 论文自述限制</h2>
+<ol type="1">
+<li><strong>只建模药物对。</strong>
+论文指出共病患者常同时服用多种药物，而当前框架只处理二元关系；需要推广到高阶多药交互（Limitations，PDF
+p.25）。</li>
+<li><strong>全连接跨分子边会扩张。</strong>
+大分子时所有原子对连边带来显著计算量，作者建议设计稀疏交互机制（Limitations，p.25）。</li>
+<li><strong>缺少物理环境变量。</strong> 药物功能受温度、pH
+等条件影响，当前输入并未显式纳入（Limitations，p.26）。</li>
+</ol>
+</section>
+<section id="13-独立批判证据推论链" class="card level2">
+<h2>13. 独立批判：证据—推论链</h2>
+<ol type="1">
+<li><strong>[归因]</strong> 因为去掉 VQ 使 ACC 下降 <strong>14.12
+pp</strong>，而去掉跨交互只下降 <strong>4.13 pp</strong>（Table
+4，p.8），所以论文标题所强调的 interaction-aware
+不是主增益的唯一、甚至不是最大来源；更准确的归因应是“离散环境增广主导、关系图补充”。</li>
+<li><strong>[外部有效性]</strong> 因为最严格 Zhang Type 2 的 F1 仅
+<strong>39.95</strong>（Table
+2，p.6），所以即便相对基线显著，模型对两种全新药物的正类识别仍弱，不能由
+transductive 的 88.64 ACC 推断真实新药安全性。</li>
+<li><strong>[效率]</strong> 因为 I2Mole 相对 CGIB 在 ZhangDDI 训练时间约
+<strong>8.82×</strong>、参数 <strong>3.22×</strong>，而 ACC 只高
+<strong>1.32 pp</strong>（Tables 1、14），所以资源受限筛选系统可能更适合
+CGIB/轻骨干；论文需要成本归一化排名。</li>
+<li><strong>[因果性]</strong> 因为 (Y\perp G_{env}\mid G_{sub})
+是训练假设，VQ
+码字也没有与真实温度、pH、剂量或酶代谢通路对齐，所以“环境干预”只能称表示级增广，不能被解释成真实化学干预。</li>
+<li><strong>[对照充分性]</strong> 因为 VQ
+比随机噪声更好，但没有与同容量的连续混合模型、可学习高斯环境或
+shuffled-but-valid scaffold
+对照，所以不能确定收益来自离散语义、额外参数，还是更合适的噪声分布。</li>
+<li><strong>[统计]</strong>
+因为论文做了三数据集、多指标、多设置的大量比较，却只对三项 ACC 给独立 t
+检验且未说明配对/校正，所以“显著性”覆盖面有限；更稳妥的是 8 seeds
+配对检验、效应量、置信区间和 Holm 校正。</li>
+<li><strong>[数据划分]</strong> 因为 Appendix
+的训练比例实验同时改变训练/测试样本数量（test 从 45% 降到 5%），ACC 从
+<strong>53.27</strong> 升到 <strong>92.25</strong>（Tables
+12–13，p.24）混合了更多训练数据与更小测试集的效应，所以不能把曲线纯粹解释为样本效率。</li>
+<li><strong>[复现]</strong> 因为 PDF 给出的 anonymous.4open
+代码本次无法访问，且超参段出现“initial LR (10^{-4})”与“increased to
+0.5”的可疑表述，所以目前不能确认最终实现细节；正式匿名解除后的稳定仓库与
+commit hash 是必要补充。</li>
+</ol>
+</section>
+<section id="14-相关工作问题来源与技术传递" class="card level2">
+<h2>14. 相关工作：问题来源与技术传递</h2>
+<section id="141-moleood从环境变化提出不变子结构" class="subsection level3">
+<h3>14.1 MoleOOD：从“环境变化”提出不变子结构</h3>
+<p><strong>解决什么：</strong> MoleOOD 观察到 scaffold、size
+等环境改变会破坏分子属性预测，学习环境划分和环境不变子结构；NeurIPS
+正式摘要报告在 OGB/DrugOOD 上最高 ROC-AUC 提升
+<strong>5.9%/3.9%</strong>（正式页，摘要；全文为 NeurIPS 2022）。<br />
+<strong>遗留缺口：</strong>
+它以单分子属性为主，不回答“同一分子在不同配对对象下哪个部分变成核心”。<br />
+<strong>I2Mole 如何回应：</strong>
+把不变子结构从单对象提升到条件于配对对象的关系核心。<br />
+<strong>设计如何传递：</strong> “环境推断 + 不变学习”传成 I2Mole
+的核心/环境分解和环境重组；不同点是环境被 VQ 离散化。</p>
+</section>
+<section id="142-cgib把信息瓶颈带入分子关系学习" class="subsection level3">
+<h3>14.2 CGIB：把信息瓶颈带入分子关系学习</h3>
+<p><strong>解决什么：</strong> CGIB
+让一个分子的核心子图依赖配对分子，用条件图信息瓶颈寻找最小充分子图（ICML
+2023 PDF p.1–2）。<br />
+<strong>遗留缺口：</strong>
+重点仍是从两个原图压缩核心，跨分子原子关系没有作为显式边进入统一图；环境残差被压缩而不是系统采样。<br />
+<strong>I2Mole 如何回应：</strong> 先建立关系图，再做 GIB；保留 CGIB
+的“配对条件核心”，同时为残差增加可采样的 VQ 表示。<br />
+<strong>设计如何传递：</strong> 条件互信息目标直接成为 I2Mole
+的理论底座之一。</p>
+</section>
+<section id="143-cmrl从相关核心转向条件因果子结构" class="subsection level3">
+<h3>14.3 CMRL：从相关核心转向条件因果子结构</h3>
+<p><strong>解决什么：</strong> CMRL 构造 SCM，把因果子结构
+(C_1)、shortcut (S_1)、配对分子 (G_2)
+与标签联系起来，并用条件干预/后门调整减少 shortcut 影响（KDD 2023 PDF
+p.1–4）。<br />
+<strong>遗留缺口：</strong>
+“因果”主要发生在表示空间，干预环境仍由模型生成；关系物理没有显式图结构。<br />
+<strong>I2Mole 如何回应：</strong> 用 VQ
+环境码实现更直接的可替换环境，并用跨分子边承载关系。<br />
+<strong>设计如何传递：</strong> “核心在不同 shortcut
+下预测应稳定”被转写为重组环境下的不变损失。</p>
+</section>
+<section id="144-igib-ise用-em-迭代收紧交互子结构" class="subsection level3">
+<h3>14.4 IGIB-ISE：用 EM 迭代收紧交互子结构</h3>
+<p><strong>解决什么：</strong> IGIB-ISE 将交互子结构视作潜变量，以 EM 的
+E/M 步迭代耦合两个分子的子结构，并用 Interactive GIB 保证最小充分（ICLR
+2025 PDF p.2–7）。<br />
+<strong>遗留缺口：</strong>
+迭代抽取提高了子结构精度，但对分布环境的显式生成不足；计算链也更复杂。<br />
+<strong>I2Mole 如何回应：</strong> 采用一次关系图构建 + GIB + VQ
+重组的模块化路线；Type 1/2 表中以 IGIB-ISE 为最强直接基线。<br />
+<strong>设计如何传递：</strong>
+从“核心必须由双方共同决定”传到跨分子注意力和关系边筛选。</p>
+</section>
+<section id="145-非线性技术演进树" class="subsection level3">
+<h3>14.5 非线性技术演进树</h3>
+<pre class="text"><code>                         ┌─ MoleOOD：未知环境 → 不变子结构
+环境/OOD ────────────────┤
+                         └──────────────┐
+                                        ├─ I2Mole：VQ 环境码 + 重组不变性
+信息瓶颈 ─ GIB ─ CGIB：配对条件核心 ────┤
+                                        │
+因果分支 ─ CMRL：条件干预/shortcut ─────┤
+                                        │
+交互抽取 ─ IGIB-ISE：EM 迭代耦合 ──────┘
+                                                │
+                                                └─ 显式跨分子边 + 核心/环境联合建模</code></pre>
+<p>演进动力有三个转折：从 IID 随机拆分转向实体不相交
+OOD；从固定分子核心转向“随配对对象变化”的条件核心；从丢弃背景转向生成/采样背景以近似干预。I2Mole
+的新意不是发明每一条支线，而是把它们接到同一张关系图上。</p>
+</section>
+<section id="146-跨论文对标" class="subsection level3">
+<h3>14.6 跨论文对标</h3>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">对象</th>
+<th scope="col" style="text-align: right;">核心是否依赖配对</th>
+<th scope="col" style="text-align: right;">是否显式跨分子边</th>
+<th scope="col">环境处理</th>
+<th scope="col">主要可复用点</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>MoleOOD</td>
+<td>单分子</td>
+<td style="text-align: right;">否</td>
+<td style="text-align: right;">否</td>
+<td>潜环境推断</td>
+<td>无环境标签的 OOD 学习</td>
+</tr>
+<tr class="even">
+<td>CGIB</td>
+<td>分子对</td>
+<td style="text-align: right;">是</td>
+<td style="text-align: right;">否</td>
+<td>信息压缩</td>
+<td>条件最小充分子图</td>
+</tr>
+<tr class="odd">
+<td>CMRL</td>
+<td>分子对</td>
+<td style="text-align: right;">是</td>
+<td style="text-align: right;">间接交互图</td>
+<td>条件干预与 shortcut 采样</td>
+<td>SCM 驱动的稳健关系学习</td>
+</tr>
+<tr class="even">
+<td>IGIB-ISE</td>
+<td>分子对</td>
+<td style="text-align: right;">是</td>
+<td style="text-align: right;">子结构交互</td>
+<td>EM 迭代收紧</td>
+<td>双方子结构共同优化</td>
+</tr>
+<tr class="odd">
+<td><strong>I2Mole</strong></td>
+<td>分子对</td>
+<td style="text-align: right;">是</td>
+<td style="text-align: right;"><strong>是</strong></td>
+<td><strong>VQ 离散环境重组</strong></td>
+<td>关系图 + 可采样环境接口</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</section>
+<section id="15-开放挑战可操作的-head-to-head-实验空白" class="card level2">
+<h2>15. 开放挑战：可操作的 head-to-head 实验空白</h2>
+<section id="理论" class="subsection level3">
+<h3>理论</h3>
+<ol type="1">
+<li><strong>离散环境是否真的逼近干预？</strong> 在相同参数量、同一
+GNN、同一 split 下比较 VQ、连续 VAE、conditional normalizing flow 与真实
+scaffold/assay 环境标签；报告 OOD ACC、HSIC
+独立性、码字—已知化学条件互信息。若 VQ 只在 ACC
+领先而码字无语义，就只能称增广。</li>
+<li><strong>何时满足条件独立？</strong> 在合成 DDI 中控制核心因果强度与
+shortcut 强度，比较 I2Mole、CMRL、IGIB-ISE 的恢复率；同时测被选核心的
+precision/recall，而非只测标签预测。</li>
+<li><strong>高阶多药关系。</strong>
+构造三元与四元相互作用超图，head-to-head 比较 pairwise 聚合、超图 GNN 与
+set
+transformer；固定总参数与训练对数，测试只有高阶组合未见时的泛化。</li>
+</ol>
+</section>
+<section id="工程应用" class="subsection level3">
+<h3>工程应用</h3>
+<ol start="4" type="1">
+<li><strong>稀疏边的真实帕累托。</strong> 比较全连接+剪枝、3D
+距离半径图、局部敏感哈希候选边与 learned top-k；在相同 A100 上报告
+molecules/s、峰值显存、P95 延迟、Type 2
+F1。目标不是单点最优，而是找每种分子大小的拐点。</li>
+<li><strong>校准与临床阈值。</strong> 在类别不均衡数据上比较
+I2Mole、IGIB-ISE、CGIB 的
+PR-AUC、Brier、ECE、灵敏度@95%特异度；用时间切分或药品批准年份切分，避免随机数据泄漏。</li>
+<li><strong>可复现性审计。</strong> 用作者最终仓库和独立重实现各跑 8
+seeds，锁定 commit、CUDA、数据哈希；复核 Table 1 的 MDF-SA-DDI AUROC
+与学习率表述，并报告差异。</li>
+</ol>
+</section>
+<section id="新兴方向" class="subsection level3">
+<h3>新兴方向</h3>
+<ol start="7" type="1">
+<li><strong>2D 关系边 vs 3D 物理关系。</strong>
+在有构象集合的数据上比较纯 2D I2Mole、3D 等变网络、2D+3D 融合；控制
+conformer 数，测试未见 scaffold 和未见构象双重 OOD。</li>
+<li><strong>基础模型能否替代关系图？</strong> 冻结同一蛋白/分子
+foundation encoder，比较 late fusion、cross-attention、I2Mole
+关系边与检索增强；以单位 GPU-hour 的 Type 2 F1
+评估，而非只看最大模型。</li>
+<li><strong>不确定性与拒答。</strong> 给 I2Mole 加深度集成、Laplace 或
+conformal prediction，在 Type 2 新药对上比较
+coverage-width、选择性风险和错误报警；验证“知道自己不知道”是否比 +1 pp
+ACC 更有部署价值。</li>
+</ol>
+</section>
+</section>
+<section id="16-近期工作雷达经验证链接" class="card level2">
+<h2>16. 近期工作雷达（经验证链接）</h2>
+<ol type="1">
+<li><a href="https://arxiv.org/abs/2601.15771">GenRel-DDI: Rethinking
+Drug-Drug Interaction Modeling as Generalizable Relation
+Learning</a>（2026）：把表示中心从药物身份转向关系本身，直接挑战“扩大分子编码器即可泛化”的假设；非常适合作为
+I2Mole 的关系表征对手。</li>
+<li><a href="https://arxiv.org/abs/2605.16799">Cross-Domain Molecular
+Relational Learning</a>（2026）：通过结构—语义迁移处理跨域 MRL，补上
+I2Mole 主要在同模态分子图内建模的缺口。</li>
+<li><a
+href="https://arxiv.org/abs/2505.01912">BOOM</a>（2025）：系统比较 140+
+模型—任务组合，发现最佳模型平均 OOD 误差仍是 ID 的 3 倍；提醒不要用单一
+DDI split 宣称普遍 OOD 稳健。</li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/4c1516dc8f1643c94d164a436ce8fe51-Abstract-Conference.html">SigmaDock</a>（ICLR
+2026）：用刚体片段 SE(3) 扩散把结构化化学先验引入
+docking，是“先把物理关系空间设计好”这一路线的强例子。</li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/3b39fc8c1f437fc52706cfa759ccda12-Abstract-Conference.html">ProTDyn</a>（ICLR
+2026）：统一蛋白构象系综与多时间尺度动力学；对 I2Mole
+的启示是环境不应只做静态 codebook，还可做动力学状态。</li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/047c84ec50bd8ea29349b996fc64af4b-Abstract-Conference.html">SC-Arena</a>（ICLR
+2026）：以知识增强评估单细胞自然语言推理，强调 AI4Science
+不只要分数，还要生物学证据链。</li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/022abe84083d235f7572ca5cba24c51c-Abstract-Conference.html">AntigenLM</a>（ICLR
+2026）：保持基因组功能单元完整性的预训练显著优于打乱/碎片化，和 I2Mole
+的共同主题是“正确的结构单位比盲目扩大模型更重要”。</li>
+</ol>
+</section>
+<section id="17-结论" class="card level2">
+<h2>17. 结论</h2>
+<p>I2Mole 值得读，不是因为它把 transductive ACC 推高了不到 1
+pp，而是因为它把“关系如何形成”和“环境如何变化”都暴露为可训练对象。最关键的实证不是单一
+SOTA，而是三组互相制约的数字：完整模型相对最强基线的 ACC 只高
+<strong>0.42–0.66 pp</strong>；去掉 VQ 却损失 <strong>14.12
+pp</strong>；相对 CGIB 的训练成本约
+<strong>8.82×</strong>。这三者共同说明：离散环境重组可能是有效的稳健化机制，但它的归因、效率和化学有效性仍需更严格对照。</p>
+<p>对研究者，最可复用的是“关系图 + 核心/环境分解 +
+环境重组”的接口化设计；对应用者，最应警惕的是严格 Type 2 的低绝对
+F1、代码链接不可用以及缺少校准/前瞻验证。把它当作稳健分子关系学习的工程蓝图是合理的，把它当作临床
+DDI 判定器则证据远远不够。</p>
+<hr />
+<p><strong>索引状态：</strong> 本报告已更新
+<code>ml-report-index.md</code>，追加 2026-09-27、AI4Science
+与跨界、I2Mole、ICLR 2026 及一句话结论。<br />
+<strong>数字审计：</strong> 所有定量值来自本次实际读取的 I2Mole 正式 PDF
+或明确标注的相关论文正式页面/PDF；没有用摘要二手转述补造缺失矩阵。论文未报告的
+PR-AUC、校准、临床阈值、置信区间与 codebook
+精确曲线点均明确保留为空白。</p>
+</section>
+
+  </main>
+
+  <footer>基于 ICLR 2026 正式论文、四篇技术来源链全文及经验证的会议、arXiv 与代码页面；生成于 2026-09-27。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1369 @@
+---
+layout: null
+title: "RGM"
+date: 2026-09-28
+topic: "rl-peft"
+tags: ["rl-peft", "process-reward-models", "test-time-scaling"]
+excerpt: "共享骨干、轻量评分头、结果—伪标签一致性过滤：外部测试时扩展不再需要第二个 72B 模型。 QwQ-32B + 54M SPRM 在五项上比同基座 PRM-72B 高 0.9–1.6 pp；但完整 8 路生成的服务成本与真正过程判错能力仍未闭合。"
+permalink: "/blog/2026/09/28/rgm/"
+blog_post: true
+lang: "zh-CN"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_en: "/blog/2026/09/28/rgm/en/"
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>RGM 深度研究报告 · 2026-09-28</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  main { display: grid; gap: 22px; min-width: 0; }
+  .card.level2 { margin: 0; min-width: 0; }
+  .subsection { margin-top: 24px; }
+  .subsection h3 { margin-top: 0; }
+  h4 { margin: 18px 0 8px; font-size: 16px; }
+  blockquote { margin: 14px 0; padding: 10px 14px; border-left: 4px solid var(--chart-primary); background: var(--surface-2); color: var(--text-secondary); }
+  pre { overflow-x: auto; padding: 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); font-size: 12.5px; line-height: 1.55; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  p code, li code, td code { padding: .08em .3em; border-radius: 4px; background: var(--surface-2); }
+  ol, ul { padding-left: 1.35em; }
+  li + li { margin-top: .38em; }
+  .table-scroll { margin: 15px 0 22px; }
+  table { min-width: 760px; }
+  .figure { margin: 0; min-width: 0; max-width: 100%; }
+  .legend { display: inline-flex; align-items: center; gap: 6px; margin-right: 12px; }
+  .swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  .swatch.primary { background: var(--chart-primary); }
+  .swatch.comparison { background: var(--chart-comparison); }
+  p, li, td, th, a { overflow-wrap: anywhere; }
+  .chart rect { outline: none; }
+  .chart rect:focus { stroke: var(--text-primary); stroke-width: 2; }
+  @media (max-width: 640px) {
+    .toolbar { position: static; justify-content: flex-end; margin-bottom: 10px; }
+    .hero { margin-top: 0; }
+    .chart { width: 760px; max-width: none; }
+    .figure { overflow-x: auto; }
+  }
+
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ICLR 2026 · LLM/NLP · Test-time scaling</p>
+    <h1>RGM：把生成与过程验证压进同一模型</h1>
+    <p class="subtitle">共享骨干、轻量评分头、结果—伪标签一致性过滤：外部测试时扩展不再需要第二个 72B 模型。</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">每日深度论文追踪</span>
+      <span class="chip">2026-09-28</span>
+      <span class="chip">ICLR 2026 Poster</span>
+    </div>
+    <p class="lede">QwQ-32B + 54M SPRM 在五项上比同基座 PRM-72B 高 0.9–1.6 pp；但完整 8 路生成的服务成本与真正过程判错能力仍未闭合。</p>
+  </header>
+
+  <main>
+<figure class="figure" aria-labelledby="main-chart-title">
+      <p class="fig-title" id="main-chart-title">同一 QwQ-32B 基座：54M 共享头对 72B 独立 PRM</p>
+      <p class="fig-sub"><span class="legend"><i class="swatch comparison"></i>PRM-72B</span> <span class="legend"><i class="swatch primary"></i>RGM-54M</span>；RGM 五项均值高 0.9–1.6 pp。</p>
+      <svg class="chart" viewBox="0 0 980 350" role="img" xmlns="http://www.w3.org/2000/svg">
+        <title>QwQ-32B 使用 PRM-72B 与 RGM-54M 的五基准比较</title>
+        <desc>RGM 在 AIME24、AIME25、BRUMO25、HMMT25、LiveCodeBench 分别取得 84.2、73.4、78.1、53.1、64.0，均高于同基座 PRM-72B。</desc>
+        <line x1="72" x2="928" y1="300.0" y2="300.0" stroke="var(--border)" stroke-width="1" /><text x="60" y="304.0" text-anchor="end" font-size="12">0</text><line x1="72" x2="928" y1="246.7" y2="246.7" stroke="var(--border)" stroke-width="1" /><text x="60" y="250.7" text-anchor="end" font-size="12">20</text><line x1="72" x2="928" y1="193.3" y2="193.3" stroke="var(--border)" stroke-width="1" /><text x="60" y="197.3" text-anchor="end" font-size="12">40</text><line x1="72" x2="928" y1="140.0" y2="140.0" stroke="var(--border)" stroke-width="1" /><text x="60" y="144.0" text-anchor="end" font-size="12">60</text><line x1="72" x2="928" y1="86.7" y2="86.7" stroke="var(--border)" stroke-width="1" /><text x="60" y="90.7" text-anchor="end" font-size="12">80</text><rect x="117" y="77.9" width="36" height="222.1" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="AIME24 · PRM-72B：83.3" /><rect x="165" y="75.5" width="36" height="224.5" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="AIME24 · RGM-54M：84.2" /><rect x="282" y="107.2" width="36" height="192.8" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="AIME25 · PRM-72B：72.3" /><rect x="330" y="104.3" width="36" height="195.7" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="AIME25 · RGM-54M：73.4" /><rect x="447" y="96.0" width="36" height="204.0" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="BRUMO25 · PRM-72B：76.5" /><rect x="495" y="91.7" width="36" height="208.3" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="BRUMO25 · RGM-54M：78.1" /><rect x="612" y="162.1" width="36" height="137.9" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="HMMT25 · PRM-72B：51.7" /><rect x="660" y="158.4" width="36" height="141.6" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="HMMT25 · RGM-54M：53.1" /><rect x="777" y="132.0" width="36" height="168.0" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="LiveCode · PRM-72B：63.0" /><rect x="825" y="129.3" width="36" height="170.7" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="LiveCode · RGM-54M：64.0" /><text x="135" y="70.9" text-anchor="middle" font-size="11">83.3</text><text x="183" y="68.5" text-anchor="middle" font-size="11">84.2</text><text x="155" y="326" text-anchor="middle" font-size="12">AIME24</text><text x="300" y="100.2" text-anchor="middle" font-size="11">72.3</text><text x="348" y="97.3" text-anchor="middle" font-size="11">73.4</text><text x="320" y="326" text-anchor="middle" font-size="12">AIME25</text><text x="465" y="89.0" text-anchor="middle" font-size="11">76.5</text><text x="513" y="84.7" text-anchor="middle" font-size="11">78.1</text><text x="485" y="326" text-anchor="middle" font-size="12">BRUMO25</text><text x="630" y="155.1" text-anchor="middle" font-size="11">51.7</text><text x="678" y="151.4" text-anchor="middle" font-size="11">53.1</text><text x="650" y="326" text-anchor="middle" font-size="12">HMMT25</text><text x="795" y="125.0" text-anchor="middle" font-size="11">63.0</text><text x="843" y="122.3" text-anchor="middle" font-size="11">64.0</text><text x="815" y="326" text-anchor="middle" font-size="12">LiveCode</text>
+      </svg>
+      <figcaption>数据源：核心论文 Table 1（PDF p.6）。单一纵轴为 accuracy / Pass@1（0–90）；悬停或键盘聚焦柱体可查看精确值。</figcaption>
+    </figure>
+
+<blockquote>
+<p><strong>一句话核心定位：</strong>《Test-Time Scaling with Reflective
+Generative Model》把策略模型与过程奖励模型（PRM）共享为一个骨干，只增加
+5M–54M 的轻量 SPRM 头，并用“结果正确性 ×
+自身伪标签一致性”过滤噪声，使同一网络同时负责推理轨迹生成与轨迹选择。</p>
+</blockquote>
+<ul>
+<li>日期：2026-09-28</li>
+<li>轮转领域：LLM/NLP——推理、test-time scaling、post-training、评测</li>
+<li>核心论文：Zixiao Wang et al., <strong>Test-Time Scaling with
+Reflective Generative Model</strong>, ICLR 2026 Poster</li>
+<li>论文终稿：<a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/c1e854c0620b13668b93058455c7b183-Abstract-Conference.html">https://proceedings.iclr.cc/paper_files/paper/2026/hash/c1e854c0620b13668b93058455c7b183-Abstract-Conference.html</a></li>
+<li>报告口径：除明确标注“本报告计算”的差值、相对变化外，所有数字均来自实际读取的论文表格、正文或公开模型卡；缺失项不推测。</li>
+</ul>
+<h2 id="0-检索去重与随机选择审计">0. 检索、去重与随机选择审计</h2>
+<h3 id="01-最近-14-天去重">0.1 最近 14 天去重</h3>
+<p>先读取 <code>ml-report-index.md</code>。最近 14
+天内与本日轮转最接近的已覆盖工作是 2026-09-14 的
+ThinkSLM（小模型推理与压缩评测）和 2026-09-21 的 HPS（偏好优化与
+hardest-negative
+采样）；因此本次排除这两篇及“压缩后推理能力矩阵”“偏好数据困难负例采样”两个主题。RGM
+聚焦外部测试时扩展、过程验证器与共享骨干，不与上述深度覆盖重复。</p>
+<h3 id="02-候选池与来源覆盖">0.2 候选池与来源覆盖</h3>
+<p>候选池以 ICLR 2026 正式 proceedings 为主干，并用
+arXiv、OpenReview、Hugging Face Daily Papers、Papers with Code 与
+Semantic Scholar 进行补充核验。Semantic Scholar 的 arXiv API
+链接本次实际访问返回
+403，故只记为“访问失败”，不将其元数据用于任何定量结论；Papers with Code
+未检索到核心论文独立条目，但检索到来源链论文 Math-Shepherd。ACL
+Anthology用于核验 ACL 2024 长文 Math-Shepherd。以下 24 篇均在 24
+个月窗口内，且候选标题及正式页面已逐条打开或由同批 proceedings
+结果验证：</p>
+<ol type="1">
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/1df27e31a0c0b916797a49198cb28d6a-Abstract-Conference.html">The
+End of Manual Decoding: Towards Truly End-to-End Language
+Models</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/5f124a1979570872ff46a6de8fbac35c-Abstract-Conference.html">Language
+Models are Injective and Hence Invertible</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/ae8d4084f418bb51575c2ca6c658a05b-Abstract-Conference.html">Plan
+and Budget: Effective and Efficient Test-Time Scaling on Reasoning Large
+Language Models</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/0d1941f73833eb107939f62d323d6cc0-Abstract-Conference.html">Language
+Models Use Lookbacks to Track Beliefs</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/2af179e30c16f3a6d44311adbb5ec63f-Abstract-Conference.html">Sequences
+of Logits Reveal the Low Rank Structure of Language Models</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/ac6bd5acdf0c9446389e56e919f62ff0-Abstract-Conference.html">Soft-Masked
+Diffusion Language Models</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/5ef998a50e6a4f9ff52d39833ded30a0-Abstract-Conference.html">On
+Predictive Power of Representation Dispersion in Language
+Models</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/ff6f1a8c167f5f17a32981ecae4f3539-Abstract-Conference.html">Comparing
+Learning Dynamics of In-Context Learning and Fine-Tuning in Language
+Models</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/1a96349bbc03432c5ec8c6c502d102e7-Abstract-Conference.html">Do
+Large Language Models Know What They Are Capable Of?</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/ccf6d8b4a1fe9d9c8192f00c713872ea-Abstract-Conference.html">Native
+Reasoning Models: Training Language Models to Reason on Unverifiable
+Data</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/b213d870740582dd6af77bbdaed900c9-Abstract-Conference.html">SynthWorlds:
+Controlled Parallel Worlds for Disentangling Reasoning and Knowledge in
+Language Models</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/a77eadda332b6d4a9ae1e0e4024555f2-Abstract-Conference.html">R-Horizon:
+How Far Can Your Large Reasoning Model Really Go in Breadth and
+Depth?</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/06d5f1fe6509b001e6d4e0ec1afd83dd-Abstract-Conference.html">Log-Augmented
+Generation: Scaling Test-Time Reasoning with Reusable
+Computation</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/ced46a50befedcb884ccf0cbe8c3ad23-Abstract-Conference.html">e3:
+Learning to Explore Enables Extrapolation of Test-Time Compute for
+LLMs</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/e52554a70e0df57a0bea11d1eca0c9b5-Abstract-Conference.html">RL
+Squeezes, SFT Expands: A Comparative Study of Reasoning LLMs</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/0edc72113440dceb0fd3e9408bb19485-Abstract-Conference.html">Understanding
+the Role of Training Data in Test-Time Scaling</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/a03037317560b8c5f2fb4b6466d4c439-Abstract-Conference.html">Are
+Reasoning LLMs Robust to Interventions on their
+Chain-of-Thought?</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/c1e854c0620b13668b93058455c7b183-Abstract-Conference.html">Test-Time
+Scaling with Reflective Generative Model</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/8a81180649011d1690e05c68bfeaa57c-Abstract-Conference.html">MoDr:
+Mixture-of-Depth-Recurrent Transformers for Test-Time Reasoning</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/48c292f57f37569241ea9191a507031d-Abstract-Conference.html">ATTS:
+Asynchronous Test-Time Scaling via Conformal Prediction</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/1eeacdf8770e6dd5164cdeec8bcfa8cc-Abstract-Conference.html">TrimR:
+Verifier-based Training-Free Thinking Trimming for Efficient Test-Time
+Scaling</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/da7ce04b3683b173691ecbb801f2690f-Abstract-Conference.html">Sample
+Smart, Not Hard: Correctness-First Decoding for Better Reasoning in
+LLMs</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/8984ee7aae8ae8bff19f7224f1f04a53-Abstract-Conference.html">Whatever
+Remains Must Be True: Filtering Drives Reasoning in LLMs, Shaping
+Diversity</a></li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/b010241b9f1cdfc7d4c392db899cef86-Abstract-Conference.html">OpenThoughts:
+Data Recipes for Reasoning Models</a></li>
+</ol>
+<p>实际执行 <code>shuf -i 1-24 -n 1</code> 得到 <strong>18</strong>，即
+RGM。论文正式终稿有 18 页、五个主评测集、64 次重复评测、完整的主表和 11
+组消融/附录对照，资料充足，因此 <strong>重抽次数为 0</strong>。</p>
+<h2 id="1-链接验证表">1. 链接验证表</h2>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">会议/正式页</th>
+<th scope="col">arXiv（版本与日期）</th>
+<th scope="col">代码</th>
+<th scope="col">数据/权重</th>
+<th scope="col">项目页/视频</th>
+<th scope="col">本次状态</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>RGM（核心）</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/c1e854c0620b13668b93058455c7b183-Abstract-Conference.html">ICLR
+2026 Poster</a></td>
+<td><a href="https://arxiv.org/abs/2507.01951">2507.01951v2</a>，v1
+2025-07-02，v2 2025-07-09</td>
+<td><a href="https://github.com/MetaStone-AI/XBai-o4">XBai-o4</a></td>
+<td>仓库含 data；<a
+href="https://huggingface.co/MetaStoneTec/MetaStone-S1-1.5B">1.5B</a>、<a
+href="https://huggingface.co/MetaStoneTec/MetaStone-S1-7B">7B</a>、<a
+href="https://huggingface.co/MetaStoneTec/MetaStone-S1-32B">32B</a>
+权重公开</td>
+<td>项目页由 GitHub 承载；视频未找到</td>
+<td>均实际访问；OpenReview 页面触发 challenge，但正式 proceedings
+可访问</td>
+</tr>
+<tr class="even">
+<td>Let’s Verify Step by Step</td>
+<td>ICLR 2024；<a href="https://arxiv.org/abs/2305.20050">arXiv
+页面</a></td>
+<td>2305.20050，2023-05-31</td>
+<td><a href="https://github.com/openai/prm800k">PRM800K</a></td>
+<td>800K 过滤后 step labels / 75K solutions / 12K problems</td>
+<td>视频未找到</td>
+<td>正文与数据链接可访问</td>
+</tr>
+<tr class="odd">
+<td>Math-Shepherd</td>
+<td><a href="https://aclanthology.org/2024.acl-long.510/">ACL 2024 Main
+Long</a></td>
+<td><a href="https://arxiv.org/abs/2312.08935">2312.08935</a></td>
+<td>未找到独立官方训练仓库</td>
+<td>论文描述自动 MC 数据；权重未在 ACL 页公开</td>
+<td>视频未找到</td>
+<td>ACL 页与 PDF 可访问；Papers with Code 条目可检索</td>
+</tr>
+<tr class="even">
+<td>Scaling LLM Test-Time Compute Optimally</td>
+<td><a
+href="https://proceedings.iclr.cc/paper_files/paper/2025/hash/1b623663fd9b874366f3ce019fdfdd44-Abstract-Conference.html">ICLR
+2025</a></td>
+<td><a href="https://arxiv.org/abs/2408.03314">2408.03314</a></td>
+<td>未找到作者官方代码；HF 社区复现非原作者仓库</td>
+<td>PaLM 2/PRM 权重未公开</td>
+<td>视频未找到</td>
+<td>正式 PDF 可访问</td>
+</tr>
+<tr class="odd">
+<td>Lessons of Developing PRMs</td>
+<td>arXiv 论文</td>
+<td><a href="https://arxiv.org/abs/2501.07301">2501.07301</a>，v1
+2025-01-13</td>
+<td><a
+href="https://github.com/QwenLM/Qwen2.5-Math">Qwen2.5-Math</a></td>
+<td><a
+href="https://huggingface.co/Qwen/Qwen2.5-Math-PRM-72B">Qwen2.5-Math-PRM-72B</a></td>
+<td>视频未找到</td>
+<td>正文、代码、权重可访问</td>
+</tr>
+<tr class="even">
+<td>ReasonFlux-PRM</td>
+<td>NeurIPS 2025 Spotlight（仓库声明）</td>
+<td><a href="https://arxiv.org/abs/2506.18896">2506.18896</a>，v1
+2025-06-23</td>
+<td><a
+href="https://github.com/Gen-Verse/ReasonFlux">ReasonFlux</a></td>
+<td><a
+href="https://huggingface.co/Gen-Verse/ReasonFlux-PRM-1.5B">1.5B</a>、<a
+href="https://huggingface.co/Gen-Verse/ReasonFlux-PRM-7B">7B</a></td>
+<td>视频未找到</td>
+<td>arXiv、仓库、权重可访问</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p><strong>版本警报。</strong> arXiv v2 摘要仍称额外参数为
+<strong>53M</strong>，而 ICLR 终稿主表按基座分别报告
+<strong>5M、26M、54M、54M、17M</strong>，正式摘要概括为约
+<strong>50M</strong>。这不是可忽略的排版差异：它改变了“轻量头相对 72B
+奖励模型节省多少参数”的精确倍率。下文以 ICLR 终稿的逐模型数字为主，并把
+53M 仅视为旧版 MetaStone-S1 口径。[arXiv abs lines 8–27；核心论文 Table
+1, PDF p.6]</p>
+<h2 id="2-motivation为什么多采样仍不等于有效扩展">2.
+Motivation：为什么“多采样”仍不等于有效扩展</h2>
+<p>外部 test-time scaling 的基本套路是：策略模型生成 (k)
+条完整推理轨迹，奖励模型为它们打分，再选择最高分答案。问题有三层。</p>
+<p>第一，验证器本身可能比策略模型还重。核心论文的对照是
+Qwen2.5-Math-RM/PRM-72B，而 RGM 的 SPRM 头只有
+5M–54M；如果每个候选还要经过一遍独立 72B
+验证器，所谓“测试时扩展”会把推理计算和部署内存重新推回大模型级别。[核心论文
+Sec.1, PDF pp.1–2；Table 1, p.6]</p>
+<p>第二，过程标注昂贵且不可靠。PRM800K 过滤后仍需约
+<strong>800K</strong> 步级人工标签，覆盖 <strong>75K</strong> 解答和
+<strong>12K</strong> 题目；虽然其大模型 PRM 在特定 MATH 子集达到
+<strong>78.2%</strong>，但这一路线把验证质量建立在人力过程审阅上。[Let’s
+Verify Step by Step, arXiv HTML lines 23–30, 52–55, 171]</p>
+<p>第三，只看最终答案会污染过程标签。Math-Shepherd
+通过从中间步继续采样、以最终答对比例估计该步质量，免去人工标注；但
+Lessons of Developing PRMs 随后指出，MC
+标签可能把“过程错、答案对”的轨迹当成好过程，并发现除其自家
+Qwen2.5-Math-PRM 外，多数开源 PRM 的错误步检测准确率低于
+<strong>50%</strong>。换言之，Best-of-N
+的最终正确率可以升高，验证器却未必真正学会了找逻辑错误。[Math-Shepherd
+PDF pp.1–2；Lessons, Sec.3, arXiv HTML lines 95–125, 178–179]</p>
+<p>RGM 的问题设定因此不是“怎样再造一个更强
+PRM”，而是：<strong>能否让策略模型利用自己的隐藏状态，附着一个极轻的过程评分头，并只在自身过程判断与最终结果一致时学习，从而降低错误结果标签向每一步传播的噪声？</strong></p>
+<h2 id="3-论文故事线假设与权衡">3. 论文故事线、假设与权衡</h2>
+<p>论文故事线可分四步：</p>
+<ol type="1">
+<li><strong>统一接口。</strong> 生成头与 SPRM 共享同一 Transformer
+骨干；评分不再由独立 LLM 再做一次前向，而是读取策略前向中第二倒数层的
+step-token 隐状态。</li>
+<li><strong>自监督过滤。</strong> 最终答案正确性 (y)
+只提供轨迹级弱标签；每步由当前 SPRM 产生伪标签 \hat y_n。只有 (y=\hat
+y_n) 的步骤参与 BCE，冲突步骤被丢弃。</li>
+<li><strong>长度去偏。</strong>
+用各步分数的几何平均作为轨迹分数，避免直接乘积随步骤数指数衰减。</li>
+<li><strong>推理扩展。</strong> 同一模型采样 (k) 条思维，SPRM
+对每条评分，选最高分思维后由策略头输出答案；主实验 (k=8)。</li>
+</ol>
+<p>隐含假设 A 是“第二倒数层隐藏状态保留足够完整的过程质量信号”。Table 9
+支持它：在 DeepScaleR-1.5B 上，SPRM 接第二倒数层的 AIME24 为
+<strong>53.1</strong>，接最后层只有 <strong>48.8</strong>，提升
+<strong>4.3 pp</strong>；HMMT25 为 <strong>21.5 vs 18.8</strong>，提升
+<strong>2.7 pp</strong>。[核心论文 Table 9, PDF pp.13–14]</p>
+<p>隐含假设 B
+是“早期伪标签虽噪，但一致性过滤能使正确/错误轨迹分数最终分离”。Figure 5
+将“正确轨迹曲线斜率转正且错误轨迹曲线斜率转负”的首个训练步定义为 aha
+moment；QwQ-32B 约在 <strong>60 steps</strong> 出现，作者因此额外训练 60
+steps，总计 <strong>140 steps</strong>。[核心论文 Sec.5.4, PDF p.8]</p>
+<p>隐含假设 C 是“共享骨干带来的参数与前向节省，胜过多任务干扰”。Table 8
+提供了最关键反证：独立 RGM8 使用额外 <strong>1.5B</strong>
+参数，在四个数学基准都比共享 5M 头高 <strong>0.6–1.6
+pp</strong>；因此共享不是精度最优，而是效率—精度折中。[核心论文 Table 8,
+PDF p.13]</p>
+<h2 id="4-方程级形式化">4. 方程级形式化</h2>
+<p>设问题为 (Q)，策略模型产生 (k) 条思维轨迹 (\tau_i)。外部 TTS
+的传统形式是：</p>
+<p>[ i^<em>=\arg\max_{i\in{1,\dots,k}} R_\phi(\tau_i),\qquad
+a=G_\theta(Q,\tau_{i^</em>}), ]</p>
+<p>其中 (G_\theta) 与 (R_\phi) 是两套大模型。RGM 改为共享骨干
+(H_\theta)，只把输出分成生成头和轻量评分头：</p>
+<p>[ h_{i,n}=H_\theta^{(L-1)}(\tau_i)[t_{i,n}], ]</p>
+<p>[
+s_{i,n}=\sigma\bigl(W_2,\mathrm{Dropout}<em>{0.5}(\mathrm{ReLU}(W_1h</em>{i,n}))\bigr),
+]</p>
+<p>其中 (t_{i,n}) 是第 (n) 个
+step-token，(W_1:c\rightarrow2c)，(W_2:2c\rightarrow1)。英文数学推理以包含
+<code>.\n\n</code> 的 token 切步；连续 step-token 只保留首个，轨迹开头的
+step-token 被忽略。[核心论文 Sec.4.1, PDF pp.3–4]</p>
+<p>轨迹分数使用几何平均：</p>
+<p>[ S_i=\left(\prod_{n=1}^{N_i}s_{i,n}\right)^{1/N_i}
+=\exp\left(\frac{1}{N_i}\sum_{n=1}^{N_i}\log s_{i,n}\right). ]</p>
+<p>后一个等价形式揭示其本质：它比较平均
+log-score，而非让长轨迹因多乘若干个小于 1 的概率而天然吃亏。Table 3
+中，直接乘积在 AIME24/AIME25/BRUMO25/HMMT25 为
+<strong>44.2/31.1/40.0/17.9</strong>，几何平均为
+<strong>53.1/35.7/43.2/21.5</strong>；最大提升为 AIME24 的 <strong>8.9
+pp</strong>。[核心论文 Eq.5 与 Table 3, PDF pp.4, 8]</p>
+<p>SPRM 的关键不是普通 BCE，而是掩码 BCE：</p>
+<p>[ \hat y_{i,n}=\mathbb{I}[s_{i,n}&gt;0.5],\qquad
+\mathcal{L}<em>{SPR}=\frac{1}{N}\sum_n\mathbb{I}[y_i=\hat
+y</em>{i,n}],\mathrm{BCE}(s_{i,n},\hat y_{i,n}). ]</p>
+<p>当最终答案正确但某步当前被模型判为错，或最终答案错误但某步当前被判为对时，这一步不更新。这个目标不会“证明”伪标签正确；它只是避免把明显冲突的轨迹级标签强压到所有步骤上。</p>
+<h3 id="41-训练与推理伪代码">4.1 训练与推理伪代码</h3>
+<pre class="text"><code>for question Q, gold answer a*:
+    trajectories = policy.sample(Q, group_size)
+    outcome y_i = exact_match(final_answer_i, a*)
+    GRPO_update(policy, trajectories, y)
+
+    for each trajectory i:
+        steps = split_by_step_token(trajectory_i)
+        for each step n:
+            h = penultimate_hidden_state(step_token_n)
+            s = SPRM_head(h)
+            pseudo = 1[s &gt; threshold]
+            if pseudo == y_i:
+                BCE_update(SPRM_head, s, pseudo)
+
+inference(Q, k=8):
+    sample k complete thoughts
+    score each thought by geometric_mean(step_scores)
+    select argmax score
+    generate final answer conditioned on selected thought</code></pre>
+<p>注意：论文说“联合训练”，但策略的 GRPO 与 SPRM 的掩码 BCE
+是两种并行目标，不等于评分头的梯度一定通过采样选择反向影响策略；论文没有给出完整总损失权重或梯度耦合消融，因此不能据此断言端到端联合目标优于交替训练。</p>
+<h2 id="5-关键机制与工程细节">5. 关键机制与工程细节</h2>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">组件</th>
+<th scope="col">实现</th>
+<th scope="col">作用</th>
+<th scope="col">已知代价/风险</th>
+<th scope="col">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>共享骨干</td>
+<td>策略头与 SPRM 共用 Transformer</td>
+<td>避免独立 72B 验证器</td>
+<td>多任务干扰；独立 RGM 更准</td>
+<td>Sec.4.1；Table 8</td>
+</tr>
+<tr class="even">
+<td>SPRM 头</td>
+<td>Linear(c,2c)→ReLU→Dropout(0.5)→Linear(2c,1)</td>
+<td>5M–54M 额外参数</td>
+<td>维度随基座变化；版本口径不一致</td>
+<td>PDF p.3；Table 1</td>
+</tr>
+<tr class="odd">
+<td>特征层</td>
+<td>第二倒数层 step-token hidden state</td>
+<td>保留上下文而非只服务 next-token logits</td>
+<td>依赖特定层语义，跨架构不稳定</td>
+<td>Table 9</td>
+</tr>
+<tr class="even">
+<td>步切分</td>
+<td>英文用含 <code>.\n\n</code> token；中文 C-Eval 用含 <code>\n</code>
+token</td>
+<td>无需新增专用 token</td>
+<td>对格式和 tokenizer 敏感</td>
+<td>PDF p.4；Appendix A</td>
+</tr>
+<tr class="odd">
+<td>SPRLoss</td>
+<td>仅在 outcome 与伪标签一致时 BCE</td>
+<td>减少轨迹级标签噪声</td>
+<td>可能放大初始偏置，舍弃困难反例</td>
+<td>Eq.6；Figure 5</td>
+</tr>
+<tr class="even">
+<td>聚合</td>
+<td>步分数几何平均</td>
+<td>缓解长度偏置</td>
+<td>仍把各步等权；不定位首个致命错误</td>
+<td>Eq.5；Table 3</td>
+</tr>
+<tr class="odd">
+<td>主推理</td>
+<td>(k=8) 完整轨迹并行采样</td>
+<td>以较小 N 做 Best-of-N</td>
+<td>首 token 延迟和总 token 成本仍约乘 k</td>
+<td>Sec.5.1；Limitations</td>
+</tr>
+<tr class="even">
+<td>训练</td>
+<td>40K 题；64×H200；batch 128；response 32K；80 iterations</td>
+<td>on-policy GRPO + SPR</td>
+<td>未报告 wall-clock、GPU-hours、能耗</td>
+<td>PDF p.5</td>
+</tr>
+<tr class="odd">
+<td>生成配置</td>
+<td>数学最大 38K token；其他 32K；温度 0.6，GPT-OSS 1.0</td>
+<td>保持长 CoT 空间</td>
+<td>温度不统一，跨模型比较混入采样差异</td>
+<td>PDF p.5</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h2 id="6-数据集基准与指标">6. 数据集、基准与指标</h2>
+<p>训练集从 NuminaMath、OpenR1-Math-220k、DeepScaleR、LIMR、OREAL-RL
+汇总，经 MATH 难度分类器过滤简单题，再按 pass rate 采样，最终
+<strong>40K</strong> 样本。论文没有给出各源数据占比、去重规模或与
+AIME/HMMT/BRUMO
+的污染检查，因此训练数据的“40K”只能说明数量，不能证明评测独立性。[核心论文
+Sec.5.1, PDF p.5]</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">基准</th>
+<th scope="col">类型</th>
+<th scope="col">主指标</th>
+<th scope="col">论文评测口径</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>AIME24</td>
+<td>竞赛数学</td>
+<td>Pass@1 / accuracy</td>
+<td>每题只输出一个最终答案；64 次重复平均</td>
+</tr>
+<tr class="even">
+<td>AIME25</td>
+<td>更新年份竞赛数学</td>
+<td>同上</td>
+<td>同上</td>
+</tr>
+<tr class="odd">
+<td>BRUMO25</td>
+<td>高难数学</td>
+<td>同上</td>
+<td>同上</td>
+</tr>
+<tr class="even">
+<td>HMMT25</td>
+<td>高难竞赛数学</td>
+<td>同上</td>
+<td>同上</td>
+</tr>
+<tr class="odd">
+<td>LiveCodeBench 240801–250201</td>
+<td>OOD 代码生成</td>
+<td>Pass@1</td>
+<td>数学训练之外的跨域测试</td>
+</tr>
+<tr class="even">
+<td>C-Eval</td>
+<td>中文综合问答</td>
+<td>accuracy</td>
+<td>英文训练后的跨语言附录实验</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>这里“Pass@1”容易误解：每个配置对问题重复采样并取 64
+次平均，但单次运行最终只提交一个经 RGM 选择的答案；它不是传统 pass@k
+的“任一候选答对即成功”。[核心论文 PDF pp.5–6, lines 324–374]</p>
+<h2 id="7-完整主结果矩阵">7. 完整主结果矩阵</h2>
+<h3 id="71-六方法--五基准以-qwq-32b-为公平主干">7.1 六方法 × 五基准：以
+QwQ-32B 为公平主干</h3>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">额外验证器</th>
+<th scope="col" style="text-align: right;">AIME24</th>
+<th scope="col" style="text-align: right;">AIME25</th>
+<th scope="col" style="text-align: right;">BRUMO25</th>
+<th scope="col" style="text-align: right;">HMMT25</th>
+<th scope="col" style="text-align: right;">LiveCodeBench</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DeepSeek-R1-671B</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">79.8</td>
+<td style="text-align: right;">70.0</td>
+<td style="text-align: right;"><strong>80.8</strong></td>
+<td style="text-align: right;">44.4</td>
+<td style="text-align: right;">65.9</td>
+</tr>
+<tr class="even">
+<td>OpenAI o3-mini (med)</td>
+<td style="text-align: right;">未公开</td>
+<td style="text-align: right;">79.6</td>
+<td style="text-align: right;"><strong>74.8</strong></td>
+<td style="text-align: right;">80.0</td>
+<td style="text-align: right;"><strong>53.0</strong></td>
+<td style="text-align: right;"><strong>67.4</strong></td>
+</tr>
+<tr class="odd">
+<td>QwQ-32B 原始</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">79.5</td>
+<td style="text-align: right;">69.5</td>
+<td style="text-align: right;">75.2</td>
+<td style="text-align: right;">47.5</td>
+<td style="text-align: right;">63.4</td>
+</tr>
+<tr class="even">
+<td>QwQ-32B + GRPO</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">79.9</td>
+<td style="text-align: right;">70.5</td>
+<td style="text-align: right;">75.8</td>
+<td style="text-align: right;">47.1</td>
+<td style="text-align: right;">63.4</td>
+</tr>
+<tr class="odd">
+<td>QwQ-32B + PRM-72B, (k=8)</td>
+<td style="text-align: right;">72B</td>
+<td style="text-align: right;">83.3</td>
+<td style="text-align: right;">72.3</td>
+<td style="text-align: right;">76.5</td>
+<td style="text-align: right;">51.7</td>
+<td style="text-align: right;">63.0</td>
+</tr>
+<tr class="even">
+<td><strong>QwQ-32B + RGM8-54M</strong></td>
+<td style="text-align: right;"><strong>54M</strong></td>
+<td style="text-align: right;"><strong>84.2</strong></td>
+<td style="text-align: right;">73.4</td>
+<td style="text-align: right;">78.1</td>
+<td style="text-align: right;"><strong>53.1</strong></td>
+<td style="text-align: right;">64.0</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>来源：核心论文 Table 1（PDF p.6）。粗体按两组理解：在同基座 QwQ
+四行中 RGM 五项全优；若把外部闭源/671B 参考也纳入，RGM 仅在 AIME24 与
+HMMT25 为全表最佳。相对同基座 PRM-72B，RGM 的绝对提升为
+<strong>+0.9/+1.1/+1.6/+1.4/+1.0 pp</strong>，相对提升为
+<strong>+1.08%/+1.52%/+2.09%/+2.71%/+1.59%</strong>（本报告据表计算）。相对
+o3-mini，RGM 在 AIME24 为 <strong>+4.6 pp</strong>、HMMT25 为
+<strong>+0.1 pp</strong>，但 AIME25/BRUMO25/LiveCodeBench 分别低
+<strong>1.4/1.9/3.4 pp</strong>；因此“超过
+o3-mini”只在两个列成立，不能泛化为整体领先。</p>
+<h3 id="72-五种策略骨干rgm-对各自最强-72b-奖励模型">7.2
+五种策略骨干：RGM 对各自最强 72B 奖励模型</h3>
+<p>单元格为
+<code>RGM 分数（相对同基座更强的 RM-72B/PRM-72B：绝对 pp；相对 %）</code>。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">基座 + RGM8</th>
+<th scope="col" style="text-align: right;">额外参数</th>
+<th scope="col" style="text-align: right;">AIME24</th>
+<th scope="col" style="text-align: right;">AIME25</th>
+<th scope="col" style="text-align: right;">BRUMO25</th>
+<th scope="col" style="text-align: right;">HMMT25</th>
+<th scope="col" style="text-align: right;">LiveCodeBench</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DeepScaleR-1.5B</td>
+<td style="text-align: right;">5M</td>
+<td style="text-align: right;">53.1 (+0.6; +1.14%)</td>
+<td style="text-align: right;">35.7 (+1.1; +3.18%)</td>
+<td style="text-align: right;">43.2 (+1.2; +2.86%)</td>
+<td style="text-align: right;">21.5 (+3.3; +18.13%)</td>
+<td style="text-align: right;">26.6 (+2.4; +9.92%)</td>
+</tr>
+<tr class="even">
+<td>R1-Distill-Qwen-7B</td>
+<td style="text-align: right;">26M</td>
+<td style="text-align: right;"><strong>66.3</strong> (+6.2;
++10.32%)</td>
+<td style="text-align: right;">48.3 (+1.0; +2.11%)</td>
+<td style="text-align: right;">56.9 (+1.1; +1.97%)</td>
+<td style="text-align: right;">33.4 (+3.5; +11.71%)</td>
+<td style="text-align: right;">44.1 (+1.3; +3.04%)</td>
+</tr>
+<tr class="odd">
+<td>QwQ-32B</td>
+<td style="text-align: right;">54M</td>
+<td style="text-align: right;">84.2 (+0.9; +1.08%)</td>
+<td style="text-align: right;">73.4 (+1.1; +1.52%)</td>
+<td style="text-align: right;">78.1 (+1.6; +2.09%)</td>
+<td style="text-align: right;">53.1 (+1.4; +2.71%)</td>
+<td style="text-align: right;">64.0 (+1.0; +1.59%)</td>
+</tr>
+<tr class="even">
+<td>Qwen3-32B</td>
+<td style="text-align: right;">54M</td>
+<td style="text-align: right;">83.8 (+0.9; +1.09%)</td>
+<td style="text-align: right;"><strong>77.6</strong> (+0.5; +0.65%)</td>
+<td style="text-align: right;"><strong>85.8</strong> (+2.3; +2.75%)</td>
+<td style="text-align: right;">56.3 (<strong>−0.4; −0.71%</strong>)</td>
+<td style="text-align: right;">66.2 (+1.3; +2.00%)</td>
+</tr>
+<tr class="odd">
+<td>GPT-OSS-20B</td>
+<td style="text-align: right;">17M</td>
+<td style="text-align: right;">81.9 (<strong>−0.3; −0.36%</strong>)</td>
+<td style="text-align: right;"><strong>79.1</strong> (+1.0; +1.28%)</td>
+<td style="text-align: right;">73.3 (+0.2; +0.27%)</td>
+<td style="text-align: right;"><strong>63.4</strong> (+3.0; +4.97%)</td>
+<td style="text-align: right;"><strong>69.9</strong> (+0.4; +0.58%)</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>来源：核心论文 Table 1（PDF p.6）；相对百分比为本报告计算。RGM 在 25
+个架构×任务格中有 <strong>23 个</strong>优于同基座最强 72B
+奖励模型，失败格是 Qwen3-32B/HMMT25（−0.4 pp）与
+GPT-OSS-20B/AIME24（−0.3 pp）。这比“consistently
+surpasses”更精确：总体稳定，但非逐格支配。</p>
+<h2 id="8-逐层消融收益到底来自哪里">8. 逐层消融：收益到底来自哪里</h2>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">消融/对照</th>
+<th scope="col">设置</th>
+<th scope="col">结果</th>
+<th scope="col">可推出什么</th>
+<th scope="col">不能推出什么</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>SPRLoss vs 普通 BCE</td>
+<td>1.5B RGM32</td>
+<td>AIME24 57.9 vs 56.7；LCB 28.1 vs 27.9</td>
+<td>一致性过滤有小而稳定收益</td>
+<td>未给多种子方差，不能证显著</td>
+</tr>
+<tr class="even">
+<td>SPRLoss vs 普通 BCE</td>
+<td>7B RGM32</td>
+<td>70.2 vs 69.1；44.4 vs 43.9</td>
+<td>大基座仍有 +1.1/+0.5 pp</td>
+<td>不知是否来自样本数量变化</td>
+</tr>
+<tr class="odd">
+<td>轨迹聚合</td>
+<td>1.5B RGM8</td>
+<td>Product 44.2/31.1/40.0/17.9；Arithmetic
+52.9/35.2/43.3/21.1；Geometric 53.1/35.7/43.2/21.5</td>
+<td>几何均值强烈修复乘积的长度惩罚</td>
+<td>BRUMO25 算术均值反而高 0.1 pp，非全胜</td>
+</tr>
+<tr class="even">
+<td>过程级 vs 仅末步</td>
+<td>1.5B RGM8</td>
+<td>过程级相对 outcome-level：+4.6/+0.7/+0.7/+2.7/+0.9 pp</td>
+<td>中间步信号确有贡献，尤其 AIME24/HMMT25</td>
+<td>未与真正 step-error 标签对齐评测</td>
+</tr>
+<tr class="odd">
+<td>MCTS 搜索 token</td>
+<td>0→40K→80K→120K→160K</td>
+<td>AIME24 43.8→48.8→50.0→51.7→52.8</td>
+<td>更多树搜索预算单调改善</td>
+<td>仍低于 Table 1 BoN 53.1；未计 wall-clock</td>
+</tr>
+<tr class="even">
+<td>伪标签阈值</td>
+<td>mean/median/hard 0.5</td>
+<td>AIME24 50.0/51.7/53.1；其余混合</td>
+<td>固定 0.5 平均最好</td>
+<td>BRUMO25 mean 45.0 高于 hard 43.2，不存在任务统一最优</td>
+</tr>
+<tr class="odd">
+<td>共享 vs 独立</td>
+<td>独立 RGM 1.5B vs 共享 5M</td>
+<td>独立四项均高 0.6–1.6 pp</td>
+<td>共享主要贡献是效率</td>
+<td>论文未报吞吐，效率仍是参数代理</td>
+</tr>
+<tr class="even">
+<td>SPRM 位置</td>
+<td>last vs penultimate</td>
+<td>AIME24 48.8 vs 53.1；HMMT25 18.8 vs 21.5</td>
+<td>中间层更适合辅助判别</td>
+<td>只测两层，不知最优层是否更早</td>
+</tr>
+<tr class="odd">
+<td>多数投票</td>
+<td>Majority vs RGM</td>
+<td>50.4/34.0/41.7/20.3 vs 53.1/35.7/43.2/21.5</td>
+<td>学习评分优于简单聚合</td>
+<td>差距仅 1.2–2.7 pp，需成本对齐</td>
+</tr>
+<tr class="even">
+<td>评分头架构</td>
+<td>Linear / 2-layer+gate / 2-layer</td>
+<td>Gate 在 BRUMO25/HMMT25 为 46.7/22.3，胜标准 43.2/21.5；标准在 AIME25
+高 0.1</td>
+<td>表达力重要，门控有潜力</td>
+<td>作者最终设计并非所有列最优</td>
+</tr>
+<tr class="odd">
+<td>跨模型迁移</td>
+<td>32B SPRM→1.5B</td>
+<td>52.2/37.1/45.5/21.1 vs 本模型 53.1/35.7/43.2/21.5</td>
+<td>线性投影后可迁移，2/4 列更高</td>
+<td>只做一个方向、一个源—目标对</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>来源依次为核心论文 Tables 2–5、7–13（PDF
+pp.8–15）。最值得注意的不是某一项最大增益，而是三条互相制约的结论：过程级信号确有用；共享骨干牺牲约
+1 pp
+精度换巨大参数节省；固定阈值和两层头只是稳妥默认值，而非所有任务最优。</p>
+<h2 id="9-超参敏感性与相变">9. 超参敏感性与“相变”</h2>
+<h3 id="91-候选数-k">9.1 候选数 (k)</h3>
+<p>Figure 3 表明 1.5B 与 7B 在 AIME24、AIME25、LiveCodeBench
+上随候选数增加而上升，且 SPRM 曲线通常高于 72B RM/PRM；但 PDF
+文本没有给出各 (k) 的精确坐标，故本报告不从图像补造数值。主表只报告
+(k=8)，Appendix 的 RGM32 只在 SPRLoss
+对照中出现。可以推出“更多候选通常有收益”，不能推出 RGM 在同等
+FLOPs、同等延迟下仍优于 72B PRM。</p>
+<h3 id="92-搜索预算">9.2 搜索预算</h3>
+<p>MCTS 的 AIME24 从 0 token 的 <strong>43.8</strong> 增至 160K token 的
+<strong>52.8</strong>，五个点单调上升，但边际收益为
+<strong>+5.0、+1.2、+1.7、+1.1 pp</strong>，首 40K
+最划算，之后明显递减。[Table 5, PDF p.9]
+论文自己承认树搜索在长推理上深度过大、计算开销高，最终仍低于 BoN。</p>
+<h3 id="93-训练中的-aha-moment">9.3 训练中的 aha moment</h3>
+<p>作者把曲线斜率符号分叉定义为相变：正确轨迹分数斜率由负/平转正、错误轨迹斜率转负。QwQ-32B
+约在 60 steps 发生，因此继续训练 60
+steps。问题在于，这一阈值依赖曲线平滑方式、评估批次和随机性，论文没有给置信区间或自动检测算法；所以它是有启发性的训练诊断，不是已建立的普适相变定律。</p>
+<h3 id="94-阈值与格式">9.4 阈值与格式</h3>
+<p>阈值 0.5 的四基准平均为 <strong>38.38</strong>，mean 阈值为
+<strong>37.78</strong>，median 为 <strong>37.30</strong>（本报告据 Table
+7 计算），平均优势只有 0.60–1.08 分；同时 BRUMO25 上 mean 高出 hard
+<strong>1.8 pp</strong>。此外，英文用 <code>.\n\n</code>、中文改为所有含
+<code>\n</code> token，说明所谓“零格式微调”仍依赖人工规则迁移。</p>
+<h2 id="10-统计显著性与评测可信度">10. 统计显著性与评测可信度</h2>
+<p>论文为每题配置重复评估 <strong>64
+次</strong>并报告平均准确率，这是比单次运行更可靠的做法。[核心论文 PDF
+p.6] 但论文
+<strong>未报告标准差、标准误、置信区间、显著性检验或随机种子数量</strong>。因此：</p>
+<ul>
+<li>可以说 QwQ-RGM 的五项均值高于同基座 PRM-72B；</li>
+<li>不能说 +0.5 pp、+0.9 pp 等小差值具有统计显著性；</li>
+<li>HMMT25 的 +0.1 pp 对 o3-mini
+更不应表述为稳健领先，因为闭源模型结果的评测协议也未必等算力；</li>
+<li>23/25 格领先是方向一致性证据，但不是显著性替代品。</li>
+</ul>
+<p>论文也没有提供端到端 latency、tokens/s、显存峰值、能耗或
+P95/P99。所谓“99% PRM inference cost reduction”出现在模型卡，而 ICLR
+正文主要用额外参数量作效率代理；在没有实机服务数据时，不应把参数节省直接等同于
+99% 延迟节省。</p>
+<h2 id="11-真正贡献可复用设计与迁移潜力">11.
+真正贡献、可复用设计与迁移潜力</h2>
+<p><strong>真正贡献 1：验证器不必是第二个模型。</strong>
+只要生成前向能暴露合适的中间隐藏状态，过程评分可以是同一骨干的辅助头。这一思想可迁移到代码执行轨迹、工具调用计划、检索链和
+agent 行为序列。</p>
+<p><strong>真正贡献
+2：弱结果标签可以通过一致性掩码减少过程污染。</strong> SPRLoss
+很简单，但把“答案对/错”从每一步的硬真值降格为“只在模型自身判断同意时使用的筛选信号”。可复用模板是：全局弱标签
+(y) + 局部伪标签 \hat y + 一致性掩码。</p>
+<p><strong>真正贡献 3：聚合器是 TTS 的一等公民。</strong>
+从乘积换成几何平均就在 AIME24 带来 <strong>8.9 pp</strong>。这说明 PRM
+研究不能只比模型规模，必须把步切分、分数校准和跨长度聚合纳入统一评测。</p>
+<p><strong>迁移潜力。</strong> Table 13 的 32B→1.5B
+迁移用线性投影对齐维度，四项中两项超过本模型
+SPRM；这提示可以训练“通用过程评分表征”，再用小投影适配新基座。更值得做的不是继续扩大独立
+PRM，而是验证隐藏状态质量在不同架构、语言和任务间能否线性对齐。</p>
+<h2 id="12-技术来源链解决什么留下什么rgm-如何回应设计如何传递">12.
+技术来源链：解决什么—留下什么—RGM 如何回应—设计如何传递</h2>
+<h3 id="121-lets-verify-step-by-stepiclr-2024">12.1 Let’s Verify Step by
+Step（ICLR 2024）</h3>
+<p>它解决的是“过程监督是否比结果监督更可靠”，用 PRM800K
+的人工步级标签证明 process supervision 在特定 MATH 子集达到
+<strong>78.2%</strong>，并显示主动学习使数据效率提高
+<strong>2.6×</strong>。遗留缺口是 800K
+人工标签成本、闭源大模型依赖和数学域局限。RGM
+接受“过程分数优于最终分数”的结论，却用 outcome + pseudo-label
+一致性替代人工 step
+labels；传递的关键设计是“每步产生可聚合分数”，但监督源从人变成模型自身。</p>
+<h3 id="122-math-shepherdacl-2024-main-long">12.2 Math-Shepherd（ACL
+2024 Main Long）</h3>
+<p>它用从中间步继续 rollout 的 MC
+成功率自动构造过程标签，解决人工标注瓶颈；Mistral-7B 经过程 RL 从
+<strong>77.9→84.1</strong>（GSM8K）、<strong>28.6→33.0</strong>（MATH），再经验证提升到
+<strong>89.1/43.5</strong>。[ACL PDF pp.1–2]
+遗留缺口是每个中间步都需多次
+rollout，而且“能从错误步碰巧走到正确答案”会污染标签。RGM 不做额外 MC
+completion，而以当前 SPRM 的二值判断过滤 outcome
+标签；设计传递是“结果可作为过程弱监督”，但成本从 rollout
+转为一次共享前向。</p>
+<h3 id="123-scaling-llm-test-time-compute-optimallyiclr-2025">12.3
+Scaling LLM Test-Time Compute Optimally（ICLR 2025）</h3>
+<p>它解决“固定预算如何分配”，指出搜索策略取决于题目难度，compute-optimal
+策略相对 Best-of-N 可节省超过 <strong>4×</strong>
+计算，并在部分难度上让小模型击败 <strong>14×</strong> 大模型。[正式 PDF
+pp.1–3] 遗留缺口是难度估计用每题 <strong>2048
+samples</strong>，且论文明确未计这笔成本；模型与 PRM也不公开。RGM
+选择更简单的固定 (k=8)
+和共享验证头，回应“验证器成本”而非“题目级预算路由”；传递的是
+proposer–verifier 抽象，但没有吸收动态预算分配。</p>
+<h3 id="124-lessons-of-developing-prms2025">12.4 Lessons of Developing
+PRMs（2025）</h3>
+<p>它解决“BoN 高分是否代表过程验证好”，发现 MC、LLM-as-judge、人工标签在
+BoN 与 ProcessBench 上呈相反趋势；共识过滤只保留约 <strong>40%</strong>
+数据，却可接近 LLM-as-judge 的 ProcessBench 表现。遗留缺口是仍需 72B
+judge 或大规模 MC。RGM
+的一致性掩码可视为“单模型内生共识过滤”：全局结果与局部头一致才训练。设计传递是过滤而非盲目扩数据，但
+RGM 没有用 ProcessBench 验证其过程判错能力。</p>
+<h3 id="125-reasonflux-prmneurips-2025-spotlight">12.5
+ReasonFlux-PRM（NeurIPS 2025 Spotlight）</h3>
+<p>它解决长 CoT 中“trajectory 与 final response 分布不同”的问题，以
+step-level + trajectory-level 监督覆盖蒸馏、RL 与
+BoN；论文摘要报告平均增益为 SFT <strong>12.1%</strong>、RL
+<strong>4.5%</strong>、TTS <strong>6.3%</strong>。遗留缺口是仍需独立
+1.5B/7B PRM。RGM 将验证头压到
+5M–54M，但只用单一几何平均、没有轨迹级结构编码；传递方向是将 ReasonFlux
+的双粒度监督移植到共享骨干，检验是否还能保持轻量。</p>
+<h2 id="13-非线性技术演进树演进动力与转折">13.
+非线性技术演进树、演进动力与转折</h2>
+<pre class="text"><code>                         ┌─ 人工过程监督 ─ PRM800K (2023/ICLR 2024)
+                         │      └─ 强过程判别；高标注成本
+最终答案监督 ────────────┤
+                         └─ 自动过程监督 ─ Math-Shepherd (ACL 2024)
+                                ├─ MC rollout 标签；成本高、可误标
+                                └─ Lessons of PRMs (2025)
+                                       └─ 共识过滤 + ProcessBench 批判
+
+Best-of-N 外部扩展 ─ Snell et al. (ICLR 2025)
+       ├─ 动态难度路由：同预算选搜索策略
+       └─ 验证器仍独立、难度估计本身昂贵
+
+长 CoT 新分布 ─ ReasonFlux-PRM (NeurIPS 2025)
+       └─ step + trajectory 双粒度，但仍是 1.5B/7B 外部模型
+
+上述两支汇合 ─ RGM (ICLR 2026)
+       ├─ 共享骨干 + 5M–54M 评分头
+       ├─ outcome × pseudo-label 一致性过滤
+       └─ 固定 k=8：解决验证器成本，尚未解决动态预算分配</code></pre>
+<p>演进动力经历三次转折。第一次从“最终答案对即可”转向“过程也必须可信”；第二次从昂贵人工标签转向自动弱监督，但暴露
+MC 与 BoN 偏差；第三次从“做更大的独立
+PRM”转向“把判别能力嵌回生成模型”。RGM
+最重要的转折并非刷新某一数学榜单，而是把部署问题重新定义为：<strong>是否能复用一次生成前向中的表征完成验证。</strong></p>
+<h3 id="131-跨论文对标">13.1 跨论文对标</h3>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">过程标签</th>
+<th scope="col" style="text-align: right;">验证器规模</th>
+<th scope="col">搜索/选择</th>
+<th scope="col">过程级独立评测</th>
+<th scope="col">部署要点</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>PRM800K</td>
+<td>人工 step label</td>
+<td style="text-align: right;">大模型，未公开</td>
+<td>Best-of-N</td>
+<td>人工过程标签本身</td>
+<td>质量高、成本高</td>
+</tr>
+<tr class="even">
+<td>Math-Shepherd</td>
+<td>MC rollout</td>
+<td style="text-align: right;">独立 PRM</td>
+<td>rerank + PPO</td>
+<td>主要看最终准确率</td>
+<td>自动但 rollout 重</td>
+</tr>
+<tr class="odd">
+<td>Snell et al.</td>
+<td>MC PRM</td>
+<td style="text-align: right;">独立 PRM</td>
+<td>BoN/beam/lookahead + 难度路由</td>
+<td>主要看 MATH accuracy</td>
+<td>预算最优化但难度估计昂贵</td>
+</tr>
+<tr class="even">
+<td>Lessons/Qwen PRM</td>
+<td>MC + 72B judge 共识</td>
+<td style="text-align: right;">7B/72B</td>
+<td>BoN</td>
+<td>ProcessBench</td>
+<td>暴露 BoN 偏差</td>
+</tr>
+<tr class="odd">
+<td>ReasonFlux-PRM</td>
+<td>step + trajectory</td>
+<td style="text-align: right;">1.5B/7B</td>
+<td>SFT/RL/BoN</td>
+<td>多下游，但仍依赖最终任务</td>
+<td>适合长 CoT</td>
+</tr>
+<tr class="even">
+<td><strong>RGM</strong></td>
+<td>outcome + 自身伪标签</td>
+<td style="text-align: right;"><strong>5M–54M 头，共享骨干</strong></td>
+<td>固定 BoN (k=8)，附 MCTS</td>
+<td><strong>未报 ProcessBench</strong></td>
+<td>最轻，但绑定策略模型</td>
+</tr>
+</tbody>
+</table>
+</div>
+<h2 id="14-论文自述限制">14. 论文自述限制</h2>
+<ol type="1">
+<li><strong>完整轨迹延迟。</strong> 必须先生成 (k)
+条完整轨迹；作者承认这会增加 latency，主实验用 (k=8)，而常见外部 TTS
+可用 64–512。批并行可压 wall-clock，但不会消除总 token
+和显存带宽成本。[Appendix D, PDF p.15]</li>
+<li><strong>短推理/知识任务收益有限。</strong>
+对事实问答或几乎不需要推理的任务，缺少足够 step-token 和推理轨迹，RGM
+不适用；作者认为此时瓶颈是知识而非 TTS。[Appendix D, PDF p.15]</li>
+<li><strong>绑定目标策略模型。</strong> 不同 LLM hidden dimension
+不同，SPRM
+不能直接跨模型应用；作者需加线性投影并单独微调轻量头。[Appendix D, PDF
+p.15] 虽然 Table 13 展示一次迁移，但仍不是真正即插即用。</li>
+</ol>
+<h2 id="15-独立批判每点采用因为-x所以-y">15. 独立批判：每点采用“因为
+X，所以 Y”</h2>
+<ol type="1">
+<li><strong>[评测效度]</strong> 因为 RGM 只以最终答案正确率和 BoN
+选择评测，且没有 ProcessBench 或人工错误步定位指标，而 Lessons of PRMs
+已显示 BoN 与真实过程验证能力可呈相反趋势，所以不能由 Table 1 推出 SPRM
+真正理解逻辑步骤；它可能只是学到与最终成功相关的轨迹风格。</li>
+<li><strong>[统计]</strong> 因为论文虽重复 64
+次，却未给标准差、置信区间或检验，而多数优势只有 <strong>0.2–1.6
+pp</strong>，所以 23/25 格均值领先不能等价为逐格显著领先；尤其 +0.1 pp
+对 o3-mini 几乎没有可解释余量。</li>
+<li><strong>[效率]</strong> 因为主推理仍完整生成 8 条、数学每条上限 38K
+token，且没有 tokens/s、TTFT、P99 或
+GPU-hours，所以“轻量验证头”只证明验证器参数小，不能证明整个 RGM
+服务便宜；生成成本可能远大于评分头成本。</li>
+<li><strong>[公平性]</strong> 因为 GPT-OSS-20B 温度为
+<strong>1.0</strong>、其他模型为
+<strong>0.6</strong>，而候选多样性会直接影响 BoN 上限，所以跨基座的
+RGM收益并非完全同协议；Table 1
+应优先做同基座纵向比较，而非横向排名。</li>
+<li><strong>[数据污染]</strong> 因为 40K
+训练集混合多个公开数学源，却未报告与 AIME24/25、HMMT25、BRUMO25
+的去重或时间切断，所以高分中无法排除题目或近重复泄漏；尤其 AIME24
+早于训练论文日期，更需要污染审计。</li>
+<li><strong>[机制归因]</strong> 因为独立 RGM8 额外 1.5B
+参数在四个数学集均比共享 RGM 高 0.6–1.6
+pp，所以共享骨干不是精度优势来源；真正贡献是把大部分独立验证能力压缩到
+5M 头，而不是证明联合表征天然更优。</li>
+<li><strong>[伪标签偏置]</strong> 因为只有 (y=\hat y)
+的步骤被训练，初始模型不确定或与结果冲突的困难步骤被系统丢弃，所以一致性过滤可能形成
+confirmation bias；Figure 5 的 aha moment
+说明这种风险存在，但论文没有不同初始化/种子下失败率。</li>
+<li><strong>[版本与复现]</strong> 因为 arXiv v2 写 53M、ICLR 主表写
+5M–54M、终稿摘要写约 50M，仓库又以 XBai o4
+命名，所以模型身份与参数口径发生漂移；复现者必须以具体 checkpoint 的
+hidden size 和 head 配置核算，不能把“50M”当固定常数。</li>
+</ol>
+<h2 id="16-开放挑战必须能做-head-to-head-的实验空白">16.
+开放挑战：必须能做 head-to-head 的实验空白</h2>
+<h3 id="161-理论">16.1 理论</h3>
+<ul>
+<li><strong>一致性掩码是否收敛到真过程标签？</strong>
+固定同一策略、数据和计算量，对比 SPRLoss、普通
+BCE、co-teaching、置信度加权软标签；在人工 step-error 集上报告
+AUROC/F1、校准误差与最终 BoN
+accuracy，并追踪错误伪标签随训练步的转移矩阵。</li>
+<li><strong>几何平均是否只是隐式长度正则？</strong> 对比
+product、arithmetic、geometric、min-step、learned attention
+aggregation，在按轨迹长度分桶后报告选择准确率；控制同一候选集合，避免生成差异混入。</li>
+<li><strong>共享表征的最优层在哪里？</strong>
+对每一层训练同参数量线性/两层头，冻结骨干，构建“层深×任务×模型”矩阵；再与独立
+1.5B verifier 做等 FLOPs 对比，验证过程质量信号是否呈普适中层峰值。</li>
+</ul>
+<h3 id="162-工程与应用">16.2 工程与应用</h3>
+<ul>
+<li><strong>真正的服务成本。</strong> 在同一 8×H200 或 8×H100 节点上比较
+Majority@8、72B-PRM@8、RGM@8、RGM 动态 (k)，报告
+TTFT、总延迟、P50/P95/P99、tokens/s、峰值显存、joules/query 与
+accuracy；没有这张表就不能谈部署优越性。</li>
+<li><strong>早停而非完整 8 路。</strong> 同一 RGM
+头比较“完整轨迹后评分”和“在线 step score 触发剪枝”，固定平均生成
+token，测准确率—延迟
+Pareto；特别观察错误是否集中在被过早剪枝的探索性轨迹。</li>
+<li><strong>跨语言格式鲁棒性。</strong>
+在中英日韩及代码上比较手工分隔符、句法切分、学习型 boundary head；固定
+checkpoint，报告 step coverage、误切率和最终性能，验证
+<code>.\n\n</code> 规则是否为隐藏工程依赖。</li>
+</ul>
+<h3 id="163-新兴方向">16.3 新兴方向</h3>
+<ul>
+<li><strong>RGM × 动态预算路由。</strong> 直接 head-to-head：固定总
+FLOPs，让固定 (k=8) 对比 Plan-and-Budget/ATTS 风格的题目级
+(k\in{1,2,4,8,16}) 路由；难度估计也必须计入
+FLOPs，报告每难度桶准确率与过度计算率。</li>
+<li><strong>双粒度共享验证器。</strong> 在同一骨干上比较 RGM 的
+step-only 几何平均与 ReasonFlux 风格 step+trajectory 双头，固定额外参数
+54M；用 ProcessBench、AIME、LiveCodeBench 同时测“找错”和“选对”。</li>
+<li><strong>Agent/工具轨迹。</strong>
+在可执行代码或工具调用任务上，用执行器提供稀疏 outcome reward；比较共享
+SPRM、独立 verifier、纯执行结果
+rerank，报告首个错误动作定位率、任务成功率和工具调用成本。</li>
+</ul>
+<h2 id="17-近期值得跟进的-8-篇工作">17. 近期值得跟进的 8 篇工作</h2>
+<ol type="1">
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/ae8d4084f418bb51575c2ca6c658a05b-Abstract-Conference.html">Plan
+and Budget: Effective and Efficient Test-Time Scaling on Reasoning
+LLMs</a>：把“想多久”变成计划与预算问题，适合与 RGM 固定 (k=8) 做等 FLOPs
+对照。</li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/ced46a50befedcb884ccf0cbe8c3ad23-Abstract-Conference.html">e3:
+Learning to Explore Enables Extrapolation of Test-Time
+Compute</a>：关注训练时学会探索，使测试预算外推；可检验 RGM
+的评分头在更大 (k) 是否仍校准。</li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/48c292f57f37569241ea9191a507031d-Abstract-Conference.html">ATTS:
+Asynchronous Test-Time Scaling via Conformal Prediction</a>：以异步与
+conformal prediction 管理候选，直指固定批量采样的尾延迟问题。</li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/8a81180649011d1690e05c68bfeaa57c-Abstract-Conference.html">MoDr:
+Mixture-of-Depth-Recurrent Transformers for Test-Time
+Reasoning</a>：把额外计算放进深度递归而非并行候选，代表 internal TTS
+的结构路线。</li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/1eeacdf8770e6dd5164cdeec8bcfa8cc-Abstract-Conference.html">TrimR:
+Verifier-based Training-Free Thinking Trimming</a>：用 verifier
+裁剪冗余思考，正好补足 RGM 只会“选完整轨迹”、不会在线减 token
+的缺口。</li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/da7ce04b3683b173691ecbb801f2690f-Abstract-Conference.html">Sample
+Smart, Not Hard</a>：把解码目标从似然优先转成正确性优先；若与共享 SPRM
+联合，可减少无效候选而不是只在事后重排。</li>
+<li><a
+href="https://proceedings.iclr.cc/paper_files/paper/2026/hash/06d5f1fe6509b001e6d4e0ec1afd83dd-Abstract-Conference.html">Log-Augmented
+Generation</a>：复用既有计算日志扩展推理，代表“缓存/复用”而非“每次重采样”的成本路线。</li>
+<li><a href="https://arxiv.org/abs/2608.04001">Test-Time Scaling in
+Reasoning LLMs: Inference Regimes, Evaluation, and
+Reproducibility</a>：把 sequential、leaf-level 与 prefix-level
+三类扩展统一为预算化前缀树，并强调计算、重复采样与不确定性报告；它提供了审计
+RGM 的更严格框架。</li>
+</ol>
+<h2 id="18-结论该如何读这篇论文">18. 结论：该如何读这篇论文</h2>
+<p>RGM 最值得看的不是“32B 超过 o3-mini”这一宣传性结论，而是它把外部 TTS
+的系统边界改写了：验证不必是第二个大模型，过程分数可以从生成模型已有隐藏状态中读出。QwQ-32B
++ RGM8-54M 相对同基座 PRM-72B 在五项上提高 <strong>0.9–1.6
+pp</strong>，并在 AIME24/HMMT25 达
+<strong>84.2/53.1</strong>；跨五种骨干的 25 个格中有 23 格领先最强 72B
+奖励模型。与此同时，独立 RGM 仍高约 1 pp、完整 8
+路生成没有服务指标、过程判错没有独立基准、微小优势没有统计检验。最稳妥的结论是：<strong>RGM
+证明了轻量共享 verifier
+可以有竞争力，但尚未证明它在等总计算、等延迟和真实过程可靠性上全面优于独立
+PRM。</strong></p>
+<hr />
+<p>脚注：已更新本地 <code>ml-report-index.md</code>，加入
+2026-09-28、LLM/NLP、核心论文、venue
+与一句话结论；持久索引替换结果以本次保存返回为准。Semantic Scholar API
+本次实际访问返回 403，故未引用其任何数字。Papers with Code
+未找到核心论文独立条目，已明确标注而未用替代页面冒充。</p>
+
+  </main>
+
+  <footer>基于 ICLR 2026 正式论文、五篇技术来源链全文及经验证的会议、arXiv、代码与权重页面；生成于 2026-09-28。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

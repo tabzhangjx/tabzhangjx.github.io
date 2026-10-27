@@ -1,0 +1,1633 @@
+---
+layout: null
+title: "ScaleSearch"
+date: 2026-09-11
+topic: "llm-systems"
+tags: ["llm-systems", "quantization", "kv-cache"]
+excerpt: "NVFP4 邻域定标搜索 × FP4 attention × 4.5-bit KV cache Qwen3-8B MATH-500 较普通 NVFP4 提高 15.0 pp；但 SSA 消融显示 scale 搜索本身只带来 0.0047 PPL，主要保真来自高精度首尾 KV。"
+permalink: "/blog/2026/09/11/scalesearch/"
+blog_post: true
+lang: "zh-CN"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_en: "/blog/2026/09/11/scalesearch/en/"
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>ScaleSearch：别再让绝对最大值独占 FP4 的 scale · 2026-09-11</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ML / AI DAILY DEEP PAPER · MLSYS 2026</p>
+    <h1>ScaleSearch：别再让绝对最大值独占 FP4 的 scale</h1>
+    <p class="subtitle">NVFP4 邻域定标搜索 × FP4 attention × 4.5-bit KV cache</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">MLSys 2026</span>
+      <span class="chip">2026-09-11</span>
+      <span class="chip">效率与系统 / 量化 / Attention</span>
+    </div>
+    <p class="lede">Qwen3-8B MATH-500 较普通 NVFP4 提高 15.0 pp；但 SSA 消融显示 scale 搜索本身只带来 0.0047 PPL，主要保真来自高精度首尾 KV。</p>
+  </header>
+
+  <main>
+<section class="card" aria-labelledby="0-链接验证版本与资源审计"><h2 id="0-链接验证版本与资源审计">0. 链接验证、版本与资源审计</h2>
+<p>下表链接均于 <strong>2026-09-11</strong> 实际访问。会议身份以
+MLSys/PMLR 正式 proceedings 为先，arXiv 日期以 submission history
+为准；“未公开/未找到”表示在正式论文页、arXiv 的 Code/Data/Media
+区、GitHub 题名搜索、Hugging Face Papers、Papers with Code、Semantic
+Scholar 与项目搜索中没有找到可核实入口。核心数字均来自 MLSys 正式
+PDF（16 页），不是网页摘要。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">会议/正式页</th>
+<th scope="col">arXiv 版本与日期</th>
+<th scope="col">代码</th>
+<th scope="col">数据/权重</th>
+<th scope="col">项目页/视频</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>核心：ScaleSearch</strong></td>
+<td><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/633b0e871a48d542280c3ad03928e60d-Abstract-Conference.html">MLSys
+2026 正式页</a>；<a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/file/633b0e871a48d542280c3ad03928e60d-Paper-Conference.pdf">正式
+PDF</a>；<a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/file/633b0e871a48d542280c3ad03928e60d-Supplemental-Conference.pdf">Supplement</a></td>
+<td><a
+href="https://arxiv.org/abs/2605.12464v1">2605.12464v1</a>，2026-05-12
+17:50 UTC</td>
+<td><strong>未公开/未找到</strong>；论文只说修改 ModelOpt 与在 PyTorch
+中模拟</td>
+<td><strong>未公开/未找到</strong></td>
+<td><strong>未找到</strong></td>
+</tr>
+<tr class="even">
+<td>SageAttention3</td>
+<td>论文 PDF 标注 NeurIPS 2025，仓库公告为 Spotlight；正式 proceedings
+入口未找到</td>
+<td><a
+href="https://arxiv.org/abs/2505.11594v3">2505.11594v3</a>，2026-01-14；v1
+为 2025-05-16</td>
+<td><a
+href="https://github.com/thu-ml/SageAttention">thu-ml/SageAttention</a>，含
+`sageattention3_blackwell`</td>
+<td>独立数据/权重不适用；评测脚本与示例见仓库</td>
+<td>项目页复用 GitHub；独立视频未找到</td>
+</tr>
+<tr class="odd">
+<td>QuIP#</td>
+<td><a href="https://proceedings.mlr.press/v235/tseng24a.html">ICML 2024
+/ PMLR 235</a></td>
+<td><a href="https://arxiv.org/abs/2402.04396">2402.04396</a>，v1
+2024-02-06</td>
+<td><a
+href="https://github.com/Cornell-RelaxML/quip-sharp">Cornell-RelaxML/quip-sharp</a></td>
+<td>量化模型入口见仓库；训练数据不适用</td>
+<td>独立项目页/视频未找到</td>
+</tr>
+<tr class="even">
+<td>StreamingLLM</td>
+<td>ICLR 2024；OpenReview 入口触发验证页，故以 arXiv
+与官方仓库双证据</td>
+<td><a href="https://arxiv.org/abs/2309.17453">2309.17453</a>，v1
+2023-09-29</td>
+<td><a
+href="https://github.com/mit-han-lab/streaming-llm">mit-han-lab/streaming-llm</a></td>
+<td>代码与评测配置公开；专用权重不适用</td>
+<td>项目入口见仓库；独立视频未找到</td>
+</tr>
+<tr class="odd">
+<td>NVFP4 技术说明</td>
+<td><a
+href="https://developer.nvidia.com/blog/introducing-nvfp4-for-efficient-and-accurate-low-precision-inference/">NVIDIA
+技术博客，2025-06-24</a></td>
+<td>不适用</td>
+<td><a
+href="https://github.com/NVIDIA/TensorRT-Model-Optimizer">TensorRT Model
+Optimizer</a>；<a
+href="https://github.com/vllm-project/llm-compressor">LLM
+Compressor</a></td>
+<td>博客链接若干预量化权重；不是 ScaleSearch 权重</td>
+<td>博客即项目说明；独立视频未找到</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>版本不一致警报。</strong> MLSys PDF 作者名写作
+<strong>Shirley Wu</strong>，正式网页和 arXiv 写作 <strong>Xiaoxia
+Wu</strong>；arXiv HTML 还残留“Anonymous Authors”“Under review by
+MLSys”的投稿模板，而正式 PDF 已署名。报告以正式 proceedings
+的论文身份为准，但不擅自判断两个英文名是否为同一人的更名，因为作者页没有给出解释。另一个细节是
+proceedings 总页称 <em>Proceedings of Machine Learning and Systems
+8</em>，PDF 页脚称“9th MLSys
+Conference”；前者是卷号，后者是会议届次，不构成冲突。</p>
+</section><section class="card" aria-labelledby="1-候选池近-14-天排除与随机选择"><h2 id="1-候选池近-14-天排除与随机选择">1. 候选池、近 14
+天排除与随机选择</h2>
+<p>先检查 <code>ml-report-index.md</code>：近 14 天已经深读
+<strong>QServe</strong>（W4A8KV4 服务系统）与
+<strong>Lumos</strong>（训练性能建模），因此排除同论文，并避免再次选择“混合精度服务内核”或“训练预测器”这一高度重合主线。候选搜集先用
+MLSys 2025 页面建立了 27 篇池，并严格执行 <code>shuf -i 1-27 -n 1</code>
+抽中 #23 <strong>APOLLO</strong>；随后发现 MLSys 2026 正式 proceedings
+已上线且包含 135 篇正式论文。继续用 2025-only 池会违背“最近 12
+个月正式论文优先”，所以这次抽取作废，不是因为论文不热门或结果不漂亮。</p>
+<p>随后以 MLSys 2026 正式论文集为主，辅以 arXiv、OpenReview、Hugging
+Face Daily Papers、Papers with Code、Semantic Scholar 和 ACL Anthology
+题名检索核对身份与资源。系统方向没有必要为了凑来源而塞入 ACL
+论文；这些辅助入口对核心题名没有返回额外代码或数据。重建后得到以下
+<strong>30 篇</strong>合格候选，执行 <code>shuf -i 1-30 -n 1</code> 抽中
+<strong>#24 ScaleSearch</strong>。总重抽 <strong>1
+次</strong>，唯一理由是发现了更新正式论文集。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">#</th>
+<th scope="col">候选论文</th>
+<th scope="col">正式身份</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td>ProfInfer: An eBPF-based Fine-Grained LLM Inference Profiler</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td>SpecDiff-2: Scaling Diffusion Drafter Alignment For Faster
+Speculative Decoding</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td>SuperInfer: SLO-Aware Rotary Scheduling and Memory Management for
+LLM Inference on Superchips</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td>HELIOS: Adaptive Model And Early-Exit Selection for Efficient LLM
+Inference Serving</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td>AccelOpt: A Self-Improving LLM Agentic System for AI Accelerator
+Kernel Optimization</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td>BOOST: Bottleneck-Optimized Scalable Training Framework for Low-Rank
+Large Language Models</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td>Rethinking DVFS for Mobile LLMs: Unified Energy-Aware Scheduling
+with CORE</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">8</td>
+<td>CATWILD: Compiler Autotuning for TPU Workloads in the Wild</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td>Breaking the Ice: Analyzing Cold Start Latency in vLLM</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td>FlashInfer-Bench: Building the Virtuous Cycle for AI-driven LLM
+Systems</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td>CRAFT: Fine-Grained Cost-Aware Expert Replication for Efficient MoE
+Serving</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">12</td>
+<td>Stream2LLM: Overlap Context Streaming and Prefill for Reduced
+Time-to-First-Token</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td>FlexTrain: Scalable Hybrid-Parallel Training with Elastic Resource
+Utilization and Consistent Accuracy</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td>PRISM: Parametrically Refactor Inference for Speculative Decoding
+Draft Models</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td>Efficient Long-Context Language Model Training by Core Attention
+Disaggregation</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">16</td>
+<td>Demystifying the Mixture of Experts Serving Tax</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td>SkipKV: Selective Skipping of KV Generation and Storage for
+Efficient Inference with Large Reasoning Models</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td>Wave: A Symbolic Python DSL And Compiler for High-Performance
+Machine Learning</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">19</td>
+<td>RaidServe: High-performance Resilient Serving</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">20</td>
+<td>Event Tensor: A Unified Abstraction for Compiling Dynamic
+Megakernel</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">21</td>
+<td>Speculative Decoding: Performance or Illusion?</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">22</td>
+<td>ProTrain: Efficient LLM Training via Automatic Memory
+Management</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">23</td>
+<td>BatchLLM: Optimizing Large Batched LLM Inference with Global Prefix
+Sharing and Throughput-oriented Token Batching</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;"><strong>24</strong></td>
+<td><strong>Search Your Block Floating Point Scales!</strong></td>
+<td><strong>MLSys 2026；抽中</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">25</td>
+<td>Accelerating Large-Scale Reasoning Model Inference with Sparse
+Self-Speculative Decoding</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">26</td>
+<td>FaaScale: Unlocking Fast LLM Scaling for Serverless Inference</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">27</td>
+<td>TokenWeave: Efficient Compute-Communication Overlap for Distributed
+LLM Inference</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">28</td>
+<td>MTraining: Distributed Dynamic Sparse Attention for Efficient
+Ultra-Long Context Training</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">29</td>
+<td>TeleRAG: Efficient Retrieval-Augmented Generation Inference with
+Lookahead Retrieval</td>
+<td>MLSys 2026</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">30</td>
+<td>MoEBlaze: Breaking the Memory Wall for Efficient MoE Training on
+Modern GPUs</td>
+<td>MLSys 2026</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="2-motivation4-bit-的瓶颈不只在位数太少还在-scale-选错"><h2 id="2-motivation4-bit-的瓶颈不只在位数太少还在-scale-选错">2.
+Motivation：4-bit 的瓶颈不只在“位数太少”，还在 scale 选错</h2>
+<p>NVFP4 把连续值表示成“每个元素一个 E2M1 四位浮点数 + 每 16
+个元素共享一个 E4M3 八位 scale”。E2M1 只有</p>
+<p><span
+class="math display">ℛ<sub><em>E</em>2<em>M</em>1</sub> = {0,  ± 0.5,  ± 1,  ± 1.5,  ± 2,  ± 3,  ± 4,  ± 6}.</span></p>
+<p>因此每个原值最终只能落在 <span
+class="math inline"><em>s</em>ℛ<sub><em>E</em>2<em>M</em>1</sub></span>
+上。标准做法用块内最大绝对值 <span
+class="math inline"><em>x</em><sub>max</sub></span> 定标：<span
+class="math inline"><em>s</em> = round<sub><em>U</em><em>E</em>4<em>M</em>3</sub>(<em>x</em><sub>max</sub>/6)</span>，保证最大值大致映射到
+6。这一启发式只照顾一个极值，却没有最小化 16 个值的总体误差。核心论文第
+3–4 节（pp.4–5）指出，E4M3 scale 本身有 3 位
+mantissa，邻近的多个非二次幂 scale 都能由 Blackwell 硬件直接表示；既然
+scale 网格已经存在，就可以在不改变存储格式的前提下为整块寻找更低 MSE
+的格点。</p>
+<p>硬件诱因很直接。核心论文引言（p.1）援引 Blackwell：NVFP4/MXFP4
+矩阵乘在 B200 上相对 FP8 的峰值吞吐为 <strong>2×</strong>，B300 为
+<strong>3×</strong>。NVIDIA 技术说明表 1 与“Memory”小节进一步说明 NVFP4
+是 16 值共享 E4M3 scale，平均约 <strong>4.5
+bit/value</strong>，模型内存约为 FP16 的 <strong>1/3.5</strong>、FP8 的
+<strong>1/1.8</strong>。但这些是格式与硬件上限，不是 ScaleSearch
+自身的端到端收益；ScaleSearch 的问题更窄：在相同 4.5-bit 表示和相同
+Tensor Core 指令下，能不能少犯一些舍入错误？</p>
+<p>图 3/正文在这里暴露了值得审计的内部矛盾。PDF p.5 图 3 的纵轴清楚显示
+MSE 从约 <strong>0.0090</strong> 降到 <strong>0.0066</strong>，相对下降
+<span
+class="math inline">(0.0090−0.0066)/0.0090 = 26.67%</span>，与摘要的 27%
+和贡献列表的 26% 基本一致；但 p.6 正文把起点写成
+<strong>0.0990</strong>，并仍称“约 25%”。若照正文两数复算，下降会是
+<strong>93.33%</strong>。因此本报告采用图示 0.0090 作为可信读数，并把
+0.0990
+判为十倍小数点笔误，而不是把不可能同时成立的三个数字混写成结论。</p>
+<p>下游痛点并非均匀。PTQ 表 1（p.9）中，DeepSeek-R1-Distill-Qwen-1.5B
+的普通 NVFP4 把 MATH-500 从 64.6 拉到 51.6，损失 <strong>13.0
+pp</strong>；Qwen3-8B 的 GPQA 从 51.3 到 42.4，损失 <strong>8.9
+pp</strong>。相反，Qwen3-8B 的 MATH-500 量化结果 73.1 甚至略高于全精度
+72.8，说明 benchmark/采样噪声会和量化误差纠缠。ScaleSearch
+最有价值的场景不是所有张量，而是 max-scale
+明显失配、低比特误差已穿透到任务表现的块。</p>
+</section><section class="card" aria-labelledby="3-论文故事线从一个局部枚举器到完整-fp4-attention"><h2 id="3-论文故事线从一个局部枚举器到完整-fp4-attention">3.
+论文故事线：从一个局部枚举器到完整 FP4 attention</h2>
+<p>论文有两条嵌套故事线。</p>
+<p>第一条是纯数值算法。作者先从标准 scale 的 E4M3
+位模式出发，把它重新解释成 <code>int8</code>，枚举偏移 <span
+class="math inline"><em>f</em></span>，对每个候选 scale 重量化 16
+个值并计算 MSE，选最小者。完整枚举 <span
+class="math inline">[−127,127]</span> 可找全局最优表示，但代价过高；图 4
+显示高斯数据与 Llama 3.1 8B 的真实 Key 状态都呈双峰 offset，集中在 0
+附近与 4–5 附近，于是作者固定搜索 <span
+class="math inline">[−2,6]</span> 共 9
+个候选。第二峰有清楚的离散几何解释：默认 scale 让最大值编码成 6；scale
+放大约 <span class="math inline">6/4 = 1.5</span> 后，最大值编码成
+4，却可能让其余 15 个值更贴近网格（pp.5–7）。</p>
+<p>第二条是系统组合。作者把搜索器用于三处：ModelOpt 的权重
+PTQ、SageAttention3 的视频 diffusion attention、以及自建的
+ScaleSearchAttention（SSA）。SSA 不只加 scale 搜索，还同时加入：Q/K 的
+Hadamard incoherence processing、一个通过 SVD
+得到的幅值平衡变换、对首块与最近块保留高精度的 sink-aware KV cache，以及
+QKᵀ、softmax 概率 P、V、PV 全链 NVFP4 Tensor Core 路径。因此表 3/4 中
+SSA 的结果不能全归因于 ScaleSearch；表 5 的逐组件消融才是归因依据。</p>
+<p>核心假设可写成三个层级：</p>
+<ol type="1">
+<li><strong>局部代理假设</strong>：逐块 MSE
+越小，模型功能越好。它通常合理，却没有保证，因为 attention 与 residual
+路径对不同方向的误差敏感性不同。</li>
+<li><strong>分布迁移假设</strong>：高斯块与真实 Key 状态有相似的 offset
+双峰，所以固定 <span class="math inline">[−2,6]</span>
+能迁移到权重、Q/K/V/P、LLM 与视频 diffusion。论文只展示一类真实 Key
+tensor 的直方图（图 4，p.5），没有逐模型逐层验证覆盖率。</li>
+<li><strong>系统摊销假设</strong>：scale 搜索可以融合或在离线 PTQ
+中摊销，因此 1.74× 的量化局部开销不会破坏端到端吞吐。视频 latency
+支持“约 2%–3% 额外时间”，但语言模型只给 attention kernel TOPS 曲线，没有
+TTFT、TPOT、吞吐/延迟 SLO。</li>
+</ol>
+<p>这三层恰好对应论文真正的权衡：更小 MSE换来更多候选；更稳 attention
+换来首尾高精度缓存与离线矩阵变换；更强硬件效率则换来 Blackwell-only
+的部署约束。</p>
+</section><section class="card" aria-labelledby="4-方程级形式化与流程"><h2 id="4-方程级形式化与流程">4. 方程级形式化与流程</h2>
+<h3 id="41-nvfp4-表示与标准量化">4.1 NVFP4 表示与标准量化</h3>
+<p>对 <span
+class="math inline"><em>x</em> ∈ ℝ<sup>16</sup></span>，NVFP4
+可表示集合为</p>
+<p><span
+class="math display">𝒱<sub><em>N</em><em>V</em><em>F</em><em>P</em>4</sub> = {<em>s</em><em>q</em> ∣ <em>q</em> ∈ ℛ<sub><em>E</em>2<em>M</em>1</sub><sup>16</sup>, <em>s</em> ∈ ℛ<sub><em>U</em><em>E</em>4<em>M</em>3</sub>}.</span></p>
+<p>一个 <span class="math inline"><em>N</em> × <em>D</em></span>
+张量被表示为 <span
+class="math inline">(<em>Q</em>,<em>S</em>)</span>，其中 <span
+class="math inline"><em>Q</em> ∈ ℛ<sub><em>E</em>2<em>M</em>1</sub><sup><em>N</em> × <em>D</em></sup></span>、<span
+class="math inline"><em>S</em> ∈ ℛ<sub><em>U</em><em>E</em>4<em>M</em>3</sub><sup><em>N</em> × (<em>D</em>/16)</sup></span>；解码为</p>
+<p><span
+class="math display"><em>X̂</em> = decode(<em>Q</em>) ⊙ Broadcast(<em>S</em>).</span></p>
+<p>以上来自核心第 3 节（p.4）。4-bit value 加每 16 值一个 8-bit
+scale，平均存储 <span class="math inline">4 + 8/16 = 4.5</span>
+bits/value，不含每 tensor 的 FP32 global scale。</p>
+<h3 id="42-邻近可表示-scale-的离散优化">4.2 邻近可表示 scale
+的离散优化</h3>
+<p>令标准 scale 为 <span
+class="math inline"><em>s</em><sup>(0)</sup></span>。把其 UE4M3
+位模式视作整数并加偏移：</p>
+<p><span
+class="math display"><em>s</em><sup>(<em>f</em>)</sup> = reinterpret(reinterpret(<em>s</em><sup>(0)</sup>,int8)+<em>f</em>,UE4M3).</span></p>
+<p>ScaleSearch 求解</p>
+<p><span
+class="math display">$$f^*=\arg\min_{f\in[f_{\min},f_{\max}]}\sum_{i=1}^{16}\left(x_i-s^{(f)}\,\mathrm{round}_{E2M1}(x_i/s^{(f)})\right)^2.$$</span></p>
+<p>在论文默认 <span class="math inline">[−2,6]</span> 下，每块只评估 9
+个相邻 scale。若块长为 <span
+class="math inline"><em>B</em> = 16</span>、候选数为 <span
+class="math inline"><em>K</em> = 9</span>，朴素搜索复杂度为 <span
+class="math inline"><em>O</em>(<em>K</em><em>B</em>)</span>，存储格式不变；额外成本发生在量化而不是矩阵乘。算法
+1（p.5）还检查 <code>1 ≤ scale_int8 + f ≤ 127</code>，避免越出正 UE4M3
+scale 范围。</p>
+<pre class="text"><code>输入：16 值块 x，偏移范围 [-2, 6]
+1  xmax = max |x_i|；s0 = round_UE4M3(xmax / 6)
+2  best_loss = +∞
+3  对 f = -2 ... 6：
+4      sf = s0 的 E4M3 位模式加 f
+5      qf = round_E2M1(x / sf)
+6      loss = Σ_i (x_i - sf*qf_i)^2
+7      若 loss 更小，保存 sf、qf、f
+8  返回最优 block scale 与 16 个 FP4 值</code></pre>
+<h3 id="43-保持-attention-score-的幅值平衡变换">4.3 保持 attention score
+的幅值平衡变换</h3>
+<p>SSA 先用 Hadamard 变换削弱 outlier，再引入可逆 <span
+class="math inline"><em>R</em></span>：</p>
+<p><span
+class="math display"><em>Q</em>′ = <em>Q</em><em>R</em><sup>−<em>T</em></sup>,   <em>K</em>′ = <em>K</em><em>R</em>,</span></p>
+<p>于是</p>
+<p><span
+class="math display"><em>Q</em>′<em>K</em>′<sup><em>T</em></sup> = <em>Q</em><em>R</em><sup>−<em>T</em></sup><em>R</em><sup><em>T</em></sup><em>K</em><sup><em>T</em></sup> = <em>Q</em><em>K</em><sup><em>T</em></sup>.</span></p>
+<p>附录 A（p.16）令 <span
+class="math inline"><em>X</em> = 𝔼[<em>Q</em><sup><em>T</em></sup><em>Q</em>]</span>、<span
+class="math inline"><em>Y</em> = 𝔼[<em>K</em><sup><em>T</em></sup><em>K</em>]</span>，最小化</p>
+<p><span
+class="math display">min<sub><em>R</em></sub>tr(<em>R</em><sup>−1</sup><em>X</em><em>R</em><sup>−<em>T</em></sup>) ⋅ tr(<em>R</em><sup><em>T</em></sup><em>Y</em><em>R</em>).</span></p>
+<p>若 <span
+class="math inline"><em>X</em><sup>1/2</sup><em>Y</em><sup>1/2</sup> = <em>U</em><em>S</em><em>V</em><sup><em>T</em></sup></span>，论文给出
+<span
+class="math inline"><em>R</em> = <em>Y</em><sup>−1/2</sup><em>V</em><em>S</em><sup>1/2</sup></span>，使两个
+trace 都等于 <span class="math inline">tr(<em>S</em>)</span>，最小乘积为
+<span
+class="math inline">tr(<em>S</em>)<sup>2</sup></span>。这个推导保证
+score
+不变并平衡二阶能量，但“二阶能量更小所以量化误差更小”仍是代理关系；附录没有对离散
+E2M1 rounding 的最终任务误差给界。</p>
+<h3 id="44-混合精度-kv-与-fp4-kernel-路径">4.4 混合精度 KV 与 FP4 kernel
+路径</h3>
+<p>论文图 8（p.8）把 QKᵀ 和 PV
+都拆成高/低精度子块。首块和最近一个不完整块保留全精度，中间完成块量化为
+NVFP4；新 token 让最近块凑满 <span class="math inline"><em>B</em></span>
+后再压入 4.5-bit KV cache。高精度缓存只占 <span
+class="math inline"><em>O</em>(<em>B</em>)</span>，不随上下文增长；但
+<span class="math inline"><em>B</em> ≥ 16</span>，因为 V 沿 token 维以
+16 为 NVFP4 group。Q/K/V/P 都先 per-row scaling，再 ScaleSearch；NVFP4
+MMA 用 FP32 accumulator，所以作者声称矩阵乘路径没有显式
+dequantization。</p>
+</section><section class="card" aria-labelledby="5-关键机制与工程细节"><h2 id="5-关键机制与工程细节">5. 关键机制与工程细节</h2>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">组件</th>
+<th scope="col">论文设置</th>
+<th scope="col">功能</th>
+<th scope="col">审计判断</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Value/scale 格式</td>
+<td>E2M1 值；每 16 值一个 UE4M3 scale</td>
+<td class="num">4.5 bits/value，直接进 NVFP4 Tensor Core</td>
+<td>依赖 Blackwell；不是通用 CUDA 加速</td>
+</tr>
+<tr class="even">
+<td>搜索范围</td>
+<td>默认 <code>[-2,6]</code>，9 个候选（图 4，pp.5–6）</td>
+<td>覆盖 offset 0 与 4–5 双峰</td>
+<td>由单个高斯分布和一类真实 Key tensor 决定</td>
+</tr>
+<tr class="odd">
+<td>PTQ 集成</td>
+<td>修改 TensorRT Model Optimizer 的 NVFP4 path（§5.1，p.9）</td>
+<td>离线权重量化</td>
+<td>补丁与 commit 未公开，难以复现</td>
+</tr>
+<tr class="even">
+<td>SSA 仿真</td>
+<td>PyTorch FP4 simulator；SA3 也用模拟算法</td>
+<td>比较 PPL/GPQA</td>
+<td>论文称公开 SA3 causal 路径“numerically
+unstable”，因此不是实机同栈比较</td>
+</tr>
+<tr class="odd">
+<td>Incoherence</td>
+<td>继承 QuIP# 的 Hadamard 思路</td>
+<td>抑制 outlier</td>
+<td>是重要技术来源，不是 ScaleSearch 原创</td>
+</tr>
+<tr class="even">
+<td>幅值平衡</td>
+<td>用二阶矩与 SVD 构造 <span
+class="math inline"><em>R</em></span>（附录 A）</td>
+<td>保持 QKᵀ，平衡 Q/K energy</td>
+<td>未报校准集、矩阵更新频率与 SVD 成本</td>
+</tr>
+<tr class="odd">
+<td>KV cache</td>
+<td>首块+最近块全精度，中间 NVFP4</td>
+<td>保护 sink/local token</td>
+<td>消融贡献大于 ScaleSearch；真实内存峰值未报</td>
+</tr>
+<tr class="even">
+<td>Quant kernel</td>
+<td class="num">2048×2048 高斯矩阵</td>
+<td>基线 0.0258 ms；全搜索 0.0449 ms</td>
+<td class="num">1.74× 是局部量化 kernel，不是模型 latency</td>
+</tr>
+<tr class="odd">
+<td>视频评测</td>
+<td>Mochi、CogVideoX；12 prompts（表 7，p.11）</td>
+<td>端到端质量与时间</td>
+<td>样本极小，无方差/置信区间</td>
+</tr>
+<tr class="even">
+<td>吞吐评测</td>
+<td class="num">32K 时 non-causal 98.3%、causal 97.5% 的 SA3 TOPS</td>
+<td>检验融合搜索成本</td>
+<td>图 9 无逐点数表，也未给 TTFT/TPOT</td>
+</tr>
+</tbody>
+</table></div>
+<p>论文没有报告 GPU 型号于核心 §5.3 的文字表格中；图 9 也没有在 caption
+明写设备。由于被对比 SA3 针对 Blackwell，不能擅自把该结果标成 B200、B300
+或 RTX 5090。SageAttention3 自身论文是在 RTX 5090 上报 1038 TOPS（其
+p.1、p.7），不等于 ScaleSearch 的实验也使用同一块卡。</p>
+</section><section class="card" aria-labelledby="6-数据集基准与指标"><h2 id="6-数据集基准与指标">6. 数据集、基准与指标</h2>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">评测面</th>
+<th scope="col">模型/数据</th>
+<th scope="col">指标</th>
+<th scope="col">样本/重复</th>
+<th scope="col">能说明什么；不能说明什么</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>权重 PTQ</td>
+<td>DeepSeek-R1-Distill-Qwen-1.5B、Qwen3-8B</td>
+<td>GPQA、MATH-500、AIME-120、MMLU accuracy↑</td>
+<td>除 MMLU 外均 5 runs；MMLU 1 run（表 1，p.9）</td>
+<td>说明离线权重量化的任务保持；不说明在线 activation/KV 性能</td>
+</tr>
+<tr class="even">
+<td>视频 attention</td>
+<td>Mochi、CogVideoX-2B；SA3 evaluation set</td>
+<td>VQA-a/t、FScore、CLIPSIM、CLIP-T↑</td>
+<td>表 2 未给样本数；latency 表 7 为 12 prompts</td>
+<td>能看生成质量代理；不等于人类偏好或大规模视频质量</td>
+</tr>
+<tr class="odd">
+<td>语言 PPL</td>
+<td>Llama 3.1 8B/70B、Qwen3 4B/8B；WikiText-2 test</td>
+<td>perplexity↓</td>
+<td>未报 seeds/标准差</td>
+<td>任务无关 next-token likelihood；不等于真实服务质量</td>
+</tr>
+<tr class="even">
+<td>语言能力</td>
+<td>Llama 3.1 8B Instruct；GPQA Diamond</td>
+<td>accuracy↑</td>
+<td>未报 shot、sampling、runs</td>
+<td>单一 reasoning benchmark；不支持“全面能力无损”</td>
+</tr>
+<tr class="odd">
+<td>数值误差</td>
+<td>标准高斯 tensor、真实 Key state offset</td>
+<td>MSE↓、offset 分布</td>
+<td>tensor 尺寸未报；图 4 未报层/头/序列</td>
+<td>支持局部 scale 机制；不足以证明全模型各层分布一致</td>
+</tr>
+<tr class="even">
+<td>系统性能</td>
+<td class="num">2048×2048 高斯矩阵；attention kernel；视频生成</td>
+<td>quantization time、TOPS、E2E latency↓</td>
+<td>latency 12 prompts，其他重复次数未报</td>
+<td>证明局部开销可小；没有并发 serving、能耗、显存峰值</td>
+</tr>
+</tbody>
+</table></div>
+<p>论文声称“五个 general capability benchmarks”，但表 1 实际只有
+<strong>四列</strong>：GPQA、MATH-500、AIME-120、MMLU（§5.1，p.9）。这不是本报告漏抄，而是正文计数与表格不一致。AIME-120
+也没有清楚说明它如何由 AIME 年份/题目构成，影响可复现性。</p>
+</section><section class="card" aria-labelledby="7-完整主结果矩阵与逐项复算"><h2 id="7-完整主结果矩阵与逐项复算">7. 完整主结果矩阵与逐项复算</h2>
+<h3 id="71-权重-ptq表-1-全量转录">7.1 权重 PTQ：表 1 全量转录</h3>
+<p>下表来自核心表 1（p.9）。括号是论文报告的 5-run 离散度，但 caption
+没有说是标准差还是标准误；MMLU
+只跑一次，没有括号。每个模型内粗体为最好。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">模型</th>
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">GPQA↑</th>
+<th scope="col" style="text-align: right;">MATH-500↑</th>
+<th scope="col" style="text-align: right;">AIME-120↑</th>
+<th scope="col" style="text-align: right;">MMLU↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DeepSeek-R1-Distill-Qwen-1.5B</td>
+<td>Baseline</td>
+<td style="text-align: right;"><strong>32.6 (3.2)</strong></td>
+<td style="text-align: right;"><strong>64.6 (1.4)</strong></td>
+<td style="text-align: right;"><strong>24.5 (2.3)</strong></td>
+<td style="text-align: right;"><strong>48.0</strong></td>
+</tr>
+<tr class="even">
+<td></td>
+<td>NVFP4</td>
+<td style="text-align: right;">30.4 (4.2)</td>
+<td style="text-align: right;">51.6 (2.9)</td>
+<td style="text-align: right;">18.7 (1.4)</td>
+<td style="text-align: right;">45.2</td>
+</tr>
+<tr class="odd">
+<td></td>
+<td>ScaleSearch</td>
+<td style="text-align: right;">31.3 (1.8)</td>
+<td style="text-align: right;">62.1 (1.9)</td>
+<td style="text-align: right;">19.8 (1.9)</td>
+<td style="text-align: right;">45.4</td>
+</tr>
+<tr class="even">
+<td>Qwen3-8B</td>
+<td>Baseline</td>
+<td style="text-align: right;"><strong>51.3 (3.8)</strong></td>
+<td style="text-align: right;">72.8 (3.4)</td>
+<td style="text-align: right;"><strong>71.0 (3.0)</strong></td>
+<td style="text-align: right;"><strong>79.7</strong></td>
+</tr>
+<tr class="odd">
+<td></td>
+<td>NVFP4</td>
+<td style="text-align: right;">42.4 (5.5)</td>
+<td style="text-align: right;">73.1 (4.3)</td>
+<td style="text-align: right;"><strong>63.7 (1.3)</strong></td>
+<td style="text-align: right;">77.7</td>
+</tr>
+<tr class="even">
+<td></td>
+<td>ScaleSearch</td>
+<td style="text-align: right;">49.9 (1.6)</td>
+<td style="text-align: right;"><strong>88.1 (0.6)</strong></td>
+<td style="text-align: right;">63.0 (2.2)</td>
+<td style="text-align: right;">79.4</td>
+</tr>
+</tbody>
+</table></div>
+<p>ScaleSearch 相对普通 NVFP4 的复算如下。绝对变化以 percentage
+point（pp）表示，relative 是
+<code>(ScaleSearch-NVFP4)/NVFP4</code>：</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">模型/指标</th>
+<th scope="col" style="text-align: right;">NVFP4→ScaleSearch</th>
+<th scope="col" style="text-align: right;">绝对变化</th>
+<th scope="col" style="text-align: right;">相对变化</th>
+<th scope="col">是否胜出</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td class="num">1.5B GPQA</td>
+<td style="text-align: right;">30.4→31.3</td>
+<td style="text-align: right;">+0.9 pp</td>
+<td style="text-align: right;">+2.96%</td>
+<td>是</td>
+</tr>
+<tr class="even">
+<td class="num">1.5B MATH-500</td>
+<td style="text-align: right;">51.6→62.1</td>
+<td style="text-align: right;"><strong>+10.5 pp</strong></td>
+<td style="text-align: right;"><strong>+20.35%</strong></td>
+<td>是</td>
+</tr>
+<tr class="odd">
+<td class="num">1.5B AIME-120</td>
+<td style="text-align: right;">18.7→19.8</td>
+<td style="text-align: right;">+1.1 pp</td>
+<td style="text-align: right;">+5.88%</td>
+<td>是</td>
+</tr>
+<tr class="even">
+<td class="num">1.5B MMLU</td>
+<td style="text-align: right;">45.2→45.4</td>
+<td style="text-align: right;">+0.2 pp</td>
+<td style="text-align: right;">+0.44%</td>
+<td>是；仅单次</td>
+</tr>
+<tr class="odd">
+<td class="num">8B GPQA</td>
+<td style="text-align: right;">42.4→49.9</td>
+<td style="text-align: right;"><strong>+7.5 pp</strong></td>
+<td style="text-align: right;">+17.69%</td>
+<td>是</td>
+</tr>
+<tr class="even">
+<td class="num">8B MATH-500</td>
+<td style="text-align: right;">73.1→88.1</td>
+<td style="text-align: right;"><strong>+15.0 pp</strong></td>
+<td style="text-align: right;"><strong>+20.52%</strong></td>
+<td>是</td>
+</tr>
+<tr class="odd">
+<td class="num">8B AIME-120</td>
+<td style="text-align: right;"><strong>63.7→63.0</strong></td>
+<td style="text-align: right;"><strong>−0.7 pp</strong></td>
+<td style="text-align: right;">−1.10%</td>
+<td><strong>否</strong></td>
+</tr>
+<tr class="even">
+<td class="num">8B MMLU</td>
+<td style="text-align: right;">77.7→79.4</td>
+<td style="text-align: right;">+1.7 pp</td>
+<td style="text-align: right;">+2.19%</td>
+<td>是；仅单次</td>
+</tr>
+</tbody>
+</table></div>
+<p>所以“across all benchmarks”的严格说法不成立：8 个模型×指标单元格中
+<strong>7/8</strong> 上升，Qwen3-8B AIME-120 下降 0.7
+pp。作者说它在一个标准差内是合理的定性解释，但没有配对检验、置信区间或原始
+5 次结果，不能把“未显著差”改写成“等价”。更反常的是 8B MATH-500 从全精度
+72.8 到 ScaleSearch 88.1，<strong>高 15.3 pp</strong>；这很可能包含
+decoding 或评测随机性，却没有配置可核验。</p>
+<h3 id="72-视频-diffusion表-2-全量转录">7.2 视频 diffusion：表 2
+全量转录</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">模型</th>
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">VQA-a↑</th>
+<th scope="col" style="text-align: right;">VQA-t↑</th>
+<th scope="col" style="text-align: right;">FScore↑</th>
+<th scope="col" style="text-align: right;">CLIPSIM↑</th>
+<th scope="col" style="text-align: right;">CLIP-T↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Mochi</td>
+<td>Full-Precision</td>
+<td style="text-align: right;"><strong>62.919</strong></td>
+<td style="text-align: right;">70.216</td>
+<td style="text-align: right;"><strong>2.466</strong></td>
+<td style="text-align: right;"><strong>0.1834</strong></td>
+<td style="text-align: right;"><strong>0.9991</strong></td>
+</tr>
+<tr class="even">
+<td></td>
+<td>SageAttention3</td>
+<td style="text-align: right;">49.635</td>
+<td style="text-align: right;">55.738</td>
+<td style="text-align: right;">1.874</td>
+<td style="text-align: right;">0.1829</td>
+<td style="text-align: right;">0.9988</td>
+</tr>
+<tr class="odd">
+<td></td>
+<td>SA3 + ScaleSearch</td>
+<td style="text-align: right;">57.424</td>
+<td style="text-align: right;"><strong>70.362</strong></td>
+<td style="text-align: right;">2.143</td>
+<td style="text-align: right;">0.1826</td>
+<td style="text-align: right;">0.9989</td>
+</tr>
+<tr class="even">
+<td>CogVideoX</td>
+<td>Full-Precision</td>
+<td style="text-align: right;">74.969</td>
+<td style="text-align: right;">75.345</td>
+<td style="text-align: right;"><strong>5.969</strong></td>
+<td style="text-align: right;"><strong>0.1850</strong></td>
+<td style="text-align: right;"><strong>0.9976</strong></td>
+</tr>
+<tr class="odd">
+<td></td>
+<td>SageAttention3</td>
+<td style="text-align: right;">72.915</td>
+<td style="text-align: right;">74.912</td>
+<td style="text-align: right;">5.118</td>
+<td style="text-align: right;">0.1845</td>
+<td style="text-align: right;">0.9973</td>
+</tr>
+<tr class="even">
+<td></td>
+<td>SA3 + ScaleSearch</td>
+<td style="text-align: right;"><strong>75.753</strong></td>
+<td style="text-align: right;"><strong>75.873</strong></td>
+<td style="text-align: right;">5.402</td>
+<td style="text-align: right;">0.1833</td>
+<td style="text-align: right;">0.9974</td>
+</tr>
+</tbody>
+</table></div>
+<p>来自核心表 2（p.10）。相对 SA3，Mochi 的 VQA-a/t/FScore 分别
+<strong>+7.789 pp（+15.69%）</strong>、<strong>+14.624
+pp（+26.24%）</strong>、<strong>+0.269（+14.35%）</strong>；CogVideoX
+分别 <strong>+2.838 pp（+3.89%）</strong>、<strong>+0.961
+pp（+1.28%）</strong>、<strong>+0.284（+5.55%）</strong>。但 CLIPSIM
+在两个模型上分别
+<strong>−0.0003（−0.16%）</strong>、<strong>−0.0012（−0.65%）</strong>，所以论文“matching”更接近“几乎不变”，不是逐项不降。没有标准差时，0.0001
+级 CLIP-T 差异更不应解释为胜负。</p>
+<h3 id="73-wikitext-2-ppl六种精度路径">7.3 WikiText-2
+PPL：六种精度路径</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">Llama 3.1 8B↓</th>
+<th scope="col" style="text-align: right;">Llama 3.1 70B↓</th>
+<th scope="col" style="text-align: right;">Qwen3 4B↓</th>
+<th scope="col" style="text-align: right;">Qwen3 8B↓</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Full Prec</td>
+<td style="text-align: right;"><strong>5.4837</strong></td>
+<td style="text-align: right;"><strong>2.5554</strong></td>
+<td style="text-align: right;"><strong>11.1327</strong></td>
+<td style="text-align: right;"><strong>8.3013</strong></td>
+</tr>
+<tr class="even">
+<td>Naive-FP4</td>
+<td style="text-align: right;">5.9988</td>
+<td style="text-align: right;">3.4000</td>
+<td style="text-align: right;">11.5258</td>
+<td style="text-align: right;">8.4429</td>
+</tr>
+<tr class="odd">
+<td>Naive-FP4 + ScaleSearch</td>
+<td style="text-align: right;">5.8330</td>
+<td style="text-align: right;">3.3441</td>
+<td style="text-align: right;">11.3618</td>
+<td style="text-align: right;">8.4378</td>
+</tr>
+<tr class="even">
+<td>SA3</td>
+<td style="text-align: right;">5.9542</td>
+<td style="text-align: right;">3.3899</td>
+<td style="text-align: right;">11.3672</td>
+<td style="text-align: right;">8.4575</td>
+</tr>
+<tr class="odd">
+<td>SA3 + ScaleSearch</td>
+<td style="text-align: right;">5.8060</td>
+<td style="text-align: right;">3.2972</td>
+<td style="text-align: right;">11.2441</td>
+<td style="text-align: right;">8.4181</td>
+</tr>
+<tr class="even">
+<td><strong>ScaleSearchAttention</strong></td>
+<td style="text-align: right;"><strong>5.4977</strong></td>
+<td style="text-align: right;"><strong>2.6348</strong></td>
+<td style="text-align: right;"><strong>11.2088</strong></td>
+<td style="text-align: right;"><strong>8.3018</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>来自核心表 3（p.10）。SSA 相对 Naive-FP4 的 PPL 降幅依次为
+<strong>0.5011（8.35%）</strong>、<strong>0.7652（22.51%）</strong>、<strong>0.3170（2.75%）</strong>、<strong>0.1411（1.67%）</strong>。其中
+Llama 70B 的“最多约 22%”成立；不过 SSA 仍比 full precision 高
+0.0794（+3.11%）。Qwen3-8B 只差 0.0005（+0.006%），最接近“near-zero
+loss”。四个模型的相对收益跨度
+1.67%–22.51%，显示方法并非规模越大必然越有利：同为 8B，Llama 与 Qwen
+差异明显。</p>
+<p>论文无法提供用户期望的统一“五基准×六方法”矩阵：PTQ
+只有三方法×四列，PPL
+才有六方法×四模型，视频是三方法×五指标。把它们拼成同一表会混合
+accuracy、PPL
+与视频分数，产生伪比较，因此本报告完整保留原表而不补造第五个
+benchmark。</p>
+<h3 id="74-gpqa-diamond-与系统代价">7.4 GPQA Diamond 与系统代价</h3>
+<p>核心表 4（p.10）在 Llama 3.1 8B Instruct 上报告 Full Prec
+<strong>31.81</strong>、SA3 <strong>26.26</strong>、SSA
+<strong>32.32</strong>。SSA 相对 SA3 是 <strong>+6.06
+pp（+23.08%）</strong>，不是引言笼统写的“+5 points”；它也高于 full
+precision 0.51 pp，但无方差不能宣称真正超越。</p>
+<p>核心表 6–7（p.11）给出成本：</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">测试</th>
+<th scope="col" style="text-align: right;">基线</th>
+<th scope="col" style="text-align: right;">ScaleSearch</th>
+<th scope="col" style="text-align: right;">绝对/相对代价</th>
+<th scope="col" style="text-align: right;">对 full precision 的净收益</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td class="num">2048² FP32→NVFP4 quant</td>
+<td style="text-align: right;">0.0258 ms</td>
+<td style="text-align: right;">0.0449 ms <code>[-2,6]</code></td>
+<td style="text-align: right;">+0.0191 ms；<strong>+74.03% /
+1.74×</strong></td>
+<td style="text-align: right;">不适用</td>
+</tr>
+<tr class="even">
+<td>Mochi E2E</td>
+<td style="text-align: right;">SA3 353.40 s</td>
+<td style="text-align: right;">364.68 s</td>
+<td style="text-align: right;">+11.28 s；<strong>+3.19%</strong></td>
+<td style="text-align: right;">比 FP 503.38 s 低 27.55%；1.38×
+speedup</td>
+</tr>
+<tr class="odd">
+<td>CogVideoX E2E</td>
+<td style="text-align: right;">SA3 61.72 s</td>
+<td style="text-align: right;">63.09 s</td>
+<td style="text-align: right;">+1.37 s；<strong>+2.22%</strong></td>
+<td style="text-align: right;">比 FP 91.67 s 低 31.18%；1.45×
+speedup</td>
+</tr>
+</tbody>
+</table></div>
+<p>较窄 <code>[-1,1]</code> 搜索为 0.0328 ms，即
+1.27×。论文没有报告该范围的 MSE、PPL 或任务准确率，因此无法做“每增加
+0.01 ms 换多少质量”的 Pareto 曲线。把 1.74× 称为 minimal overhead
+只有在离线 PTQ或端到端被大矩阵乘摊薄时成立；若是逐 token
+动态量化，必须看 kernel 融合和 batch/sequence 分布。</p>
+</section><figure class="figure" aria-labelledby="ablation-chart-title">
+<p class="fig-title" id="ablation-chart-title">SSA 消融：最大保真来源不是 ScaleSearch</p>
+<p class="fig-sub">WikiText-2 / Llama 3.1 8B，纵轴为 PPL（越低越好）；为看清细微差异，纵轴截断为 5.49–5.59。</p>
+<div class="legend"><span><span class="swatch" style="background:#2a78d6"></span>完整系统</span><span><span class="swatch" style="background:#eb6834"></span>移除组件</span></div>
+<svg class="chart" viewBox="0 0 860 380" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>ScaleSearchAttention 逐组件消融的 WikiText-2 perplexity</title>
+<desc>完整系统为 5.4977，去掉 ScaleSearch 为 5.5024，去掉 incoherence 和幅值缩减为 5.5283，去掉高精度首尾 KV 为 5.5768。</desc>
+<line x1="85" y1="310" x2="810" y2="310" stroke="var(--grid)"/>
+<line x1="85" y1="65" x2="85" y2="310" stroke="var(--grid)"/>
+<line x1="85" y1="187.5" x2="810" y2="187.5" stroke="var(--grid)" stroke-dasharray="4 5"/>
+<line x1="85" y1="65" x2="810" y2="65" stroke="var(--grid)" stroke-dasharray="4 5"/>
+<text x="74" y="314" text-anchor="end" font-size="12">5.49</text>
+<text x="74" y="191" text-anchor="end" font-size="12">5.54</text>
+<text x="74" y="69" text-anchor="end" font-size="12">5.59</text>
+<rect x="145" y="291.1" width="70" height="18.9" rx="5" fill="#2a78d6" tabindex="0" data-tip="完整 SSA: PPL 5.4977"/><text x="180" y="337" text-anchor="middle" font-size="12">完整 SSA</text><rect x="320" y="279.6" width="70" height="30.4" rx="5" fill="#eb6834" tabindex="0" data-tip="去 ScaleSearch: PPL 5.5024"/><text x="355" y="337" text-anchor="middle" font-size="12">去 ScaleSearch</text><rect x="495" y="216.2" width="70" height="93.8" rx="5" fill="#eb6834" tabindex="0" data-tip="去 IP + 幅值缩减: PPL 5.5283"/><text x="530" y="337" text-anchor="middle" font-size="12">去 IP + 幅值缩减</text><rect x="670" y="97.3" width="70" height="212.7" rx="5" fill="#eb6834" tabindex="0" data-tip="去高精度首尾 KV: PPL 5.5768"/><text x="705" y="337" text-anchor="middle" font-size="12">去高精度首尾 KV</text>
+</svg>
+<figcaption>来源：核心论文表 5，正式版 p.10。悬停或键盘聚焦柱形查看精确值；去高精度首尾 KV 的恶化约为去 ScaleSearch 的 16.8×。</figcaption>
+</figure><section class="card" aria-labelledby="8-逐层消融敏感性与相变"><h2 id="8-逐层消融敏感性与相变">8. 逐层消融、敏感性与相变</h2>
+<p>核心表 5（p.10）只在 Llama 3.1 8B 的 PPL 上消融 SSA：</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">配置</th>
+<th scope="col" style="text-align: right;">PPL↓</th>
+<th scope="col" style="text-align: right;">相对完整 SSA 的恶化</th>
+<th scope="col">归因</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>完整 SSA</td>
+<td style="text-align: right;"><strong>5.4977</strong></td>
+<td style="text-align: right;">—</td>
+<td>全组件</td>
+</tr>
+<tr class="even">
+<td>去 ScaleSearch</td>
+<td style="text-align: right;">5.5024</td>
+<td style="text-align: right;">+0.0047（+0.086%）</td>
+<td>scale 搜索的独立贡献很小</td>
+</tr>
+<tr class="odd">
+<td>去 Incoherence + 幅值缩减</td>
+<td style="text-align: right;">5.5283</td>
+<td style="text-align: right;">+0.0306（+0.557%）</td>
+<td>约为去 ScaleSearch 的 6.5×</td>
+</tr>
+<tr class="even">
+<td>去 mixed-precision KV</td>
+<td style="text-align: right;">5.5768</td>
+<td style="text-align: right;">+0.0791（+1.439%）</td>
+<td>最大保真来源，约为去 ScaleSearch 的 16.8×</td>
+</tr>
+</tbody>
+</table></div>
+<p>这张表改变了论文故事的重心：<strong>ScaleSearch
+是漂亮、通用、格式不变的局部改进，但“几乎无损 FP4
+attention”主要依赖高精度首尾 KV 和变换。</strong> 论文没有“只加 mixed
+precision”“只加 IP”“去幅值变换但保留 Hadamard”的完整 factorial
+ablation，因此也不知道三者是否存在交互。</p>
+<p>敏感性证据有两条但都只画图、不给原始表。图 3（p.5）显示候选 scale
+数增加时 MSE 快速下降，约到 <strong>10 个候选</strong>后进入平台；默认 9
+候选恰在拐点附近。图 7（p.6）显示 block size 从 1、2、4、8、16 到 32
+增大时，有/无 ScaleSearch 的 MSE 差距持续缩小；这解释了为何 16 值 NVFP4
+比 32 值 MXFP4 更适合搜索。图 5（pp.6–7）报告 NVFP4 约 27%、MXFP6 E2M3
+约 11%、MXFP4 约 8% 的 MSE 减少，并称某些假想格式可达约
+80%。这些是格式层面的“相变”：scale mantissa 越细、block 越小，邻近 scale
+搜索越有价值。</p>
+<p>论文<strong>未报告</strong>：逐层/逐头敏感性；<code>[-1,1]</code> 与
+<code>[-2,6]</code> 的质量对比；B=16
+之外的真实模型结果；校准集大小；幅值变换的正则化；首尾高精度块数；不同
+batch/sequence 的端到端延迟分位数。因而可以推出默认点在合成 MSE
+曲线的拐点附近，不能推出它对所有模型是全局最优系统配置。</p>
+</section><section class="card" aria-labelledby="9-统计显著性与证据等级"><h2 id="9-统计显著性与证据等级">9. 统计显著性与证据等级</h2>
+<p>只有 PTQ 表 1 明确说除 MMLU 外平均 <strong>5
+runs</strong>，但括号统计量没有定义。作者用“一标准差内”解释 8B AIME 的
+−0.7 pp，暗示括号是标准差，却没有在 caption 正式说明。没有 paired
+seeds、t-test、bootstrap CI 或多重比较校正。MMLU 单次；视频表 2、PPL 表
+3、GPQA 表 4、消融表 5、kernel 表 6 和 latency 表 7 均无标准差。</p>
+<p>因此证据可分三级：</p>
+<ul>
+<li><strong>较强</strong>：同一格式的合成 MSE
+与明确离散优化目标；算法上候选集包含默认 scale，所以逐块训练样本 MSE
+不会比默认更高。</li>
+<li><strong>中等</strong>：8 个 PTQ 单元格 7 个改善、四模型 PPL
+全改善；方向一致但随机性描述不足。</li>
+<li><strong>较弱</strong>：12 prompts 的视频质量/latency、单一 GPQA
+设置、98.3%/97.5% 的单曲线点，以及“近乎无损”泛化到生产 serving
+的主张。</li>
+</ul>
+<p>特别要区分“候选集单调性”和“模型质量单调性”：ScaleSearch
+在同一块上选到的 MSE 不会高于 <span
+class="math inline"><em>f</em> = 0</span>，但任务 accuracy
+可以下降，Qwen3-8B AIME 已给出反例。局部 L2
+误差最小不保证离散解题输出单调改进。</p>
+</section><section class="card" aria-labelledby="10-真正贡献可复用设计与迁移潜力"><h2 id="10-真正贡献可复用设计与迁移潜力">10.
+真正贡献、可复用设计与迁移潜力</h2>
+<p>第一项真正贡献是把 BFP scale calibration
+写成<strong>可硬件实现的邻域离散优化</strong>，而不是训练新量化器。它不改
+checkpoint 的 4.5-bit 布局、不新增推理时 codebook，也把默认 scale
+纳入候选，容易嵌入现有 PTQ。对于拥有 mantissa scale 的任何 microscaling
+format，这个思路都可复用：先用格式位模式定义邻域，再根据真实张量的
+offset 直方图缩小搜索。</p>
+<p>第二项贡献是揭示“最大值映射到最大码字”并不总是最优。offset 4–5
+对应把最大值从 6 改用 4
+表示，牺牲单个极值的码字利用，换取全块其余值的网格贴合。这个设计可迁移到非均匀码本、per-group
+INT quantization 和 KV cache：候选不一定是邻近 scale，也可以是邻近
+zero-point、clip ratio 或少量 codebook temperature。</p>
+<p>第三项贡献是系统拼装 SSA：FP4 QKᵀ/PV、4.5-bit KV、FP32
+accumulate、高精度首尾块与幅值平衡共同形成可运行路径。可复用经验是“<strong>量化
+kernel 的理论峰值必须由异常值变换、敏感 token
+保护和缓存布局共同兑现</strong>”。这条经验比任何单一 PPL 数更重要。</p>
+<p>迁移时要把目标函数改成任务敏感的误差。权重 PTQ 可用 Hessian-weighted
+block loss，attention 可分别对 QKᵀ 与 PV
+的输出误差做搜索，生成模型则可对噪声阶段或层做不同范围。代价是在线搜索复杂度上升；可行折中是从离线统计学习每层
+offset prior，再只评估 2–3 个高概率候选。</p>
+</section><section class="card" aria-labelledby="11-技术来源链问题如何传递又在哪里转折"><h2 id="11-技术来源链问题如何传递又在哪里转折">11.
+技术来源链：问题如何传递、又在哪里转折</h2>
+<h3 id="111-nvfp4给-scalesearch-留出可搜索的-scale-网格">11.1 NVFP4：给
+ScaleSearch 留出可搜索的 scale 网格</h3>
+<p><strong>解决什么。</strong> NVIDIA 的 NVFP4 技术说明把 E2M1
+值、16-value microblock、E4M3 scale 和 per-tensor FP32
+scale组合起来，目标是在 Blackwell 上兼顾 4-bit compute 与精度；其表 1
+明确对比 MXFP4 的 32-value、power-of-two scale。<br />
+<strong>遗留缺口。</strong> 格式允许 E4M3 的细粒度 scale，却仍沿用
+amax/6 的单点启发式，没有利用邻近 mantissa 格点。<br />
+<strong>核心如何回应。</strong> ScaleSearch 把“已有但闲置的 scale
+分辨率”变成候选空间，不改变格式。<br />
+<strong>设计如何传递。</strong> 16-value 小块与 E4M3
+非二次幂步进直接决定 offset 搜索有效；换成 MXFP4 的 E8M0，图 6
+显示几乎只选 offset 0/1，收益缩小。</p>
+<h3 id="112-quip从降低权重-incoherence-到降低-qk-outlier">11.2
+QuIP#：从降低权重 incoherence 到降低 Q/K outlier</h3>
+<p><strong>解决什么。</strong> QuIP# 用 randomized Hadamard transform
+改善 incoherence，再用 E8 lattice codebook 与 fine-tuning 做 ≤4-bit 权重
+PTQ；正式 ICML 论文图 2/算法 1（pp.2–3）给出这条管线，表
+5–6（pp.10–11）还展示量化权重的生成吞吐。<br />
+<strong>遗留缺口。</strong> 它主要量化权重；Hadamard 变换本身没有选择
+NVFP4 block scale，也没有处理 causal KV/P。<br />
+<strong>核心如何回应。</strong> SSA 继承 Hadamard IP 到 Q/K，再加 scale
+搜索和保持 QKᵀ 的 <span class="math inline"><em>R</em></span>
+变换。<br />
+<strong>设计如何传递。</strong>
+“先让分布更均匀，再做低比特离散化”是核心传递；但表 5 说明 IP+幅值变换对
+SSA 的 PPL贡献约为 scale 搜索的 6.5 倍，必须给前作足够归因。</p>
+<h3 id="113-streamingllm从保留-attention-sink-到高精度首尾-kv">11.3
+StreamingLLM：从保留 attention sink 到高精度首尾 KV</h3>
+<p><strong>解决什么。</strong> StreamingLLM 发现只保留最近窗口会在越过
+cache size 后 PPL 暴涨，而保留 <strong>4 个初始 token</strong>
+可恢复稳定；论文图 3、表 1–2（pp.4–5）和图 10（p.11）报告可扩到 4M
+tokens、相对重计算最高 22.2×。<br />
+<strong>遗留缺口。</strong> 它解决 token eviction/streaming，不解决中间
+KV 的数值精度，也没有 NVFP4 Tensor Core 路径。<br />
+<strong>核心如何回应。</strong> SSA 不丢中间
+token，而是把首块与最近块保留高精度，中间块压成 NVFP4。<br />
+<strong>设计如何传递。</strong> “初始 token 是结构敏感区域”被转译为
+mixed-precision policy；但 SSA 没报告究竟保留多少 token、不同模型 sink
+宽度或长上下文 needle/reasoning 结果。</p>
+<h3
+id="114-sageattention3从第一条-fp4-attention-内核到更稳的-scale-与-causal-cache">11.4
+SageAttention3：从第一条 FP4 attention 内核到更稳的 scale 与 causal
+cache</h3>
+<p><strong>解决什么。</strong> SageAttention3 对 QKᵀ/PV 用 1×16
+microscaling FP4，并对 P 设计两级量化；其 p.6 表 1 报 NVFP4 CosSim
+99.52%，p.1 报 RTX5090 1038 TOPS、约为其最快 FlashAttention 的
+5×。<br />
+<strong>遗留缺口。</strong> 核心论文称 SA3 公布算法在 causal setting
+数值不稳定（ScaleSearch §5.2，p.9），且 SA3 不是完整 4.5-bit causal KV
+cache 方案。<br />
+<strong>核心如何回应。</strong> 在 SA3 上直接加
+ScaleSearch用于视频；对语言则重组为 SSA，加入
+IP、幅值平衡与高精度首尾缓存。<br />
+<strong>设计如何传递。</strong> SA3 的 1×16 block、P 的 FP4
+路径与硬件优化构成系统底座；ScaleSearch 的视频结果是“SA3 + 一个更好
+scale chooser”，SSA 结果则是多个组件的新组合。</p>
+<h3 id="115-非线性技术演进树">11.5 非线性技术演进树</h3>
+<pre class="text"><code>                         ┌─ QuIP / QuIP#：Hadamard incoherence ─┐
+传统 BFP：共享 exponent ─┤                                      ├─→ Q/K 分布整形
+                         └─ MX：32值 + power-of-two scale ───────┐
+                                                                ├─→ NVFP4：16值 + E4M3 scale
+NVIDIA Blackwell Tensor Core ────────────────────────────────────┘             │
+                                                                              ├─→ ScaleSearch：邻近 scale 离散 MSE 搜索
+FlashAttention：online softmax / IO-aware ─→ SageAttention3：FP4 QKᵀ + PV ───┤
+                                                                              │
+StreamingLLM：初始 token 是 sink ─→ 高精度首尾块 ──────────────────────────────┤
+                                                                              ↓
+                SVD 幅值平衡 + ScaleSearch + FP4 MMA + 4.5-bit KV = SSA
+                                      │
+                                      ├─ 精度主要由 mixed-precision KV 保住
+                                      └─ scale search 提供小而稳定的局部修补</code></pre>
+<p>演进动力先是<strong>硬件格式变化</strong>：scale 从 exponent-only
+变成带 mantissa，算法搜索才有细网格；再是<strong>瓶颈迁移</strong>：FP4
+matmul 变快后，quantization、softmax 与
+KV布局成为系统瓶颈；最后是<strong>误差位置变化</strong>：权重 PTQ
+的静态误差转到 causal attention 的动态
+Q/K/P/V，必须混合精度与分布变换。转折点不是“又少一位”，而是格式允许把
+scale 选择当成优化变量。</p>
+<h3 id="116-跨论文对标">11.6 跨论文对标</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">主要对象</th>
+<th scope="col">位宽/格式</th>
+<th scope="col">关键保真机制</th>
+<th scope="col">硬件路径</th>
+<th scope="col">ScaleSearch 的回应</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>NVFP4</td>
+<td>权重/激活格式</td>
+<td class="num">4-bit E2M1 + E4M3/16</td>
+<td>两级 scale、较小 block</td>
+<td>Blackwell NVFP4 MMA</td>
+<td>搜索邻近 E4M3，不再只用 amax</td>
+</tr>
+<tr class="even">
+<td>QuIP#</td>
+<td>LLM 权重 PTQ</td>
+<td class="num">2–4 bit codebook</td>
+<td>RHT incoherence + E8 lattice</td>
+<td>自定义 decode kernel</td>
+<td>借 Hadamard，但转向 attention tensors</td>
+</tr>
+<tr class="odd">
+<td>StreamingLLM</td>
+<td>KV token 保留</td>
+<td>原精度窗口</td>
+<td>初始 sink + recent tokens</td>
+<td>滚动 KV cache</td>
+<td>从“保留 token”迁移到“保留高精度块”</td>
+</tr>
+<tr class="even">
+<td>SageAttention3</td>
+<td>QKᵀ/PV</td>
+<td>NVFP4</td>
+<td>microblock + P 两级量化</td>
+<td>RTX5090 FP4 kernel</td>
+<td>改 scale，并补 causal cache 与变换</td>
+</tr>
+<tr class="odd">
+<td>ScaleSearch/SSA</td>
+<td>PTQ、Q/K/P/V、KV</td>
+<td>NVFP4 4.5 bit</td>
+<td>邻域搜索 + IP + SVD + mixed precision</td>
+<td>声称直接 NVFP4 MMA</td>
+<td>综合；但未公开实现</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="12-论文自述限制与边界条件"><h2 id="12-论文自述限制与边界条件">12. 论文自述限制与边界条件</h2>
+<p>论文没有独立 <strong>Limitations</strong> 或 Broader Impact
+小节，不能虚构“作者自述的 2–3
+点”。能从正文明确提取的边界条件有三项：</p>
+<ol type="1">
+<li><strong>格式边界。</strong> 作者说主要实现
+NVFP4，因为它是其所知唯一“scale 为 floating point
+且有现代硬件加速”的格式（§4，p.5）；对其他格式只有图 5
+仿真。因此“architecture-agnostic”指算法定义，不代表已有跨硬件
+kernel。</li>
+<li><strong>causal 基线边界。</strong> 作者明确说公开 SA3 code 在 causal
+setting 数值不稳定，因此表 3 使用其 FP4 simulator 实现 SA3
+算法（§5.2，p.9）。所以语言质量是模拟数值路径，不是两个公开 kernel
+的端到端实机对照。</li>
+<li><strong>混合精度边界。</strong> mixed-precision cache 要求 <span
+class="math inline"><em>B</em> ≥ 16</span>，并永久保留 <span
+class="math inline"><em>O</em>(<em>B</em>)</span>
+的全精度首尾区域（§4.2，p.8）。因此“全 FP4
+attention/KV”并不字面成立，更准确是“多数块 FP4、敏感块全精度”。</li>
+</ol>
+<p>作者没有讨论代码缺失、12-prompt
+小样本、统计显著性或主文数字冲突；这些属于独立审计，不应伪装为论文自述。</p>
+</section><section class="card" aria-labelledby="13-独立批判证据到推论的八条链"><h2 id="13-独立批判证据到推论的八条链">13.
+独立批判：证据到推论的八条链</h2>
+<ol type="1">
+<li><strong>[归因]</strong> 因为表 5 去掉 ScaleSearch 只使 PPL
+<strong>5.4977→5.5024（+0.086%）</strong>，而去 mixed-precision KV
+使其到 <strong>5.5768（+1.439%）</strong>，所以“SSA
+近乎无损”主要不能归功于核心命名组件；应把贡献拆成局部 scale 优化与组合式
+attention 系统两层。</li>
+<li><strong>[内部一致性]</strong> 因为 p.6 正文写 <strong>0.0990→0.0066
+≈25%</strong>，而图 3 实为约 <strong>0.0090→0.0066
+=26.67%</strong>，所以至少存在一个十倍小数点错误；摘要 27%
+可被图支持，但正文数字不能直接引用。</li>
+<li><strong>[统计]</strong> 因为只有 PTQ 报 5
+runs、括号未定义，其他主表均无方差，且 8B MATH 的量化模型反超全精度
+<strong>15.3 pp</strong>，所以评测随机性足以改变若干结论；没有原始 seeds
+与统一 decoding 时不能声称任务表现单调跟随 MSE。</li>
+<li><strong>[基线公平]</strong> 因为语言 PPL 的 SA3
+是作者自行模拟，理由是公开 causal code 不稳定，而 SSA
+又包含额外高精度缓存和 SVD 变换，所以表 3不是“同一实机内核只换 scale”的
+head-to-head；它证明数值配方优于模拟基线，不证明生产 kernel 更优。</li>
+<li><strong>[系统外推]</strong> 因为 98.3%/97.5% 只来自 32K attention
+TOPS，语言模型没有 TTFT、TPOT、batch sweep、并发请求或 P99，而视频仅 12
+prompts，所以“negligible system overhead”只对被测
+kernel/生成脚本成立，不能外推到在线服务 SLO。</li>
+<li><strong>[分布覆盖]</strong> 因为 <code>[-2,6]</code>
+由标准高斯与一个 Llama 3.1 8B Key-state
+直方图决定，却用于权重、Q/K/V/P、四个 LLM
+和两个视频模型，所以固定搜索范围的普适性证据不足；若 P 或 V 的 offset
+超出该双峰，9 候选可能不是最佳预算。</li>
+<li><strong>[可复现性]</strong> 因为核心代码、ModelOpt 补丁、PyTorch
+simulator、GPU型号、校准样本与完整超参均未公开，所以读者无法验证 0.0449
+ms、表 3或图 9；公开的 SageAttention/ModelOpt
+只能复现来源组件，不能复现论文方法。</li>
+<li><strong>[目标错配]</strong> 因为算法逐块最小化未加权 MSE，而 AIME
+已出现 <strong>−0.7 pp</strong>、CLIPSIM
+两模型均下降，所以局部欧氏误差不是任务风险的充分统计量；下一步应比较
+Hessian/attention-output 加权搜索，而不是继续扩大同一个 MSE
+候选集。</li>
+</ol>
+</section><section class="card" aria-labelledby="14-开放挑战可操作的-head-to-head-实验空白"><h2 id="14-开放挑战可操作的-head-to-head-实验空白">14.
+开放挑战：可操作的 head-to-head 实验空白</h2>
+<h3 id="141-理论">14.1 理论</h3>
+<ul>
+<li><strong>MSE vs. 功能误差。</strong> 固定同一 NVFP4 checkpoint、同一
+9 候选，比较 block-MSE、Hessian-weighted MSE、<span
+class="math inline">∥<em>Q</em><em>K</em><sup><em>T</em></sup> − <em>Q̂</em><em>K̂</em><sup><em>T</em></sup>∥<sub><em>F</em></sub><sup>2</sup></span>
+与 <span
+class="math inline">∥<em>P</em><em>V</em> − <em>P̂</em><em>V̂</em>∥<sub><em>F</em></sub><sup>2</sup></span>
+四种 chooser；在同一 seeds 上测 WikiText-2、LongBench、GPQA 与
+AIME。若任务收益与加权目标更相关，便能验证第 8 条批判。</li>
+<li><strong>搜索范围最优性。</strong> 对每层/头记录全
+<code>[-127,127]</code> oracle offset，再 head-to-head 比
+<code>[-1,1]</code>、<code>[-2,6]</code>、top-3 learned prior 和自适应
+early-stop；同时画“oracle
+coverage—量化时间—PPL”。当前论文只给开销，不给质量曲线。</li>
+<li><strong>误差传播界。</strong> 在同一 attention block 比较只量
+Q、K、V、P 与全部量化，估计局部 MSE 到输出误差/softmax KL 的 Lipschitz
+上界；特别分开 sink-heavy 与均匀 attention heads，检验“更低 block
+MSE必然更稳”的条件。</li>
+</ul>
+<h3 id="142-工程与应用">14.2 工程与应用</h3>
+<ul>
+<li><strong>真实 Blackwell 端到端。</strong> 在 B200/B300/RTX5090
+上用公开 commit 比较 BF16
+FlashAttention-4、SA3、SA3+ScaleSearch、SSA；控制 batch、prompt/output
+length，报告 TTFT、TPOT、tokens/s、P50/P99、HBM、功耗。当前只有 TOPS
+与两个视频脚本时间。</li>
+<li><strong>等内存 KV 对比。</strong> 以每 token 相同平均 bits，在 Llama
+3.1/Qwen3 上比较 SSA、KIVI、KVQuant、Kitty 与 FP8；测 4K–128K 的
+needle、LongBench、reasoning 和 PPL。SSA 的 4.5-bit
+中间块加高精度首尾块，不能直接与名义 4-bit/2-bit 比。</li>
+<li><strong>离线 vs. 在线量化。</strong> 分别测权重一次性 PTQ、prefill
+K/V 写入、decode 单 token 写入的 search cost，并与 LUT/learned offset
+选择对比。0.0449 ms 的 2048² 高斯矩阵不能回答小 batch decode 的
+launch/branch 代价。</li>
+</ul>
+<h3 id="143-新兴方向">14.3 新兴方向</h3>
+<ul>
+<li><strong>跨格式搜索。</strong> 在同一 Blackwell/AMD 平台比较 NVFP4
+E4M3、MXFP4 E8M0、MXFP6 E2M3与 FP8，控制总 bits 与峰值硬件；用相同
+oracle/邻域 search 判断收益究竟来自 mantissa scale 还是小 block。图
+5只是软件仿真。</li>
+<li><strong>生成阶段自适应。</strong> 视频 diffusion 按噪声
+timestep、LLM 按 prefill/decode 和 token uncertainty 动态选择 search
+range/精度；与固定 <code>[-2,6]</code> 做等平均量化 FLOPs
+对比，测质量—延迟
+Pareto。Ambient/阶段化精度思路可能比全程固定搜索更合适。</li>
+<li><strong>学习型 chooser 的安全边界。</strong> 用小型分类器预测
+offset，但保留 <span class="math inline"><em>f</em> = 0</span> 与局部
+MSE verifier；和 9-way exhaustive search
+比错误率、fallback率、P99。目标是减少 1.74×
+cost，同时不破坏“候选含默认值”的非劣保证。</li>
+</ul>
+</section><section class="card" aria-labelledby="15-近期工作雷达"><h2 id="15-近期工作雷达">15. 近期工作雷达</h2>
+<p>以下均为已访问的 MLSys 2026 正式论文页，不作为核心论文数字来源。</p>
+<ol type="1">
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/37e44c4b5321605735be9761f9b758fc-Abstract-Conference.html">FlashInfer-Bench</a>：把
+agent 生成 kernel、真实
+trace、正确性/性能评测与部署替换接成闭环。它恰好提供 ScaleSearch
+缺少的公开 kernel benchmark/reproducibility 外壳。</li>
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/ae8b0b5838ba510daff1198474e7b984-Abstract-Conference.html">FlashAttention-4</a>：面向
+Blackwell 的异步 MMA、softmax rescaling 与 TMA pipeline，B200 BF16 最高
+1613 TFLOPs/s。它是 SSA 必须在同设备上补做的强全精度基线。</li>
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/e4d8d1b5120be349d3fff8878650cf45-Abstract-Conference.html">Kitty</a>：用动态
+channel-wise precision boost 做接近 2-bit 的 KV，报告七任务与 2.1×–4.1×
+吞吐。它与 SSA 的“token块混合精度”形成直接对标空白。</li>
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/a66caa1703fe34705a4368c3014c1966-Abstract-Conference.html">MixLLM</a>：在
+output-feature 维做全局 mixed precision，并以两步 dequantization/kernel
+pipeline 兑现系统效率；说明 scale 搜索之外，bit allocation
+仍是更大的优化轴。</li>
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/45c1f6a8cbf2da59ebf2c802b4f742cd-Abstract-Conference.html">SkipKV</a>：针对长
+CoT 按句子同时抑制冗余生成与 KV 存储，最高 1.7× 吞吐。它提醒我们：减少
+token 数可能比每 token 再省几 bit
+更有效，二者应等质量/等答案长度比较。</li>
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/42a452cbafa9dd64e9ba4aa95cc1ef21-Abstract-Conference.html">Demystifying
+the MoE Serving Tax</a>：发现 FLOP 等价 MoE 可比 dense 慢 2–3×，且 load
+imbalance 对 prefill/decode 影响相反。它代表系统评测应从单 kernel
+转向工作负载阶段分解。</li>
+<li><a
+href="https://proceedings.mlsys.org/paper_files/paper/2026/hash/9032e5c9ec394ce768a2fa9bdc56af6c-Abstract-Conference.html">MoEBlaze</a>：从
+token dispatch、buffer materialization 与 checkpoint co-design 击穿 MoE
+memory wall，并称已用于 Meta 推荐生产。与 ScaleSearch
+相比，它的价值在于给出真实部署语境，但仍需看完整论文的负载与基线公平性。</li>
+</ol>
+<h2
+id="16-结论值得复用的是搜索-scale不该过度归因的是近乎无损-attention">16.
+结论：值得复用的是“搜索 scale”，不该过度归因的是“近乎无损
+attention”</h2>
+<p>ScaleSearch 的核心洞见足够简洁：既然 NVFP4 的 E4M3 scale 比 E8M0
+更细，就不要默认 amax/6 是唯一答案；用 9 个邻近可表示 scale 对 16 值块做
+MSE 选择，格式不变、默认候选仍在、离线 PTQ
+容易接入。其最有说服力的量化证据是 PTQ <strong>7/8</strong>
+单元格优于普通 NVFP4，Qwen3-8B MATH-500 <strong>+15.0
+pp</strong>，以及图 3 约 <strong>26.67%</strong> 的合成 MSE 降幅。</p>
+<p>但“ScaleSearchAttention 近乎无损”是组合系统结果：Llama 70B PPL
+3.4000→2.6348 很亮眼，消融却显示去掉 ScaleSearch 只恶化
+0.0047，而去高精度首尾 KV 恶化 0.0791。加上核心实现未公开、causal SA3
+采用模拟、语言端缺少真实 serving latency，以及论文自身 0.0990
+小数点与“五个 benchmark”计数错误，当前最稳妥的结论是：<strong>scale
+邻域搜索是一块值得移植的低风险组件；SSA
+是有希望但尚未由可复现实机证据闭环的系统原型。</strong></p>
+<hr />
+<h3 id="证据与制作说明">证据与制作说明</h3>
+<ul>
+<li>核心论文逐页阅读正式 MLSys PDF pp.1–16；所有主结果来自表 1–7、图
+3–9、算法 1 与附录 A，并在相应段落标注。</li>
+<li>相关工作逐页阅读 SageAttention3（重点 pp.1–8）、QuIP#（重点
+pp.1–11）与 StreamingLLM（重点 pp.1–12）；NVFP4 读取 NVIDIA
+技术说明全文。</li>
+<li>相对百分比与 pp
+变化均为本报告根据论文表格复算，保留到两位小数；没有把图中无法精确读取的点补成表格。</li>
+<li>统计量缺失、代码/数据未公开、硬件型号未说明处均明确标注；未用网页摘要替代论文数字。</li>
+<li>HTML 已通过 Warm Editorial 结构验证器（0 warnings），并按响应式 CSS
+静态检查浅色、深色、640 px 移动端与打印规则。当前执行环境没有
+<code>/usr/bin/chromium</code>、<code>chromium-browser</code> 或
+<code>/opt/pw-browsers</code> 可执行文件，虽有 Playwright
+模块却无法启动浏览器，因此没有虚报截图式视觉
+QA；表格均置于可横向滚动容器，SVG 使用自适应
+<code>viewBox</code>，主题色与文字色均来自双主题变量。</li>
+<li><code>ml-report-index.md</code> 已追加本期条目。</li>
+</ul>
+</section>
+  </main>
+
+  <footer>核心来源：MLSys 2026 正式论文与 Supplement、arXiv v1；技术链深读 SageAttention3、QuIP#、StreamingLLM 与 NVIDIA NVFP4 技术说明。生成于 2026-09-11。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

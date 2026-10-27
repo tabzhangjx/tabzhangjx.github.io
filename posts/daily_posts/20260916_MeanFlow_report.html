@@ -1,0 +1,1146 @@
+---
+layout: null
+title: "MeanFlow"
+date: 2026-09-16
+topic: "vlm-vision"
+tags: ["vlm-vision", "flow-matching", "image-generation"]
+excerpt: "平均速度恒等式 × JVP 自举 × 1‑NFE 生成 1‑NFE FID 从 Shortcut 的 10.60 降至 3.43，但 CFG 贡献巨大、统计检验缺失，且论文存在两处内部数字冲突。"
+permalink: "/blog/2026/09/16/meanflow/"
+blog_post: true
+lang: "zh-CN"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_en: "/blog/2026/09/16/meanflow/en/"
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>MeanFlow：一步生成的平均速度重参数化、证据强度与失效边界 · 2026-09-16</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  :root { --chart-primary:#2a78d6; --chart-primary-soft:#3987e5; --chart-comparison:#eb6834; --chart-comparison-dark:#d95926; }
+  :root[data-theme="dark"] { --chart-primary:#3987e5; --chart-comparison:#eb6834; }
+  blockquote { margin:16px 0; padding:10px 18px; border-left:3px solid var(--chart-primary); color:var(--text-secondary); background:var(--page); }
+  h2 { scroll-margin-top:20px; }
+  h3 { color:var(--text-primary); }
+  table td, table th { vertical-align:top; }
+  table th:not(:first-child), table td:not(:first-child) { font-variant-numeric:tabular-nums; }
+  table td:first-child, table th:first-child { min-width:125px; }
+  strong { color:var(--text-primary); }
+  code { overflow-wrap:anywhere; }
+  pre { max-width:100%; overflow-x:auto; }
+  .card > :last-child { margin-bottom:0; }
+  @media (max-width:640px) { .toolbar { position:sticky; top:8px; z-index:20; } .theme-toggle { box-shadow:0 2px 12px rgba(0,0,0,.12); } pre { font-size:11.5px; } .chart text { font-size:10px; } }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">NEURIPS 2025 ORAL · GENERATIVE MODELS</p>
+    <h1>MeanFlow：一步生成的平均速度重参数化、证据强度与失效边界</h1>
+    <p class="subtitle">平均速度恒等式 × JVP 自举 × 1‑NFE 生成</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">NeurIPS 2025 · arXiv:2505.13447v1</span>
+      <span class="chip">2026-09-16</span>
+      <span class="chip">Flow Matching · One-step Generation</span>
+    </div>
+    <p class="lede">1‑NFE FID 从 Shortcut 的 10.60 降至 3.43，但 CFG 贡献巨大、统计检验缺失，且论文存在两处内部数字冲突。</p>
+  </header>
+
+  <main>
+<section class="card" aria-label="报告章节 0">
+<p><strong>领域：</strong> 生成模型（扩散 / 流匹配 / 一步生成）　<strong>核心论文：</strong> <em>Mean Flows for One-step Generative Modeling</em>，NeurIPS 2025 Main Conference，Oral。<br />
+<strong>证据约定：</strong> “论文原报”指正文或附录的明确数字；“本报告复算”只做四则运算并给出原始表格；“论文未报告”绝不补值。PDF 页码均指论文文件显示页码。链接与页面状态核验于 2026-09-16。</p>
+</section>
+<section class="card" aria-label="报告章节 1">
+<h2 id="先读结论它真正解决了什么">0. 先读结论：它真正解决了什么</h2>
+<p>MeanFlow 的重要性不在“又一个 FID SOTA”，而在于它把一步生成从教师—学生蒸馏、显式课程或多阶段优化中抽离出来：模型直接学习任意时间区间 <code>[r,t]</code> 的平均速度 <code>u(z_t,r,t)</code>，并用 <code>u = v − (t−r) d u/dt</code> 把不可直接监督的平均量变成可计算的自举目标。论文在 ImageNet 256×256 上从头训练，MF‑XL/2 以 1‑NFE 达到 FID <strong>3.43</strong>（表 2，PDF p.9），相对同为 1‑NFE、同为 676M 参数的 Shortcut‑XL/2 的 <strong>10.60</strong>，绝对降低 <strong>7.17</strong>、相对降低 <strong>67.64%</strong>（本报告复算）。但这不是无条件的“免费一步”：训练仍使用大规模 ImageNet、固定 VAE、CFG、JVP，且无随机种子方差或显著性检验；CIFAR‑10 上 MeanFlow 的 FID <strong>2.92</strong> 还弱于 iCT 的 <strong>2.83</strong>（表 3，PDF p.9）。</p>
+</section>
+<section class="card" aria-label="报告章节 2">
+<h2 id="链接验证表">1. 链接验证表</h2>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">对象</th>
+<th scope="col">会议 / 正式页</th>
+<th scope="col">arXiv 版本与日期</th>
+<th scope="col">代码</th>
+<th scope="col">数据 / 权重</th>
+<th scope="col">项目页 / 视频</th>
+<th scope="col">核验结果</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>MeanFlow（核心）</strong></td>
+<td><a href="https://papers.neurips.cc/paper_files/paper/2025/vol38-main-conference">NeurIPS 2025 proceedings 索引</a>；标题位于 Main Conference Track，会议标注 Oral</td>
+<td><a href="https://arxiv.org/abs/2505.13447">arXiv:2505.13447v1</a>，2025-05-19</td>
+<td><a href="https://github.com/Gsunshine/meanflow">官方 JAX 实现</a>，MIT；仓库后来补充 CIFAR PyTorch</td>
+<td>ImageNet 需用户自备；仓库公开 MF‑B/4 checkpoint 与 FID stats 的下载入口，主表 XL 权重未找到</td>
+<td><a href="https://huggingface.co/papers/2505.13447">Hugging Face Daily Papers</a>；独立项目页/官方视频未找到</td>
+<td>均可访问；代码页自述在 TPU 上测试</td>
+</tr>
+<tr class="even">
+<td>Flow Matching</td>
+<td>会议页未单列</td>
+<td><a href="https://arxiv.org/abs/2210.02747">arXiv:2210.02747v2</a>，2023-02-08</td>
+<td>论文所述实现链接可访问性未作为本报告复现依据</td>
+<td>公开数据集；权重未核验</td>
+<td>未找到独立项目页 / 视频</td>
+<td>论文 PDF 已读取</td>
+</tr>
+<tr class="odd">
+<td>Improved Techniques for Training Consistency Models（iCT）</td>
+<td>ICLR 2024</td>
+<td><a href="https://arxiv.org/abs/2310.14189">arXiv:2310.14189v1</a>，2023-10-22</td>
+<td>未在本次核验中确认官方仓库</td>
+<td>公开数据集；权重未核验</td>
+<td>未找到独立项目页 / 视频</td>
+<td>论文 PDF 已读取</td>
+</tr>
+<tr class="even">
+<td>Shortcut Models</td>
+<td>ICLR 2025</td>
+<td><a href="https://arxiv.org/abs/2410.12557">arXiv:2410.12557v3</a>，2025-06-23</td>
+<td>未在本次核验中确认官方仓库</td>
+<td>公开数据集；权重未核验</td>
+<td>未找到独立项目页 / 视频</td>
+<td>论文 PDF 已读取</td>
+</tr>
+<tr class="odd">
+<td>Inductive Moment Matching（IMM）</td>
+<td>ICML 2025</td>
+<td><a href="https://arxiv.org/abs/2503.07565">arXiv:2503.07565v7</a>，2025-05-14</td>
+<td>未在本次核验中确认官方仓库</td>
+<td>公开数据集；权重未核验</td>
+<td>未找到独立项目页 / 视频</td>
+<td>论文 PDF 已读取</td>
+</tr>
+<tr class="even">
+<td>Improved Mean Flows（iMF）</td>
+<td>ICLR 2026</td>
+<td><a href="https://arxiv.org/abs/2512.02012">arXiv:2512.02012v2</a>，2026-05-09</td>
+<td>代码入口由 MeanFlow 官方仓库更新区提供</td>
+<td>公开数据集；权重状态未逐项核验</td>
+<td>独立视频未找到</td>
+<td>论文 PDF 已读取</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>链接边界。</strong> Papers with Code 的论文条目在本次访问中没有得到稳定可读页面，因此候选收集只把它作为交叉检索入口，不将其页面当作定量证据。Semantic Scholar、Hugging Face、arXiv、OpenReview/会议 proceedings 用于发现与身份交叉核对；本文所有实验数字仍只取自实际读取的论文 PDF。</p>
+</section>
+<section class="card" aria-label="报告章节 3">
+<h2 id="候选池与随机选择">2. 候选池与随机选择</h2>
+<p>运行日为周三，轮转领域为生成模型。先检查 <code>ml-report-index.md</code>，剔除最近 14 天已深度覆盖的 LongLive（长视频流式生成）、DreamGen（视频世界模型生成机器人轨迹）、Ambient Creativity（扩散记忆控制）及相邻主题。候选来自 NeurIPS/ICLR proceedings、OpenReview、arXiv、Hugging Face Daily Papers，并用 Semantic Scholar 与 Papers with Code 做名称与版本交叉检索；共保留 24 篇，均不超过 24 个月，优先近 12 个月主会 / 高质量预印本。</p>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 30%" />
+<col style="width: 23%" />
+<col style="width: 23%" />
+<col style="width: 23%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">编号</th>
+<th scope="col">候选论文</th>
+<th scope="col">入口</th>
+<th scope="col">与本轮主题的关系</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td>Improved Mean Flows for One-step Generative Modeling</td>
+<td>ICLR 2026 / arXiv</td>
+<td>MeanFlow 的直接后续</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td>SoFlow</td>
+<td>arXiv 2025</td>
+<td>一步 flow 改进</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td>Pixel MeanFlow</td>
+<td>arXiv 2026</td>
+<td>像素空间一步生成</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td>PixelGen</td>
+<td>arXiv 2026</td>
+<td>像素级生成</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td>W‑Flow</td>
+<td>arXiv 2026</td>
+<td>flow 重参数化</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td>Modular MeanFlow</td>
+<td>arXiv 2025</td>
+<td>MeanFlow 模块化</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td>Contrastive Flow Matching</td>
+<td>arXiv 2025</td>
+<td>flow 训练目标</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;"><strong>8</strong></td>
+<td><strong>Mean Flows for One-step Generative Modeling</strong></td>
+<td><strong>NeurIPS 2025 Oral / arXiv</strong></td>
+<td><strong>本次抽中</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td>Diffuse and Disperse</td>
+<td>arXiv 2025</td>
+<td>扩散轨迹设计</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td>Fair Benchmarking of Emerging One-Step Generative Models</td>
+<td>arXiv 2026</td>
+<td>一步模型评价</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td>SubFlow</td>
+<td>arXiv 2026</td>
+<td>子区间 flow</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">12</td>
+<td>APEX</td>
+<td>OpenReview</td>
+<td>高效生成</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td>Building Flow Uniqueness</td>
+<td>OpenReview</td>
+<td>flow 可识别性</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td>TwinFlow</td>
+<td>OpenReview</td>
+<td>双流建模</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td>Decoupled MeanFlow</td>
+<td>ICLR 2026 proceedings</td>
+<td>MeanFlow 目标解耦</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">16</td>
+<td>Understanding and Improving MeanFlow</td>
+<td>ICLR 2026 proceedings</td>
+<td>机制分析</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td>On the Design of One-step Diffusion via Shortcutting Paths</td>
+<td>OpenReview</td>
+<td>shortcut path</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td>Understand Before You Generate: ST‑AR</td>
+<td>arXiv 2025</td>
+<td>自回归图像生成</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">19</td>
+<td>Towards Better and Faster AR Image Generation via Entropy</td>
+<td>arXiv 2025</td>
+<td>高效自回归</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">20</td>
+<td>Mage‑Flow</td>
+<td>arXiv 2026</td>
+<td>flow 生成</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">21</td>
+<td>World‑In‑World</td>
+<td>OpenReview</td>
+<td>世界模型</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">22</td>
+<td>Are We Ready for RL in Text-to-3D?</td>
+<td>arXiv 2025</td>
+<td>3D / RL 生成</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">23</td>
+<td>Watermarking Autoregressive Image Generation</td>
+<td>arXiv 2025</td>
+<td>生成溯源</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">24</td>
+<td>ARRA</td>
+<td>arXiv 2025</td>
+<td>自回归生成</td>
+</tr>
+</tbody>
+</table></div>
+<p>在固定 <code>N=24</code> 后执行系统命令 <code>shuf -i 1-24 -n 1</code>，输出 <strong>8</strong>，因此选中 MeanFlow。论文、附录、正式会议身份、代码和主结果齐备，不触发“资料严重不足”条件；<strong>重抽次数为 0</strong>。这一步意味着选择不是按热度或报告者偏好挑选，后续批判也不能因论文知名度而放宽证据标准。</p>
+</section>
+<section class="card" aria-label="报告章节 4">
+<h2 id="motivation一步生成真正卡在哪里">3. Motivation：一步生成真正卡在哪里</h2>
+<p>Flow Matching 学习的是每个时刻的瞬时速度 <code>v(z_t,t)</code>。如果要从噪声 <code>z_1</code> 到数据 <code>z_0</code>，通常需数值积分 ODE；一步 Euler 仅用 <code>z_0≈z_1−v(z_1,1)</code>，把整段弯曲轨迹压成端点切线，误差会很大。Shortcut 的同算力 DiT‑B 对照非常直观：ImageNet 256 上，普通 flow matching 的 1-step FID 为 <strong>324.8</strong>，Shortcut 为 <strong>40.3</strong>；到 128-step 才分别变为 <strong>17.3</strong> 与 <strong>15.5</strong>（Shortcut 表 1，PDF p.8）。这说明困难不是网络“完全不会生成”，而是训练对象与推理所需的有限区间位移不一致。</p>
+<p>现有三类补救各有成本。第一类蒸馏从强教师抽取一步学生，但需要预训练教师与额外训练阶段；第二类 consistency training 强迫不同噪声层输出一致，训练稳定性依赖课程、权重和离散化；第三类 Shortcut 直接条件化 step size，让一个模型覆盖不同积分步长，却仍受噪声—数据 coupling 影响。MeanFlow 的切入点是：既然一次跳跃真正需要的是 <code>z_t</code> 到 <code>z_r</code> 的<strong>平均速度</strong>，为什么不直接学习它？</p>
+<p>量化上，这个问题的价值足够大：核心论文的 MF‑XL/2 在 1‑NFE FID <strong>3.43</strong>，而同参数量 Shortcut‑XL/2 为 <strong>10.60</strong>（MeanFlow 表 2，PDF p.9）；但多步生成的 SiT+REPA 已达 <strong>1.42</strong>，说明一步模型仍有 <strong>2.01</strong> FID 的绝对差距。因此论文不是“终结多步生成”，而是在一次函数求值的约束下重写了可学习对象。</p>
+</section>
+<section class="card" aria-label="报告章节 5">
+<h2 id="故事线核心假设与权衡">4. 故事线、核心假设与权衡</h2>
+<p>论文的故事线可以压成四步。其一，定义区间平均速度，使有限步位移成为精确积分量。其二，从微积分推导平均速度与瞬时速度之间的恒等式。其三，把恒等式右端视为 stop-gradient 目标，利用 JVP 高效计算沿轨迹的全导数。其四，把 CFG 直接并入训练目标，使推理仍只调用一次网络。</p>
+<p>它依赖三项关键假设。<strong>可表示性假设：</strong> 单个条件网络能同时拟合大量 <code>[r,t]</code> 区间；<strong>自举稳定性假设：</strong> 目标包含当前网络导数时，stop-gradient 足以避免塌缩；<strong>分布覆盖假设：</strong> 训练采样的时间区间、CFG 权重和 latent 数据覆盖推理端 <code>r=0,t=1</code> 的关键区域。换来的好处是无需教师、无需预训练、无需显式 curriculum；代价是训练目标更复杂、需要 JVP，且质量对时间采样与 CFG 非常敏感。</p>
+</section>
+<section class="card" aria-label="报告章节 6">
+<h2 id="方程级形式化">5. 方程级形式化</h2>
+<h3 id="从概率路径到瞬时速度">5.1 从概率路径到瞬时速度</h3>
+<p>取数据 <code>x~p_data</code> 与噪声 <code>ε~N(0,I)</code>，构造线性或一般概率路径</p>
+<p><code>z_t = a_t x + b_t ε</code>，　<code>t∈[0,1]</code>。</p>
+<p>条件速度为路径导数 <code>v_t(x,ε)=d z_t/dt</code>；边缘速度是给定 <code>z_t</code> 后的条件期望</p>
+<p><code>v(z_t,t)=E[v_t(x,ε) | z_t]</code>。</p>
+<p>它定义 ODE <code>d z_t/dt = v(z_t,t)</code>（MeanFlow 式 (1)–(2)，PDF p.2–3）。标准 Flow Matching 用回归训练 <code>v</code>，采样时仍需从 1 积到 0。</p>
+<h3 id="平均速度是有限位移的正确对象">5.2 平均速度是有限位移的正确对象</h3>
+<p>对任意 <code>0≤r≤t≤1</code>，定义</p>
+<p><code>u(z_t,r,t) = 1/(t-r) ∫_r^t v(z_τ,τ)dτ</code>。</p>
+<p>于是精确位移满足</p>
+<p><code>z_r = z_t − (t−r) u(z_t,r,t)</code>。</p>
+<p>特别地，若 <code>r=0,t=1</code>，只要网络给出整段平均速度，就能一步得到 <code>z_0=z_1−u(z_1,0,1)</code>（式 (3)、(12)，PDF p.3、p.5）。注意这不是近似 Euler：若 <code>u</code> 完全正确，这个有限区间更新就是定义上的精确积分。</p>
+<h3 id="meanflow-恒等式">5.3 MeanFlow 恒等式</h3>
+<p>令 <code>Δ=t−r</code>。由 <code>Δu=∫_r^t v dτ</code> 对 <code>t</code> 求全导数，得到</p>
+<p><code>u(z_t,r,t) = v(z_t,t) − (t−r) d u(z_t,r,t)/dt</code>。</p>
+<p>而 <code>u</code> 同时依赖状态 <code>z_t</code> 与显式时间 <code>t</code>，全导数展开为</p>
+<p><code>d u/dt = (∂u/∂z_t)·v(z_t,t) + ∂u/∂t</code>，</p>
+<p>也就是对网络 <code>u_θ(z_t,r,t)</code> 做方向为 <code>(v,0,1)</code> 的 JVP（式 (6)、(8)，PDF p.4–5）。<code>r</code> 在求导时固定，所以中间分量必须是 0。论文的消融显示，把方向误写成 <code>(v,0,0)</code>、<code>(v,1,0)</code> 或 <code>(v,1,1)</code>，FID 会从 <strong>61.06</strong> 恶化到 <strong>268.06 / 329.22 / 137.96</strong>（表 1b，PDF p.7），因此 JVP 不是实现细节，而是方法语义本身。</p>
+<h3 id="自举目标与停止梯度">5.4 自举目标与停止梯度</h3>
+<p>目标写成</p>
+<p><code>u_tgt = sg[v − (t−r) JVP(u_θ; (v,0,1))]</code>，</p>
+<p><code>L = E[w · ||u_θ(z_t,r,t) − u_tgt||²]</code>。</p>
+<p><code>sg</code> 表示停止梯度，避免网络通过同步移动预测与目标来构造退化解。论文在式 (9)–(11) 中还使用自适应权重，对误差幅值进行幂次调节（PDF p.5–6）。训练并非每次都采 <code>r&lt;t</code>：表 1a 显示若 <code>r≠t</code> 的比例为 <strong>0%</strong>，FID <strong>328.91</strong>；提高到 <strong>25%</strong> 为 <strong>61.06</strong>，<strong>50%</strong> 为 <strong>63.14</strong>，<strong>100%</strong> 为 <strong>67.32</strong>（PDF p.7）。保留部分 <code>r=t</code> 的瞬时速度任务，相当于给自举系统一个锚点。</p>
+<h3 id="训练与一步采样伪代码">5.5 训练与一步采样伪代码</h3>
+<pre class="text"><code>repeat:
+    x ~ p_data, ε ~ N(0, I)
+    sample t and r ≤ t; construct z_t = a_t x + b_t ε
+    compute analytic conditional velocity v_t(x, ε)
+    predict u = u_θ(z_t, r, t, class)
+    compute J = JVP[u_θ] along tangent (v_t, 0, 1)
+    target = stopgrad(v_t - (t-r) * J)
+    update θ on adaptive_weight(u,target) * ||u-target||²
+
+sampling (1-NFE):
+    z_1 ~ N(0, I)
+    z_0 = z_1 - u_θ(z_1, 0, 1, class; CFG folded into target)
+    image = VAE_decode(z_0)</code></pre>
+<p>这里“1‑NFE”只计算一次主网络，不等于整个系统只有一次算术操作：还包含噪声采样、VAE 解码，并且训练端包含 JVP。</p>
+</section>
+<section class="card" aria-label="报告章节 7">
+<h2 id="关键机制与工程细节">6. 关键机制与工程细节</h2>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">模块</th>
+<th scope="col">论文实现</th>
+<th scope="col">为什么重要</th>
+<th scope="col">证据</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>区间条件</td>
+<td>输入 <code>(t,r)</code>，消融也测试 <code>(t,t−r)</code> 等</td>
+<td>网络必须知道积分区间</td>
+<td><code>(t,r)</code> 61.75，<code>(t,t−r)</code> 61.06，三者并用 63.98；表 1c，p.7</td>
+</tr>
+<tr class="even">
+<td>时间采样</td>
+<td>log-normal；主消融最佳 <code>(-0.4,1.0)</code></td>
+<td>训练密度决定哪些区间学得好</td>
+<td>uniform 65.90，最佳 61.06；表 1d，p.7</td>
+</tr>
+<tr class="odd">
+<td>自适应权重</td>
+<td>误差幂 <code>p</code>；主设置 p=1</td>
+<td>抑制尺度不均衡</td>
+<td>p=0/0.5/1/1.5/2 对应 79.75/63.98/61.06/66.57/69.19；表 1e，p.7</td>
+</tr>
+<tr class="even">
+<td>CFG 入目标</td>
+<td>训练时构造带引导的目标场</td>
+<td>保持推理 1‑NFE</td>
+<td>ω=1→61.06，2→20.15，3→15.53，5→20.75；表 1f，p.7</td>
+</tr>
+<tr class="odd">
+<td>JVP</td>
+<td>切向量 <code>(v,0,1)</code></td>
+<td>实现全导数，而非偏导</td>
+<td>错误方向使 FID 至少恶化 76.90；表 1b，p.7</td>
+</tr>
+<tr class="even">
+<td>latent 训练</td>
+<td>固定 VAE，latent 32×32×4</td>
+<td>降低主干训练成本</td>
+<td>实验设置，p.7</td>
+</tr>
+<tr class="odd">
+<td>优化器</td>
+<td>Adam，β=(0.9,0.95)，LR 1e−4，batch 256，EMA .9999</td>
+<td>复现 ImageNet 主结果的基本配置</td>
+<td>表 4，p.14</td>
+</tr>
+<tr class="even">
+<td>CIFAR 配置</td>
+<td>LR .0006，batch 1024，dropout .2，EMA .99995，800K iter + 10K warmup</td>
+<td>说明 CIFAR 不是 ImageNet 配方直接缩放</td>
+<td>附录 C，p.14</td>
+</tr>
+</tbody>
+</table></div>
+<p>论文附录报告：在 TPU v4‑8 上，每步 wall time 从不带 JVP 的 <strong>0.045 s</strong> 增至 <strong>0.052 s</strong>，相对开销约 <strong>16%</strong>（附录 B.4，PDF p.16）。这支持“JVP 训练开销可控”，但不能外推到 GPU，因为官方主实现明确写着在 TPU 上测试，论文未给 GPU kernel、显存峰值或端到端能耗。</p>
+</section>
+<section class="card" aria-label="报告章节 8">
+<h2 id="数据集基准与指标">7. 数据集、基准与指标</h2>
+<p><strong>ImageNet 256×256。</strong> 类条件生成，固定 VAE 将图像编码到 32×32×4 latent；主指标为 50K 样本 FID。FID 越低越好，但它只比较特征分布的均值与协方差，不能单独证明语义忠实、多样性无坍缩或单样本质量。默认主结果强调 1‑NFE；2‑NFE 结果是另一个计算预算，不能与 1‑NFE 混作等预算排名。</p>
+<p><strong>CIFAR‑10。</strong> 使用约 55M 参数 U‑Net，报告无条件生成 FID。它用于检验方法是否只在 ImageNet latent DiT 配方上成立。MeanFlow 为 2.92，低于多数 consistency / moment matching 对照，但没有击败 iCT 的 2.83（表 3，PDF p.9）。</p>
+<p><strong>NFE。</strong> 一次神经函数求值是推理主干的调用次数；它比“采样步数”更公平，但不同模型的单次 FLOPs、VAE、CFG 实现仍可能不同。论文表 4 给部分 FLOPs，却没有把所有基线统一到实际延迟或能耗。</p>
+</section>
+<section class="card" aria-label="报告章节 9">
+<h2 id="主结果数据矩阵">8. 主结果数据矩阵</h2>
+<h3 id="imagenet-2561nfe-等预算核心矩阵">8.1 ImageNet 256：1‑NFE 等预算核心矩阵</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">参数量</th>
+<th scope="col">训练方式</th>
+<th scope="col" style="text-align: right;">NFE</th>
+<th scope="col" style="text-align: right;">FID↓</th>
+<th scope="col" style="text-align: right;">相对 MF‑XL/2 的差距</th>
+<th scope="col">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>iCT‑XL/2</td>
+<td style="text-align: right;">675M</td>
+<td>从头 consistency</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">34.24</td>
+<td style="text-align: right;">+30.81</td>
+<td>表 2，p.9</td>
+</tr>
+<tr class="even">
+<td>Shortcut‑XL/2</td>
+<td style="text-align: right;">675M</td>
+<td>从头 step-conditioned flow</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">10.60</td>
+<td style="text-align: right;">+7.17</td>
+<td>表 2，p.9</td>
+</tr>
+<tr class="odd">
+<td>MF‑B/2</td>
+<td style="text-align: right;">131M</td>
+<td>从头 MeanFlow</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">6.17</td>
+<td style="text-align: right;">+2.74</td>
+<td>表 2，p.9</td>
+</tr>
+<tr class="even">
+<td>MF‑M/2</td>
+<td style="text-align: right;">308M</td>
+<td>从头 MeanFlow</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">5.01</td>
+<td style="text-align: right;">+1.58</td>
+<td>表 2，p.9</td>
+</tr>
+<tr class="odd">
+<td>MF‑L/2</td>
+<td style="text-align: right;">459M</td>
+<td>从头 MeanFlow</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">3.84</td>
+<td style="text-align: right;">+0.41</td>
+<td>表 2，p.9</td>
+</tr>
+<tr class="even">
+<td><strong>MF‑XL/2</strong></td>
+<td style="text-align: right;"><strong>676M</strong></td>
+<td><strong>从头 MeanFlow</strong></td>
+<td style="text-align: right;"><strong>1</strong></td>
+<td style="text-align: right;"><strong>3.43</strong></td>
+<td style="text-align: right;"><strong>0</strong></td>
+<td>表 2，p.9</td>
+</tr>
+</tbody>
+</table></div>
+<p>对最强同类 Shortcut，绝对降低 <code>10.60−3.43=7.17</code>，相对降低 <code>7.17/10.60=67.64%</code>（本报告复算）。模型从 131M 扩到 676M，FID 从 6.17 降到 3.43，绝对改善 2.74、相对改善 44.41%（本报告复算）；规模收益明显但非线性，L→XL 只改善 0.41。</p>
+<h3 id="更宽方法谱系不可混淆-nfe">8.2 更宽方法谱系：不可混淆 NFE</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">家族</th>
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">NFE</th>
+<th scope="col" style="text-align: right;">FID↓</th>
+<th scope="col">是否可与 1‑NFE 直接公平比较</th>
+<th scope="col">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>一步 / 少步</td>
+<td>MF‑XL/2</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">3.43</td>
+<td>基准点</td>
+<td>表 2，p.9</td>
+</tr>
+<tr class="even">
+<td>一步 / 少步</td>
+<td>IMM</td>
+<td style="text-align: right;">2（1×2）</td>
+<td style="text-align: right;">7.77</td>
+<td>否，NFE 更高且仍较差</td>
+<td>表 2，p.9</td>
+</tr>
+<tr class="odd">
+<td>一步 / 少步</td>
+<td>MF‑XL/2</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">2.93</td>
+<td>否，用于自身计算扩展</td>
+<td>表 2，p.9</td>
+</tr>
+<tr class="even">
+<td>一步 / 少步</td>
+<td>MF‑XL/2+</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">2.20</td>
+<td>否，额外训练 / 配置</td>
+<td>表 2，p.9</td>
+</tr>
+<tr class="odd">
+<td>GAN</td>
+<td>BigGAN</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">6.95</td>
+<td>模型范式不同</td>
+<td>表 2，p.9</td>
+</tr>
+<tr class="even">
+<td>GAN</td>
+<td>GigaGAN</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">3.45</td>
+<td>模型范式不同；MF 仅优 0.02</td>
+<td>表 2，p.9</td>
+</tr>
+<tr class="odd">
+<td>GAN</td>
+<td>StyleGAN‑XL</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">2.30</td>
+<td>模型范式不同</td>
+<td>表 2，p.9</td>
+</tr>
+<tr class="even">
+<td>AR</td>
+<td>VQGAN</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">26.52</td>
+<td>序列长度未折为 NFE</td>
+<td>表 2，p.9</td>
+</tr>
+<tr class="odd">
+<td>AR</td>
+<td>MaskGIT</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">6.18</td>
+<td>迭代 token 解码</td>
+<td>表 2，p.9</td>
+</tr>
+<tr class="even">
+<td>AR</td>
+<td>VAR‑d30</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">1.92</td>
+<td>计算口径不同</td>
+<td>表 2，p.9</td>
+</tr>
+<tr class="odd">
+<td>AR</td>
+<td>MAR‑H</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">1.55</td>
+<td>计算口径不同</td>
+<td>表 2，p.9</td>
+</tr>
+<tr class="even">
+<td>扩散 / flow</td>
+<td>ADM</td>
+<td style="text-align: right;">多步</td>
+<td style="text-align: right;">10.94</td>
+<td>否</td>
+<td>表 2，p.9</td>
+</tr>
+<tr class="odd">
+<td>扩散 / flow</td>
+<td>LDM</td>
+<td style="text-align: right;">多步</td>
+<td style="text-align: right;">3.60</td>
+<td>否</td>
+<td>表 2，p.9</td>
+</tr>
+<tr class="even">
+<td>扩散 / flow</td>
+<td>SimDiff</td>
+<td style="text-align: right;">多步</td>
+<td style="text-align: right;">2.77</td>
+<td>否</td>
+<td>表 2，p.9</td>
+</tr>
+<tr class="odd">
+<td>扩散 / flow</td>
+<td>DiT</td>
+<td style="text-align: right;">多步</td>
+<td style="text-align: right;">2.27</td>
+<td>否</td>
+<td>表 2，p.9</td>
+</tr>
+<tr class="even">
+<td>扩散 / flow</td>
+<td>SiT</td>
+<td style="text-align: right;">多步</td>
+<td style="text-align: right;">2.06</td>
+<td>否；正文另写 2.15</td>
+<td>表 2，p.9；正文 p.8</td>
+</tr>
+<tr class="odd">
+<td>扩散 / flow</td>
+<td>SiT+REPA</td>
+<td style="text-align: right;">多步</td>
+<td style="text-align: right;">1.42</td>
+<td>否</td>
+<td>表 2，p.9</td>
+</tr>
+</tbody>
+</table></div>
+<p>这张表刻意不制造“五基准×六方法”的假矩阵：核心论文只给 ImageNet 与 CIFAR 两个基准，且不同论文的训练数据、架构和 NFE 并不统一。能推出的是“一步预算下 MeanFlow 显著推进了 FID”；不能推出的是“它在所有生成范式、所有延迟与质量维度全面领先”。</p>
+<h3 id="cifar10-外部有效性">8.3 CIFAR‑10 外部有效性</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">参数规模</th>
+<th scope="col" style="text-align: right;">FID↓</th>
+<th scope="col" style="text-align: right;">MeanFlow 相对差值</th>
+<th scope="col">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>iCT</strong></td>
+<td style="text-align: right;">约55M</td>
+<td style="text-align: right;"><strong>2.83</strong></td>
+<td style="text-align: right;">MeanFlow +0.09（更差）</td>
+<td>表 3，p.9</td>
+</tr>
+<tr class="even">
+<td>ECT</td>
+<td style="text-align: right;">约55M</td>
+<td style="text-align: right;">3.60</td>
+<td style="text-align: right;">MeanFlow −0.68</td>
+<td>表 3，p.9</td>
+</tr>
+<tr class="odd">
+<td>sCT</td>
+<td style="text-align: right;">约55M</td>
+<td style="text-align: right;">2.97</td>
+<td style="text-align: right;">MeanFlow −0.05</td>
+<td>表 3，p.9</td>
+</tr>
+<tr class="even">
+<td>IMM</td>
+<td style="text-align: right;">约55M</td>
+<td style="text-align: right;">3.20</td>
+<td style="text-align: right;">MeanFlow −0.28</td>
+<td>表 3，p.9</td>
+</tr>
+<tr class="odd">
+<td>MeanFlow</td>
+<td style="text-align: right;">约55M</td>
+<td style="text-align: right;">2.92</td>
+<td style="text-align: right;">0</td>
+<td>表 3，p.9</td>
+</tr>
+</tbody>
+</table></div>
+<p>因此，“ImageNet 的大幅领先”没有在 CIFAR 上等比例复现。相对 iCT，MeanFlow 的 FID 高 0.09，即相对差 <strong>3.18%</strong>（本报告复算），而且论文未给方差，不能判断 0.09 是否超出训练随机性。</p>
+</section>
+
+<figure class="figure" aria-labelledby="figure-fid-title">
+  <p class="fig-title" id="figure-fid-title">ImageNet 256：从头训练、1‑NFE 的 FID 对比</p>
+  <p class="fig-sub">同一 Y 轴，越低越好；MeanFlow 系列使用蓝色，早期一步基线使用橙色。</p>
+  <div class="legend"><span><span class="swatch" style="background:#2a78d6"></span>MeanFlow</span><span><span class="swatch" style="background:#eb6834"></span>一步基线</span></div>
+  <svg class="chart" viewBox="0 0 900 340" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>MeanFlow 与 iCT、Shortcut 的 ImageNet 256 一步 FID 对比</title>
+    <desc>iCT 34.24，Shortcut 10.60，MeanFlow B、M、L、XL 分别为 6.17、5.01、3.84、3.43。</desc>
+    <line x1="72" y1="285.0" x2="866" y2="285.0" stroke="var(--grid)"/><text x="58" y="290.0" text-anchor="end" font-size="12">0</text><line x1="72" y1="221.1" x2="866" y2="221.1" stroke="var(--grid)"/><text x="58" y="226.1" text-anchor="end" font-size="12">10</text><line x1="72" y1="157.2" x2="866" y2="157.2" stroke="var(--grid)"/><text x="58" y="162.2" text-anchor="end" font-size="12">20</text><line x1="72" y1="93.3" x2="866" y2="93.3" stroke="var(--grid)"/><text x="58" y="98.3" text-anchor="end" font-size="12">30</text><line x1="72" y1="55.0" x2="866" y2="55.0" stroke="var(--grid)"/><text x="58" y="60.0" text-anchor="end" font-size="12">36</text><line x1="72" y1="55" x2="72" y2="285" stroke="var(--grid)"/><rect x="118" y="66.2" width="66" height="218.8" rx="5" fill="#eb6834" tabindex="0" data-tip="iCT · FID 34.24" aria-label="iCT FID 34.24"/><text x="151" y="310" text-anchor="middle" font-size="12">iCT</text><text x="151" y="58.2" text-anchor="middle" font-size="12">34.24</text><rect x="241" y="217.3" width="66" height="67.7" rx="5" fill="#d95926" tabindex="0" data-tip="Shortcut · FID 10.60" aria-label="Shortcut FID 10.60"/><text x="274" y="310" text-anchor="middle" font-size="12">Shortcut</text><text x="274" y="209.3" text-anchor="middle" font-size="12">10.60</text><rect x="364" y="245.6" width="66" height="39.4" rx="5" fill="#3987e5" tabindex="0" data-tip="MF-B/2 · FID 6.17" aria-label="MF-B/2 FID 6.17"/><text x="397" y="310" text-anchor="middle" font-size="12">MF-B/2</text><text x="397" y="237.6" text-anchor="middle" font-size="12">6.17</text><rect x="487" y="253.0" width="66" height="32.0" rx="5" fill="#3987e5" tabindex="0" data-tip="MF-M/2 · FID 5.01" aria-label="MF-M/2 FID 5.01"/><text x="520" y="310" text-anchor="middle" font-size="12">MF-M/2</text><text x="520" y="245.0" text-anchor="middle" font-size="12">5.01</text><rect x="610" y="260.5" width="66" height="24.5" rx="5" fill="#2a78d6" tabindex="0" data-tip="MF-L/2 · FID 3.84" aria-label="MF-L/2 FID 3.84"/><text x="643" y="310" text-anchor="middle" font-size="12">MF-L/2</text><text x="643" y="252.5" text-anchor="middle" font-size="12">3.84</text><rect x="733" y="263.1" width="66" height="21.9" rx="5" fill="#2a78d6" tabindex="0" data-tip="MF-XL/2 · FID 3.43" aria-label="MF-XL/2 FID 3.43"/><text x="766" y="310" text-anchor="middle" font-size="12">MF-XL/2</text><text x="766" y="255.1" text-anchor="middle" font-size="12">3.43</text>
+  </svg>
+  <figcaption>来源：核心论文表 2（PDF p.9）。悬停或键盘聚焦显示精确值；论文未报告误差条。</figcaption>
+</figure>
+<section class="card" aria-label="报告章节 10">
+<h2 id="逐层消融从必要条件到锦上添花">9. 逐层消融：从必要条件到锦上添花</h2>
+<p><strong>第一层：任务定义。</strong> 没有非零区间样本（<code>r≠t=0%</code>）时 FID 328.91，加入 25% 后降到 61.06；但 100% 又退到 67.32（表 1a，p.7）。这说明平均速度任务不可缺，但纯平均速度训练也不最优；瞬时速度样本可能提供锚定。</p>
+<p><strong>第二层：导数语义。</strong> 正确 <code>(v,0,1)</code> 为 61.06，三种错误 JVP 方向均灾难性退化（表 1b，p.7）。这是最强的机制消融，因为它直接区分“恒等式正确实现”和“任意导数正则”。</p>
+<p><strong>第三层：条件参数化。</strong> <code>(t,t−r)</code> 略优于 <code>(t,r)</code>：61.06 对 61.75，但差值只有 0.69；把三个量都输入反而 63.98（表 1c，p.7）。更多条件不是单调更好，冗余参数可能增加学习难度。</p>
+<p><strong>第四层：采样分布。</strong> uniform 为 65.90；log-normal 的四个设置在 61.06–64.72（表 1d，p.7）。最佳 <code>(-0.4,1.0)</code> 相对 uniform 降低 4.84，说明时间密度有实质作用，但论文没有更细网格或跨模型验证。</p>
+<p><strong>第五层：损失权重。</strong> <code>p=1</code> 最好 61.06；<code>p=0</code> 为 79.75，<code>p=2</code> 为 69.19（表 1e，p.7）。它呈 U 型，而不是“越关注困难样本越好”。</p>
+<p><strong>第六层：CFG。</strong> 在短训练 B/4 设置中，ω 从 1 提到 3，FID 从 61.06 降到 15.53；再到 5 反弹至 20.75（表 1f，p.7）。附录的修正 CFG 在固定有效 <code>ω'=2</code> 下，κ 从 0 的 20.15 到 0.9 的 18.63，再到 0.95 的 19.17（表 5，p.15）。CFG 贡献巨大且存在清晰甜点区。</p>
+</section>
+<section class="card" aria-label="报告章节 11">
+<h2 id="超参敏感性与相变">10. 超参敏感性与“相变”</h2>
+<p>论文没有给连续相图，但离散网格显示三类相变式行为。</p>
+<ol type="1">
+<li><strong>区间监督开关：</strong> <code>r≠t</code> 从 0% 到 25%，FID 由 328.91 降到 61.06，绝对改善 267.85；这是从“学瞬时场”到“能学有限位移”的结构突变，而不是微调。</li>
+<li><strong>JVP 语义：</strong> 只改变切向量分量，FID 可从 61.06 变为 329.22；这说明模型没有把错误导数自动吸收进参数化。</li>
+<li><strong>引导强度：</strong> ω=1→3 快速改善，3→5 反向恶化；κ 也在 0.9 附近呈 U 型。高引导增强类别信号，但过强会牺牲覆盖与稳定性。</li>
+</ol>
+<p>无法推出的内容同样重要：论文没有对学习率、batch、EMA、模型宽度与时间采样做联合扫描，没有报告失败率，也没有给最佳超参在不同随机种子、数据集或 GPU 后端的稳定区间。因此“相变”只是对已观测离散点的描述，不是严格临界值估计。</p>
+</section>
+<section class="card" aria-label="报告章节 12">
+<h2 id="统计显著性与可重复性审计">11. 统计显著性与可重复性审计</h2>
+<p><strong>论文未报告</strong> ImageNet 主结果的多随机种子均值、标准差、置信区间或显著性检验；CIFAR 表 3 也只有单值。由此，7.17 FID 的大差距很难仅由噪声解释，但 0.02（相对 GigaGAN）和 0.09（CIFAR 相对 iCT）的差距不能被称为稳健胜负。</p>
+<p>可复现性处于“代码公开但主 SOTA 非开箱复现”的中间状态。官方仓库给 JAX/TPU 代码、数据预处理、MF‑B/4 checkpoint 与 FID stats，仓库期望该 checkpoint FID <strong>11.4</strong>；但论文表 2 的 MF‑XL/2 FID 3.43 所需完整训练资源、主权重与逐种子日志没有在已核验页面中完整提供。表 4 还存在模型参数口径冲突：M/2 在表 2 为 <strong>308M</strong>，表 4 却列 <strong>497.8M</strong>（PDF p.9 与 p.14）。这会直接影响规模—性能曲线与复现实验预算。</p>
+<p>另一个内部不一致是 SiT：正文写 <strong>2.15</strong>，表 2 写 <strong>2.06</strong>（PDF p.8–9）。它不改变 MeanFlow 1‑NFE 的核心结论，但说明横向基线数字需要回源核查。</p>
+</section>
+<section class="card" aria-label="报告章节 13">
+<h2 id="相关工作链问题来源技术来源与设计传递">12. 相关工作链：问题来源、技术来源与设计传递</h2>
+<h3 id="flow-matching解决如何直接学连续流遗留仍需积分">12.1 Flow Matching：解决“如何直接学连续流”，遗留“仍需积分”</h3>
+<p>Flow Matching 用条件概率路径构造可回归的速度目标，绕开对数似然 ODE 的高成本。它在 CIFAR‑10 上 FM+OT FID <strong>6.35 / NFE 142</strong>，DDPM 为 <strong>7.48 / 274</strong>；ImageNet‑64 上分别 <strong>14.45 / 138</strong> 与 <strong>17.36 / 264</strong>（Flow Matching 表 1，PDF p.7）。它解决了稳定训练连续流，却仍把推理留给数值积分。MeanFlow 保留概率路径和速度回归这条主干，把学习对象从瞬时 <code>v</code> 改为区间平均 <code>u</code>。传递下来的关键设计是“用条件路径提供无模拟训练信号”；被改写的是“训练哪个场”。</p>
+<h3 id="ict解决无需教师的一致性训练遗留课程与权重依赖">12.2 iCT：解决“无需教师的一致性训练”，遗留“课程与权重依赖”</h3>
+<p>iCT 通过改进 consistency training，使 CIFAR‑10 1-step / 2-step FID 达 <strong>2.51 / 2.24</strong>，ImageNet‑64 达 <strong>3.25 / 2.77</strong>（iCT 表 2–3，PDF p.8）。它证明无需蒸馏也能做少步生成，但训练仍依赖离散化与 curriculum。MeanFlow 以连续区间 <code>[r,t]</code> 取代显式课程，使用恒等式自举。设计传递体现在“同一网络跨噪声层保持全局一致”；不同之处是 MeanFlow 的一致性由平均速度微积分约束表达，而非直接约束不同时间预测相等。</p>
+<h3 id="shortcut-models解决一个模型覆盖多个步长遗留coupling-与一步质量">12.3 Shortcut Models：解决“一个模型覆盖多个步长”，遗留“coupling 与一步质量”</h3>
+<p>Shortcut 把 step size 作为条件，并以 bootstrap shortcut 训练。DiT‑B 同算力下，1-step FID 从普通 flow 的 324.8 降到 40.3，4-step 从 108.2 降到 28.3（表 1，PDF p.8）；大模型 1-step 达 10.60。论文也指出噪声到数据的映射依赖 coupling（限制讨论，PDF p.10）。MeanFlow 的 <code>[r,t]</code> 条件与 Shortcut 的 step-size 条件同源，但不直接让短步预测拼成长步，而是通过积分平均的恒等式连接二者。关键设计传递是“步长条件化”；回应的缺口是给该条件一个解析、可验证的速度语义。</p>
+<h3 id="imm解决以矩匹配传播分布遗留多粒子与额外-nfe">12.4 IMM：解决“以矩匹配传播分布”，遗留“多粒子与额外 NFE”</h3>
+<p>IMM 用 inductive moment matching 让生成分布逐步接近目标，ImageNet 256 的 8-step FID <strong>1.99</strong>，CIFAR‑10 2-step <strong>1.98</strong>；MeanFlow 表 2 引用其 ImageNet 一步配置为 <strong>2 NFE、FID 7.77</strong>。它提供另一条无需经典教师蒸馏的少步路径，但训练/推理涉及矩估计与粒子配置。MeanFlow 把监督收缩为单轨迹的速度/JVP 恒等式。传递的是“从局部可估统计量构造全局生成映射”的思想，回应则是用解析导数替代粒子矩传播。</p>
+<h3 id="improved-mean-flows解释-meanflow-的后续缺口">12.5 Improved Mean Flows：解释 MeanFlow 的后续缺口</h3>
+<p>iMF 直接审视原始 MeanFlow：原目标依赖当前网络导数，训练 CFG 固定，架构也未针对一步目标优化。它在 ImageNet 256 上逐层把 B/2 FID 从原始 <strong>6.17</strong> 推到 v-loss 辅助头 <strong>5.68</strong>、灵活 Ω <strong>4.57</strong>、in-context <strong>4.09</strong>、先进 block <strong>3.82</strong>，640 epochs 为 <strong>3.39</strong>（iMF 表 1，PDF p.6）；XL 规模从原始 676M / 3.43 改进为 610M / <strong>1.72</strong>（表 2，PDF p.7）。这说明 MeanFlow 的方程是有效底座，但其原始参数化和训练配方不是终点。设计传递最直接：保留平均速度语义，拆解目标耦合并增强条件表达。</p>
+<h3 id="非线性技术演进树">12.6 非线性技术演进树</h3>
+<pre class="text"><code>概率路径 / 连续流
+├─ Flow Matching：学瞬时速度 v ───────────────┐
+│                                             │ 仍需 ODE 多步积分
+│                                             ▼
+│     consistency 路线 ─ iCT ── 无教师，但依赖课程/离散化
+│              └───────────────┐
+│                               ├─ 全局一步映射问题
+│     step-size 路线 ─ Shortcut ┘      │
+│        （跨步长自举，受 coupling）    │
+│                                      ▼
+│                         MeanFlow：学区间平均速度 u
+│                         ├─ 恒等式 u=v−Δ·du/dt
+│                         ├─ JVP (v,0,1)
+│                         └─ CFG 折入目标 → 1-NFE
+│                                      │
+│                                      ├─ iMF：解耦目标/灵活 Ω/新 block
+│                                      ├─ Pixel MeanFlow：移向像素空间
+│                                      └─ Decoupled/Modular 分支
+└─ moment 路线 ─ IMM：以分布矩递推 ───────────┘</code></pre>
+<p><strong>演进动力与转折。</strong> 第一转折是从“更准确积分”转向“改变被学习的有限步对象”；第二转折是从教师蒸馏转向自洽、自监督的全局映射；MeanFlow 的特有转折则是把 step size 条件赋予精确平均速度语义。iMF 随后表明下一阶段不再只是证明“一步可行”，而是拆开目标耦合、引导与架构之间的相互污染。</p>
+<h3 id="跨论文对标">12.7 跨论文对标</h3>
+<div class="table-scroll" role="region" aria-label="数据表" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">学习对象</th>
+<th scope="col">需要教师</th>
+<th scope="col">训练中的全局一致性来源</th>
+<th scope="col">推理预算亮点</th>
+<th scope="col">主要遗留缺口</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Flow Matching</td>
+<td>瞬时速度 <code>v</code></td>
+<td>否</td>
+<td>概率路径回归</td>
+<td>高质量但多步</td>
+<td>ODE 积分</td>
+</tr>
+<tr class="even">
+<td>iCT</td>
+<td>consistency function</td>
+<td>否</td>
+<td>跨噪声层一致性 + curriculum</td>
+<td>1–2 step</td>
+<td>课程 / 权重敏感</td>
+</tr>
+<tr class="odd">
+<td>Shortcut</td>
+<td>步长条件速度</td>
+<td>否</td>
+<td>短步 bootstrap 长步</td>
+<td>1-step 10.60</td>
+<td>coupling、一步质量</td>
+</tr>
+<tr class="even">
+<td>IMM</td>
+<td>分布矩映射</td>
+<td>否</td>
+<td>inductive moment matching</td>
+<td>少步高质量</td>
+<td>粒子与 NFE 成本</td>
+</tr>
+<tr class="odd">
+<td><strong>MeanFlow</strong></td>
+<td><strong>区间平均速度 <code>u</code></strong></td>
+<td><strong>否</strong></td>
+<td><strong>解析恒等式 + JVP</strong></td>
+<td><strong>1‑NFE 3.43</strong></td>
+<td>CFG 依赖、目标耦合、无方差</td>
+</tr>
+<tr class="even">
+<td>iMF</td>
+<td>改进平均速度系统</td>
+<td>否</td>
+<td>解耦目标 + 条件/架构增强</td>
+<td>1‑NFE 1.72</td>
+<td>仍需更广泛公平延迟评测</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section class="card" aria-label="报告章节 14">
+<h2 id="真正贡献可复用设计与迁移潜力">13. 真正贡献、可复用设计与迁移潜力</h2>
+<p><strong>真正贡献一：学习对象重参数化。</strong> 它不是单纯加 loss，而是指出“一步生成的自然预测量是区间平均速度”。这个抽象可独立于特定 DiT block 使用。</p>
+<p><strong>真正贡献二：可计算的自洽恒等式。</strong> <code>u=v−Δ du/dt</code> 把积分定义转化为局部可训练关系，JVP 又把全导数算得足够便宜。表 1b 的灾难性错误方向消融提供较强机制证据。</p>
+<p><strong>真正贡献三：把 guidance 视为目标场。</strong> 若推理时再做传统 conditional/unconditional 双前向，就不再是严格 1‑NFE；论文在训练端折入 CFG，保持一次调用。这对任何宣称“一步”的条件生成方法都有复用价值。</p>
+<p>迁移上，最直接是视频、音频、3D 与分子 flow：若存在连续路径、可定义条件速度，并能对模型做 JVP，就能尝试区间平均场。但高维时序中的轨迹曲率、条件 CFG、内存与 JVP 成本可能更严重。另一个方向是逆问题：把 <code>[r,t]</code> 看作可变求解区间，使同一网络按观测难度选择一步或少步；但需要校准误差估计器，不能只凭 FID。</p>
+</section>
+<section class="card" aria-label="报告章节 15">
+<h2 id="论文自述限制">14. 论文自述限制</h2>
+<p>论文没有独立、系统的 “Limitations” 章节，因此以下只列正文/附录明确承认或可直接定位的边界，不把报告者批评伪装成作者自述。</p>
+<ol type="1">
+<li><strong>JVP 训练成本。</strong> 附录 B.4（PDF p.16）明确讨论开销：0.045→0.052 s/iter，约 +16%。作者据此认为成本可控，但只测 TPU v4‑8。</li>
+<li><strong>CFG 配方仍可改进。</strong> 附录 B.3（PDF p.15）专门引入修正 CFG，并显示 κ 的最优点；这等于承认原始固定引导目标不是完结方案。</li>
+<li><strong>一步仍未追平最强多步。</strong> 正文结果讨论（PDF p.8–9）把“缩小差距”而非“消除差距”作为结论；表 2 的 3.43 与 SiT+REPA 1.42 直接显示边界。</li>
+</ol>
+</section>
+<section class="card" aria-label="报告章节 16">
+<h2 id="独立批判每条都是因为-x所以-y">15. 独立批判：每条都是“因为 X，所以 Y”</h2>
+<ol type="1">
+<li><strong>[统计]</strong> 因为 ImageNet 和 CIFAR 主表都没有多随机种子、标准差或置信区间，所以 7.17 FID 的大优势有方向性说服力，但 0.02 对 GigaGAN、0.09 对 iCT 的差距不能被宣称为统计显著。</li>
+<li><strong>[归因]</strong> 因为 B/4 消融中仅把 CFG ω 从 1 调到 3 就让 FID 从 61.06 降到 15.53（表 1f，p.7），幅度远大于多数结构微调，所以最终 3.43 不能只归因于平均速度恒等式；需要与同等 CFG 训练的强基线做 head-to-head。</li>
+<li><strong>[外部有效性]</strong> 因为 CIFAR‑10 上 MeanFlow 2.92 仍弱于 iCT 2.83（表 3，p.9），所以 ImageNet latent DiT 的领先不能直接外推为跨数据集统一优势。</li>
+<li><strong>[公平性]</strong> 因为表 2 把 GAN、AR、多步扩散和 1‑NFE flow 并列，却没有统一实际延迟、FLOPs、VAE 与能耗，所以“总体 SOTA”只能解释为表内 FID 排名，不能解释为系统吞吐最优。</li>
+<li><strong>[复现性]</strong> 因为表 2 把 MF‑M/2 写成 308M，而表 4 写成 497.8M（p.9 与 p.14），所以规模律与训练预算无法无歧义复现；这一冲突应由作者勘误。</li>
+<li><strong>[基线审计]</strong> 因为正文把 SiT FID 写成 2.15、表 2 写成 2.06（p.8–9），所以至少一处横向数字有转录或版本误差；对 0.1 量级差距的比较必须回查原论文与评测协议。</li>
+<li><strong>[机制]</strong> 因为 <code>r≠t=0%</code> 的 328.91 与正确 JVP 的 61.06 证明平均速度任务和全导数都必要，却没有“同算力增加导数正则但不使用 MeanFlow 恒等式”的对照，所以尚不能完全分离解析结构与额外训练信号/算力的贡献。</li>
+<li><strong>[部署]</strong> 因为 +16% JVP 开销只在 TPU v4‑8 测得，官方主代码也以 TPU 为测试环境，所以不能据此断言 GPU 训练成本同样可忽略；GPU 上的显存峰值、编译稳定性与吞吐仍是空白。</li>
+</ol>
+</section>
+<section class="card" aria-label="报告章节 17">
+<h2 id="开放挑战可操作的-head-to-head-实验">16. 开放挑战：可操作的 head-to-head 实验</h2>
+<h3 id="理论">理论</h3>
+<ul>
+<li><strong>平均场可识别性。</strong> 固定架构与样本，比较 MeanFlow 恒等式、任意 JVP 正则、直接积分伪标签三组；测 <code>u</code> 的区间闭合误差、终点误差与 FID，并证明何时自举固定点唯一。</li>
+<li><strong>误差传播界。</strong> 在具有已知解析流的 2D/低维分布上，比较一步 MeanFlow、Shortcut、Euler/RK；扫描轨迹曲率与 Lipschitz 常数，检验终点误差是否由平均速度回归误差线性控制。</li>
+<li><strong>coupling 敏感性。</strong> 在同一数据上更换独立 coupling、OT coupling 与学习 coupling，固定 NFE/参数/FLOPs，测 FID、precision/recall 与配对稳定性，回答 MeanFlow 是否真正缓解 Shortcut 的 coupling 依赖。</li>
+</ul>
+<h3 id="工程与应用">工程与应用</h3>
+<ul>
+<li><strong>等 wall-clock 对照。</strong> 在同一 H100 集群，用相同训练小时比较 MeanFlow、Shortcut、iCT、iMF；同时报吞吐、峰值显存、总能耗、失败重启和最终 FID，而不是只对齐 epoch。</li>
+<li><strong>端到端服务对照。</strong> batch=1/8/64 下测 latent 编码、1‑NFE 主干、VAE 解码的 p50/p95 延迟，与 2/4-step 模型比较；若 VAE 占主导，主干从 4 步到 1 步的系统收益可能被高估。</li>
+<li><strong>CFG 因果消融。</strong> 对 MeanFlow 与所有一步基线使用相同 guidance 训练和相同有效 ω，网格扫描 ω/κ；报告无 CFG 与最佳 CFG 两套榜单，分离恒等式收益和引导收益。</li>
+</ul>
+<h3 id="新兴方向">新兴方向</h3>
+<ul>
+<li><strong>视频平均速度。</strong> 在同一视频 DiT 上比较 MeanFlow 与 Shortcut，固定帧数、分辨率和训练 FLOPs；除 FVD 外按时间位置报告身份/运动漂移，检验单区间平均是否抹平长时动作相位。</li>
+<li><strong>文本到 3D / 分子生成。</strong> 在有硬约束的流上比较瞬时场与平均场，报告合法率、性质分布、去重率和采样延迟；观察一步跃迁是否越过可行流形。</li>
+<li><strong>自适应一步—少步路由。</strong> 训练一个区间误差预测器，让简单样本 1‑NFE、困难样本 2–4 NFE；与固定 1/2/4 NFE 在相同平均算力下比较 FID、最坏分位质量与校准误差。</li>
+</ul>
+</section>
+<section class="card" aria-label="报告章节 18">
+<h2 id="近期工作雷达">17. 近期工作雷达</h2>
+<ol type="1">
+<li><a href="https://arxiv.org/abs/2512.02012">Improved Mean Flows</a>：最直接的后续，明确把原目标耦合、固定 guidance 与架构配方当作瓶颈；其 XL 1‑NFE FID 1.72 说明 MeanFlow 更像新基线而非终点。</li>
+<li><a href="https://arxiv.org/abs/2601.22158">Pixel MeanFlow</a>：把平均速度路线从 latent 推向像素空间，值得用端到端延迟与 VAE 误差消失后的质量变化衡量，而不只看 FID。</li>
+<li><a href="https://arxiv.org/abs/2508.17426">Modular MeanFlow</a>：尝试拆开 MeanFlow 的训练组件，适合用来验证哪些模块能独立迁移到视频、音频和 3D。</li>
+<li><a href="https://arxiv.org/abs/2506.05350">Contrastive Flow Matching</a>：从表征/对比目标改造 flow matching，和 MeanFlow 的区间目标正交，潜在组合价值高，但需要控制额外负样本算力。</li>
+<li><a href="https://arxiv.org/abs/2603.14186">Fair Benchmarking of Emerging One-Step Generative Models</a>：把“1‑NFE”之外的参数、训练量与评测协议拉回同一口径，正面回应本文的公平性批评。</li>
+<li><a href="https://openreview.net/group?id=ICLR.cc/2026/Conference">Decoupled MeanFlow（ICLR 2026 proceedings）</a>：聚焦自举目标的耦合问题；正式条目需在会议列表按题名检索，本报告不引用其未核验数字。</li>
+</ol>
+</section>
+<section class="card" aria-label="报告章节 19">
+<h2 id="复现蓝图与最终判断">18. 复现蓝图与最终判断</h2>
+<p>最小可信复现应分三层。第一层用官方 MF‑B/4 checkpoint 复核仓库声明的 FID 11.4，并记录 FID stats 哈希；第二层按表 4 训练 B/4，复现表 1 的关键三点：<code>r≠t=0/25%</code>、正确/错误 JVP、ω=1/3；第三层再扩到 B/2 或 XL/2，并至少跑 3 个随机种子。任何复现都应同时报告训练 wall-clock、JVP 占比、峰值内存与端到端生成延迟。</p>
+<p>最终判断是：MeanFlow 提供了一个足够简洁、足够可迁移的思想——把一步生成写成平均速度学习，并用微积分恒等式把它变成可训练问题。其 ImageNet 一步结果确实跨过了此前从头训练方法的质量门槛；但“平均速度方程本身贡献多少”“CFG 和规模贡献多少”“跨数据集是否稳健”，论文仍未完全拆清。研究上值得复用的是平均量重参数化、正确 JVP 和训练端 guidance；工程上应先验证 GPU 成本与多种子稳定性，再把 3.43 当作可交付指标。</p>
+<hr />
+<p><strong>来源与审计脚注。</strong> 核心及五篇相关论文 PDF 均已逐页读取；所有数字都注明表号或 PDF 页码。报告没有从图线肉眼补造未列出的精确数值。HTML 版使用单文件内联 CSS/JS、浅/深主题切换与响应式表格；图表只绘制表 2 的 1‑NFE 原报数字。<code>ml-report-index.md</code> 已在本次生成后追加记录。已按要求调用本机 Playwright 探测 Chromium：Playwright 包存在，但 <code>/usr/bin/chromium</code>、<code>/opt/pw-browsers</code> 及其记录的浏览器路径均无可执行文件；遵守“不运行 playwright install”的约束，因此无法完成真实浅色、深色和移动端截图。替代检查包括 Warm Editorial 验证器（0 warning）、HTML 占位符/结构扫描、表格横向滚动规则、移动端媒体查询、主题变量与 tooltip 键盘焦点检查；不将这些静态检查冒充浏览器截图验证。</p>
+</section>
+</main>
+
+  <footer>核心来源：NeurIPS proceedings、arXiv v1、官方代码；相关链深读 Flow Matching、iCT、Shortcut、IMM 与 iMF。生成于 2026‑09‑16。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

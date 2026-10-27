@@ -1,0 +1,1296 @@
+---
+layout: null
+title: "PointMapPolicy"
+date: 2026-10-01
+topic: "rl-peft"
+tags: ["rl-peft", "robotics", "3d-representations"]
+excerpt: "把稠密三维几何重新装回二维规则网格 PMP-xyz 将 RoboCasa 平均成功率从 DP3 的 27.04% 提至 49.12%，而多模态 PMP 在 CALVIN 达 4.01；几何与颜色的价值随任务语义发生反转。"
+permalink: "/blog/2026/10/01/pointmappolicy/"
+blog_post: true
+lang: "zh-CN"
+source_url: "https://chatgpt.com/share/6ad80f26-629c-83e8-ae7e-2a4fb704a222"
+alternate_en: "/blog/2026/10/01/pointmappolicy/en/"
+---
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>PointMapPolicy 深度研究报告 · 2026-10-01</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  main { display: grid; gap: 22px; min-width: 0; }
+  .card.level2 { margin: 0; min-width: 0; }
+  .subsection { margin-top: 24px; }
+  .subsection h3 { margin-top: 0; }
+  blockquote { margin: 14px 0; padding: 10px 14px; border-left: 4px solid var(--chart-primary); background: var(--surface-2); color: var(--text-secondary); }
+  pre { overflow-x: auto; padding: 14px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); font-size: 12.5px; line-height: 1.55; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  p code, li code, td code { padding: .08em .3em; border-radius: 4px; background: var(--surface-2); }
+  ol, ul { padding-left: 1.35em; }
+  li + li { margin-top: .38em; }
+  .table-scroll { margin: 15px 0 22px; }
+  table { min-width: 720px; }
+  .figure { margin: 0; min-width: 0; max-width: 100%; }
+  p, li, td, th, a { overflow-wrap: anywhere; }
+  math[display="block"] { display: block; max-width: 100%; margin: 14px 0; padding: 10px 12px; overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+  .chart rect { outline: none; }
+  .chart rect:focus { stroke: var(--text-primary); stroke-width: 2; }
+  @media (max-width: 640px) {
+    .toolbar { position: static; justify-content: flex-end; margin-bottom: 10px; }
+    .hero { margin-top: 0; }
+    .chart { width: 760px; max-width: none; }
+    .figure { overflow-x: auto; }
+  }
+
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">NeurIPS 2025 · 具身智能 · 模仿学习</p>
+    <h1>PointMapPolicy</h1>
+    <p class="subtitle">把稠密三维几何重新装回二维规则网格</p>
+    <div class="meta" aria-label="报告元信息">
+      <span class="chip source">arXiv:2510.20406v3</span>
+      <span class="chip">2026-10-01</span>
+      <span class="chip">RGB-D · Point Map · Action Diffusion</span>
+    </div>
+    <p class="lede">PMP-xyz 将 RoboCasa 平均成功率从 DP3 的 27.04% 提至 49.12%，而多模态 PMP 在 CALVIN 达 4.01；几何与颜色的价值随任务语义发生反转。</p>
+  </header>
+
+  <main>
+<figure class="figure" aria-labelledby="calvin-chart-title">
+      <p class="fig-title" id="calvin-chart-title">CALVIN ABC→D：平均连续完成任务数</p>
+      <p class="fig-sub">PMP 为 4.01，较同骨干 RGB 的 3.15 提高 0.86；纵轴范围 0–5。</p>
+      <div class="legend" aria-label="图例">
+        <span><span class="swatch" style="background:var(--chart-primary)"></span>PointMapPolicy</span>
+        <span><span class="swatch" style="background:var(--chart-comparison)"></span>对照方法</span>
+      </div>
+      <svg class="chart" viewBox="0 0 900 350" role="img" xmlns="http://www.w3.org/2000/svg">
+        <title>PointMapPolicy 与四种对照在 CALVIN ABC 到 D 的平均任务链长度</title>
+        <desc>3D Diffuser Actor 3.27，CLOVER 3.53，Seer-Large scratch 3.83，RGB 3.15，PMP 4.01。</desc>
+        <line x1="72" x2="850" y1="300.0" y2="300.0" stroke="var(--border)" stroke-width="1" /><text x="60" y="304.0" text-anchor="end" font-size="12">0</text><line x1="72" x2="850" y1="251.0" y2="251.0" stroke="var(--border)" stroke-width="1" /><text x="60" y="255.0" text-anchor="end" font-size="12">1</text><line x1="72" x2="850" y1="202.0" y2="202.0" stroke="var(--border)" stroke-width="1" /><text x="60" y="206.0" text-anchor="end" font-size="12">2</text><line x1="72" x2="850" y1="153.0" y2="153.0" stroke="var(--border)" stroke-width="1" /><text x="60" y="157.0" text-anchor="end" font-size="12">3</text><line x1="72" x2="850" y1="104.0" y2="104.0" stroke="var(--border)" stroke-width="1" /><text x="60" y="108.0" text-anchor="end" font-size="12">4</text><line x1="72" x2="850" y1="55.0" y2="55.0" stroke="var(--border)" stroke-width="1" /><text x="60" y="59.0" text-anchor="end" font-size="12">5</text><rect x="100" y="139.8" width="72" height="160.2" rx="6" fill="var(--chart-comparison)" opacity=".88" tabindex="0" data-tip="3DA Avg. len: 3.27" /><rect x="245" y="127.0" width="72" height="173.0" rx="6" fill="var(--chart-comparison)" opacity=".88" tabindex="0" data-tip="CLOVER Avg. len: 3.53" /><rect x="390" y="112.3" width="72" height="187.7" rx="6" fill="var(--chart-comparison)" opacity=".88" tabindex="0" data-tip="Seer-L scratch Avg. len: 3.83" /><rect x="535" y="145.7" width="72" height="154.3" rx="6" fill="var(--chart-comparison)" opacity=".88" tabindex="0" data-tip="RGB Avg. len: 3.15" /><rect x="680" y="103.5" width="72" height="196.5" rx="6" fill="var(--chart-primary)" opacity="1" tabindex="0" data-tip="PMP Avg. len: 4.01" /><text x="136" y="326" text-anchor="middle" font-size="12">3DA</text><text x="281" y="326" text-anchor="middle" font-size="12">CLOVER</text><text x="426" y="326" text-anchor="middle" font-size="12">Seer-L scratch</text><text x="571" y="326" text-anchor="middle" font-size="12">RGB</text><text x="716" y="326" text-anchor="middle" font-size="12">PMP</text>
+      </svg>
+      <figcaption>数据源：核心论文 Table 2（正式 PDF p.7）。悬停或键盘聚焦柱体可查看精确值；同一数据也见正文表格。</figcaption>
+    </figure>
+
+<p><strong>日期：</strong> 2026-10-01<br />
+<strong>领域：</strong> 强化学习 / Agent / 具身智能<br />
+<strong>核心论文：</strong> <em>PointMapPolicy: Structured Point Cloud
+Processing for Multi-Modal Imitation Learning</em><br />
+<strong>会议：</strong> NeurIPS 2025 Main Conference Track</p>
+<blockquote>
+<p><strong>一句话核心定位：</strong> PointMapPolicy（PMP）不再把 RGB-D
+产生的点云先压成稀疏点集，而是保留像素拓扑、把每个像素反投影为同位置的
+XYZ“点图”，从而让常规视觉编码器直接处理三维几何，并与 RGB token
+一起条件化四步动作扩散。</p>
+</blockquote>
+<section id="链接验证表" class="card level2">
+<h2>0. 链接验证表</h2>
+<p>以下 URL 均在 2026-10-01 实际访问；版本日期来自 arXiv submission
+history。代码状态按仓库当日可见内容判定，不能把“建仓”误写成“可复现实现”。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table style="width:100%;">
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">论文 / 资源</th>
+<th scope="col">会议 / 正式入口</th>
+<th scope="col">arXiv（版本与日期）</th>
+<th scope="col">代码</th>
+<th scope="col">数据 / 权重</th>
+<th scope="col">项目页 / 视频</th>
+<th scope="col">核验结论</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>PointMapPolicy（核心）</strong></td>
+<td><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/eacc8ae341d15d2c13c02fef88189db3-Abstract-Conference.html">NeurIPS
+2025 proceedings</a>；<a
+href="https://openreview.net/forum?id=ZR2mdBrhJX">OpenReview</a></td>
+<td><a
+href="https://arxiv.org/abs/2510.20406">2510.20406v3</a>，2026-01-24；v1
+为 2025-10-23</td>
+<td><a
+href="https://github.com/ALRhub/PointMapPolicy">ALRhub/PointMapPolicy</a>：仅
+1 次提交、README / License /
+.gitignore，<strong>未公开训练或评测代码</strong></td>
+<td><strong>未公开 / 未找到</strong></td>
+<td><a
+href="https://point-map.github.io/Point-Map/">项目页与真实机器人视频</a></td>
+<td>正式论文、版本历史、项目页可访问；仓库不是可运行实现</td>
+</tr>
+<tr class="even">
+<td>Diffusion Policy</td>
+<td>RSS 2023；<a
+href="https://diffusion-policy.cs.columbia.edu/">论文项目</a></td>
+<td><a
+href="https://arxiv.org/abs/2303.04137">2303.04137v5</a>，2024-03-14</td>
+<td><a
+href="https://github.com/real-stanford/diffusion_policy">real-stanford/diffusion_policy</a></td>
+<td>代码页提供数据与训练说明</td>
+<td>项目页有视频</td>
+<td>动作扩散的直接技术起点</td>
+</tr>
+<tr class="odd">
+<td>3D Diffusion Policy（DP3）</td>
+<td>RSS 2024</td>
+<td><a
+href="https://arxiv.org/abs/2403.03954">2403.03954v7</a>，2024-09-27</td>
+<td><a
+href="https://github.com/YanjieZe/3D-Diffusion-Policy">YanjieZe/3D-Diffusion-Policy</a></td>
+<td>项目页声明公开代码与数据</td>
+<td><a href="https://3d-diffusion-policy.github.io/">项目页</a></td>
+<td>稀疏点云 + 轻量点编码器基线</td>
+</tr>
+<tr class="even">
+<td>3D Diffuser Actor（3DA）</td>
+<td>CoRL / PMLR 2024</td>
+<td><a
+href="https://arxiv.org/abs/2402.10885">2402.10885v3</a>，2024-07-25</td>
+<td><a href="https://3d-diffuser-actor.github.io/">项目页入口</a></td>
+<td>项目页提供模型入口；逐项权重状态未核实</td>
+<td><a href="https://3d-diffuser-actor.github.io/">项目页与视频</a></td>
+<td>3D feature lifting + 扩散式位姿轨迹</td>
+</tr>
+<tr class="odd">
+<td>Point Cloud Matters / OBSBench</td>
+<td><a
+href="https://proceedings.neurips.cc/paper_files/paper/2024/hash/8e5dc5969a6174fcaaececd890c7f59b-Abstract-Datasets_and_Benchmarks_Track.html">NeurIPS
+2024 D&amp;B</a></td>
+<td><a href="https://arxiv.org/abs/2402.02500">2402.02500</a></td>
+<td><a
+href="https://github.com/HaoyiZhu/PointCloudMatters">HaoyiZhu/PointCloudMatters</a></td>
+<td>OBSBench 代码入口公开</td>
+<td><a href="https://haoyizhu.github.io/pcm/">项目页</a></td>
+<td>125 任务的观察模态系统对照</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+<section id="候选池去重与随机选择" class="card level2">
+<h2>1. 候选池、去重与随机选择</h2>
+<p>先检查 <code>ml-report-index.md</code>。最近 14 天已覆盖
+Embodied-R1（点式具身推理）、BridgeVLA（三视图
+VLA）、VIKI-R（多机器人协作）以及
+DFM（渐进流匹配）；因此本轮排除同论文与高度近似主题。候选以 NeurIPS 2025
+Main 为主，确保核心不会超过 24 个月。</p>
+<ol type="1">
+<li>Hyper-GoalNet: Goal-Conditioned Manipulation Policy Learning with
+HyperNetworks</li>
+<li>Learning and Planning Multi-Agent Tasks via an MoE-based World
+Model（M3W）</li>
+<li>Group-in-Group Policy Optimization for LLM Agent
+Training（GiGPO）</li>
+<li>MonoLift: Learning 3D Manipulation Policies from Monocular RGB via
+Distillation</li>
+<li>Improving Generative Behavior Cloning via Self-Guidance and Adaptive
+Online Replanning</li>
+<li>Continual Knowledge Adaptation for Reinforcement Learning</li>
+<li>FreqPolicy: Frequency Autoregressive Visuomotor Policy</li>
+<li>DynaRend: Learning 3D Dynamics via Masked Future Rendering</li>
+<li>Agentic RL Scaling Law: Spontaneous Code Execution for Mathematical
+Problem Solving</li>
+<li>Planning without Search: Refining Frontier LLMs with Offline
+Goal-Conditioned RL</li>
+<li>HMARL-CBF: Hierarchical MARL with Control Barrier Functions</li>
+<li>Curriculum Design for Trajectory-Constrained Agent</li>
+<li>Dynamic Test-Time Compute Scaling in Control Policy（DA-SIP）</li>
+<li>WALL-E: World Alignment by NeuroSymbolic Learning</li>
+<li><strong>PointMapPolicy: Structured Point Cloud Processing for
+Multi-Modal Imitation Learning</strong></li>
+<li>Self-Challenging Language Model Agents</li>
+<li>DexFlyWheel: A Scalable and Self-improving Data Generation
+Framework</li>
+<li>Predictive Preference Learning from Human Interventions</li>
+<li>Collaborative Reasoner: Self-Improving Social Agents</li>
+<li>3D Equivariant Visuomotor Policy Learning via Spherical
+Projection</li>
+</ol>
+<p>候选来源交叉覆盖 NeurIPS proceedings、OpenReview、arXiv、Semantic
+Scholar、Hugging Face Papers、Papers with Code / 官方项目页。执行
+<code>shuf -i 1-20 -n 1</code> 得到 <strong>15</strong>，即
+PointMapPolicy。核心正式论文、arXiv
+v3、项目视频与实验表足够深读，<strong>重抽次数 0</strong>。</p>
+</section>
+<section id="motivation痛点不是没有三维而是三维进入网络前已被损坏"
+class="card level2">
+<h2>2. Motivation：痛点不是“没有三维”，而是三维进入网络前已被损坏</h2>
+<p>机器人从 RGB 获得语义，从深度获得几何。两者的问题不对称：RGB
+保留规则网格，便于卷积或视觉
+Transformer，却把距离、尺度与相机几何隐含在像素中；点云显式给出
+XYZ，却是无序集合，常依赖 FPS/KNN、体素化或 feature lifting
+才能进入网络。论文的核心质问是：<strong>为何深度相机原本逐像素对齐的稠密几何，必须先被打散、降采样，再费力重建邻域？</strong>（正式
+PDF pp.1–3；Figure 1）</p>
+<p>量化证据很直接。RoboCasa 的普通 3D 基线 DP3 与 3DA 平均成功率只有
+<strong>27.04%</strong> 与 <strong>18.50%</strong>，RGB-only 为
+<strong>40.16%</strong>，Depth-only 为 <strong>44.00%</strong>；使用规则
+XYZ 点图的 PMP-xyz 达 <strong>49.12%</strong>。相对 DP3 是
+<strong>+22.08 pp / +81.66%</strong>，相对 Depth-only 是 <strong>+5.12
+pp / +11.64%</strong>（Table 1，PDF
+p.6）。这说明“使用三维”不自动等于“保留三维”：表示过程造成的信息损失可能比策略网络更致命。</p>
+<p>但同一结果也立即否定“几何万能”。CALVIN 的指令频繁引用颜色，PMP-xyz
+平均链长仅 <strong>2.03</strong>，RGB-only 为
+<strong>3.15</strong>，RGB+XYZ 的 PMP 为 <strong>4.01</strong>（Table
+2，PDF
+p.7）。因此论文真正值得看的不是又一个融合模块，而是一个可复用的判断框架：<strong>任务若由接触几何主导，应避免稀疏化；任务若由语言—颜色语义主导，必须保留外观；跨任务系统需要在两类证据间切换。</strong></p>
+</section>
+<section id="故事线假设与权衡" class="card level2">
+<h2>3. 故事线、假设与权衡</h2>
+<p>论文故事线可以压缩为四步。</p>
+<ol type="1">
+<li><strong>表示诊断。</strong>
+传统点云管线为计算可控而稀疏化，精细接触所需的局部结构被丢掉；RGB
+则缺显式三维关系。</li>
+<li><strong>结构回收。</strong> 深度图本来就是规则 H×W
+网格。把每个深度像素用相机内参反投影成 XYZ，并保留原像素位置，即得 point
+map；多相机 point map 再用外参变换到同一世界坐标系。</li>
+<li><strong>网络复用。</strong> 规则网格可直接交给 ResNet、ConvNeXt 或
+ViT，无需专门点云算子；RGB 与 XYZ 各自编码后进行 Add、Cat 或
+cross-attention 融合。</li>
+<li><strong>动作生成。</strong> 把多模态 token、语言 CLIP token、带噪
+action chunk 送入 xLSTM X-Block，训练 EDM 式去噪器；测试时用 4 步 DDIM
+生成连续动作序列（PDF pp.4–5）。</li>
+</ol>
+<p>这条路线依赖三项假设：其一，深度图与 RGB
+已经完成像素级标定；其二，二维邻域在大多数像素处仍是有意义的三维局部邻域；其三，把不同模态压成少量全局
+token 后，简单拼接足以让 xLSTM 学会选择信息。权衡也很清楚：PMP 避免
+FPS/KNN 和大规模点
+token，但把精度上限交给深度噪声、遮挡边界及相机标定；规则网格使 2D
+编码器可复用，却不保证卷积的平移等变性与三维 SE(3) 等变性一致。</p>
+</section>
+<section id="方程级形式化与流程" class="card level2">
+<h2>4. 方程级形式化与流程</h2>
+<p>给定专家轨迹集合</p>
+<p>[ D_={<em>i}</em>{i=1}^{N}, _i=((s_1,a_1),,(s_K,a_K)), ]</p>
+<p>策略学习条件分布 (<em>(as))，其中 (a=(a_k,,a</em>{k+H})) 是 action
+chunk。PointMapPolicy 采用 EDM 连续时间动作扩散：</p>
+<p>[ da=(_t_t-_t)_t _ap_t(as)dt+_t d_t. ]</p>
+<p>去噪网络以加噪动作 (a+)、条件观察 (s) 与噪声尺度 (_t)
+为输入，优化</p>
+<p>[ L_{SM}=E_{,a,} . ]</p>
+<p>这两式来自核心论文 Eq. (1)–(2)，正式 PDF
+p.4。点图由深度反投影得到：</p>
+<p>[ M_t=(D,K_{int}<sup>{-1})R</sup>{HW}, ]</p>
+<p>随后用 (K_{ext}) 把各相机 XYZ
+变换到共同世界坐标。该操作的关键不是“产生点云”，而是保留 ((u,v)(X,Y,Z))
+的一一索引（Eq. (3)，PDF p.4）。</p>
+<pre class="text"><code>输入：多视角 RGB-D、相机内外参、语言指令、历史 1 帧
+1  对每台相机：depth --反投影--&gt; H×W×3 的 XYZ point map
+2  通过外参把所有 XYZ 变换到共同世界坐标，裁剪无效深度
+3  RGB --预训练视觉编码器--&gt; RGB tokens
+4  XYZ --从零训练视觉编码器--&gt; geometry tokens
+5  语言 --CLIP ViT-B/32--&gt; language tokens
+6  将 RGB / XYZ token 以 Cat 融合，加入位置编码
+7  采样带噪 action chunk；用 xLSTM X-Block 预测干净动作
+8  测试时执行 4 步 DDIM；采用 receding-horizon 方式执行 chunk
+输出：长度 10 的连续动作块</code></pre>
+</section>
+<section id="关键机制与工程细节" class="card level2">
+<h2>5. 关键机制与工程细节</h2>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">组件</th>
+<th scope="col">设计</th>
+<th scope="col">解决的问题</th>
+<th scope="col">代价 / 风险</th>
+<th scope="col">来源</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Point map</td>
+<td>H×W×3，逐像素 XYZ；过滤过近/过远深度</td>
+<td>不经 FPS/KNN 保留稠密结构</td>
+<td>依赖深度质量与标定</td>
+<td>Eq. (3), PDF p.4</td>
+</tr>
+<tr class="even">
+<td>多相机对齐</td>
+<td>外参统一到 world frame</td>
+<td>视角间坐标可比较</td>
+<td>外参误差会系统性偏移全部点</td>
+<td>§3.3, PDF p.4</td>
+</tr>
+<tr class="odd">
+<td>RGB 编码</td>
+<td>ImageNet 预训练 FiLM-ResNet50 / ConvNeXt-v2</td>
+<td>颜色、纹理与语义</td>
+<td>与从零训练 XYZ 编码器不对称</td>
+<td>§3.3, Appendix C</td>
+</tr>
+<tr class="even">
+<td>XYZ 编码</td>
+<td>常规 2D 视觉编码器</td>
+<td>复用成熟图像架构</td>
+<td>卷积邻域跨越遮挡边界</td>
+<td>§3.4</td>
+</tr>
+<tr class="odd">
+<td>融合</td>
+<td>Add / Cat / 4-layer Attn；最终用 Cat</td>
+<td>比 6-channel early fusion更灵活</td>
+<td>简单拼接缺显式对应约束</td>
+<td>Figure 3, Figure 6</td>
+</tr>
+<tr class="even">
+<td>动作骨干</td>
+<td>decoder-only X-Block，核心为 mLSTM</td>
+<td>线性序列复杂度、低延迟</td>
+<td>并未与等参数 Transformer 做完整交互消融</td>
+<td>§3.4</td>
+</tr>
+<tr class="odd">
+<td>扩散采样</td>
+<td>EDM 训练，DDIM 4 步</td>
+<td>多模态连续动作分布</td>
+<td>固定 4 步，无步数—质量曲线</td>
+<td>§3.2</td>
+</tr>
+<tr class="even">
+<td>训练配置</td>
+<td>AdamW，lr=1e-4，batch=128，chunk=10</td>
+<td>三个场景统一主配方</td>
+<td>训练步数口径互相冲突</td>
+<td>Appendix C, PDF p.17</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>CALVIN 使用 10 个 X-Blocks、嵌入维 2048；RoboCasa 为 8 /
+768；真实机器人为 6 / 2048。共同设置包括 8 heads、attention dropout
+0.3、residual 与 MLP dropout 0.1、AdamW betas [0.9,0.95]、weight decay
+0.05、(<em>{max}=80)、(</em>{min}=0.001)、EMA 与 exponential
+timesteps（Table 6，PDF p.17）。</p>
+</section>
+<section id="数据集基准与指标" class="card level2">
+<h2>6. 数据集、基准与指标</h2>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">基准</th>
+<th scope="col">数据 / 任务</th>
+<th scope="col">评测单位</th>
+<th scope="col">主要指标</th>
+<th scope="col">关键公平性问题</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>RoboCasa</td>
+<td>16 个厨房操控任务，按 PnP、抽屉、旋钮、杠杆、按钮、插入分组；每任务
+50 demonstrations</td>
+<td>每任务 50 episodes；3 seeds</td>
+<td>Success Rate (%)</td>
+<td>GR00T-N1 使用 100 demos；部分公开基线无方差</td>
+</tr>
+<tr class="even">
+<td>CALVIN ABC→D</td>
+<td>34 个语言条件任务；D 为未见环境</td>
+<td>每 seed 1,000 条、每条最多 5 指令链</td>
+<td>完成 1–5 个任务比例、平均链长</td>
+<td>预训练方法与 from-scratch 方法需分层比较</td>
+</tr>
+<tr class="odd">
+<td>真实 Franka</td>
+<td>6 个任务；45–120 demonstrations / task</td>
+<td>每任务 20 rollouts，并在 70k/80k/90k checkpoints 中选最好</td>
+<td>完成阶段数 / 最大阶段数</td>
+<td>先选最佳 checkpoint 再汇报，且无 CI</td>
+</tr>
+<tr class="even">
+<td>系统效率</td>
+<td>4×RTX 6000 Ada 训练；RTX 5080 单样本推理</td>
+<td>1,000 prediction cycles</td>
+<td>latency、epoch time</td>
+<td>未含 RGB-D 采集、反投影与机器人闭环时延</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>RoboCasa 在 30/40/50 epoch checkpoint 中选最佳结果；CALVIN 在
+10/15/20/25 epoch 中选最佳（§4，PDF
+p.5）。这不是无偏的固定终点比较，因为每种方法都获得多次“择优”机会。真实机器人进一步在三个
+checkpoint 中选最好，因此 20 次 rollout
+不是对一次预注册模型的独立测试。</p>
+</section>
+<section id="主结果矩阵" class="card level2">
+<h2>7. 主结果矩阵</h2>
+<section id="calvin五级任务链-六方法" class="subsection level3">
+<h3>7.1 CALVIN：五级任务链 × 六方法</h3>
+<p>下表完整抄录 Table 2 中六个 from-scratch / 代表方法。1–5
+列是能连续完成至少 n 个任务的比例，越高越好；Avg 是平均完成任务数。</p>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<colgroup>
+<col style="width: 11%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">1-task</th>
+<th scope="col" style="text-align: right;">2-task</th>
+<th scope="col" style="text-align: right;">3-task</th>
+<th scope="col" style="text-align: right;">4-task</th>
+<th scope="col" style="text-align: right;">5-task</th>
+<th scope="col" style="text-align: right;">Avg. len</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>3D Diffuser Actor</td>
+<td style="text-align: right;">92.2</td>
+<td style="text-align: right;">78.7</td>
+<td style="text-align: right;">63.9</td>
+<td style="text-align: right;">51.2</td>
+<td style="text-align: right;">41.2</td>
+<td style="text-align: right;">3.27</td>
+</tr>
+<tr class="even">
+<td>MoDE (scratch)</td>
+<td style="text-align: right;">91.5</td>
+<td style="text-align: right;">79.2</td>
+<td style="text-align: right;">67.3</td>
+<td style="text-align: right;">55.8</td>
+<td style="text-align: right;">45.3</td>
+<td style="text-align: right;">3.39</td>
+</tr>
+<tr class="odd">
+<td>CLOVER</td>
+<td style="text-align: right;">96.0</td>
+<td style="text-align: right;">83.5</td>
+<td style="text-align: right;">70.8</td>
+<td style="text-align: right;">57.5</td>
+<td style="text-align: right;">45.4</td>
+<td style="text-align: right;">3.53</td>
+</tr>
+<tr class="even">
+<td>Seer-Large (scratch)</td>
+<td style="text-align: right;">92.7</td>
+<td style="text-align: right;">84.6</td>
+<td style="text-align: right;">76.1</td>
+<td style="text-align: right;">68.9</td>
+<td style="text-align: right;">60.3</td>
+<td style="text-align: right;">3.83</td>
+</tr>
+<tr class="odd">
+<td>RGB（同骨干）</td>
+<td style="text-align: right;">89.9</td>
+<td style="text-align: right;">75.4</td>
+<td style="text-align: right;">60.8</td>
+<td style="text-align: right;">49.8</td>
+<td style="text-align: right;">39.1</td>
+<td style="text-align: right;">3.15</td>
+</tr>
+<tr class="even">
+<td><strong>PMP</strong></td>
+<td style="text-align: right;"><strong>96.1</strong></td>
+<td style="text-align: right;"><strong>88.6</strong></td>
+<td style="text-align: right;"><strong>80.5</strong></td>
+<td style="text-align: right;"><strong>72.3</strong></td>
+<td style="text-align: right;"><strong>63.6</strong></td>
+<td style="text-align: right;"><strong>4.01</strong></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>来源：核心论文 Table 2，PDF p.7。相对最强 from-scratch 对照
+Seer-Large，PMP 平均链长提高 <strong>0.18 / 4.70%</strong>；相对同骨干
+RGB 提高 <strong>0.86 / 27.30%</strong>。更重要的是优势随链长扩大：PMP
+对 RGB 在 1–5 task 分别是 <strong>+6.2、+13.2、+19.7、+22.5、+24.5
+pp</strong>。这支持“几何有助于误差不沿长链快速积累”，但不能证明长程规划本身变强，因为感知误差下降也会产生相同曲线。</p>
+</section>
+<section id="robocasa表示方式的平均结果" class="subsection level3">
+<h3>7.2 RoboCasa：表示方式的平均结果</h3>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">方法</th>
+<th scope="col" style="text-align: right;">平均成功率</th>
+<th scope="col" style="text-align: right;">对 PMP-xyz 的绝对差</th>
+<th scope="col" style="text-align: right;">PMP-xyz 相对提升</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>3DA</td>
+<td style="text-align: right;">18.50</td>
+<td style="text-align: right;">+30.62 pp</td>
+<td style="text-align: right;">+165.51%</td>
+</tr>
+<tr class="even">
+<td>DP3</td>
+<td style="text-align: right;">27.04</td>
+<td style="text-align: right;">+22.08 pp</td>
+<td style="text-align: right;">+81.66%</td>
+</tr>
+<tr class="odd">
+<td>BC</td>
+<td style="text-align: right;">32.25</td>
+<td style="text-align: right;">+16.87 pp</td>
+<td style="text-align: right;">+52.31%</td>
+</tr>
+<tr class="even">
+<td>GR00T-N1（100 demos）</td>
+<td style="text-align: right;">36.28</td>
+<td style="text-align: right;">+12.84 pp</td>
+<td style="text-align: right;">+35.39%</td>
+</tr>
+<tr class="odd">
+<td>RGB（同骨干）</td>
+<td style="text-align: right;">40.16</td>
+<td style="text-align: right;">+8.96 pp</td>
+<td style="text-align: right;">+22.31%</td>
+</tr>
+<tr class="even">
+<td>Depth（同骨干）</td>
+<td style="text-align: right;">44.00</td>
+<td style="text-align: right;">+5.12 pp</td>
+<td style="text-align: right;">+11.64%</td>
+</tr>
+<tr class="odd">
+<td>PMP-6ch</td>
+<td style="text-align: right;">43.12</td>
+<td style="text-align: right;">+6.00 pp</td>
+<td style="text-align: right;">+13.91%</td>
+</tr>
+<tr class="even">
+<td><strong>PMP-xyz</strong></td>
+<td style="text-align: right;"><strong>49.12</strong></td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">—</td>
+</tr>
+<tr class="odd">
+<td>PMP（RGB+XYZ Cat）</td>
+<td style="text-align: right;">47.22</td>
+<td style="text-align: right;">+1.90 pp</td>
+<td style="text-align: right;">PMP-xyz 反而高 4.02%</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>来源：Table 1，PDF p.6。这里不能把 PMP 写成全局 SOTA：几何-only 的
+PMP-xyz 才是平均最优；多模态 PMP 比 RGB 高 <strong>7.06 pp /
+17.58%</strong>，但比 PMP-xyz 低 <strong>1.90
+pp</strong>。逐任务也非全面胜出，例如 TurnSinkSpout 是 Depth / PMP-xyz
+的 76.0，而 PMP 为 48.7；CoffeePressButton 则 PMP 92.0
+为最优。任务语义决定最佳模态。</p>
+</section>
+<section id="真实机器人六任务矩阵" class="subsection level3">
+<h3>7.3 真实机器人：六任务矩阵</h3>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table>
+<thead>
+<tr class="header">
+<th scope="col">任务</th>
+<th scope="col" style="text-align: right;">demos</th>
+<th scope="col" style="text-align: right;">RGB</th>
+<th scope="col" style="text-align: right;">PMP-xyz</th>
+<th scope="col" style="text-align: right;">PMP</th>
+<th scope="col" style="text-align: right;">最大阶段</th>
+<th scope="col" style="text-align: right;">PMP 对 RGB</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Arrange</td>
+<td style="text-align: right;">80</td>
+<td style="text-align: right;">2.05</td>
+<td style="text-align: right;">2.10</td>
+<td style="text-align: right;"><strong>2.25</strong></td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">+0.20 / +9.76%</td>
+</tr>
+<tr class="even">
+<td>Fold</td>
+<td style="text-align: right;">45</td>
+<td style="text-align: right;">2.10</td>
+<td style="text-align: right;">0.80</td>
+<td style="text-align: right;"><strong>2.50</strong></td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">+0.40 / +19.05%</td>
+</tr>
+<tr class="odd">
+<td>Cup-Stack</td>
+<td style="text-align: right;">75</td>
+<td style="text-align: right;">1.40</td>
+<td style="text-align: right;">0.45</td>
+<td style="text-align: right;"><strong>2.10</strong></td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">+0.70 / +50.00%</td>
+</tr>
+<tr class="even">
+<td>Drawer</td>
+<td style="text-align: right;">120</td>
+<td style="text-align: right;">2.00</td>
+<td style="text-align: right;">2.15</td>
+<td style="text-align: right;"><strong>2.40</strong></td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">+0.40 / +20.00%</td>
+</tr>
+<tr class="odd">
+<td>Pour</td>
+<td style="text-align: right;">80</td>
+<td style="text-align: right;">1.55</td>
+<td style="text-align: right;">1.60</td>
+<td style="text-align: right;"><strong>1.80</strong></td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">+0.25 / +16.13%</td>
+</tr>
+<tr class="even">
+<td>Sweep</td>
+<td style="text-align: right;">90</td>
+<td style="text-align: right;">1.80</td>
+<td style="text-align: right;">0.80</td>
+<td style="text-align: right;"><strong>2.15</strong></td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">+0.35 / +19.44%</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>来源：Table 3，PDF p.10；每格是 20 rollouts
+的平均完成阶段数。考虑不同任务最大阶段数后，RGB
+的六任务平均归一化完成率为 <strong>53.13%</strong>，PMP 为
+<strong>64.51%</strong>，即 <strong>+11.39 pp / +21.44%</strong>。然而
+PMP-xyz 在 Fold、Cup-Stack、Sweep 分别只有
+0.80、0.45、0.80，证明可变形物体与颜色指令不能靠几何-only 解决。</p>
+</section>
+<section id="效率" class="subsection level3">
+<h3>7.4 效率</h3>
+<p>CALVIN 模型报告 147M trainable parameters；4×RTX 6000 Ada、总 batch
+512 时，每 epoch 约 13 分钟，25 epochs 少于 6 小时。单张 RTX 5080、batch
+1、1,000 次预测循环中，PMP-xyz 为 <strong>2.9 ms</strong>，PMP 为
+<strong>3.9 ms</strong>（§4.4，PDF p.9）。PMP 的模型前向比 PMP-xyz 慢
+<strong>1.0 ms /
+34.48%</strong>，但仍明显低于常见机器人控制周期。论文未报告端到端传感器、点图构造、通信与执行延迟，所以“3.9
+ms 实时”只能解释为模型推理时间。</p>
+</section>
+</section>
+<section id="逐层消融超参敏感性与相变" class="card level2">
+<h2>8. 逐层消融、超参敏感性与相变</h2>
+<section id="表示层" class="subsection level3">
+<h3>8.1 表示层</h3>
+<p>Figure 5（PDF p.8）在同一个 X-Block 策略骨干下比较
+PointNet-xyz、PointNet-color、PointPatch、3D-Lifting 与 PMP-xyz。PMP-xyz
+平均为 <strong>49.12%</strong>，并在图示 16
+任务上整体占优。其意义是把增益从“xLSTM
+更强”中部分隔离出来：固定下游骨干后，结构化稠密点图仍优于 FPS 到 1,024
+点的 PointNet、256×32 point patches 与 CLIP feature lifting。遗憾的是
+Figure 5
+未给各基线平均值的精确数字或误差条，报告不能补造矩阵，也不能计算置信区间。</p>
+</section>
+<section id="模态层" class="subsection level3">
+<h3>8.2 模态层</h3>
+<p>Table 1 构成最可靠的消融链：RGB 40.16 → Depth 44.00 → PMP-6ch 43.12 →
+PMP 47.22 → PMP-xyz 49.12。它显示早期六通道拼接甚至比纯 Depth 低
+<strong>0.88 pp</strong>，晚期 Cat 比 6ch 高 <strong>4.10
+pp</strong>；但在 RoboCasa 上再加入 RGB 又比 PMP-xyz 低 <strong>1.90
+pp</strong>。因此“融合”不是单调增益，出现了任务相关相变：几何占主导时颜色
+token 可能稀释容量，颜色语言占主导时 CALVIN 又强烈需要 RGB。</p>
+</section>
+<section id="融合层与编码器层" class="subsection level3">
+<h3>8.3 融合层与编码器层</h3>
+<p>Figure 6（PDF p.8）比较 Add / Cat / Attn，以及 ResNet50 / ConvNeXt-v2
+/ DaViT。作者结论是 Cat 略优、ConvNeXt-v2
+跨类别整体最好；但图中柱形没有逐项数字标签，也没有误差条。故只能推出“在当前
+RoboCasa 配方中 Cat 与 ConvNeXt-v2 是经验最优”，不能推出 Cat 显著优于
+cross-attention，也不能判断差异是否来自参数量。</p>
+</section>
+<section id="超参敏感性与相变" class="subsection level3">
+<h3>8.4 超参敏感性与相变</h3>
+<p>论文<strong>未报告</strong> denoising steps（固定 4）、action
+chunk（固定 10）、历史长度（固定
+1）、点图分辨率、深度裁剪阈值、相机标定误差、XYZ/RGB token
+比例、融合层数或训练数据量的系统 sweep。也未给性能—延迟
+Pareto。因此无法判断：4
+步是否最小充分；深度噪声到何处导致点图优势崩溃；历史长度 1
+是否限制动态物体；Cat
+优势是否随相机数变化。唯一清晰的“相变”来自跨任务语义：RoboCasa 几何-only
+49.12 最好，而 CALVIN 几何-only 2.03 显著落后多模态 4.01。</p>
+</section>
+</section>
+<section id="统计显著性与可信度" class="card level2">
+<h2>9. 统计显著性与可信度</h2>
+<p>RoboCasa 报告三随机种子的均值与若干“±”值（Table 1，PDF
+p.6），但论文没有说明它是标准差还是标准误，也没有显著性检验。PMP 47.22
+与 PMP-xyz 49.12 的差仅 1.90
+pp；没有聚合方差时不能宣称两者显著不同。作者又从 30/40/50 epoch 选最佳
+checkpoint，这会放大最高值。</p>
+<p>CALVIN 使用每 seed 1,000 instruction chains，却未在 Table 2 报 seed
+数、标准差或置信区间；大量 rollout 只能降低环境采样误差，不能替代训练
+seed 方差。真实机器人每任务 20 rollouts，没有成功次数、方差、bootstrap
+CI 或配对初始状态，并从三个 checkpoint 中择优。故 Table 3
+足以说明观察到的一致方向，但不足以给出高置信的真实世界效应量。</p>
+</section>
+<section id="真正贡献可复用设计与迁移潜力" class="card level2">
+<h2>10. 真正贡献、可复用设计与迁移潜力</h2>
+<p>真正贡献首先是<strong>表示层的“反复杂化”</strong>：不创造专用 3D
+backbone，而是保留深度图已有的规则索引，使三维几何可直接进入成熟 2D
+encoder。第二是通过同骨干模态对照把“点云有用”推进为“点云如何编码决定是否有用”。第三是跨
+RoboCasa、CALVIN
+与真实机器人展示一种稳定规律：几何与外观互补，但最佳配比由任务语义决定。</p>
+<p>可复用设计包括：将多相机深度转到共同参考系；为 RGB 与 XYZ 使用独立
+encoder，避免 early channel mixing；用简单 Cat
+作为可靠基线，再测试更复杂融合；用 action chunk +
+少步扩散承载多峰控制；报告 geometry-only
+版本以测量语义需求。该套路可迁移到触觉 height
+map、事件相机时空表面、医学深度图、自动驾驶 range
+image，前提是规则索引与物理坐标仍一一对应。</p>
+<p>迁移到 VLA foundation model 时，point map 可作为额外视觉塔而不是把
+XYZ 序列化成文本 token；迁移到 JEPA / world model 时，可以在 point-map
+latent 上预测未来几何变化，减少 RGB
+纹理的不确定性；迁移到主动感知时，可以让策略根据 RGB/XYZ
+不确定性选择相机视角。不过，所有这些迁移都需要校准扰动和遮挡边界测试，不能直接从现有静态
+benchmark 外推。</p>
+</section>
+<section id="论文自述限制" class="card level2">
+<h2>11. 论文自述限制</h2>
+<ol type="1">
+<li><strong>融合不足。</strong> 作者承认简单拼接未必能最优利用 RGB 与
+point map 的互补信息（§6，PDF p.10）。这与 RoboCasa 上 PMP 低于 PMP-xyz
+1.90 pp 一致。</li>
+<li><strong>XYZ 编码器无预训练。</strong> point-map encoder 从零训练，而
+RGB encoder 受益于 ImageNet 预训练（§6，PDF
+p.10）；模态能力并不对称。</li>
+<li><strong>未来需点图预训练。</strong> 作者提出建立专用于 point map
+的预训练目标，以在下游微调前学习稳健几何特征（§6，PDF p.10）。</li>
+</ol>
+</section>
+<section id="独立批判" class="card level2">
+<h2>12. 独立批判</h2>
+<ol type="1">
+<li><strong>[因果归因] 因为</strong> PMP 同时改变表示、融合与骨干，而
+Figure 5 虽固定 X-Block
+却未给精确平均值和误差条，<strong>所以</strong>现有证据只能支持“点图管线整体更好”，不能精确分配给“不降采样”“二维拓扑”或“world-frame
+对齐”。</li>
+<li><strong>[选择偏差] 因为</strong> RoboCasa 从 3 个 epochs、CALVIN 从
+4 个 epochs、真实机器人从 3 个 checkpoints
+中分别挑最好，<strong>所以</strong>表中结果混入了验证集择优收益；尤其真实机器人
+20 rollouts 没有独立锁定 checkpoint。</li>
+<li><strong>[统计] 因为</strong> CALVIN 没有训练 seed
+方差、真实机器人没有 CI，而 PMP 对 Seer-Large scratch 仅高 0.18
+平均链长，<strong>所以</strong>“SOTA”是点估计排序，不是统计显著结论。</li>
+<li><strong>[口径一致性] 因为</strong>正文计算段称 CALVIN 使用 8
+X-Blocks、512 latent、147M，而 Appendix C 写 10 X-Blocks、embedding
+2048，Appendix E 又写 10 X-Blocks、512 latent、仍为 147M（PDF
+pp.9,17,22），<strong>所以</strong>核心模型配置无法由论文唯一确定。</li>
+<li><strong>[训练步数] 因为</strong> Appendix C 报真实机器人 30k train
+steps，但 §5.2 声称比较 70k/80k/90k
+checkpoints，<strong>所以</strong>训练预算与 checkpoint
+选择存在直接冲突，复现者无法知道最终曲线范围。</li>
+<li><strong>[系统测量] 因为</strong> 2.9/3.9 ms 只测 RTX 5080
+上模型预测，不含深度采集、反投影、坐标变换与控制通信，<strong>所以</strong>不能由此推出完整机器人闭环频率，更不能直接与含预处理的点云系统比较。</li>
+<li><strong>[鲁棒性]
+因为</strong>点图一一依赖内外参且论文没有标定噪声、深度洞、遮挡边界或相机失效
+sweep，<strong>所以</strong>“跨视角更稳健”仍是机制直觉，不是压力测试结论。</li>
+<li><strong>[开放性] 因为</strong>官方 GitHub 当日只有 README、License
+和 .gitignore
+的单次提交，没有训练/评测代码、权重或数据处理脚本，<strong>所以</strong>论文虽给超参表，实际端到端复现仍未开放。</li>
+</ol>
+</section>
+<section id="相关工作问题来源与技术传递链" class="card level2">
+<h2>13. 相关工作：问题来源与技术传递链</h2>
+<section id="diffusion-policyrss-2023" class="subsection level3">
+<h3>13.1 Diffusion Policy（RSS 2023）</h3>
+<p><strong>解决什么：</strong>把机器人动作分布建模为条件去噪过程，以
+receding-horizon、视觉条件和时序扩散网络处理多峰动作；论文在 12
+个任务、4 个基准上报告平均 <strong>46.9%</strong> 提升（arXiv
+摘要，v5）。<br />
+<strong>遗留缺口：</strong>观察仍主要是
+RGB，精细三维关系隐含在图像中。<br />
+<strong>PMP
+如何回应：</strong>保留动作扩散框架，把创新焦点从“如何生成动作”移到“如何条件化动作”。<br />
+<strong>设计如何传递：</strong>action chunk、条件 score
+network、迭代采样和 receding horizon 直接成为 PMP 的控制骨架。</p>
+</section>
+<section id="d-diffusion-policy-dp3rss-2024" class="subsection level3">
+<h3>13.2 3D Diffusion Policy / DP3（RSS 2024）</h3>
+<p><strong>解决什么：</strong>把稀疏点云经过轻量 PointNet 压成紧凑 3D
+表征，再条件化扩散策略；72 个模拟任务中相对提升
+<strong>24.2%</strong>，4 个真实任务、每任务 40 demonstrations 时成功率
+<strong>85%</strong>（arXiv v7 摘要）。<br />
+<strong>遗留缺口：</strong>为效率使用 FPS
+与全局池化，局部细节和规则像素对应被抹平。<br />
+<strong>PMP 如何回应：</strong>取消 FPS，把每个深度像素的 XYZ
+留在原网格中；RoboCasa 上 PMP-xyz 49.12 对 DP3 27.04。<br />
+<strong>设计如何传递：</strong>“简单 3D 表示 +
+动作扩散”的工程哲学被保留，但“紧凑”从稀疏点集改成卷积可处理的稠密点图。</p>
+</section>
+<section id="d-diffuser-actor2024" class="subsection level3">
+<h3>13.3 3D Diffuser Actor（2024）</h3>
+<p><strong>解决什么：</strong>把多视角 2D 特征 lift 到 3D，并用 3D
+denoising transformer 同时融合场景、语言和 proprioception；论文报告
+RLBench 多视角 <strong>+18.1 pp</strong>、单视角 <strong>+13.1
+pp</strong>，CALVIN 相对 <strong>+9%</strong>（arXiv v3 摘要）。<br />
+<strong>遗留缺口：</strong>feature lifting、深度平均与 FPS
+仍可能损失空间结构，Transformer token 数随场景增长。<br />
+<strong>PMP 如何回应：</strong>不把语义特征先投到无序点集，而让 RGB 与
+XYZ 独立编码后晚期融合。<br />
+<strong>设计如何传递：</strong>多视角共同坐标系、语言条件与扩散位姿轨迹成为
+PMP 的对标接口。</p>
+</section>
+<section id="point-cloud-matters-obsbenchneurips-2024-db"
+class="subsection level3">
+<h3>13.4 Point Cloud Matters / OBSBench（NeurIPS 2024 D&amp;B）</h3>
+<p><strong>解决什么：</strong>在两个模拟器、<strong>125 tasks</strong>
+上系统比较 RGB、RGB-D、point
+cloud，发现简单点云方法常优于其他模态，且跨几何/视觉变化泛化更强（正式
+proceedings 摘要）。<br />
+<strong>遗留缺口：</strong>结论停留在“点云模态有价值”，没有解决点云编码时的稀疏化与结构丢失。<br />
+<strong>PMP
+如何回应：</strong>把观察模态结论转化成具体表示设计，并在统一策略骨干下比较
+PointNet、PointPatch、lifting 与 point map。<br />
+<strong>设计如何传递：</strong>公平的同骨干模态控制实验，以及“外观 +
+坐标可能互补”的假设，直接进入 PMP 的 RGB / Depth / XYZ / 6ch /
+late-fusion 消融。</p>
+<pre class="text"><code>                    ┌─ RGB policy：语义强，几何隐式 ─────────────┐
+Diffusion Policy ───┤                                          ├─ PointMapPolicy
+  动作多峰建模       └─ 3D Diffuser Actor：feature lifting ──────┤  稠密 XYZ 网格
+                    ┌─ DP3：FPS + PointNet + diffusion ─────────┤  2D encoder 复用
+OBSBench ───────────┤                                          └─ RGB/XYZ 晚期融合
+  模态决定泛化       └─ Point cloud &gt; RGB/RGB-D 的系统证据
+
+转折 1：从“动作回归”转为“动作分布生成”
+转折 2：从“RGB 条件”转为“显式 3D 条件”
+转折 3：从“点云必须无序处理”转为“恢复传感器原生规则拓扑”</code></pre>
+</section>
+<section id="跨论文对标" class="subsection level3">
+<h3>跨论文对标</h3>
+<div class="table-scroll" role="region" aria-label="数据表，可横向滚动" tabindex="0">
+<table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">工作</th>
+<th scope="col">动作建模</th>
+<th scope="col">3D 表示</th>
+<th scope="col">多视角融合</th>
+<th scope="col">主要优势</th>
+<th scope="col">主要缺口</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Diffusion Policy</td>
+<td>action diffusion</td>
+<td>无 / RGB</td>
+<td>图像级</td>
+<td>多峰动作、训练稳定</td>
+<td>几何隐式</td>
+</tr>
+<tr class="even">
+<td>DP3</td>
+<td>action diffusion</td>
+<td>FPS 稀疏点 + PointNet</td>
+<td>点集合并</td>
+<td>轻量、少样本</td>
+<td>局部细节丢失</td>
+</tr>
+<tr class="odd">
+<td>3D Diffuser Actor</td>
+<td>3D pose diffusion</td>
+<td>lifted 2D features</td>
+<td>3D tokens</td>
+<td>语言+3D 轨迹</td>
+<td>lifting/FPS 与注意力成本</td>
+</tr>
+<tr class="even">
+<td>OBSBench</td>
+<td>多类策略</td>
+<td>RGB/RGB-D/点云基准</td>
+<td>标准化管线</td>
+<td>125 任务系统证据</td>
+<td>不给新的结构编码</td>
+</tr>
+<tr class="odd">
+<td><strong>PMP</strong></td>
+<td>EDM + 4-step DDIM</td>
+<td>H×W×XYZ point map</td>
+<td>world frame + token Cat</td>
+<td>稠密结构、2D encoder 复用</td>
+<td>标定依赖、融合与预训练不足</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+</section>
+<section id="开放挑战可操作的-head-to-head-实验" class="card level2">
+<h2>14. 开放挑战：可操作的 head-to-head 实验</h2>
+<section id="理论" class="subsection level3">
+<h3>理论</h3>
+<ol type="1">
+<li><strong>拓扑保持 vs 三维等变。</strong> 固定参数量与动作骨干，比
+PMP、SE(3)-equivariant point
+encoder、PointPatch；在物体/相机同时旋转下画成功率—旋转角曲线。若 PMP
+仅依赖像素拓扑，其优势应在大旋转或重遮挡处下降。</li>
+<li><strong>信息损失分解。</strong>
+构造同一稠密点集的三版：规则网格、随机打乱网格、FPS 稀疏点；保证 point
+count、encoder FLOPs 与 token
+数一致。这样才能把“稠密度”“顺序”“网络类型”三个因素分开。</li>
+<li><strong>模态选择理论。</strong>
+在可控任务中连续调节颜色互信息与几何互信息，比较 RGB、XYZ、Cat、gated
+fusion，定位从 geometry-only 到 multimodal 最优的转折点。</li>
+</ol>
+</section>
+<section id="工程与应用" class="subsection level3">
+<h3>工程与应用</h3>
+<ol type="1">
+<li><strong>标定压力测试。</strong> 对内参焦距注入 0–10% 偏差、外参平移
+0–5 cm / 旋转 0–10°，比较 PMP、DP3、3DA 与
+RGB；同时报告性能、点图构造时延与失败类型。</li>
+<li><strong>真实延迟。</strong> 在同一 RTX 5080 + 两台 Orbbec 上测
+sensor-to-action P50/P95：采集、depth
+filtering、unprojection、fusion、4-step DDIM、通信分别计时，而非只报网络
+3.9 ms。</li>
+<li><strong>公平 checkpoint。</strong> 预注册固定训练步数与
+seed；另设小验证集选择一次 checkpoint，在全新初始状态上做 ≥100 paired
+rollouts，并给 bootstrap CI。</li>
+<li><strong>点图预训练。</strong> 对比从零、RGB ImageNet
+初始化直接迁移、masked XYZ reconstruction、RGB-XYZ contrastive
+pretraining；保持机器人 demonstrations 不变，画 10/25/50/100 demos
+学习曲线。</li>
+</ol>
+</section>
+<section id="新兴方向" class="subsection level3">
+<h3>新兴方向</h3>
+<ol type="1">
+<li><strong>Point-map world model。</strong> 让模型同时预测未来 XYZ map
+与动作，和纯 action diffusion、未来 RGB prediction head-to-head；检验
+contact-rich 和 deformable 任务是否受益。</li>
+<li><strong>主动模态路由。</strong> 用 learned gate 在每一步选择
+RGB、XYZ 或双模态，和固定 Cat 比 FLOPs—成功率，并观察 CALVIN 颜色任务与
+RoboCasa 几何任务是否产生不同路由。</li>
+<li><strong>VLA 接入。</strong> 在同一个 VLA 上比较把 XYZ
+作为独立视觉塔、离散 3D token、语言化坐标；冻结语言骨干，只训练
+adapter，测 unseen instruction / unseen camera / unseen object
+三轴泛化。</li>
+</ol>
+</section>
+</section>
+<section id="近期工作雷达" class="card level2">
+<h2>15. 近期工作雷达</h2>
+<ol type="1">
+<li><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/783c5986e1d6112cb4688d9b2105609a-Abstract-Conference.html">Hyper-GoalNet（NeurIPS
+2025）</a>：用 hypernetwork 由目标生成任务特定策略参数；适合检验 PMP
+表示能否与目标条件参数化正交叠加。</li>
+<li><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/3a2d96d2eb2902043c2db705ca03e9a2-Abstract-Conference.html">M3W（NeurIPS
+2025）</a>：把 MoE
+放进世界模型而非策略，并用于多任务多智能体规划；提示模态专门化也可发生在
+dynamics experts。</li>
+<li><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/420c9f777c0b4f78d515e53cf74d58b2-Abstract-Conference.html">GiGPO（NeurIPS
+2025）</a>：以 episode-level 与 anchor-state step-level 两级 group
+advantage 解决多轮 Agent 信用分配，是语言 Agent
+与具身策略的共同训练问题。</li>
+<li><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/07bdb30a6aa9792c404d5d62b626f9d7-Abstract-Conference.html">MonoLift（NeurIPS
+2025）</a>：把深度 teacher 的空间、时间和动作知识蒸馏到单目 RGB
+student；与 PMP 相反，它追求部署时去深度传感器。</li>
+<li><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/49eadcc4a329fc6b74b9f8a82b78cbc3-Abstract-Conference.html">DA-SIP（NeurIPS
+2025）</a>：动态分配扩散 / 流策略的测试时步数，报告总计算时间减少
+2.6–4.4× 且保持成功率；正好补 PMP 固定 4 步的缺口。</li>
+<li><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/5e772a13ccba5255331240dcd99aa38b-Abstract-Conference.html">WALL-E（NeurIPS
+2025）</a>：从探索轨迹提取可执行符号规则做 world alignment，再以 MPC
+控制 LLM agent；代表显式世界知识而非端到端表征路线。</li>
+<li><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/a5a305fac88fb4ae40969cfec5eef48d-Abstract-Conference.html">Self-Challenging
+Agents（NeurIPS 2025）</a>：Agent
+自己与工具交互生成挑战任务，再训练求解者；对机器人而言可迁移为自动课程与可验证任务生成。</li>
+<li><a
+href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/4f7b1f51ef415f09e171f632172284ff-Abstract-Conference.html">Predictive
+Preference Learning（NeurIPS
+2025）</a>：把人工干预传播到策略未来可能访问的安全关键状态，为真实机器人少量纠正提供比纯模仿更直接的安全信号。</li>
+</ol>
+</section>
+<section id="结论" class="card level2">
+<h2>16. 结论</h2>
+<p>PointMapPolicy
+最有价值的地方是提醒具身学习研究者：传感器数据在进入网络前的表示变换，可能比更大的策略骨干更决定成败。规则
+XYZ 点图让 PMP-xyz 在 RoboCasa 达 49.12%，比 DP3 高 22.08 pp；多模态 PMP
+又把 CALVIN 平均链长从同骨干 RGB 的 3.15 提至
+4.01，并在六个真实任务上把归一化阶段完成率平均提高 11.39 pp。</p>
+<p>但结论必须收紧：PMP 不是所有任务上的最佳融合，RoboCasa 上
+geometry-only 更高；统计显著性不足，真实世界有 checkpoint 择优；CALVIN
+模型维度、X-Block
+数与真实训练步数存在内部冲突；公开仓库也没有代码。当前证据支持“保留稠密几何拓扑是强而简单的设计”，尚不支持“已解决多模态具身感知与长程规划”。</p>
+<hr />
+<p><strong>审计脚注：</strong> 本报告所有定量值来自实际读取的 NeurIPS
+正式 PDF / arXiv
+v3、论文表格或相关论文摘要；复算统一标为绝对百分点与相对百分比。论文未报告的标准差、CI、完整敏感性矩阵和系统端到端延迟均明确保留为空白，不作插补。候选抽签为一次
+<code>shuf</code>，无重抽。<code>ml-report-index.md</code>
+已追加本条记录。</p>
+</section>
+
+  </main>
+
+  <footer>基于 NeurIPS 2025 正式论文、arXiv v3、官方项目与公开仓库，以及四篇技术来源链全文；生成于 2026-10-01。</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ 浅色' : '☾ 深色';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

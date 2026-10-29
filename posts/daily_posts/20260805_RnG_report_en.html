@@ -1,0 +1,1142 @@
+---
+layout: null
+title: "RnG"
+date: 2026-08-05
+topic: vlm-vision
+tags: ["vlm-vision"]
+excerpt: "A unified Transformer uses implicit KV-cache representations to reconstruct 3D scenes from partial observations."
+permalink: "/blog/2026/08/05/rng-kv-cache-3d-modeling/en/"
+blog_post: false
+lang: en
+sitemap: true
+alternate_zh: "/blog/2026/08/05/rng-kv-cache-3d-modeling/"
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RnG: KV-Cache as an Implicit 3D Representation · 2026-08-05 · CVPR 2026 Highlight</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --accent-soft: #cde2fb;
+    --good: #006300;
+    --crit: #d03b3b;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --accent-soft: #184f95;
+    --good: #0ca30c;
+    --crit: #e66767;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  header.hero {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 32px 34px;
+    margin-bottom: 34px;
+  }
+  .eyebrow {
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; margin: 0 0 10px;
+  }
+  h1 { font-size: 30px; line-height: 1.3; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .subtitle { font-size: 17px; color: var(--text-secondary); margin: 0 0 18px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    font-size: 12.5px; padding: 4px 11px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--text-secondary);
+    background: var(--page);
+  }
+  .chip.venue { border-color: var(--series-1); color: var(--series-1); font-weight: 600; }
+  .chip.warn { border-color: var(--series-2); color: var(--series-2); font-weight: 600; }
+  .lede {
+    border-left: 3px solid var(--series-1);
+    padding: 4px 0 4px 18px; margin: 20px 0 0;
+    color: var(--text-secondary); font-size: 15.5px;
+  }
+  h2 {
+    font-size: 22px; margin: 52px 0 16px; padding-bottom: 10px;
+    border-bottom: 1px solid var(--border); letter-spacing: -0.01em;
+  }
+  h3 { font-size: 18px; margin: 34px 0 12px; }
+  h3:first-child { margin-top: 0; }
+  h4 { font-size: 15.5px; margin: 24px 0 8px; color: var(--text-secondary); }
+  p { margin: 0 0 14px; }
+  section.card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 26px 30px; margin-bottom: 20px;
+  }
+  a { color: var(--series-1); text-decoration: none; border-bottom: 1px solid transparent; }
+  a:hover { border-bottom-color: var(--series-1); }
+  code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px; background: var(--page); padding: 1.5px 5px;
+    border-radius: 4px; border: 1px solid var(--border);
+  }
+  .formula {
+    background: var(--page); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 16px; margin: 12px 0; font-family: ui-monospace, Menlo, monospace;
+    font-size: 13.5px; overflow-x: auto; color: var(--text-primary);
+    white-space: pre;
+  }
+  .tablewrap { overflow-x: auto; margin: 16px 0 20px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  .tablewrap table { margin: 0; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--accent-soft); font-weight: 600; }
+  :root[data-theme="dark"] tr.best td { background: rgba(57,135,229,.18); }
+  tr.grouphead td { background: var(--page); color: var(--muted); font-size: 12.5px; font-weight: 600; letter-spacing: .04em; }
+  .tablewrap.compact table { font-size: 12.5px; }
+  .tablewrap.compact th, .tablewrap.compact td { padding: 7px 7px; }
+  .tablewrap.compact th { font-size: 10.5px; letter-spacing: .02em; }
+  .tablewrap.compact td:first-child { white-space: nowrap; }
+  .good { color: var(--good); font-weight: 600; }
+  .crit { color: var(--crit); font-weight: 600; }
+  ol, ul { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 8px; }
+  .callout {
+    border-left: 3px solid var(--series-2); background: var(--page);
+    padding: 14px 18px; border-radius: 0 8px 8px 0; margin: 18px 0;
+    font-size: 15px; color: var(--text-secondary);
+  }
+  .callout strong { color: var(--text-primary); }
+  .callout.blue { border-left-color: var(--series-1); }
+  .quote {
+    border-left: 3px solid var(--baseline); background: var(--page);
+    padding: 12px 18px; border-radius: 0 8px 8px 0; margin: 14px 0;
+    font-size: 14.5px; color: var(--text-secondary); font-style: italic;
+  }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  button.tgl {
+    font: inherit; font-size: 13px; padding: 6px 14px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface-1);
+    color: var(--text-secondary); cursor: pointer;
+  }
+  button.tgl:hover { color: var(--text-primary); }
+  .figure { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 24px 26px; margin: 24px 0; }
+  .fig-title { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+  .fig-sub { font-size: 13.5px; color: var(--muted); margin: 0 0 18px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 16px; font-size: 13.5px; color: var(--text-secondary); }
+  .legend span.sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 7px; vertical-align: -1px; }
+  svg.chart { width: 100%; height: auto; display: block; }
+  svg.chart text { font-family: system-ui, -apple-system, "PingFang SC", sans-serif; }
+  svg.chart .bar, svg.chart .dot { cursor: pointer; transition: opacity .12s; }
+  svg.chart .bar:hover, svg.chart .dot:hover { opacity: 1 !important; }
+  .tip {
+    position: fixed; pointer-events: none; opacity: 0; transition: opacity .1s;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 12px; font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,.14);
+    z-index: 50; color: var(--text-primary); white-space: nowrap;
+  }
+  .tip b { display: block; font-size: 13.5px; margin-bottom: 2px; }
+  .flow {
+    background: var(--page); border: 1px solid var(--border); border-radius: 10px;
+    padding: 20px 22px; font-family: ui-monospace, Menlo, monospace;
+    font-size: 12.5px; line-height: 1.8; overflow-x: auto; color: var(--text-secondary);
+    white-space: pre;
+  }
+  footer { margin-top: 60px; padding-top: 22px; border-top: 1px solid var(--border); font-size: 13.5px; color: var(--muted); }
+  footer a { color: var(--muted); border-bottom: 1px solid var(--border); }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    header.hero { padding: 22px 18px; }
+    h1 { font-size: 23px; }
+    h2 { font-size: 19px; margin: 36px 0 12px; }
+    h3 { font-size: 16.5px; }
+    .subtitle { font-size: 15px; }
+    section.card { padding: 20px 18px; }
+    .figure { padding: 18px 14px; }
+    table { font-size: 12.5px; }
+    th, td { padding: 7px 8px; }
+    .formula, .flow { font-size: 11.5px; }
+    .legend { gap: 12px; font-size: 12.5px; }
+  }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+
+  <div class="toolbar">
+    <button class="tgl" onclick="const r=document.documentElement; r.setAttribute('data-theme', r.getAttribute('data-theme')==='dark'?'light':'dark'); this.textContent = r.getAttribute('data-theme')==='dark'?'☀ Light':'☾ Dark';">☾ Dark</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">Daily ML/AI Paper Review · Wednesday · Generative Models</p>
+    <h1>RnG: KV-Cache as an Implicit 3D Representation</h1>
+    <p class="subtitle">A Unified Transformer for Complete 3D Modeling from Partial Observations</p>
+    <div class="meta">
+      <span class="chip venue">CVPR 2026 Highlight</span>
+      <span class="chip">2026-08-05</span>
+      <span class="chip">arXiv:2603.01194 · v1 · 2026-03-01</span>
+      <span class="chip">27 candidates · shuf selected #14 · 0 redraws</span>
+      <span class="chip warn">Index not updated automatically (see footnote)</span>
+    </div>
+    <p class="lede">A 3D representation need not be a point cloud, Gaussians, or triplanes: it can be the reconstruction network's own KV-cache. With one binary attention mask and two output heads, RnG turns CVPR 2025 Best Paper VGGT from reconstructing visible regions to generating unseen ones: Chamfer Distance improves 10×, and inference is 317× faster than a unified diffusion model. Yet its most interesting finding lies in its own ablations: the causal mask highlighted in the title loses on eight of ten quality metrics.</p>
+  </header>
+
+  <section class="card">
+    <h3>0. Report Metadata and Transparency Statement</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Item</th><th>Content</th></tr>
+      <tr><td>Date / weekday</td><td>2026-08-05, Wednesday (<code>date +%u</code> = 3)</td></tr>
+      <tr><td>Rotating research area</td><td><strong>Generation models</strong> — diffusion / flow matching, autoregressive generation, 3D generation, and world models</td></tr>
+      <tr><td>Candidate pool</td><td>27 papers (9 ICLR 2026 Orals · 7 CVPR 2026 Highlights · 4 ICML 2026 Orals · 7 arXiv 2026 papers)</td></tr>
+      <tr><td>Selection method</td><td><code>shuf -i 1-27 -n 1</code> → selected <strong>#14</strong>; redraws: <strong>0</strong> times</td></tr>
+      <tr class="best"><td>Core paper</td><td>RnG: A Unified Transformer for Complete 3D Modeling from Partial Observations (CVPR 2026 Highlight)</td></tr>
+    </table></div>
+
+    <div class="callout">
+      <strong>Transparency Statement.</strong> This report uses the full arXiv HTML (v1, 2026-03-01), project page, and CVPR 2026 Highlight page. Three known blind spots are disclosed here and revisited below:
+      <ol style="margin-top:10px">
+        <li>The project page links to GitHub code and Hugging Face weights, but the retrieval tool's source allowlist prevented <strong>independent access and verification</strong>; these are marked “not independently verified.”</li>
+        <li>The CO3D experiment has <strong>no quantitative table</strong>, only qualitative Figure 10, so conclusions about real-world generalization remain inferential.</li>
+        <li>In Table 2, MUSt3R's RA@5 and RT@5 are identical (21.683 / 21.683), an unusual coincidence for independent metrics. This may be a typesetting or HTML-parsing issue; I could not check the original PDF layout.</li>
+      </ol>
+    </div>
+  </section>
+
+  <h2>1 · Link Verification</h2>
+  <section class="card">
+    <p style="font-size:14px;color:var(--muted)">✅ = fetched and confirmed reachable during the original review; ⚠️ = credible source, but not independently opened.</p>
+    <div class="tablewrap"><table>
+      <tr><th>The paper</th><th>Publication / conference page</th><th>arXiv</th><th>Code</th><th>Data / weights</th><th>Project page</th></tr>
+      <tr class="best">
+        <td><strong>Core: RnG</strong><br><span style="font-size:12.5px;color:var(--muted)">CVPR 2026 Highlight</span></td>
+        <td><a href="https://cvpr.thecvf.com/virtual/2026/events/Highlights2026">CVPR 2026 Highlights</a> ✅</td>
+        <td><a href="https://arxiv.org/abs/2603.01194">2603.01194</a> ✅<br><a href="https://arxiv.org/html/2603.01194">Full HTML</a> ✅</td>
+        <td><code>github.com/XiangMochu/RnG</code> ⚠️</td>
+        <td>Objaverse-LVIS 113.5K; <code>hf.co/MochuXiang/RnG</code> ⚠️</td>
+        <td><a href="https://npucvr.github.io/RnG/">npucvr.github.io/RnG</a> ✅</td>
+      </tr>
+      <tr>
+        <td>DUSt3R<br><span style="font-size:12.5px;color:var(--muted)">CVPR 2024</span></td>
+        <td><a href="https://openaccess.thecvf.com/content/CVPR2024/papers/Wang_DUSt3R_Geometric_3D_Vision_Made_Easy_CVPR_2024_paper.pdf">CVF PDF</a> ✅</td>
+        <td><a href="https://arxiv.org/abs/2312.14132">2312.14132</a> ✅</td>
+        <td><a href="https://github.com/naver/dust3r">naver/dust3r</a> ✅</td>
+        <td>Habitat / MegaDepth / ScanNet++ mixture</td>
+        <td><a href="https://cvpr.thecvf.com/virtual/2024/poster/29338">CVPR Poster</a> ✅</td>
+      </tr>
+      <tr>
+        <td>LRM<br><span style="font-size:12.5px;color:var(--muted)">ICLR 2024</span></td>
+        <td><a href="https://proceedings.iclr.cc/paper_files/paper/2024/file/dcad3425f5c8c36b5b3885c091bf1257-Paper-Conference.pdf">ICLR PDF</a> ✅ · <a href="https://openreview.net/forum?id=sllU8vvsFF">OpenReview</a> ✅</td>
+        <td><a href="https://arxiv.org/abs/2311.04400">2311.04400</a> ✅</td>
+        <td>Not officially open-sourced; <a href="https://github.com/3DTopia/OpenLRM">OpenLRM</a> ✅</td>
+        <td>Objaverse + MVImgNet</td>
+        <td>Not found</td>
+      </tr>
+      <tr>
+        <td>LVSM<br><span style="font-size:12.5px;color:var(--muted)">ICLR 2025 <strong>Oral</strong></span></td>
+        <td><a href="https://proceedings.iclr.cc/paper_files/paper/2025/hash/9676c5283df26cabca412ca66b164a7d-Abstract-Conference.html">ICLR Proceedings</a> ✅ · <a href="https://iclr.cc/virtual/2025/oral/31849">Oral page</a> ✅</td>
+        <td><a href="https://arxiv.org/abs/2410.17242">2410.17242</a> ✅</td>
+        <td><a href="https://github.com/haian-jin/LVSM">haian-jin/LVSM</a> ✅</td>
+        <td>Objaverse, RealEstate10K</td>
+        <td><a href="https://haian-jin.github.io/projects/LVSM/">Project page</a> ✅</td>
+      </tr>
+      <tr>
+        <td>VGGT<br><span style="font-size:12.5px;color:var(--muted)">CVPR 2025 <strong>Best Paper</strong></span></td>
+        <td><a href="https://openaccess.thecvf.com/content/CVPR2025/html/Wang_VGGT_Visual_Geometry_Grounded_Transformer_CVPR_2025_paper.html">CVF Open Access</a> ✅</td>
+        <td><a href="https://arxiv.org/abs/2503.11651">2503.11651</a> ✅</td>
+        <td><a href="https://github.com/facebookresearch/vggt">facebookresearch/vggt</a> ✅</td>
+        <td>VGGT-1B (noncommercial) / VGGT-1B-Commercial (Co3D AUC@30 90.37 vs 89.98)</td>
+        <td><a href="https://vgg-t.github.io/">vgg-t.github.io</a> ✅</td>
+      </tr>
+      <tr>
+        <td>Matrix3D<br><span style="font-size:12.5px;color:var(--muted)">CVPR 2025</span></td>
+        <td><a href="https://openaccess.thecvf.com/content/CVPR2025/html/Lu_Matrix3D_Large_Photogrammetry_Model_All-in-One_CVPR_2025_paper.html">CVF Open Access</a> ✅ pp.11250–11263</td>
+        <td><a href="https://arxiv.org/abs/2502.07685">2502.07685</a> ✅</td>
+        <td>See project page</td>
+        <td>CO3D and others</td>
+        <td><a href="https://nju-3dv.github.io/projects/matrix3d/">nju-3dv</a> ✅</td>
+      </tr>
+      <tr>
+        <td>RayZer<br><span style="font-size:12.5px;color:var(--muted)">ICCV 2025 BSP-HM</span></td>
+        <td><a href="https://openaccess.thecvf.com/content/ICCV2025/papers/Jiang_RayZer_A_Self-supervised_Large_View_Synthesis_Model_ICCV_2025_paper.pdf">ICCV CVF PDF</a> ✅</td>
+        <td><a href="https://arxiv.org/abs/2505.00702">2505.00702</a> ✅</td>
+        <td><a href="https://github.com/hwjiang1510/RayZer">hwjiang1510/RayZer</a> ✅</td>
+        <td>—</td>
+        <td><a href="https://hwjiang1510.github.io/RayZer/">Project page</a> ✅</td>
+      </tr>
+    </table></div>
+  </section>
+
+  <h2>2 · In-Depth Analysis of the Core Paper</h2>
+
+  <section class="card">
+    <h3>2.1 Positioning in One Sentence</h3>
+    <div class="callout blue" style="font-size:16.5px">
+      <strong>A 3D representation need not be a point cloud, Gaussians, or triplanes: it can be the reconstruction network's own KV-cache.</strong>
+    </div>
+    <p>The key claim is not that caching is fast, but that <strong>the network's intermediate activations already encode geometry on which it was never supervised</strong>. RnG's engineering makes that hypothesis queryable, renderable, and exportable.</p>
+  </section>
+
+  <section class="card">
+    <h3>2.2 Motivation and Problem Evidence</h3>
+    <h4>The Precise Problem</h4>
+    <p>Feed-forward generalizable reconstruction, from DUSt3R to VGGT, reduced sparse-image-to-3D inference to subsecond speed within two years. Yet <strong>its training objective asks only for visible geometry</strong>. </p>
+    <div class="quote">"their representations are often confined to observed regions, leaving unseen geometry un-modeled." —— Abstract<br><br>"Most 3D reconstruction pipelines are explicitly trained to recover geometry only for regions visible in the input camera views. Consequently, their geometric outputs are incomplete, hindering downstream applications that demand a complete object representation, such as physics simulation or content generation." —— Introduction</div>
+
+    <h4>How the Problem Is Quantified</h4>
+    <p>Rather than an abstract incompleteness rate, the paper uses <strong>Chamfer Distance (CD)</strong> as its decisive metric. In Table 2, VGGT has strong source-view depth Rel of 5.960, but complete-3D CD is 0.0260. RnG reaches 0.0067, <span class="good">74.2% lower (3.88×)</span>. Accurate visible geometry alone does not yield complete geometry.</p>
+    <p>The reverse comparison is more compelling: Matrix3D, then the only unified model generating unseen regions, has pose-free CD 0.0670— <span class="crit">2.58× worse than VGGT's 0.0260 without generation</span>. Before RnG, the field faced an either-or trade-off:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Approach</th><th>Representative</th><th>Visible geometry</th><th>Unseen geometry</th><th>Real-time performance</th></tr>
+      <tr><td>Discriminative reconstruction</td><td>VGGT</td><td><strong>Very strong</strong> (Rel 5.960 / CD 0.0260)</td><td><span class="crit">Not modeled</span></td><td>✅ &lt; 1 s</td></tr>
+      <tr><td>Unified generative model</td><td>Matrix3D</td><td>Weak (Rel 9.430 / CD 0.0670)</td><td>Generated but inconsistent</td><td><span class="crit">❌ 27 s</span></td></tr>
+    </table></div>
+
+    <h4>Why It Matters</h4>
+    <ul>
+      <li><strong>Applications</strong> — physical simulation, collision detection, 3D printing, and content creation require closed geometry; front-facing point clouds are insufficient.</li>
+      <li><strong>Systems</strong> — unified diffusion inference at 27s prevents interactive applications.</li>
+      <li><strong>Representations</strong>(the most interesting point)—if reconstruction latents <em>already contain</em> complete geometry, generation needs no separate generative model, only a <strong>different readout</strong>. </li>
+    </ul>
+    <div class="quote">"Although prior work has focused on adapting generative priors for reconstruction, we demonstrate that the <strong>reverse direction of transferring reconstruction priors to generation</strong> is viable and effective." —— Related Work</div>
+    <p>Recent approaches add geometry to generative diffusion models, including Zero-1-to-3, Matrix3D, and Gen3R. RnG instead opens a generative output path from a reconstruction model.</p>
+  </section>
+
+  <section class="card">
+    <h3>2.3 The Paper's Argument</h3>
+    <p>The argument follows a chain with clear turning points, rather than merely proposing a successful module:</p>
+    <h4>Step 1: State a Falsifiable Hypothesis</h4>
+    <div class="quote">"feed-forward 3D reconstruction foundation models, while primarily trained to recover visible geometry, <strong>may possess the potential to infer a more complete 3D representation within their latent space</strong>"</div>
+    <p>This is the paper's pivot: if true, a <strong>decoder</strong> should recover complete geometry without retraining a generative model.</p>
+    <h4>Step 2: Add a Readout Channel Without Rewriting the Representation</h4>
+    <p>To test whether complete 3D already exists in the latent space, <strong>target-view queries must not change reconstruction results</strong>. Otherwise existing geometry cannot be distinguished from information introduced through target views. This directly motivates the causal mask.</p>
+    <div class="callout"><strong>This is the paper's most elegant step:</strong> the causal mask is first a <strong>scientific control</strong> and only second an engineering optimization.</div>
+    <h4>Step 3: Extract Engineering Benefits from the Control</h4>
+    <p>Once source K/V is independent of target views, it can be cached. The implicit 3D representation becomes cached K/V tensors, and each new view is a cross-attention query. Table 4: FLOPs fall from 12.26T to 2.29T (<strong>5.35×</strong>), with 85ms per view, faster than Matrix3D's 27s by <strong>317.6×</strong>. </p>
+    <h4>Step 4: Define the Contribution Through What Is Absent</h4>
+    <p>RnG adds no diffusion, GAN, 3DGS, NeRF, or new 3D representation—only a binary mask and two output heads.</p>
+    <h4>Implicit Design Trade-Off</h4>
+    <p>Although unstated, Tables 2/3 clearly show: <strong>texture detail is traded for geometric completeness and speed</strong>. RnG's PSNR 26.276 trails LVSM-100K's 27.522 (<span class="crit">−1.246 dB</span>), and LPIPS 0.0975 trails 0.0895. In return, CD becomes available at 0.0067 and inference accelerates 317×.</p>
+  </section>
+
+  <section class="card">
+    <h3>2.4 Methodology and Mechanisms</h3>
+    <h4>2.4.1 Overall Pipeline</h4>
+    <div class="flow">                  ┌────────────── Source views (S images, no poses required) ──────────────┐
+Input         │ I_1 ... I_S ──DINO ViT──▶ patch tokens (1024/view)             │
+              └──────────────────────────┬───────────────────────────────────┘
+                                         │ + camera tokens
+                                         │ + register tokens
+Target query   Plücker ray map ──Linear───┤
+              (arbitrary, unlimited views)│
+                                         ▼
+                     ┌─────────────────────────────────────────┐
+                     │ L = 24 layers, alternating frame/global │
+                     │ attention; global layers use mask M     │
+                     │                                         │
+                     │ Source→source ✅ Source→target ❌        │
+                     │ Target→source ✅ Target→target ✅        │
+                     └───────────┬─────────────┬───────────────┘
+                                 │             │
+                   Source tokens │             │ Target tokens
+                                 ▼             ▼
+                         ┌────────────┐  ┌──────────────────┐
+                         │ camera head│  │ D_RGB  → Î_t     │
+                         │ → ĝ_s      │  │ D_pmap → P̂_t    │
+                         └────────────┘  └──────────────────┘
+                                                  │
+                         Accumulate queried views ─┴─▶ Complete 3D point cloud</div>
+
+    <h4>2.4.2 Core Mechanism: Reconstruction-Guided Causal Attention</h4>
+    <p>Let <code>{s}</code> denote source-token indices and <code>{t}</code> denote target-token indices:</p>
+    <div class="formula">M_{i,j} = 0 if i ∈ {s} and j ∈ {t}
+M_{i,j} = 1 otherwise
+
+Out = softmax( (M ⊙ QKᵀ) / √d_k ) V</div>
+    <p><strong>Semantics</strong>: Source-view queries are <strong>forbidden</strong> from accessing target-view keys. This is not the standard autoregressive triangular mask, but a <strong>task-level one-way barrier</strong> that insulates reconstruction from generation. The paper calls it <em>reconstruction-guided</em>. </p>
+    <ul>
+      <li><strong>Byproduct 1 · Shared Parameters</strong>: Source and target paths use identical weights, with no extra parameters.</li>
+      <li><strong>Byproduct 2 · Target-View Invariance</strong>: Whether querying one or 1,000 target views, source reconstruction is bitwise identical—an <strong>architectural guarantee</strong> rather than a learned approximation.</li>
+    </ul>
+
+    <h4>2.4.3 KV-Cache as an Implicit 3D Representation</h4>
+    <p><strong>Stage 1 · Reconstruction and Caching</strong>(target-independent, performed once offline):</p>
+    <div class="formula">K'_s = Cache(K_s),   V'_s = Cache(V_s)</div>
+    <p>Cache K/V for every source token at every layer. These tensors <strong>are</strong> the scene's 3D representation.</p>
+    <p><strong>Stage 2 · Generation and Querying</strong>(the only step repeated for each new view):</p>
+    <div class="formula">Out_t = softmax( Q_t · [K'_s ; K_t]ᵀ / √d_k ) · [V'_s ; V_t]
+
+Î = D_RGB(Out_t)        # Novel-view RGB
+P̂ = D_pmap(Out_t)       # Pixel-aligned point map, including inferred unseen geometry</div>
+    <p>Linearly projected target-view Plücker rays produce Q_t and directly query the cache, <strong>entirely bypassing source-branch forward computation</strong>. </p>
+
+    <h4>2.4.4 Key Mechanisms</h4>
+    <div class="tablewrap"><table>
+      <tr><th>Mechanism / dimension</th><th>Design choice</th><th>Motivation</th><th>Key hyperparameters / values</th></tr>
+      <tr><td>Backbone</td><td>Inherit VGGT architecture <strong>and weights</strong></td><td>Reuse the prior that complete 3D already exists in the latent space</td><td>L = 24 layers, alternating frame/global attention</td></tr>
+      <tr><td>Source-view encoding</td><td>DINO ViT patch token</td><td>Retain VGGT's pretrained distribution</td><td>256×256, patch 8 → <strong>1024 token/view</strong></td></tr>
+      <tr><td>Target-view encoding</td><td>Plücker ray map + Linear</td><td>Same structure as LVSM; turn viewpoints into query tokens</td><td>6D rays → d_model</td></tr>
+      <tr class="best"><td>Task separation</td><td>Binary causal mask M</td><td>Target-invariant reconstruction enables caching</td><td>0/1, <strong>Parameter-free</strong></td></tr>
+      <tr class="best"><td>3D representation</td><td>24-layer K/V cache</td><td>No explicit geometry; reading renders the view</td><td>4 views × 1024 tokens × 24 layers × (K,V)</td></tr>
+      <tr><td>Geometry output</td><td>Pixel-aligned point map D_pmap</td><td>Inherits the DUSt3R/VGGT point-map paradigm</td><td>Per-pixel 3D coordinates</td></tr>
+      <tr><td>Appearance output</td><td>D_RGB</td><td>Direct regression, no diffusion</td><td>MSE + perceptual loss</td></tr>
+      <tr><td>World-frame anchoring</td><td>Fix the first source view</td><td>Implicitly define world coordinates</td><td>ĝ_{s=1} = [I₃ₓ₃ | (0,0,−1)ᵀ]</td></tr>
+    </table></div>
+
+    <h4>2.4.5 Training Objective</h4>
+    <div class="formula">L = L_RGB + λ_pmap · L_pmap + λ_c · L_cam
+
+L_RGB  = ‖I_t − Î_t‖₂ + λ_p · Perceptual(I_t, Î_t)
+
+L_pmap = ‖Σ_t ⊙ (P_t − P̂_t)‖ + ‖Σ_t ⊙ (∇P_t − ∇P̂_t)‖ − α · log Σ_t
+
+L_cam  = Σ_s |g_s − ĝ_s|_ε        (Huber)</div>
+    <p>In <code>L_pmap</code>, the second term provides <strong>gradient-domain</strong> supervision for normals and sharp boundaries; the third term <code>−α log Σ_t</code> regularizes uncertainty, preventing the network from driving Σ to zero everywhere to evade supervision.</p>
+
+    <h4>2.4.6 Engineering Details and Hyperparameters</h4>
+    <div class="tablewrap"><table>
+      <tr><th>Item</th><th>Value</th><th>Item</th><th>Value</th></tr>
+      <tr><td>Hardware</td><td>8 × A800</td><td>Training steps</td><td>40K (main results) / 15K (ablations)</td></tr>
+      <tr><td>Batch</td><td>96 = 6 objects × 3 target views × 2 gradient-accumulation steps</td><td>Resolution / patch</td><td>256 × 256 / 8</td></tr>
+      <tr><td>Loss weights</td><td>λ_pmap = 0.2, <strong>λ_c = 1</strong>, λ_p = 0.5, α = 0.2</td><td>Learning rate</td><td>Peak 6e-4, 3,000-step warmup + cosine schedule</td></tr>
+      <tr><td>Training data</td><td>Objaverse LVIS subset, 113.5K objects</td><td>Inference</td><td>Reconstruction ≈ 0.2s; each novel view &lt; 0.1 s</td></tr>
+    </table></div>
+    <div class="callout"><strong>A Point to Revisit.</strong> λ_c=1 is the largest of the three weights. Criticism #4 in §2.7 returns to the fact that this highest-weight term contributes <strong>0</strong>. </div>
+  </section>
+
+  <h2>3 · Experimental Design and Quantitative Results</h2>
+
+  <section class="card">
+    <h3>3.1 Benchmarks and Protocol</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Use</th><th>Dataset</th><th>Size</th><th>Explanation</th></tr>
+      <tr><td>Training</td><td>Objaverse (LVIS subset)</td><td class="num">113.5K objects</td><td>Synthetic objects, orbiting trajectories</td></tr>
+      <tr><td>Main evaluation</td><td><strong>Google Scanned Objects (GSO)</strong></td><td class="num">1,030 objects</td><td>Synthetic renders of real scans, zero-shot</td></tr>
+      <tr><td>Generalization</td><td>CO3D</td><td class="num">—</td><td><span class="crit">⚠️ Qualitative only (Figure 10), no quantitative table</span></td></tr>
+    </table></div>
+    <div class="tablewrap"><table>
+      <tr><th>Group</th><th>Metric</th><th>Meaning</th></tr>
+      <tr><td>Reconstruction · pose</td><td>RA@5↑ / RT@5↑ / AUC@30↑</td><td>Rotation/translation accuracy within 5°; pose AUC</td></tr>
+      <tr><td>Reconstruction · source-view depth</td><td>Rel↓ / a1↑</td><td>Relative error (%); δ&lt;inlier rate within 1.25 (%)</td></tr>
+      <tr><td>Generation · novel-view depth</td><td>Rel↓ / a1↑</td><td>Same metrics, evaluated on unobserved views</td></tr>
+      <tr><td>Generation · novel-view synthesis</td><td>PSNR↑ / SSIM↑ / LPIPS↓</td><td>Appearance quality</td></tr>
+      <tr class="best"><td>Complete 3D</td><td><strong>CD↓</strong></td><td>Chamfer Distance—the sole completeness criterion</td></tr>
+    </table></div>
+  </section>
+
+  <section class="card">
+    <h3>3.2 Main Results Matrix (Table 2, GSO, Four Input Views)</h3>
+    <p style="font-size:14px;color:var(--muted)">Original Table 2 caption: <em>"Quantitative comparison. We evaluate the reconstruction and generation ability of all models on the GSO dataset. '—' means that the model is not capable of delivering that result."</em></p>
+    <div class="tablewrap compact"><table>
+      <tr>
+        <th>Method</th>
+        <th class="num">RA@5↑</th><th class="num">RT@5↑</th><th class="num">AUC@30↑</th>
+        <th class="num">Source Rel↓</th><th class="num">Source a1↑</th>
+        <th class="num">Novel Rel↓</th><th class="num">Novel a1↑</th>
+        <th class="num">PSNR↑</th><th class="num">SSIM↑</th><th class="num">LPIPS↓</th><th class="num">CD↓</th>
+      </tr>
+      <tr class="grouphead"><td colspan="12">(A) Known-Pose Setting</td></tr>
+      <tr><td>LVSM [18] <span style='color:var(--muted)'>(100K)</span></td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num"><span class="good">27.522</span></td><td class="num"><span class="good">0.902</span></td><td class="num"><span class="good">0.0895</span></td><td class="num">—</td></tr>
+      <tr><td>LGM [44]</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">13.704</td><td class="num">85.646</td><td class="num">16.804</td><td class="num">82.205</td><td class="num">16.677</td><td class="num">0.751</td><td class="num">0.2248</td><td class="num">0.1130</td></tr>
+      <tr><td>Matrix3D [30] <span style='color:var(--muted)'>(posed)</span></td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">8.782</td><td class="num">95.383</td><td class="num">8.897</td><td class="num">93.858</td><td class="num">19.941</td><td class="num">0.803</td><td class="num">0.1684</td><td class="num">0.0580</td></tr>
+      <tr><td>pixelSplat [4]</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">33.594</td><td class="num">33.241</td><td class="num">39.819</td><td class="num">20.723</td><td class="num">12.904</td><td class="num">0.718</td><td class="num">0.4514</td><td class="num">0.4898</td></tr>
+      <tr class="grouphead"><td colspan="12">(B) Pose-Free Setting—RnG's Main Setting</td></tr>
+      <tr><td>MUSt3R [3] <span style="color:var(--crit)">※</span></td><td class="num">21.683</td><td class="num">21.683 <span style="color:var(--crit)">※</span></td><td class="num">33.490</td><td class="num">10.941</td><td class="num">92.663</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">0.7757</td></tr>
+      <tr><td>VGGT [50]</td><td class="num">74.239</td><td class="num">65.680</td><td class="num">77.234</td><td class="num">5.960</td><td class="num">97.723</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">0.0260</td></tr>
+      <tr><td>VGGT [50] + LVSM [18]</td><td class="num">74.239</td><td class="num">65.680</td><td class="num">77.234</td><td class="num">5.960</td><td class="num">97.723</td><td class="num">—</td><td class="num">—</td><td class="num">19.394</td><td class="num">0.796</td><td class="num">0.1980</td><td class="num">0.0260</td></tr>
+      <tr><td>Matrix3D [30] <span style='color:var(--muted)'>(unposed)</span></td><td class="num">43.770</td><td class="num">65.922</td><td class="num">66.389</td><td class="num">9.430</td><td class="num">92.261</td><td class="num">9.964</td><td class="num">90.282</td><td class="num">18.736</td><td class="num">0.786</td><td class="num">0.1930</td><td class="num">0.0670</td></tr>
+      <tr class="best"><td><strong>RnG (Ours)</strong></td><td class="num">85.146</td><td class="num">86.019</td><td class="num">86.942</td><td class="num">0.584</td><td class="num">99.929</td><td class="num">0.717</td><td class="num">99.850</td><td class="num">26.276</td><td class="num">0.891</td><td class="num">0.0975</td><td class="num">0.0067</td></tr>
+    </table></div>
+    <p style="font-size:13.5px;color:var(--muted)">※ MUSt3R's identical RA@5 and RT@5 may reflect typesetting or HTML extraction errors; the PDF could not be checked.</p>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">Figure 1 · GSO Novel-View PSNR Comparison</p>
+    <p class="fig-sub">Source: Tables 2 and 3. Hover for values. RnG alone exceeds 26dB without ground-truth poses.</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-2)"></span> RnG (this paper, pose-free)</span>
+      <span><span class="sw" style="background:var(--series-1);opacity:.55"></span> Baselines</span>
+    </div>
+    <svg id="chart1" class="chart" viewBox="0 0 900 380" xmlns="http://www.w3.org/2000/svg">
+<line x1="150.0" y1="20" x2="150.0" y2="334" stroke="var(--grid)" stroke-width="1"/>
+<text x="150.0" y="356" fill="var(--muted)" font-size="12" text-anchor="middle">0</text>
+<line x1="270.0" y1="20" x2="270.0" y2="334" stroke="var(--grid)" stroke-width="1"/>
+<text x="270.0" y="356" fill="var(--muted)" font-size="12" text-anchor="middle">5</text>
+<line x1="390.0" y1="20" x2="390.0" y2="334" stroke="var(--grid)" stroke-width="1"/>
+<text x="390.0" y="356" fill="var(--muted)" font-size="12" text-anchor="middle">10</text>
+<line x1="510.0" y1="20" x2="510.0" y2="334" stroke="var(--grid)" stroke-width="1"/>
+<text x="510.0" y="356" fill="var(--muted)" font-size="12" text-anchor="middle">15</text>
+<line x1="630.0" y1="20" x2="630.0" y2="334" stroke="var(--grid)" stroke-width="1"/>
+<text x="630.0" y="356" fill="var(--muted)" font-size="12" text-anchor="middle">20</text>
+<line x1="750.0" y1="20" x2="750.0" y2="334" stroke="var(--grid)" stroke-width="1"/>
+<text x="750.0" y="356" fill="var(--muted)" font-size="12" text-anchor="middle">25</text>
+<line x1="870.0" y1="20" x2="870.0" y2="334" stroke="var(--grid)" stroke-width="1"/>
+<text x="870.0" y="356" fill="var(--muted)" font-size="12" text-anchor="middle">30</text>
+<line x1="150" y1="20" x2="150" y2="334" stroke="var(--baseline)" stroke-width="1.5"/>
+<rect class="bar" x="150" y="27.5" width="309.7" height="24.3" rx="3" fill="var(--series-1)" opacity="0.55" data-label="pixelSplat" data-value="PSNR 12.904 dB"/>
+<text x="140" y="43.6" fill="var(--text-secondary)" font-size="12.5" font-weight="400" text-anchor="end">pixelSplat</text>
+<text x="467.7" y="43.6" fill="var(--text-primary)" font-size="12.5" font-weight="400">12.904</text>
+<rect class="bar" x="150" y="66.7" width="400.2" height="24.3" rx="3" fill="var(--series-1)" opacity="0.55" data-label="LGM" data-value="PSNR 16.677 dB"/>
+<text x="140" y="82.9" fill="var(--text-secondary)" font-size="12.5" font-weight="400" text-anchor="end">LGM</text>
+<text x="558.2" y="82.9" fill="var(--text-primary)" font-size="12.5" font-weight="400">16.677</text>
+<rect class="bar" x="150" y="106.0" width="449.7" height="24.3" rx="3" fill="var(--series-1)" opacity="0.55" data-label="Matrix3D (unposed)" data-value="PSNR 18.736 dB"/>
+<text x="140" y="122.1" fill="var(--text-secondary)" font-size="12.5" font-weight="400" text-anchor="end">Matrix3D (unposed)</text>
+<text x="607.7" y="122.1" fill="var(--text-primary)" font-size="12.5" font-weight="400">18.736</text>
+<rect class="bar" x="150" y="145.2" width="465.5" height="24.3" rx="3" fill="var(--series-1)" opacity="0.55" data-label="VGGT + LVSM" data-value="PSNR 19.394 dB"/>
+<text x="140" y="161.4" fill="var(--text-secondary)" font-size="12.5" font-weight="400" text-anchor="end">VGGT + LVSM</text>
+<text x="623.5" y="161.4" fill="var(--text-primary)" font-size="12.5" font-weight="400">19.394</text>
+<rect class="bar" x="150" y="184.5" width="478.6" height="24.3" rx="3" fill="var(--series-1)" opacity="0.55" data-label="Matrix3D (posed)" data-value="PSNR 19.941 dB"/>
+<text x="140" y="200.6" fill="var(--text-secondary)" font-size="12.5" font-weight="400" text-anchor="end">Matrix3D (posed)</text>
+<text x="636.6" y="200.6" fill="var(--text-primary)" font-size="12.5" font-weight="400">19.941</text>
+<rect class="bar" x="150" y="223.7" width="590.9" height="24.3" rx="3" fill="var(--series-1)" opacity="0.55" data-label="LVSM-40K" data-value="PSNR 24.619 dB"/>
+<text x="140" y="239.9" fill="var(--text-secondary)" font-size="12.5" font-weight="400" text-anchor="end">LVSM-40K</text>
+<text x="748.9" y="239.9" fill="var(--text-primary)" font-size="12.5" font-weight="400">24.619</text>
+<rect class="bar" x="150" y="263.0" width="630.6" height="24.3" rx="3" fill="var(--series-2)" opacity="1" data-label="RnG (Ours)" data-value="PSNR 26.276 dB"/>
+<text x="140" y="279.1" fill="var(--text-secondary)" font-size="12.5" font-weight="600" text-anchor="end">RnG (Ours)</text>
+<text x="788.6" y="279.1" fill="var(--text-primary)" font-size="12.5" font-weight="600">26.276</text>
+<rect class="bar" x="150" y="302.2" width="660.5" height="24.3" rx="3" fill="var(--series-1)" opacity="0.55" data-label="LVSM-100K" data-value="PSNR 27.522 dB"/>
+<text x="140" y="318.4" fill="var(--text-secondary)" font-size="12.5" font-weight="400" text-anchor="end">LVSM-100K</text>
+<text x="818.5" y="318.4" fill="var(--text-primary)" font-size="12.5" font-weight="400">27.522</text>
+<text x="510.0" y="374" fill="var(--muted)" font-size="12" text-anchor="middle">PSNR (dB)—higher is better</text>
+</svg>
+  </div>
+
+  <div class="figure">
+    <p class="fig-title">Figure 2 · Complete-3D Chamfer Distance (Log Scale)</p>
+    <p class="fig-sub">Source: final column of Table 2. CD drops about 73× over two years, with discrete jumps from VGGT and RnG rather than smooth progress.</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-2)"></span> RnG (this paper)</span>
+      <span><span class="sw" style="background:var(--series-1);opacity:.55"></span> Baselines</span>
+    </div>
+    <svg id="chart2" class="chart" viewBox="0 0 900 320" xmlns="http://www.w3.org/2000/svg">
+<line x1="181.6" y1="20" x2="181.6" y2="274" stroke="var(--grid)" stroke-width="1"/>
+<text x="181.6" y="296" fill="var(--muted)" font-size="12" text-anchor="middle">0.005</text>
+<line x1="279.8" y1="20" x2="279.8" y2="274" stroke="var(--grid)" stroke-width="1"/>
+<text x="279.8" y="296" fill="var(--muted)" font-size="12" text-anchor="middle">0.01</text>
+<line x1="378.1" y1="20" x2="378.1" y2="274" stroke="var(--grid)" stroke-width="1"/>
+<text x="378.1" y="296" fill="var(--muted)" font-size="12" text-anchor="middle">0.02</text>
+<line x1="507.9" y1="20" x2="507.9" y2="274" stroke="var(--grid)" stroke-width="1"/>
+<text x="507.9" y="296" fill="var(--muted)" font-size="12" text-anchor="middle">0.05</text>
+<line x1="606.1" y1="20" x2="606.1" y2="274" stroke="var(--grid)" stroke-width="1"/>
+<text x="606.1" y="296" fill="var(--muted)" font-size="12" text-anchor="middle">0.1</text>
+<line x1="704.3" y1="20" x2="704.3" y2="274" stroke="var(--grid)" stroke-width="1"/>
+<text x="704.3" y="296" fill="var(--muted)" font-size="12" text-anchor="middle">0.2</text>
+<line x1="834.2" y1="20" x2="834.2" y2="274" stroke="var(--grid)" stroke-width="1"/>
+<text x="834.2" y="296" fill="var(--muted)" font-size="12" text-anchor="middle">0.5</text>
+<rect class="bar" x="150" y="28.5" width="681.2" height="25.4" rx="3" fill="var(--series-1)" opacity="0.55" data-label="pixelSplat" data-value="CD 0.4898"/>
+<text x="140" y="45.2" fill="var(--text-secondary)" font-size="12.5" font-weight="400" text-anchor="end">pixelSplat</text>
+<text x="839.2" y="45.2" fill="var(--text-primary)" font-size="12.5" font-weight="400">0.4898</text>
+<rect class="bar" x="150" y="70.8" width="473.4" height="25.4" rx="3" fill="var(--series-1)" opacity="0.55" data-label="LGM" data-value="CD 0.1130"/>
+<text x="140" y="87.5" fill="var(--text-secondary)" font-size="12.5" font-weight="400" text-anchor="end">LGM</text>
+<text x="631.4" y="87.5" fill="var(--text-primary)" font-size="12.5" font-weight="400">0.1130</text>
+<rect class="bar" x="150" y="113.1" width="399.4" height="25.4" rx="3" fill="var(--series-1)" opacity="0.55" data-label="Matrix3D (unposed)" data-value="CD 0.0670"/>
+<text x="140" y="129.8" fill="var(--text-secondary)" font-size="12.5" font-weight="400" text-anchor="end">Matrix3D (unposed)</text>
+<text x="557.4" y="129.8" fill="var(--text-primary)" font-size="12.5" font-weight="400">0.0670</text>
+<rect class="bar" x="150" y="155.5" width="378.9" height="25.4" rx="3" fill="var(--series-1)" opacity="0.55" data-label="Matrix3D (posed)" data-value="CD 0.0580"/>
+<text x="140" y="172.2" fill="var(--text-secondary)" font-size="12.5" font-weight="400" text-anchor="end">Matrix3D (posed)</text>
+<text x="536.9" y="172.2" fill="var(--text-primary)" font-size="12.5" font-weight="400">0.0580</text>
+<rect class="bar" x="150" y="197.8" width="265.2" height="25.4" rx="3" fill="var(--series-1)" opacity="0.55" data-label="VGGT" data-value="CD 0.0260"/>
+<text x="140" y="214.5" fill="var(--text-secondary)" font-size="12.5" font-weight="400" text-anchor="end">VGGT</text>
+<text x="423.2" y="214.5" fill="var(--text-primary)" font-size="12.5" font-weight="400">0.0260</text>
+<rect class="bar" x="150" y="240.1" width="73.1" height="25.4" rx="3" fill="var(--series-2)" opacity="1" data-label="RnG (Ours)" data-value="CD 0.0067"/>
+<text x="140" y="256.8" fill="var(--text-secondary)" font-size="12.5" font-weight="600" text-anchor="end">RnG (Ours)</text>
+<text x="231.1" y="256.8" fill="var(--text-primary)" font-size="12.5" font-weight="600">0.0067</text>
+<line x1="150" y1="20" x2="150" y2="274" stroke="var(--baseline)" stroke-width="1.5"/>
+<text x="505.0" y="314" fill="var(--muted)" font-size="12" text-anchor="middle">Chamfer Distance (log scale)—lower is better</text>
+</svg>
+  </div>
+
+  <section class="card">
+    <h3>3.3 Relative Improvements</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Comparator</th><th>Pose RA@5</th><th>Source-depth Rel</th><th>PSNR</th><th>CD</th></tr>
+      <tr><td>vs VGGT (strongest pure reconstruction)</td><td><span class="good">+10.907 pp</span> (+14.7 %)</td><td>5.960 → 0.584, <span class="good">90.2% lower (10.21×)</span></td><td>—</td><td>0.0260 → 0.0067, <span class="good">74.2% lower (3.88×)</span></td></tr>
+      <tr><td>vs VGGT + LVSM (combined pipeline)</td><td>Same as above</td><td>Same as above</td><td><span class="good">+6.882 dB</span></td><td>Same as above</td></tr>
+      <tr><td>vs Matrix3D (unposed, strongest unified model)</td><td><span class="good">+41.376 pp</span></td><td>93.8% lower</td><td><span class="good">+7.540 dB</span></td><td><span class="good">90.0% lower (exactly 10.0×)</span></td></tr>
+      <tr><td>vs Matrix3D (posed)</td><td>—</td><td>93.3% lower</td><td>+6.335 dB</td><td>88.4% lower (8.66×)</td></tr>
+      <tr><td>vs LGM</td><td>—</td><td>95.7% lower</td><td>+9.599 dB</td><td>94.1% lower (16.87×)</td></tr>
+      <tr><td><strong>vs LVSM-100K (the sole loss)</strong></td><td>—</td><td>—</td><td><span class="crit">−1.246 dB</span></td><td>—</td></tr>
+    </table></div>
+
+    <div class="callout blue">
+      <strong>⭐ Strongest quantitative evidence: source-depth relative error falls from VGGT's 5.960 to 0.584—a 10.21× improvement.</strong>
+      <p style="margin-top:10px">This matters because RnG <strong>inherits VGGT's weights</strong>. With the same backbone and initialization, changing the objective and domain reduces visible-geometry error 90.2%. This both supports and weakens the claim:</p>
+      <ul style="margin-bottom:0">
+        <li><strong>Supports</strong>: VGGT's latent space is not exhausted; the original objective leaves substantial geometry unread, supporting the core hypothesis.</li>
+        <li><strong>Weakens</strong>: The magnitude also indicates a role for <strong>domain adaptation</strong>. VGGT trains on general scenes; RnG fine-tunes on object-level synthetic renders and evaluates on similar GSO data. The paper does not separate hidden-information readout from adaptation to an easier distribution in the 5.960→0.584 gain. <strong>This is the most important missing control in my view.</strong></li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>3.4 Ablation Study (Table 3)</h3>
+    <div class="tablewrap compact"><table>
+      <tr><th>Configuration</th><th class="num">RA@5↑</th><th class="num">RT@5↑</th><th class="num">AUC@30↑</th><th class="num">Source Rel↓</th><th class="num">Source a1↑</th><th class="num">Novel Rel↓</th><th class="num">Novel a1↑</th><th class="num">PSNR↑</th><th class="num">SSIM↑</th><th class="num">LPIPS↓</th></tr>
+      <tr><td>LVSM-100K (control)</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">27.522</td><td class="num">0.902</td><td class="num">0.0895</td></tr>
+      <tr><td>LVSM-40K (equal-step control)</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">24.619</td><td class="num">0.864</td><td class="num">0.1544</td></tr>
+      <tr class="best"><td><strong>Ours-40K (complete)</strong></td><td class="num">85.146</td><td class="num">86.019</td><td class="num">86.942</td><td class="num">0.584</td><td class="num">99.929</td><td class="num">0.717</td><td class="num">99.850</td><td class="num">26.276</td><td class="num">0.891</td><td class="num">0.0975</td></tr>
+      <tr><td>Ours-15K</td><td class="num">81.650</td><td class="num">82.233</td><td class="num">82.631</td><td class="num">0.742</td><td class="num">99.884</td><td class="num">0.882</td><td class="num">99.788</td><td class="num">24.856</td><td class="num">0.873</td><td class="num">0.1243</td></tr>
+      <tr><td>Ours-15K-scratch (no pretraining)</td><td class="num"><span class="crit">8.252</span></td><td class="num">17.184</td><td class="num">33.654</td><td class="num">2.331</td><td class="num">99.475</td><td class="num">2.331</td><td class="num">99.364</td><td class="num"><span class="crit">20.784</span></td><td class="num">0.819</td><td class="num">0.2035</td></tr>
+      <tr><td>Ours-15K-w/o cam (remove L_cam)</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">0.739</td><td class="num">99.890</td><td class="num">0.878</td><td class="num">99.789</td><td class="num">24.850</td><td class="num">0.873</td><td class="num">0.1235</td></tr>
+      <tr><td>Ours-15K-FullAttn (<strong>Remove causal mask</strong>)</td><td class="num">82.718</td><td class="num">81.456</td><td class="num">82.686</td><td class="num">0.727</td><td class="num">99.906</td><td class="num">0.892</td><td class="num">99.792</td><td class="num">24.861</td><td class="num">0.874</td><td class="num">0.1193</td></tr>
+    </table></div>
+
+    <h4>Incremental Decomposition</h4>
+    <div class="tablewrap"><table>
+      <tr><th>Increment</th><th>Pose RA@5</th><th>Source-depth Rel</th><th>PSNR</th><th>Interpretation</th></tr>
+      <tr class="best"><td>Scratch → pretrained (15K)</td><td><span class="good">+73.398 pp</span></td><td>2.331 → 0.742 (−68.2 %)</td><td><span class="good">+4.072 dB</span></td><td><strong>VGGT pretraining overwhelmingly dominates</strong></td></tr>
+      <tr><td>15K → 40K (2.67× training)</td><td>+3.496 pp</td><td>0.742 → 0.584 (−21.3 %)</td><td>+1.420 dB</td><td>Diminishing but substantial returns</td></tr>
+      <tr><td>Full attention → causal mask</td><td><span class="crit">−1.068 pp</span></td><td>0.727 → 0.742 (<span class="crit">2.1% worse</span>)</td><td>+0.005dB (noise scale)</td><td><strong>⚠️ See below</strong></td></tr>
+      <tr><td>With L_cam → without L_cam</td><td>(pose output lost)</td><td>0.742 → 0.739 (slightly better)</td><td>−0.006 dB</td><td><strong>L_cam adds no quality benefit</strong></td></tr>
+    </table></div>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">Figure 3 · PSNR Contributions of Design Choices</p>
+    <p class="fig-sub">Starting at Ours-15K-scratch's 20.784dB, add each contribution. Source: Table 3.</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-1)"></span> VGGT pretrained weights</span>
+      <span><span class="sw" style="background:var(--series-2)"></span> Training 15K→40K</span>
+      <span><span class="sw" style="background:var(--muted)"></span> Causal mask (≈ 0)</span>
+    </div>
+    <svg id="chart4" class="chart" viewBox="0 0 900 230" xmlns="http://www.w3.org/2000/svg">
+<line x1="60.0" y1="50" x2="60.0" y2="170" stroke="var(--grid)" stroke-width="1"/>
+<text x="60.0" y="194" fill="var(--muted)" font-size="12" text-anchor="middle">20</text>
+<line x1="174.3" y1="50" x2="174.3" y2="170" stroke="var(--grid)" stroke-width="1"/>
+<text x="174.3" y="194" fill="var(--muted)" font-size="12" text-anchor="middle">21</text>
+<line x1="288.6" y1="50" x2="288.6" y2="170" stroke="var(--grid)" stroke-width="1"/>
+<text x="288.6" y="194" fill="var(--muted)" font-size="12" text-anchor="middle">22</text>
+<line x1="402.9" y1="50" x2="402.9" y2="170" stroke="var(--grid)" stroke-width="1"/>
+<text x="402.9" y="194" fill="var(--muted)" font-size="12" text-anchor="middle">23</text>
+<line x1="517.1" y1="50" x2="517.1" y2="170" stroke="var(--grid)" stroke-width="1"/>
+<text x="517.1" y="194" fill="var(--muted)" font-size="12" text-anchor="middle">24</text>
+<line x1="631.4" y1="50" x2="631.4" y2="170" stroke="var(--grid)" stroke-width="1"/>
+<text x="631.4" y="194" fill="var(--muted)" font-size="12" text-anchor="middle">25</text>
+<line x1="745.7" y1="50" x2="745.7" y2="170" stroke="var(--grid)" stroke-width="1"/>
+<text x="745.7" y="194" fill="var(--muted)" font-size="12" text-anchor="middle">26</text>
+<line x1="860.0" y1="50" x2="860.0" y2="170" stroke="var(--grid)" stroke-width="1"/>
+<text x="860.0" y="194" fill="var(--muted)" font-size="12" text-anchor="middle">27</text>
+<rect x="60" y="87.0" width="89.6" height="46" fill="var(--baseline)" opacity="0.5" rx="3"/>
+<text x="104.8" y="114.0" fill="var(--text-secondary)" font-size="12" text-anchor="middle">scratch 20.784</text>
+<rect class="bar" x="149.6" y="87.0" width="465.4" height="46" fill="var(--series-1)" opacity="0.85" rx="3" data-label="+ VGGT pretrained weights" data-value="ΔPSNR +4.072 dB"/>
+<text x="382.3" y="114.0" fill="#fff" font-size="12" font-weight="600" text-anchor="middle">+4.072</text>
+<rect class="bar" x="615.0" y="87.0" width="162.3" height="46" fill="var(--series-2)" opacity="0.85" rx="3" data-label="+ Training data 15K→40K" data-value="ΔPSNR +1.420 dB"/>
+<text x="696.1" y="114.0" fill="#fff" font-size="12" font-weight="600" text-anchor="middle">+1.420</text>
+<rect class="bar" x="776.7" y="87.0" width="3.0" height="46" fill="var(--muted)" opacity="0.85" rx="3" data-label="+ Causal mask (vs. FullAttn)" data-value="ΔPSNR -0.005 dB"/>
+<line x1="776.7" y1="73.0" x2="776.7" y2="147.0" stroke="var(--text-primary)" stroke-width="1.6"/>
+<text x="776.7" y="67.0" fill="var(--text-primary)" font-size="12.5" font-weight="600" text-anchor="middle">Ours-40K = 26.271 ≈ 26.276</text>
+<text x="460.0" y="220" fill="var(--muted)" font-size="12" text-anchor="middle">PSNR (dB)—incremental design contributions (Table 3)</text>
+</svg>
+  </div>
+
+  <section class="card">
+    <div class="callout">
+      <strong>⚠️ Counterintuitive Finding: A Headline Contribution Has Negative Quality Returns</strong>
+      <p style="margin-top:10px">Comparison <code>Ours-15K</code>(causal mask) versus <code>Ours-15K-FullAttn</code>(full attention), metric differences computed as FullAttn minus Causal:</p>
+    </div>
+    <div class="tablewrap"><table>
+      <tr><th>Metric</th><th class="num">Causal</th><th class="num">FullAttn</th><th class="num">Difference</th><th>Winner</th></tr>
+      <tr><td>RA@5↑</td><td class="num">81.650</td><td class="num">82.718</td><td class="num"><strong>+1.068</strong></td><td>FullAttn</td></tr>
+      <tr><td>RT@5↑</td><td class="num">82.233</td><td class="num">81.456</td><td class="num">−0.777</td><td>Causal</td></tr>
+      <tr><td>AUC@30↑</td><td class="num">82.631</td><td class="num">82.686</td><td class="num">+0.055</td><td>FullAttn</td></tr>
+      <tr><td>Source Rel↓</td><td class="num">0.742</td><td class="num">0.727</td><td class="num">−0.015</td><td>FullAttn</td></tr>
+      <tr><td>Source a1↑</td><td class="num">99.884</td><td class="num">99.906</td><td class="num">+0.022</td><td>FullAttn</td></tr>
+      <tr><td>Novel Rel↓</td><td class="num">0.882</td><td class="num">0.892</td><td class="num">+0.010</td><td>Causal</td></tr>
+      <tr><td>Novel a1↑</td><td class="num">99.788</td><td class="num">99.792</td><td class="num">+0.004</td><td>FullAttn</td></tr>
+      <tr><td>PSNR↑</td><td class="num">24.856</td><td class="num">24.861</td><td class="num">+0.005</td><td>FullAttn</td></tr>
+      <tr><td>SSIM↑</td><td class="num">0.873</td><td class="num">0.874</td><td class="num">+0.001</td><td>FullAttn</td></tr>
+      <tr><td>LPIPS↓</td><td class="num">0.1243</td><td class="num">0.1193</td><td class="num"><strong>−0.0050</strong></td><td>FullAttn</td></tr>
+    </table></div>
+    <p><strong>Full attention wins eight of ten metrics.</strong> The title and abstract present reconstruction-guided causal attention as a primary contribution, yet its value lies <strong>entirely outside quality</strong>, in two properties: (1) <strong>architectural target-view invariance</strong>;  (2)<strong>enables KV caching</strong> and a 5.35× FLOP reduction. Both are important, but the narrative can imply that masking improves quality.</p>
+    <p>A candid formulation would be: <strong>“Small regressions of 0.01–1.07 on eight of ten metrics buy 5.35× computational savings and a cacheable 3D representation.”</strong> An excellent trade-off, but still a trade-off.</p>
+  </section>
+
+  <section class="card">
+    <h3>3.5 Efficiency (Table 4)</h3>
+    <p style="font-size:14px;color:var(--muted)">caption: <em>"Efficiency comparison of models with and without KV-Cache for inferring a single novel-view appearance and geometry."</em></p>
+    <div class="tablewrap"><table>
+      <tr><th>Method</th><th class="num">Peak GPU memory</th><th class="num">FLOPs</th><th class="num">Time per view</th></tr>
+      <tr><td>Matrix3D [30]</td><td class="num">11.31 G</td><td class="num">2228 T</td><td class="num"><span class="crit">27 s</span></td></tr>
+      <tr><td>RnG w/o KV-Cache</td><td class="num">8.12 G</td><td class="num">12.26 T</td><td class="num">213 ms</td></tr>
+      <tr class="best"><td><strong>RnG w/ KV-Cache</strong></td><td class="num">7.10 G</td><td class="num">2.29 T</td><td class="num">85 ms</td></tr>
+    </table></div>
+    <div class="tablewrap"><table>
+      <tr><th>compare</th><th class="num">FLOPs</th><th class="num">Time</th><th class="num">Memory</th></tr>
+      <tr><td>KV-cache on vs off</td><td class="num"><span class="good">5.35× ↓</span></td><td class="num"><span class="good">2.51× ↓</span></td><td class="num">12.6 % ↓</td></tr>
+      <tr class="best"><td>RnG (cache) vs Matrix3D</td><td class="num"><strong>972.9× ↓</strong></td><td class="num"><strong>317.6× ↓</strong></td><td class="num">37.2 % ↓</td></tr>
+    </table></div>
+    <div class="callout">
+      <strong>Note the 2.13× gap between 5.35× and 2.51×.</strong> Over fivefold fewer FLOPs yield only 2.5× wall-clock speedup, suggesting cache queries shift <strong>from compute-bound to memory-bound</strong>. Roughly: 24 layers × 4 source views × 1024 tokens × d_model (approximately 1024 for VGGT-1B) × K/V × 2 bytes gives a cache on the order of <strong>400MB</strong> read in full for each query. This directly affects real-time interaction claims; see criticism #7.
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>3.6 Sensitivity to Input-View Count (Table 5)</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Input views</th><th class="num">PSNR↑</th><th class="num">SSIM↑</th><th class="num">LPIPS↓</th><th class="num">ΔPSNR</th></tr>
+      <tr><td>1</td><td class="num">19.452</td><td class="num">0.811</td><td class="num">0.1821</td><td class="num">—</td></tr>
+      <tr><td>2</td><td class="num">23.403</td><td class="num">0.860</td><td class="num">0.1249</td><td class="num">+3.951</td></tr>
+      <tr class="best"><td><strong>4 (training setting)</strong></td><td class="num">26.276</td><td class="num">0.891</td><td class="num">0.0975</td><td class="num">+2.873</td></tr>
+      <tr><td>8</td><td class="num">27.608</td><td class="num">0.903</td><td class="num">0.0857</td><td class="num">+1.332</td></tr>
+    </table></div>
+    <p><strong>Decay pattern</strong>: Gain ratio = 2.873/3.951 = <strong>0.727</strong>, 1.332/2.873 = <strong>0.464</strong>, showing geometric decay. Extrapolating the later ratio r≈0.464 gives remaining gain ≈1.332×r/(1−r)≈1.15dB and an <strong>asymptote around 28.7–28.8dB</strong>. </p>
+    <div class="callout blue">
+      <strong>Three Noteworthy Observations:</strong>
+      <ol style="margin-top:8px;margin-bottom:0">
+        <li><strong>At eight views, RnG (27.608) overtakes LVSM-100K (27.522)</strong> —while RnG is <strong>pose-free</strong> and LVSM requires ground-truth poses. This result is understated.</li>
+        <li><strong>One-view RnG (19.452) already exceeds four-view VGGT+LVSM (19.394) and unposed Matrix3D (18.736)</strong> —matching or beating competitors with one-quarter of their observations.</li>
+        <li><strong>The model never trains on one, two, or eight views</strong>(training fixes four sources and three targets), yet generalizes smoothly and monotonically. This indirectly supports a well-defined cache representation whose semantics survive changing entry counts.</li>
+      </ol>
+    </div>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">Figure 4 · PSNR vs Input Views and Extrapolation</p>
+    <p class="fig-sub">Source: Table 5. Gain ratios 0.727→0.464 suggest geometric decay and a capacity ceiling. The paper stops at eight views, without 16-/32-view tests to challenge this extrapolation.</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-1)"></span> RnG (pose-free)</span>
+      <span><span class="sw" style="background:var(--series-2)"></span> LVSM-100K reference (ground-truth poses required)</span>
+      <span><span class="sw" style="background:var(--muted)"></span> Geometric-decay asymptote</span>
+    </div>
+    <svg id="chart3" class="chart" viewBox="0 0 900 360" xmlns="http://www.w3.org/2000/svg">
+<line x1="70" y1="308.0" x2="750.0" y2="308.0" stroke="var(--grid)" stroke-width="1"/>
+<text x="60" y="312.0" fill="var(--muted)" font-size="12" text-anchor="end">18</text>
+<line x1="70" y1="261.0" x2="750.0" y2="261.0" stroke="var(--grid)" stroke-width="1"/>
+<text x="60" y="265.0" fill="var(--muted)" font-size="12" text-anchor="end">20</text>
+<line x1="70" y1="214.0" x2="750.0" y2="214.0" stroke="var(--grid)" stroke-width="1"/>
+<text x="60" y="218.0" fill="var(--muted)" font-size="12" text-anchor="end">22</text>
+<line x1="70" y1="167.0" x2="750.0" y2="167.0" stroke="var(--grid)" stroke-width="1"/>
+<text x="60" y="171.0" fill="var(--muted)" font-size="12" text-anchor="end">24</text>
+<line x1="70" y1="120.0" x2="750.0" y2="120.0" stroke="var(--grid)" stroke-width="1"/>
+<text x="60" y="124.0" fill="var(--muted)" font-size="12" text-anchor="end">26</text>
+<line x1="70" y1="73.0" x2="750.0" y2="73.0" stroke="var(--grid)" stroke-width="1"/>
+<text x="60" y="77.0" fill="var(--muted)" font-size="12" text-anchor="end">28</text>
+<line x1="70" y1="26.0" x2="750.0" y2="26.0" stroke="var(--grid)" stroke-width="1"/>
+<text x="60" y="30.0" fill="var(--muted)" font-size="12" text-anchor="end">30</text>
+<text x="70.0" y="332.0" fill="var(--muted)" font-size="12" text-anchor="middle">1</text>
+<text x="296.7" y="332.0" fill="var(--muted)" font-size="12" text-anchor="middle">2</text>
+<text x="523.3" y="332.0" fill="var(--muted)" font-size="12" text-anchor="middle">4</text>
+<text x="750.0" y="332.0" fill="var(--muted)" font-size="12" text-anchor="middle">8</text>
+<line x1="70" y1="84.2" x2="750.0" y2="84.2" stroke="var(--series-2)" stroke-width="1.6" stroke-dasharray="6 5"/>
+<text x="760.0" y="78.2" fill="var(--series-2)" font-size="12" font-weight="600">LVSM-100K = 27.522</text>
+<text x="760.0" y="95.2" fill="var(--muted)" font-size="11.5">(ground-truth poses required)</text>
+<line x1="70" y1="55.1" x2="750.0" y2="55.1" stroke="var(--muted)" stroke-width="1.2" stroke-dasharray="2 5"/>
+<text x="760.0" y="59.1" fill="var(--muted)" font-size="11.5">Extrapolated asymptote ≈ 28.8</text>
+<path d="M70.0 273.9 L296.7 181.0 L523.3 113.5 L750.0 82.2" fill="none" stroke="var(--series-1)" stroke-width="2.6" stroke-linejoin="round"/>
+<circle class="dot" cx="70.0" cy="273.9" r="5.5" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="2" data-label="1 input view" data-value="PSNR 19.452 dB"/>
+<text x="70.0" y="259.9" fill="var(--text-primary)" font-size="12.5" font-weight="600" text-anchor="middle">19.452</text>
+<circle class="dot" cx="296.7" cy="181.0" r="5.5" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="2" data-label="2 input views" data-value="PSNR 23.403 dB"/>
+<text x="296.7" y="167.0" fill="var(--text-primary)" font-size="12.5" font-weight="600" text-anchor="middle">23.403</text>
+<circle class="dot" cx="523.3" cy="113.5" r="5.5" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="2" data-label="4 input views" data-value="PSNR 26.276 dB"/>
+<text x="523.3" y="99.5" fill="var(--text-primary)" font-size="12.5" font-weight="600" text-anchor="middle">26.276</text>
+<circle class="dot" cx="750.0" cy="82.2" r="5.5" fill="var(--series-1)" stroke="var(--surface-1)" stroke-width="2" data-label="8 input views" data-value="PSNR 27.608 dB"/>
+<text x="750.0" y="68.2" fill="var(--text-primary)" font-size="12.5" font-weight="600" text-anchor="middle">27.608</text>
+<text x="183.3" y="249.5" fill="var(--series-2)" font-size="12" font-weight="600" text-anchor="middle">+3.951</text>
+<text x="410.0" y="169.3" fill="var(--series-2)" font-size="12" font-weight="600" text-anchor="middle">+2.873</text>
+<text x="636.7" y="119.9" fill="var(--series-2)" font-size="12" font-weight="600" text-anchor="middle">+1.332</text>
+<line x1="70" y1="26" x2="70" y2="308" stroke="var(--baseline)" stroke-width="1.5"/>
+<line x1="70" y1="308.0" x2="750.0" y2="308.0" stroke="var(--baseline)" stroke-width="1.5"/>
+<text x="410.0" y="352" fill="var(--muted)" font-size="12" text-anchor="middle">Number of source views (log scale)</text>
+<text x="18" y="167.0" fill="var(--muted)" font-size="12" text-anchor="middle" transform="rotate(-90 18 167.0)">PSNR (dB)</text>
+</svg>
+  </div>
+
+  <section class="card">
+    <h3>3.7 Statistical Significance</h3>
+    <div class="callout">
+      <strong>⚠️ No standard deviations, confidence intervals, or repeated-run results are reported.</strong> Tables 2/3/5 contain single-run estimates. This matters little for 6–9dB main-result gaps, but is <strong>decisive</strong> for the 0.005dB FullAttn–Causal difference, almost certainly within seed noise. Thus “full attention wins 8/10” should mean <strong>the two are indistinguishable in quality</strong> rather than demonstrated superiority. This weaker conclusion actually favors the paper: the causal mask is <strong>free</strong> in quality terms, rather than costly.
+    </div>
+  </section>
+
+  <h2>4 · Assessment of Value</h2>
+  <section class="card">
+    <h3>The Substantive Contribution</h3>
+    <p><strong>It expands the candidate space of 3D representations rather than merely adding another unified model.</strong> Over five years, representations progressed through meshes, voxels, NeRF, 3DGS, triplane latents, and structured latents—all <strong>data structures designed specifically for 3D</strong>. RnG claims that <strong>intermediate activations of a general Transformer</strong> can fill this role if invariant to queries, thereby <strong>reducing</strong> representation design to attention-mask design.</p>
+
+    <h3>Independently Reusable Designs</h3>
+    <div class="tablewrap"><table>
+      <tr><th>Reusable component</th><th>Reuse method</th><th>Scope of applicability</th></tr>
+      <tr><td><strong>Task-level causal mask</strong></td><td>Use a 0/1 mask to block one-way information flow in shared multitask backbones whenever task B must not contaminate task A</td><td>Beyond 3D: multimodal understanding/generation, retrieval/reranking, perception/planning</td></tr>
+      <tr><td><strong>KV-cache as representation</strong></td><td>For encode-once/query-many tasks, export encoder K/V as an intermediate artifact</td><td>Scene memory in video world models, long-document QA, embodied spatial memory</td></tr>
+      <tr><td><strong>Reconstruction priors → generation</strong> reverses the usual direction</td><td>Add a decoding outlet to a discriminative base rather than train a generative model</td><td>Detection/segmentation/depth backbones → corresponding generative tasks</td></tr>
+      <tr><td>Plücker-ray query interface</td><td>Tokenize viewpoints, decoupling query count from architecture</td><td>Rendering/simulation with continuously parameterized queries</td></tr>
+      <tr><td><strong>Invariance precedes cacheability</strong></td><td>Prove invariance before caching</td><td>A general systems-design principle</td></tr>
+    </table></div>
+
+    <h3>Implications for Future Work</h3>
+    <p>The resulting research space follows cache semantics:</p>
+    <ul>
+      <li><strong>Can a KV-cache 3D representation be edited?</strong> Perform object removal, replacement, or material edits directly on cached tensors without recomputing the encoder.</li>
+      <li><strong>Can it be compressed or quantized?</strong> Reducing 400MB to 40MB would create a neural compression format for 3D assets.</li>
+      <li><strong>Can caches be concatenated?</strong> Does joining two scene caches merge scenes? This directly concerns scene-level expansion.</li>
+      <li><strong>Can it be indexed by time?</strong> Adding time turns the KV-cache into explicit world-model memory.</li>
+    </ul>
+    <p>This last question connects most closely to generative/world models: long-term video consistency depends on the form of memory, and RnG offers an answer— <strong>the reconstruction network's K/V tensors</strong>. </p>
+  </section>
+
+  <h2>5 · Limitations</h2>
+
+  <section class="card">
+    <h3>Category I: Author-Acknowledged (§5, Quoted)</h3>
+    <h4>(1) Missing detail</h4>
+    <div class="quote">"Unlike diffusion-based image generators that produce eye-catching images with very rich details (although they can be wrong), RnG has difficulties in representing intricate textures. This is also an issue in LVSM [18]. Introducing image-generation pretraining or auto-encoding components might resolve this issue."</div>
+    <p>Evidence: LPIPS 0.0975 vs LVSM 0.0895 (8.9% gap), PSNR −1.246dB.</p>
+    <h4>(2) World-origin definition</h4>
+    <div class="quote">"For object-level reconstruction task, an ideal world origin would be the object center. However, in data preparation, all cameras look at the world center, which may confuse the network to regard the intersection of source views' optical axes as the world origin. This also limits model's real-world applications, where multiview images captured by hand-held devices have to look at a common 3D point to get the best result."</div>
+    <h4>(3) Multi-view 3D accumulation</h4>
+    <div class="quote">"Although our model generates highly consistent point maps from viewpoint queries, it requires to accumulate multi-view observations to obtain a complete 3D. Multi-view geometry integration might also introduce noise and conflicts."</div>
+    <p>A single query produces a <strong>pixel-aligned point map</strong>(2.5D); closed 3D still requires multiple queries and fusion. Complete geometry is <strong>assembled after querying</strong> rather than produced in one forward pass.</p>
+  </section>
+
+  <section class="card">
+    <h3>Category II: Eight Independent Criticisms</h3>
+
+    <h4>Criticism 1 · <span style="color:var(--series-2)">Gaps in the argument</span> — The headline mechanism adds no quality benefit, but is not positioned accordingly</h4>
+    <p>In Table 3, <code>Ours-15K-FullAttn</code> wins or ties eight of ten metrics against <code>Ours-15K</code>(LPIPS 0.1193 vs 0.1243, a 0.0050 gap, compared with the 0.0268 improvement from 15K→40K training: <strong>18.7 %</strong>). The abstract emphasizes causal attention as a performance contribution, whereas evidence supports preserving performance while enabling caching.</p>
+
+    <h4>Criticism 2 · <span style="color:var(--series-2)">Missing fair baseline comparisons</span> — Equal 40K steps do not mean equal compute</h4>
+    <p>The paper compares against <code>LVSM-40K</code>(24.619) rather than <code>LVSM-100K</code>(27.522) to claim better data efficiency (+1.657dB). But RnG inherits VGGT's large-scale, multidataset pretraining. Its own <code>Ours-15K-scratch</code> quantifies this prior: <strong>PSNR 20.784 (−4.072 dB), RA@5 8.252 (−73.398 pp)</strong>. Including pretraining compute undermines the equal-step comparison.</p>
+    <p><strong>Missing controls</strong>: Initialize LVSM from VGGT too, or fine-tune VGGT on the same Objaverse data for 40K steps using its original objective before attaching LVSM. These separate architectural benefits from pretrained priors, and hidden-geometry readout from easier-domain adaptation.</p>
+
+    <h4>Criticism 3 · <span style="color:var(--series-2)">Metric validity</span> — CD alone supports completeness, without a transparent or decomposed protocol</h4>
+    <ul>
+      <li>The paper does not specify directional versus bidirectional CD, scale alignment, or sampled point count.</li>
+      <li>An <strong>accuracy / completeness</strong> decomposition is also missing. CD combines two terms; filling an object solid can improve completeness without accuracy while retaining an attractive total.</li>
+      <li>VGGT's CD=0.0260 is itself ambiguous: it cannot generate unseen surfaces, so how is its complete point cloud constructed? Prediction→ground-truth CD favors visible-only predictions, whereas bidirectional CD penalizes missing backsides. <strong>The 3.88× gap means very different things under these protocols.</strong></li>
+    </ul>
+
+    <h4>Criticism 4 · <span style="color:var(--series-2)">Experimental design issues</span> — The highest-weight loss contributes nothing</h4>
+    <p><code>Ours-15K-w/o cam</code> with <code>Ours-15K</code>: PSNR 24.850 vs 24.856 (−0.006), LPIPS 0.1235 vs 0.1243 (<strong>better</strong>), source-depth Rel 0.739 vs 0.742 (<strong>better</strong>). Thus <strong>the pose loss λ_c=1, the largest weight, contributes zero or slightly negatively to appearance and geometry</strong>. A reasonable inference is that VGGT pretraining already supplies pose ability, with L_cam <strong>maintaining</strong> rather than <strong>learning</strong>. </p>
+    <p>The paper neither discusses this nor sweeps λ_c. <strong>If reducing λ_c to 0.1 or 0.01 preserves pose accuracy, more effective gradient budget could go to appearance, partly addressing missing detail.</strong></p>
+
+    <h4>Criticism 5 · <span style="color:var(--series-2)">Uneven evaluation coverage</span> — No quantitative real-scene results</h4>
+    <p>All numerical conclusions rely on <strong>GSO: 1,030 objects, clean backgrounds, orbiting cameras, synthetic renders</strong> with similar Objaverse-LVIS training data. CO3D has one qualitative figure, and the authors acknowledge potential ground-truth misalignment, yet claim real-time interactive applicability. <strong>An 85ms/view model validated only on synthetic objects lacks evidence for practical real-time interaction.</strong> No numbers cover indoor/street scenes, handheld trajectories, severe occlusion, or non-Lambertian materials.</p>
+
+    <h4>Criticism 6 · <span style="color:var(--series-2)">Gaps in the argument</span> — World-origin ambiguity is methodological, not merely preprocessing</h4>
+    <p>The paper suggests improving preprocessing, but the architecture <code>ĝ_{s=1} = [I₃ₓ₃ | (0,0,−1)ᵀ]</code> takes the first source view and <strong>fixes it</strong> as the world frame, implicitly defining the object center through the intersection of source optical axes <strong>Implicit</strong>. Training cameras all look at the world center, making this definition work. The model therefore learns the <strong>dataset acquisition protocol</strong> rather than <strong>a geometric invariant</strong>. </p>
+    <div class="callout">
+      <strong>A Coherent Evidence Chain</strong>: Architectural assumption (criticism 6) → mismatch with real acquisition → acknowledged CO3D misalignment → no quantitative CO3D table (criticism 5). <strong>Three symptoms share one root cause.</strong> Changing preprocessing is insufficient; what is needed is an <strong>explicit world frame independent of source-view selection</strong>.
+    </div>
+
+    <h4>Criticism 7 · <span style="color:var(--series-2)">Missing scalability analysis</span> — 5.35× fewer FLOPs yield only 2.51× speedup</h4>
+    <p>The 2.13× discrepancy in Table 4 points to a <strong>memory-bandwidth bottleneck</strong>. At 256×256 with patch size 8, each view has 1024 tokens; four sources across 24 layers require hundreds of MB of K/V. Proposed extensions imply:</p>
+    <div class="tablewrap"><table>
+      <tr><th>Extension</th><th class="num">Token-count change</th><th class="num">Cache size</th><th>Consequence</th></tr>
+      <tr><td>512×512 resolution</td><td class="num">×4</td><td class="num">×4 (~1.6 GB)</td><td>Bandwidth saturates before compute</td></tr>
+      <tr><td>8→16 source views</td><td class="num">×4</td><td class="num">×4</td><td>Same as above</td></tr>
+      <tr><td>Add time (dynamic scenes)</td><td class="num">×T</td><td class="num">×T</td><td>Linear growth explosion</td></tr>
+    </table></div>
+    <p><strong>The cache's main weakness is scaling with observation count; a good 3D representation should scale with scene complexity independently of observations.</strong> A 3DGS scene does not grow 100× because 100 additional photos were taken. Cache compression, pruning, and deduplication are not discussed.</p>
+
+    <h4>Criticism 8 · <span style="color:var(--series-2)">Gaps in the argument</span> — Signs of a capacity ceiling remain unchallenged</h4>
+    <p>Table 5's gain ratios 0.727→0.464 suggest geometric decay toward approximately <strong>28.7 dB</strong>. If true, even 16 or 32 views may not substantially beat LVSM-100K's 27.522. The bottleneck may be D_RGB capacity, 256×256 resolution, or lack of generative high-frequency priors, consistent with acknowledged missing detail. <strong>The paper stops at eight views; one 16-view point could distinguish bounded geometric decay from unbounded logarithmic growth.</strong></p>
+
+    <h3>Limitations of My Analysis</h3>
+    <ul>
+      <li>GitHub and Hugging Face could not be opened independently, so <strong>actual code/weight release could not be verified</strong>, including training code and licensing. Evaluation code would be the best way to resolve criticism 3's CD questions.</li>
+      <li>I did not read the PDF; table data came from structured arXiv HTML extraction, so MUSt3R's identical RA@5/RT@5 may be an extraction artifact.</li>
+      <li>Only textual descriptions, not Figures 13–15 themselves, were available for supplementary failure cases; analysis relies on the authors' account.</li>
+      <li>No independent reproduction or numerical verification was performed; performance figures are cited from Tables 2/3/4/5.</li>
+    </ul>
+  </section>
+
+  <h2>6 · Related Work</h2>
+  <p style="color:var(--text-secondary)">The following five works form a <strong>clear chain of problems and responses</strong> rather than a parallel list. Each solves one dimension and leaves the next a gap.</p>
+
+  <section class="card">
+    <h3>6.1 DUSt3R — 2023.12 (arXiv)/ CVPR 2024</h3>
+    <h4>Problem addressed</h4>
+    <p>Conventional MVS/SfM needs known or estimated camera parameters; pose failure breaks the pipeline. DUSt3R reformulates paired-image reconstruction as <strong>point-map regression</strong>, directly predicting each pixel's 3D coordinates in a common frame while relaxing strict projective-camera constraints. In one sentence: <strong>one regression task replaces an entire geometry pipeline.</strong></p>
+    <h4>Unresolved gaps</h4>
+    <p> (a)<strong>Inherently pairwise</strong> —N images require O(N²) forward passes plus expensive global alignment, compromising a pure feed-forward approach; (b) <strong>scale ambiguity</strong>;  (c)<strong>visible regions only</strong> —pixel alignment means no pixel, no geometry: an intrinsic representational limitation.</p>
+    <h4>How the Core Paper Responds</h4>
+    <p>RnG inherits point maps as its geometry output (<code>D_pmap</code> head and <code>L_pmap</code> loss), but cleverly <strong>bypasses</strong> rather than <strong>solves</strong> gap (c): if point maps need pixels, <strong>let query views supply them</strong>. Plücker rays also cover unseen regions, where the <code>D_pmap</code> output becomes inferred geometry.</p>
+    <h4>Transfer of Key Designs</h4>
+    <p>Point maps and heteroscedastic uncertainty-weighted losses pass almost unchanged from DUSt3R through VGGT to RnG—the chain's <strong>most stable technical inheritance</strong>. </p>
+  </section>
+
+  <section class="card">
+    <h3>6.2 LRM — 2023.11 (arXiv)/ ICLR 2024</h3>
+    <h4>Problem addressed</h4>
+    <p>Before LRM, single-image 3D relied on per-scene SDS optimization lasting tens of minutes. LRM demonstrates that <strong>large-scale feed-forward regression can replace optimization</strong>: a large Transformer trained on Objaverse produces a triplane NeRF in five seconds. In one sentence: <strong>3D reconstruction becomes a large-model problem rather than an optimization problem.</strong></p>
+    <h4>Unresolved gaps</h4>
+    <p>(a) With a single image, <strong>reconstruction and generation are conflated</strong> : the backside must be generated, but LRM cannot distinguish observed certainty from unseen guesses. (b) Triplane NeRF limits geometry accuracy. (c) Cameras must be normalized.</p>
+    <h4>How the Core Paper Responds</h4>
+    <p>Gap (a) is RnG's <strong>direct target</strong>. The causal mask separates source reconstruction, proven target-independent, from target generation. <strong>Distinguishing observed from guessed information moves from no mechanism in LRM to an architectural guarantee in RnG.</strong></p>
+    <h4>Transfer of Key Designs</h4>
+    <p>The large feed-forward model/Objaverse paradigm and zero-shot GSO evaluation descend from LRM. RnG's 113.5K Objaverse-LVIS training and 1,030-object GSO evaluation continue this line.</p>
+  </section>
+
+  <section class="card">
+    <h3>6.3 LVSM — 2024.10 (arXiv)/ ICLR 2025 Oral</h3>
+    <h4>Problem addressed</h4>
+    <p>Even after LRM, novel-view synthesis used 3D biases such as NeRF/3DGS, epipolar constraints, and plane sweeping. LVSM <strong>removes them all</strong>, retaining a pure Transformer from image tokens and target Plücker rays to pixels. It improves over prior SOTA by <strong>+1.5 ~ 3.5 dB PSNR</strong> and beats earlier methods with only one or two GPUs. In one sentence: <strong>data and scale can replace explicit 3D inductive biases.</strong></p>
+    <p>LVSM Has Two Variants, Essential for Understanding RnG: <strong>Encoder-Decoder</strong> Compress inputs into a fixed number of 1D latent scene tokens—a learned implicit 3D representation; <strong>Decoder-Only</strong> remove the intermediate representation entirely for higher quality at higher cost.</p>
+    <h4>Unresolved gaps</h4>
+    <p> (a)<strong>Ground-truth camera poses are required</strong> , forcing RnG to supply VGGT-estimated poses for the VGGT+LVSM baseline, whose PSNR is only 19.394, <strong>8.1dB below LVSM's own 27.522</strong>, demonstrating severe error propagation; (b) <strong>no geometry output</strong>; (c) encoder–decoder latents are implicitly 3D but <strong>learned specifically for rendering</strong> rather than aligned with reconstruction, so geometry cannot be read out.</p>
+    <h4>How the Core Paper Responds</h4>
+    <ul>
+      <li>For (a): VGGT makes pose an <strong>endogenous output</strong> instead of an input. RnG's RA@5=85.146 exceeds VGGT's 74.239 by 10.9pp, suggesting generation actually <strong>improves</strong> pose estimation.</li>
+      <li>For (b): parallel <code>D_pmap</code> heads generate RGB and geometry from the same tokens.</li>
+      <li>For (c): <strong>This Is the Deepest Response.</strong> LVSM learns new latents; RnG reuses reconstruction K/V, naturally aligned with geometry because that was its training objective. <strong>Reusing an existing representation instead of learning a new one is the chain's largest conceptual shift.</strong></li>
+    </ul>
+    <h4>Transfer of Key Designs</h4>
+    <p>The transfer is direct: <strong>Plücker-ray maps as target-view queries</strong> are structurally identical in RnG and LVSM. RnG can be understood as <strong>replacing LVSM's encoder with VGGT and its latent tokens with a KV-cache</strong>. RnG also acknowledges sharing LVSM's missing-texture-detail problem.</p>
+  </section>
+
+  <section class="card">
+    <h3>6.4 VGGT — 2025.03 (arXiv)/ CVPR 2025 <strong>Best Paper</strong></h3>
+    <h4>Problem addressed</h4>
+    <p>VGGT addresses DUSt3R's pairwise limitation and alignment cost with alternating frame/global attention, using any number of views to <strong>simultaneously</strong> predict cameras, depth maps, point maps, and 3D point tracks, <strong>&lt; 1 second</strong>, outperforming optimized methods without postprocessing. In one sentence: <strong>one network handles all 3D perception tasks in one forward pass.</strong></p>
+    <h4>Unresolved gaps</h4>
+    <p>One Large Gap: <strong>It is purely discriminative: outputs are functions of observations rather than a model of the scene.</strong>(a) Visible-only geometry, with no backside information in CD=0.0260; (b) no generation; (c) RnG's insight: <strong>the latent space may already know the answer but lack an output channel.</strong></p>
+    <h4>How the Core Paper Responds</h4>
+    <p>RnG responds with <strong>minimal intervention</strong>: retain the architecture and pretrained initialization, adding only a binary attention mask, two output heads, and target rays, then fine-tune for 40K steps. All VGGT capabilities are preserved and <strong>improved</strong>(RA@5 74.239→85.146; source-depth Rel 5.960→0.584), while generation is added.</p>
+    <h4>Transfer of Key Designs</h4>
+    <p>What transfers is <strong>the weights themselves</strong>, the chain's only literal inheritance rather than conceptual borrowing. Thus the collapse of <code>Ours-15K-scratch</code> (PSNR −4.072dB, RA@5 −73.4pp) is the most important ablation, quantifying that inheritance. <strong>RnG discovers an unused outlet in VGGT rather than building a wholly new model.</strong> This is both its elegance and the source of criticism 2.</p>
+  </section>
+
+  <section class="card">
+    <h3>6.5 Matrix3D — 2025.02 (arXiv)/ CVPR 2025</h3>
+    <h4>Problem addressed</h4>
+    <p>Matrix3D is the <strong>first work explicitly targeting unified reconstruction and generation</strong>. A multimodal DiT combines images, camera parameters, and depth in one diffusion process; mask learning permits full-modality training with incomplete data. In one sentence: <strong>diffusion-based modality completion turns photogrammetry tasks into one fill-in-the-blank problem.</strong></p>
+    <h4>Unresolved gaps</h4>
+    <ul>
+      <li><strong>Speed</strong>: 27s/view and 2228T FLOPs, explicitly acknowledged as too costly for real-time applications.</li>
+      <li><strong>Consistency</strong>: Attractive images often lack 3D consistency. Unposed CD=0.0670 is <strong>2.58× worse than VGGT's 0.0260 without generation</strong>. </li>
+    </ul>
+    <h4>How the Core Paper Responds</h4>
+    <p>RnG answers Matrix3D by <strong>reversing direction</strong>: Matrix3D teaches reconstruction to a diffusion generator; RnG gives a reconstruction model a generative outlet. The resulting gains span CD reduction of <strong>10.0×</strong>(exactly an order of magnitude), PSNR <strong>+7.540 dB</strong>, and speed <strong>317.6×</strong>. </p>
+    <h4>Transfer of Key Designs</h4>
+    <p>What transfers is the <strong>problem definition and evaluation protocol</strong> rather than modules. Matrix3D defines joint evaluation of pose, depth, NVS, and complete 3D; RnG's Table 2 inherits this structure while changing every result. <strong>This is critical inheritance: accept a competitor's criteria and outperform it on those terms.</strong></p>
+  </section>
+
+  <h2>7 · Technical Evolution</h2>
+  <section class="card">
+    <h3>7.1 Nonlinear Evolution Tree</h3>
+    <div class="flow">                 2023.11 LRM [Large feed-forward paradigm; image→triplane NeRF; Objaverse]
+                   │ Gap: reconstruction/generation conflated; normalized poses
+                   │
+                2023.12 DUSt3R [Point-map regression; pose-free; pairwise]
+                   │ Gap: O(N²)+global alignment; visible geometry only
+                   │
+       ┌───────────┴──────────────────────────────────┐
+       │ Observations → geometry                      │ Observations → novel views
+       ▼                                              ▼
+  2025.03 VGGT (CVPR'25 Best Paper)          2024.10 LVSM (ICLR'25 Oral)
+  [One-pass poses/depth/point maps/tracks]   [Removes all 3D inductive biases]
+  [Alternating frame/global attention; &lt;1s] [Plücker queries; latent scene representation]
+       │ Gap: discriminative only, no generation       │ Gap: ground-truth poses; no geometry
+       │ Latents know the answer but lack an outlet     │ Latents not reconstruction-aligned
+       │                                                │
+       │       2025.02 Matrix3D (CVPR'25)                │
+       │       [Multimodal DiT + mask learning]          │
+       │       [Explicit reconstruction+generation]     │
+       │       Gap: 27s; weak 3D consistency             │
+       │       (CD 0.0670 &gt; VGGT 0.0260 ❗)                          │
+       │            │                                   │
+       │            │ Defines problem and evaluation    │
+       │            ▼                                   │
+       └───────────▶●◀──────────────────────────────────┘
+                    │
+       2026.03 ★ RnG (CVPR'26 Highlight): convergence
+       ├─ VGGT architecture + weights       (geometry prior)
+       ├─ LVSM Plücker-ray queries           (generation interface)
+       ├─ DUSt3R point-map output            (geometry format)
+       ├─ LRM Objaverse/GSO protocol         (evaluation convention)
+       ├─ Matrix3D problem definition       (four-dimensional evaluation)
+       └─ New: task-level mask M → KV-cache as 3D representation
+                CD 0.0067 · PSNR 26.276 · 85ms/view
+
+       ─────────── Parallel convergence attempts (2026) ───────────
+       Gen3R (2601.04090): VGGT adapter + video-diffusion latent alignment → scenes
+       NOVA3R (2603.04179): non-pixel-aligned ViT → amodal 3D, bypassing point-map visibility limits</div>
+
+    <h3>7.2 Underlying Logic</h3>
+    <h4>Driver 1: Less Specialized Representations</h4>
+    <div class="formula">Meshes/voxels → NeRF (implicit field) → 3DGS (explicit primitives) → triplane latents
+   → LVSM's learned 1D latent tokens
+      → RnG's reused KV-cache</div>
+    <p>Each step weakens the premise that 3D requires specially designed structures. RnG takes this furthest: <strong>representations are reused rather than designed.</strong></p>
+
+    <h4>Driver 2: Less Annotation-Dependent Supervision</h4>
+    <div class="formula">Pose/depth ground truth → DUSt3R removes pose inputs → RayZer removes pose supervision
+   → VGGT turns large mixed datasets into a geometric foundation → RnG fine-tunes RGB+point maps for 40K steps</div>
+
+    <h4>Driver 3: Reconstruction and Generation Converge, Reversing Direction</h4>
+    <div class="tablewrap"><table>
+      <tr><th>Stage</th><th>Dominant idea</th><th>Representative</th><th>Result</th></tr>
+      <tr><td>2023–2024</td><td>Separate approaches</td><td>LRM (reconstruction) / Zero-1-to-3 (generation)</td><td>Two independent stacks</td></tr>
+      <tr><td>First half of 2025</td><td><strong>Add geometry to generation</strong></td><td>Matrix3D</td><td>Generates, but slow and inconsistent (CD 0.0670)</td></tr>
+      <tr><td>Second half of 2025</td><td>Mature reconstruction foundation</td><td>VGGT (Best Paper)</td><td>Strong discrimination, no generation</td></tr>
+      <tr class="best"><td>2026</td><td><strong>Add a generative outlet to reconstruction</strong></td><td><strong>RnG</strong></td><td>317× faster, 10× lower CD</td></tr>
+    </table></div>
+    <p><strong>Key Turning Points</strong> There are two:</p>
+    <ol>
+      <li><strong>VGGT's arrival in March 2025 changed the balance.</strong> Before it, weak reconstruction models justified adding geometry to generators. Afterward, reconstruction accuracy far exceeded diffusion, making reversal natural. RnG states this explicitly.</li>
+      <li><strong>Invariance→cacheability in March 2026 turned a scientific question into a systems benefit.</strong> The causal mask introduced as a control also delivers 5.35× fewer FLOPs. <strong>Such alignment between methodological rigor and speed is unusual at the systems/algorithms boundary and worth noting.</strong></li>
+    </ol>
+    <p><strong>Shift in community attention</strong>: Initially, <strong>Accuracy</strong>(PSNR, Chamfer); then <strong>Generalization</strong>(zero-shot, cross-dataset); now <strong>operability of representations</strong> : editing, compression, composition, and time. RnG translates these into familiar LLM-system problems—KV compression, cache reuse, and attention pruning—potentially its greatest spillover value.</p>
+  </section>
+
+  <h2>8 · Related-Work Comparison</h2>
+  <section class="card">
+    <div class="tablewrap"><table>
+      <tr><th>Work</th><th>Year/month</th><th>Venue / publication</th><th>Core contribution</th><th>Key metrics</th><th>Relationship to RnG</th></tr>
+      <tr><td>LRM</td><td>2023.11</td><td>ICLR 2024</td><td>Large feed-forward models replace per-scene optimization</td><td>Single image → triplane NeRF, ~5s</td><td>Supplies paradigm and Objaverse/GSO protocol</td></tr>
+      <tr><td>DUSt3R</td><td>2023.12</td><td>CVPR 2024</td><td>Pose-free paired reconstruction via point-map regression</td><td>SOTA on multiple depth/relative-pose tasks</td><td>Supplies point-map output and uncertainty loss</td></tr>
+      <tr><td>LVSM</td><td>2024.10</td><td><strong>ICLR 2025 Oral</strong></td><td>Removes all explicit 3D inductive biases</td><td>GSO PSNR <strong>27.522</strong>(ground-truth poses required)</td><td>Supplies Plücker-ray query interface; <strong>the only method beating RnG on PSNR</strong></td></tr>
+      <tr><td>Matrix3D</td><td>2025.02</td><td>CVPR 2025</td><td>Multimodal DiT unifies reconstruction/generation</td><td>CD 0.0670 / PSNR 18.736 / <strong>27 s</strong></td><td>Defines problem and evaluation; RnG's <strong>primary comparator</strong></td></tr>
+      <tr><td>VGGT</td><td>2025.03</td><td><strong>CVPR 2025 Best Paper</strong></td><td>All 3D attributes in one forward pass</td><td>RA@5 74.239 / Rel 5.960 / CD 0.0260</td><td><strong>Direct source of architecture and weights</strong>; RnG's performance foundation</td></tr>
+      <tr><td>RayZer</td><td>2025.05</td><td>ICCV 2025 (BSP-HM)</td><td>Fully self-supervised, no pose/geometry labels</td><td>Comparable to posed methods</td><td>Table 1 comparator without geometric reconstruction</td></tr>
+      <tr><td>Gen3R</td><td>2026.01</td><td>arXiv (v2 2026.03)</td><td>VGGT adapter + video-diffusion latent alignment</td><td>SOTA scene generation conditioned on one or multiple images</td><td><strong>Parallel direction</strong>: also VGGT-based, but coupled with diffusion</td></tr>
+      <tr><td>NOVA3R</td><td>2026.03</td><td>arXiv</td><td>Non-pixel-aligned ViT for amodal 3D</td><td>—</td><td><strong>Parallel direction</strong>: directly tackles point-map visibility limitations</td></tr>
+      <tr class="best"><td><strong>★ RnG</strong></td><td><strong>2026.03</strong></td><td><strong>CVPR 2026 Highlight</strong></td><td><strong>KV-cache as implicit 3D + task-level causal mask</strong></td><td><strong>RA@5 85.146 / Rel 0.584 / PSNR 26.276 / CD 0.0067 / 85 ms</strong></td><td><strong>Point of convergence</strong></td></tr>
+    </table></div>
+    <div class="callout"><strong>Reading the Table:</strong> Track CD over time: pixelSplat 0.4898 → LGM 0.1130 → Matrix3D 0.0670 → VGGT 0.0260 → <strong>RnG 0.0067</strong>, about 73× lower over two years. Progress is discontinuous, with jumps from the discriminative VGGT foundation and RnG's generative outlet.</div>
+  </section>
+
+  <h2>9 · Open Challenges and Research Opportunities</h2>
+
+  <section class="card">
+    <h3>9.1 Theory</h3>
+    <h4>T1 · What Capacity Bound Does a KV-Cache 3D Representation Have?</h4>
+    <p>More specifically than studying expressiveness: <strong>For a fixed L-layer × N-token × d-dimensional cache, what scene complexity can be reconstructed losslessly?</strong> Fix the backbone and apply low-rank truncation retaining top-r singular values or token pruning retaining k%. Plot compression against CD/PSNR. A sharp knee would indicate information capacity; smooth degradation would suggest redundancy. <strong>A high-value, low-barrier experiment requiring only inference, not retraining.</strong></p>
+    <h4>T2 · Is Target-View Invariance Necessary and Sufficient for a Representation?</h4>
+    <p>Table 3's comparable FullAttn quality suggests <strong>approximate invariance may emerge without architectural enforcement</strong>. Measure reconstruction changes for fixed sources under different target queries. If differences remain below 0.1% relative change, invariance is a property that can be <strong>verified afterward rather than imposed beforehand</strong>. <strong>This could change the interpretation of the core contribution.</strong></p>
+    <h4>T3 · Transfer Limits of Reconstruction Priors for Generation</h4>
+    <p>Is hidden unsupervised geometry in VGGT general or 3D-specific? Apply query interfaces, generative heads, and limited fine-tuning to segmentation (SAM), depth, and detection backbones, testing whether other unsupervised capabilities can be read out.</p>
+  </section>
+
+  <section class="card">
+    <h3>9.2 Engineering and Applications</h3>
+    <h4>E1 · Add the Missing Controls (Criticism 2)</h4>
+    <p><strong>Specific gap</strong>: RnG's superiority to LVSM lacks a fair head-to-head. Under <strong>identical hardware, data budgets, and initialization</strong> compare (i) LVSM from scratch, (ii) LVSM initialized from VGGT, and (iii) RnG. If (ii) matches (iii), gains mainly reflect pretraining rather than architecture. <strong>This is the most important next experiment.</strong></p>
+    <h4>E2 · Standardize Decomposed CD Reporting (Criticism 3)</h4>
+    <p><strong>Specific gap</strong>: Report a <strong>2×2 matrix of accuracy/completeness and visible/unseen regions</strong>. Unseen-region accuracy most honestly measures whether generation is correct. Total CD cannot distinguish accurate completion from simply generating more geometry.</p>
+    <h4>E3 · Missing Scene-Level Benchmarks (Criticism 5)</h4>
+    <p><strong>Specific gap</strong>: Build an incomplete-geometry benchmark from handheld indoor video, with ground truth for <strong>walls and floors occluded by furniture</strong>. Target occluded-region accuracy rather than overall CD; without this, real-scene completeness claims cannot be falsified.</p>
+    <h4>E4 · Cache Policies for Dynamic Online Use</h4>
+    <p><strong>Specific gap</strong>: Streaming observations, such as a moving robot, require incremental cache updates. <strong>Should new observations append K/V entries or merge with old ones?</strong> Appending grows memory linearly; merging loses information. Design admission/eviction policies analogous to H2O or StreamingLLM, using each view's CD improvement as an admission score, and measure CD versus fixed cache budget.</p>
+    <h4>E5 · Cache Editability</h4>
+    <p><strong>Specific gap</strong>: First mask source-token K/V corresponding to one object and test whether rendering removes it cleanly instead of creating artifacts. <strong>This simple experiment helps decide whether the cache is a representation or merely an acceleration buffer.</strong></p>
+  </section>
+
+  <section class="card">
+    <h3>9.3 Emerging Directions</h3>
+    <h4>N1 · Time: KV-Cache as Explicit World-Model Memory</h4>
+    <p><strong>Specific gap</strong>: Video world models rely on external memory mechanisms with mostly heuristic representations. RnG suggests <strong>using a reconstruction backbone's KV-cache as spatial memory</strong> queried by a video generator each frame. The question is: <strong>which matters more for long-term consistency—geometrically consistent or appearance-consistent memory?</strong> Compare one generator with (a) RnG-style geometric cache, (b) visual-feature cache, and (c) both, measuring drift after 1,000 frames.</p>
+    <h4>N2 · World-Frame Equivariance (Criticism 6)</h4>
+    <p><strong>Specific gap</strong>: <strong>Can world coordinates be equivariant to source-view selection?</strong> Normalize using predicted point-cloud centroid and principal axes, adding consistency loss under random source-view permutations. Measure CD between reconstructions of the same object from different source subsets; lower means more equivariant. <strong>This metric is currently unreported.</strong></p>
+    <h4>N3 · Cache Compression and a Neural 3D Asset Format</h4>
+    <p><strong>Specific gap</strong>: If 400MB of K/V compresses to 10MB with CD degradation below 5%, it becomes a transferable 3D asset format supporting rendering through decompression. The research question is: <strong>what is the rate–distortion curve of 3D content represented by neural caches?</strong> Compare directly with 3DGS and mesh compression.</p>
+    <h4>N4 · Explicit Uncertainty Modeling</h4>
+    <p><strong>Specific gap</strong>: RnG's <code>L_pmap</code> already includes aleatoric uncertainty Σ_t, but never exposes it as an output. Could <strong>Σ_t reliably indicate observed versus guessed geometry?</strong> Split GSO pixels by ground-truth visibility and test separation of Σ_t distributions with AUROC. Success would yield confidence-aware complete 3D at no additional training cost, valuable for physical simulation. <strong>The capability may already be trained, just unused.</strong></p>
+  </section>
+
+  <h2>10 · Other Recent Work Worth Following</h2>
+  <section class="card">
+    <h4>Gen3R: 3D Scene Generation Meets Feed-Forward Reconstruction (2026.01, v2 2026.03, arXiv)</h4>
+    <p>Also based on VGGT, but <strong>couples video diffusion</strong> instead of remaining feed-forward: an adapter aligns geometric and appearance latents, generating RGB video and geometry jointly. This represents scene-level generation and matters because <strong>VGGT-latent reuse has more than one implementation path.</strong><br>
+    <a href="https://arxiv.org/abs/2601.04090">arXiv</a> ｜ <a href="https://arxiv.org/html/2601.04090v1">HTML</a></p>
+
+    <h4>NOVA3R: Non-pixel-aligned Visual Transformer for Amodal 3D Reconstruction (2026.03, arXiv)</h4>
+    <p>NOVA3R directly tackles the point-map limitation that geometry requires pixels, using a non-pixel-aligned ViT for amodal reconstruction including occluded regions. <strong>It and RnG offer two answers to the same problem</strong> : RnG supplies pixels through queries; NOVA3R removes the pixel requirement.<br>
+    <a href="https://arxiv.org/html/2603.04179v2">arXiv HTML</a></p>
+
+    <h4>TRELLIS.2 / Native and Compact Structured Latents for 3D Generation (2025.12, arXiv:2512.14692)</h4>
+    <p>The opposite pole of 3D generation uses native 3D-latent diffusion rather than image reconstruction. It contrasts purpose-built structured latents with reused general-Transformer K/V. <strong>Comparing their rate–distortion curves may become a central debate over the next two years.</strong><br>
+    <a href="https://arxiv.org/abs/2512.14692">arXiv</a> ｜ <a href="https://microsoft.github.io/TRELLIS.2/">Project page</a></p>
+
+    <h4>Matrix-Game 3.0: Real-Time and Streaming Interactive World Model with Long-Horizon Memory (2026.04, arXiv:2604.08995)</h4>
+    <p>A real-time streaming interactive world model whose central challenge is <strong>the representation of long-term memory</strong>, directly related to RnG (§9.3 N1). It demonstrates current engineering limits under joint real-time and long-consistency constraints.<br>
+    <a href="https://arxiv.org/abs/2604.08995">arXiv</a> ｜ <a href="https://matrix-game-v3.github.io/">Project page</a></p>
+
+    <h4>Transition Models: Rethinking the Generative Learning Objective (CVPR 2026 Highlight)</h4>
+    <p>A generative objective accommodating arbitrary transition step counts, turning few-step generation from distillation into objective design. Related question: <strong>how much of RnG's 317× advantage over Matrix3D would genuinely few-step diffusion erase?</strong><br>
+    <a href="https://cvpr.thecvf.com/virtual/2026/events/Highlights2026">CVPR 2026 Highlights</a></p>
+
+    <h4>tttLRM: Test-Time Training for Long Context and Autoregressive 3D Reconstruction (CVPR 2026 Highlight)</h4>
+    <p>Uses test-time training for long-context autoregressive 3D reconstruction, directly relevant to cache scalability (criticism 7): <strong>when observations exceed the training configuration, should we expand the cache or use TTT?</strong><br>
+    <a href="https://cvpr.thecvf.com/virtual/2026/events/Highlights2026">CVPR 2026 Highlights</a></p>
+
+    <h4>RayZer: A Self-supervised Large View Synthesis Model (ICCV 2025, Best Student Paper HM)</h4>
+    <p>Removes pose and geometry supervision, learning from 2D images with ray structure as the sole 3D prior. Its relevance: <strong>RayZer's self-supervised framework is a plausible alternative if RnG is to escape dependence on VGGT pretraining (criticism 2).</strong><br>
+    <a href="https://arxiv.org/abs/2505.00702">arXiv</a> ｜ <a href="https://github.com/hwjiang1510/RayZer">Code</a> ｜ <a href="https://hwjiang1510.github.io/RayZer/">Project page</a></p>
+
+    <h4>LVSM (ICLR 2025 Oral)—Worth Emphasizing Again</h4>
+    <p><strong>It remains strongest on GSO PSNR (27.522), with fully open-source code.</strong> Claims of improved novel-view synthesis should compare against LVSM-100K, not only LVSM-40K.<br>
+    <a href="https://arxiv.org/abs/2410.17242">arXiv</a> ｜ <a href="https://github.com/haian-jin/LVSM">Code</a> ｜ <a href="https://proceedings.iclr.cc/paper_files/paper/2025/hash/9676c5283df26cabca412ca66b164a7d-Abstract-Conference.html">ICLR Proceedings</a></p>
+  </section>
+
+  <h2>11 · At a Glance</h2>
+  <section class="card">
+    <div class="tablewrap"><table>
+      <tr><th>Dimension</th><th>Conclusion</th></tr>
+      <tr class="best"><td><strong>Summary</strong></td><td>The reconstruction network's KV-cache can itself be a 3D representation</td></tr>
+      <tr><td><strong>Strongest evidence</strong></td><td>Source-depth Rel 5.960 (VGGT) → 0.584 (RnG), same backbone and initialization, a reduction of <strong>90.2 %</strong></td></tr>
+      <tr><td><strong>Largest contrast</strong></td><td>The headline causal mask loses eight of ten Table 3 quality metrics; its value is 5.35× fewer FLOPs and guaranteed invariance</td></tr>
+      <tr><td><strong>Sole defeat</strong></td><td>PSNR 26.276 &lt; LVSM-100K's 27.522 (−1.246dB); authors acknowledge insufficient detail</td></tr>
+      <tr><td><strong>Most underrated result</strong></td><td>At eight inputs, RnG (27.608) <strong>pose-free</strong> overtakes LVSM-100K (27.522) <strong>with known poses</strong></td></tr>
+      <tr><td><strong>Main methodological weakness</strong></td><td>World origin implicitly uses source optical-axis intersections → dataset protocol rather than geometric invariance → no quantitative CO3D results</td></tr>
+      <tr><td><strong>Most needed experiment</strong></td><td>VGGT-initialized LVSM control; accuracy/completeness CD decomposition; 16-/32-view extrapolation</td></tr>
+      <tr><td><strong>Largest spillover value</strong></td><td>Turns 3D representation into an LLM-systems problem: KV compression, cache reuse, attention pruning</td></tr>
+    </table></div>
+  </section>
+
+  <footer>
+    <p><strong>Footnote 1 · Index Not Updated Automatically.</strong> This scheduled run occurred in a cloud environment without access to the user's desktop filesystem, so <code>ml-report-index.md</code> could not be appended. Suggested entry:<br>
+    <code>2026-08-05 | Generative models | RnG: A Unified Transformer for Complete 3D Modeling from Partial Observations | CVPR 2026 Highlight | Reconstruction-Transformer KV-cache as a queryable implicit 3D representation; task-level causal masking yields 5.35× fewer FLOPs and 10× better Chamfer Distance.</code></p>
+    <p><strong>Footnote 2 · Data Sources.</strong> All performance figures are cited from <a href="https://arxiv.org/abs/2603.01194">arXiv:2603.01194</a> (v1), Tables 2/3/4/5, with table and row references throughout. Relative gains, ratios, and asymptotes are calculated here using formulas shown in the text.</p>
+    <p><strong>Footnote 3 · Sampling.</strong> 27 candidates; random selection <code>shuf -i 1-27 -n 1</code> →14, with zero redraws. The rotating field follows <code>date +%u</code> =3 (Wednesday: generative models).</p>
+    <p style="margin-top:18px;color:var(--baseline)">Daily ML/AI Paper Review · Generated 2026-08-05 · Automatically generated technical analysis based on public papers; interpretations may be mistaken and should be checked against the originals.</p>
+  </footer>
+
+</div>
+<div class="tip" id="tip"></div>
+<script>
+(function(){
+  var tip = document.getElementById('tip');
+  document.querySelectorAll('svg.chart .bar, svg.chart .dot').forEach(function(el){
+    el.addEventListener('mouseenter', function(e){
+      tip.innerHTML = '<b>' + el.getAttribute('data-label') + '</b>' + el.getAttribute('data-value');
+      tip.style.opacity = '1';
+    });
+    el.addEventListener('mousemove', function(e){
+      var x = e.clientX + 14, y = e.clientY - 12;
+      if (x + 220 > window.innerWidth) x = e.clientX - 200;
+      tip.style.left = x + 'px';
+      tip.style.top = y + 'px';
+    });
+    el.addEventListener('mouseleave', function(){ tip.style.opacity = '0'; });
+  });
+})();
+</script>
+</body>
+</html>

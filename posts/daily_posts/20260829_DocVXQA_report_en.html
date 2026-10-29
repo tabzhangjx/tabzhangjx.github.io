@@ -1,0 +1,948 @@
+---
+layout: null
+title: "DocVXQA"
+date: 2026-08-29
+topic: trustworthy-theory
+tags: ["trustworthy-theory"]
+excerpt: "Sufficiency, minimality, and token interactions for document-QA explanations, with a focus on faithfulness."
+permalink: "/blog/2026/08/29/docvxqa-document-vqa-explanations/en/"
+blog_post: false
+lang: en
+sitemap: true
+alternate_zh: "/blog/2026/08/29/docvxqa-document-vqa-explanations/"
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>DocVXQA: Contextual Explanations, or Answer-Conditioned Support Maps? · 2026-08-29</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" aria-pressed="false">☾ Dark</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ML / AI DAILY DEEP PAPER · ICML 2025</p>
+    <h1>DocVXQA: Contextual Explanations, or Answer-Conditioned Support Maps?</h1>
+    <p class="subtitle">Sufficiency × minimality × token interaction: More readable explanations need stronger fidelity audits</p>
+    <div class="meta" aria-label="Report metadata">
+      <span class="chip source">ICML 2025 · PMLR 267</span>
+      <span class="chip">2026-08-29</span>
+      <span class="chip">Theory and Trustworthiness / Self-Explainable Learning</span>
+    </div>
+    <p class="lede">DocVXQA raises masked PFL-DocVQA ANLS from ColPali's 0.39 to 0.66, but its training prior uses ground-truth answers; heatmaps have not yet been shown faithful to the original prediction mechanism.</p>
+  </header>
+
+  <main>
+<section class="card" aria-labelledby="0-链接验证表与证据规则"><h2 id="0-链接验证表与证据规则">0. Link-verification table and evidence rules</h2>
+<p>All URLs below were actually accessed on 2026-08-29. Experimental numbers come from downloaded ICML/PMLR PDFs read page by page; public code verifies implementation, and web abstracts do not fill unreported values.</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Resources</th>
+<th scope="col">Verified link</th>
+<th scope="col">State</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>ICML/PMLR</td>
+<td><a href="https://proceedings.mlr.press/v267/souibgui25a.html">PMLR paper page</a></td>
+<td>ICML 2025 main conference, pages 56549–56569</td>
+</tr>
+<tr class="even">
+<td>arXiv</td>
+<td><a href="https://arxiv.org/abs/2505.07496">arXiv:2505.07496</a></td>
+<td><strong>v1, 2025-05-12 12:30:16 UTC</strong>; no later versions</td>
+</tr>
+<tr class="odd">
+<td>OpenReview</td>
+<td><a href="https://openreview.net/forum?id=wex0vL4c2Y">forum</a></td>
+<td>Found</td>
+</tr>
+<tr class="even">
+<td>Code</td>
+<td><a
+href="https://github.com/dali92002/DocVXQA">dali92002/DocVXQA</a></td>
+<td>Public, CC BY-NC 4.0; training, data, and parameter code reviewed file by file</td>
+</tr>
+<tr class="odd">
+<td>Weights</td>
+<td><a
+href="https://drive.google.com/file/d/1m7ypGW7kxzL_Him4b-iIwkmgB6_-dA5x/view">Google Drive link supplied in README</a></td>
+<td>Link exists; current network policy prevents direct download, so file hash/size unverified</td>
+</tr>
+<tr class="even">
+<td>DocVQA data</td>
+<td><a href="https://www.docvqa.org/datasets/docvqa">Official data page</a></td>
+<td class="num">50K questions, 12K+ images; download through RRC portal</td>
+</tr>
+<tr class="odd">
+<td>PFL-DocVQA</td>
+<td><a
+href="https://github.com/rubenpt91/PFL-DocVQA-Competition">Official competition repository</a></td>
+<td>Competition/data descriptions available; download permissions/full package not reobtained in this run</td>
+</tr>
+<tr class="even">
+<td>Project page</td>
+<td>No standalone project page found</td>
+<td>GitHub README serves as project page</td>
+</tr>
+<tr class="odd">
+<td>Video / poster</td>
+<td>README contains an ICML virtual link, inaccessible in this environment</td>
+<td>No claim of having watched the video</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Evidence labels</strong>: Tables 1–5, Figures 3–4, and Equations (1)–(3) refer to the core PDF; code locations refer to actual GitHub default-branch files. Multiple random seeds, training variance, GPU/time, and energy are unreported; corresponding sections explicitly retain that status.</p>
+</section><section class="card" aria-labelledby="1-候选池排重与随机选择"><h2 id="1-候选池排重与随机选择">1. Candidate pool, deduplication, and random selection</h2>
+<p>Executed by local America/Los_Angeles date <code>date +%u</code> returned
+<strong>6 (Saturday)</strong>. First read <code>ml-report-index.md</code>, excluding SAE canonicality, LIMEFLDL, Alignment Potential, and other interpretation/alignment topics covered in the preceding 14 days. The 24-paper pool came from cross-searching ICML/NeurIPS proceedings, OpenReview, arXiv, Hugging Face Papers, Papers with Code, and Semantic Scholar:</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">#</th>
+<th scope="col">Candidate</th>
+<th scope="col">Topic</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td>Memorization Sinks</td>
+<td>Memory isolation / privacy</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td>OR-Bench</td>
+<td>Over-refusal evaluation</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td>Just Enough Shifts / ACTOR</td>
+<td>Representation editing and over-refusal</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td>POROver</td>
+<td>Safety–helpfulness alignment</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td>Weak-to-Strong Jailbreaking</td>
+<td>Weak-to-strong jailbreaks</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td>Representations Shape Weak-to-Strong Generalization</td>
+<td>Generalization theory</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td>Does Generation Require Memorization?</td>
+<td>Generation and memorization</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">8</td>
+<td>On Volume Minimization in Conformal Regression</td>
+<td>conformal theory</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td>Policy-labeled Preference Learning</td>
+<td>RLHF identifiability</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td>ELITE</td>
+<td>Multimodal toxicity evaluation</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td>Be Confident</td>
+<td>MLLM calibration / overfitting</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;"><strong>12</strong></td>
+<td><strong>DocVXQA</strong></td>
+<td><strong>Self-explainable document QA</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td>One-Step Generalization Ratio</td>
+<td>Domain generalization</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td>Outlier Gradient Analysis</td>
+<td>Data attribution</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td>Bi-perspective Splitting Defense</td>
+<td>Backdoor defense</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">16</td>
+<td>X-Transfer Attacks</td>
+<td>Adversarial transfer</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td>Classifier Revelation in Strategic Classification</td>
+<td>Policy-learning theory</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td>Algorithms with Calibrated ML Predictions</td>
+<td>Calibration theory</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">19</td>
+<td>Susceptibility to Catastrophic Forgetting</td>
+<td>Forgetting prediction</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">20</td>
+<td>Representational Similarity as Robustness</td>
+<td>Robustness</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">21</td>
+<td>Data Attribution at Scale</td>
+<td>Data-attribution systems</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">22</td>
+<td>Certified Smoothing under Shift</td>
+<td>Certified robustness</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">23</td>
+<td>Mechanistic Unlearning and Editing</td>
+<td>Machine unlearning</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">24</td>
+<td>Debate under Weak Judges</td>
+<td>Scalable oversight</td>
+</tr>
+</tbody>
+</table></div>
+<p>Running <code>shuf -i 1-24 -n 1</code> returned <strong>12</strong>. DocVXQA is an ICML 2025 main-conference paper with 21 pages of text/appendices, code, weight links, and descriptions of two datasets; no redraw was required. The full candidate pool is saved separately in
+<code>candidates_2026-08-29.tsv</code>. </p>
+</section><section class="card" aria-labelledby="2-motivation答案位置不是答案理由"><h2 id="2-motivation答案位置不是答案理由">2. Motivation: The answer's location is not its justification</h2>
+<p>DocVQA takes document image (X) and question (q), producing answer string (Y). Tables, headings, units, column names, footnotes, and layout jointly determine a value's meaning. For “What is the total amount?”, boxing only
+<code>$180,000</code> may reproduce the answer without explaining why it is the total or which table/column it belongs to. Pages 1–3 distinguish:</p>
+<ul>
+<li><strong>answer localization</strong>: Locate where the answer text appears;</li>
+<li><strong>context-aware
+explanation</strong>: Include the context making the answer semantically valid;</li>
+<li><strong>representation
+efficiency</strong>: Avoid highlighting the whole page.</li>
+</ul>
+<p>Existing post-hoc methods face two extremes. Gradient/attention methods are cheap but noisy or simply follow model attention; perturbation methods are closer to causal interventions but require many masked forward passes. Localization supervision applies only to extractive examples whose answers can be copied. The paper operationalizes the tradeoff through three metrics: masked re-answering Accuracy and ANLS measure <strong>sufficiency</strong>, while retained Pixel Ratio measures <strong>minimality</strong>(PDF page 6, §4.1).</p>
+<p>Direct evidence illustrates the problem: raising raw-attention threshold from 0.05 to 0.50 on DocVQA reduces Pixel Ratio from 0.38 to 0.04, but Accuracy falls from 0.34 to 0.03 and ANLS from 0.46 to 0.08; corresponding PFL-DocVQA Accuracy falls from 0.06 to 0.00 (Table 1, page 6). A single saliency ranking struggles to preserve both the answer and semantic context, beyond simple threshold tuning.</p>
+</section><section class="card" aria-labelledby="3-论文故事线关键假设与权衡"><h2 id="3-论文故事线关键假设与权衡">3. Paper narrative, key assumptions, and tradeoffs</h2>
+<p>The narrative has four steps:</p>
+<ol type="1">
+<li>Use Pix2Struct to process the full page and generate answers, while deriving a learnable mask (M) from encoder tokens, decoder attention, and positional encodings.</li>
+<li>Treat (T=X\odot M) as an information-bottleneck representation: masked regions should suffice to predict (Y) while remaining small.</li>
+<li>Answerability plus sparsity alone degenerates into copying answer text. Use ColPali question/document and answer/document late-interaction heatmaps as token-interaction priors to require broader context.</li>
+<li>At inference, enclose connected regions in bounding boxes and retain only the top-(k) for readability.</li>
+</ol>
+<p>The key assumptions are that a mask is sufficient if the same DocVQA backbone generates the same answer from it, minimal if its area is small, and more context-aware if close to the ColPali prior. These are operational surrogates, not inherently equivalent to fidelity. The tradeoff sacrifices unmasked task performance for explanation learning: on PFL-DocVQA, the method's unmasked Accuracy/ANLS is 0.57/0.79 versus original Pix2Struct's 0.80/0.92 (Table 1), absolute drops of <strong>23/13 percentage points</strong>. </p>
+</section><section class="card" aria-labelledby="4-方程级形式化与实现流程"><h2 id="4-方程级形式化与实现流程">4. Equation-level formulation and implementation</h2>
+<p>Information-bottleneck prototype (PDF Equation 1, pages 3–4):</p>
+<p>[ \min_M \mathcal L_{IB}=\beta I(X;X\odot M)-I(X\odot M;Y). ]</p>
+<p>The second term represents sufficiency. Since (H(Y)) is constant for fixed labels, autoregressive cross-entropy approximates it:</p>
+<p>[ \max I(X\odot M;Y)=H(Y)-H(Y|X\odot M) \Longleftrightarrow \min
+\mathcal L_{CE}(Y,\hat Y_M). ]</p>
+<p>The first term does not actually estimate mutual information as in Equation (1). Kernel-density MI was tried but found sensitive to high-dimensional images and hyperparameters, failing to achieve expected results (pages 4–5, §3.3). It was replaced with L1 sparsity and anisotropic total variation:</p>
+<p>[ \mathcal
+L_{min}=\lambda_1|M|<em>1+\lambda</em>{tv}\sum_{i,j}(|M_{i+1,j}-M_{i,j}|+|M_{i,j+1}-M_{i,j}|).
+]</p>
+<p>With ColPali prior (M_p), the final objective (Equation 3, page 5) is:</p>
+<p>[ \min \mathcal L_{VXQA}=\gamma,\mathrm{MSE}(M_p,M)+\beta\mathcal
+L_{min}(M)+\mathcal L_{CE}(Y,\hat Y_M). ]</p>
+<p>However, paper symbols and public-code names are confusing: PDF Table 4 gives (\gamma=0.5,\beta=5), while code <code>arg_utils.py</code> Moderate
+<code>gamma=0.5</code> denotes minimality and <code>beta=5</code> denotes ColPali interaction; <code>train.py</code> combines them as
+<code>gamma * loss_mask + beta * loss_mask_colpali</code>, reversing their letter positions in Equation (3). Values do not conflict, but <strong>semantic-label conflicts</strong> complicate reproduction.</p>
+<pre class="text"><code>Training:
+  full image + question ──&gt; Pix2Struct ──&gt; answer loss (pass 1)
+              │ decoder attention / encoder token / position
+              └──────────&gt; mask head ──&gt; sigmoid relevance M
+  question + image ──&gt; ColPali heatmap ─┐
+  GT answer + image ──&gt; ColPali heatmap ├─ add ─&gt; prior Mp
+                                        └─ MSE(M,Mp)
+  image ⊙ M ──&gt; same backbone ──&gt; answer loss (sufficiency)
+  M ──&gt; L1 + TV (minimality)
+
+Inference: question + image ─&gt; M ─&gt; connected components ─&gt; top-k boxes
+                         └─ masked image ─&gt; answer</code></pre>
+</section><section class="card" aria-labelledby="5-机制与工程细节表"><h2 id="5-机制与工程细节表">5. Mechanisms and engineering details</h2>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Module</th>
+<th scope="col">Input / output</th>
+<th scope="col">Role</th>
+<th scope="col">Reproducible details</th>
+<th scope="col">Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Pix2Struct-base</td>
+<td>image+rendered question→answer</td>
+<td>Main DocVQA backbone</td>
+<td class="num">282M; 12 encoder + 12 decoder, hidden 768</td>
+<td>Appendix A.3, page 14</td>
+</tr>
+<tr class="even">
+<td>Mask head</td>
+<td>encoder feature, decoder attention, positional encoding→patch
+score</td>
+<td>Intrinsic explanations</td>
+<td>MLP + sigmoid; depth/width unreported</td>
+<td>Appendix A.2, page 14</td>
+</tr>
+<tr class="odd">
+<td>Sufficiency</td>
+<td>masked image→answer CE</td>
+<td>Ensure explanations support answering</td>
+<td>Two forward passes; code additionally includes full-image answer loss</td>
+<td>Equation 2; <code>train.py</code></td>
+</tr>
+<tr class="even">
+<td>Minimality</td>
+<td>mask→L1+TV</td>
+<td>Small and contiguous</td>
+<td><code>lambda_reg=0.3</code> Visible only in code; absent from Table 4</td>
+<td>§3.3; <code>arg_utils.py</code></td>
+</tr>
+<tr class="odd">
+<td>Token interaction</td>
+<td>Q-image and A-image ColPali maps → prior</td>
+<td>Add semantic context</td>
+<td>README explicitly generates and sums two maps</td>
+<td>§3.4; <code>data.py:114–117</code></td>
+</tr>
+<tr class="even">
+<td>Postprocessing</td>
+<td>heatmap→connected boxes→top-k</td>
+<td>Human-readable masks</td>
+<td>Default k=3; applied only at inference</td>
+<td>§3.6; Tables 4–5</td>
+</tr>
+<tr class="odd">
+<td>Optimization</td>
+<td>All model parameters</td>
+<td>Joint training</td>
+<td>lr 1e-7, batch 5, AdamW, 100 epochs/seed42 fully specified only in code</td>
+<td>Table 4; <code>arg_utils.py</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>Page 4 says the decoder is frozen to preserve text-prediction consistency. However, the public default configuration is
+<code>decoder_frozen=False</code>, and the training script sets
+<code>requires_grad=False</code> only when that flag is true; AdamW then receives
+<code>model.parameters()</code>. Thus the README's direct-training path updates the decoder by default. Unless authors overrode parameters, the paper and public defaults disagree.</p>
+</section><section class="card" aria-labelledby="6-数据集基准与指标"><h2 id="6-数据集基准与指标">6. Datasets, benchmarks, and metrics</h2>
+<ul>
+<li><strong>DocVQA</strong>: Official pages describe approximately 50K questions and 12K+ document images, with answers as single text spans in images. The paper uses it for conventional document explanations.</li>
+<li><strong>PFL-DocVQA</strong>: Invoice domain, originally built from 4,968 manually verified documents and 32,701 newly annotated documents (PFL source paper §4). DocVXQA treats it as a cross-domain/complex-layout test but does not report actual split sizes used.</li>
+<li><strong>Accuracy</strong>: Exact/task-defined accuracy; higher is better.</li>
+<li><strong>ANLS</strong>: Normalized Levenshtein similarity, tolerant of small OCR/generated-string differences; higher is better.</li>
+<li><strong>Pixel
+Ratio</strong>: Retained pixel area / full image area; lower is more concise, but does not establish causality or ground-truth evidence coverage.</li>
+<li><strong>Human evaluation</strong>: 42 participants × 10 images, rating Context and Clarity from 1–5; a second preference experiment uses 12 participants × 21 QA pairs = 252 trials, reporting exact-binomial-style CIs and p-values.</li>
+</ul>
+</section><section class="card" aria-labelledby="7-主结果完整数据矩阵"><h2 id="7-主结果完整数据矩阵">7. Complete main-results matrix</h2>
+<p>All readable values from Table 1 follow. Each method/threshold reports Accuracy, ANLS, and Pixel Ratio across both datasets; <strong>Bold</strong> marks the best point estimate per column among explainable methods, but the smallest Pixel Ratio often reflects utility collapse and should not be read as overall best.</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Method (threshold)</th>
+<th scope="col" style="text-align: right;">Doc Acc</th>
+<th scope="col" style="text-align: right;">Doc ANLS</th>
+<th scope="col" style="text-align: right;">Doc Pixel↓</th>
+<th scope="col" style="text-align: right;">PFL Acc</th>
+<th scope="col" style="text-align: right;">PFL ANLS</th>
+<th scope="col" style="text-align: right;">PFL Pixel↓</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Pix2Struct unmasked</td>
+<td style="text-align: right;">0.56</td>
+<td style="text-align: right;">0.68</td>
+<td style="text-align: right;">1.00</td>
+<td style="text-align: right;">0.80</td>
+<td style="text-align: right;">0.92</td>
+<td style="text-align: right;">1.00</td>
+</tr>
+<tr class="even">
+<td>Our model unmasked</td>
+<td style="text-align: right;">0.51</td>
+<td style="text-align: right;">0.65</td>
+<td style="text-align: right;">1.00</td>
+<td style="text-align: right;">0.57</td>
+<td style="text-align: right;">0.79</td>
+<td style="text-align: right;">1.00</td>
+</tr>
+<tr class="odd">
+<td>Raw attention .05</td>
+<td style="text-align: right;">0.34</td>
+<td style="text-align: right;">0.46</td>
+<td style="text-align: right;">0.38</td>
+<td style="text-align: right;">0.06</td>
+<td style="text-align: right;">0.13</td>
+<td style="text-align: right;">0.27</td>
+</tr>
+<tr class="even">
+<td>Raw attention .10</td>
+<td style="text-align: right;">0.20</td>
+<td style="text-align: right;">0.32</td>
+<td style="text-align: right;">0.20</td>
+<td style="text-align: right;">0.04</td>
+<td style="text-align: right;">0.10</td>
+<td style="text-align: right;">0.17</td>
+</tr>
+<tr class="odd">
+<td>Raw attention .25</td>
+<td style="text-align: right;">0.07</td>
+<td style="text-align: right;">0.13</td>
+<td style="text-align: right;">0.08</td>
+<td style="text-align: right;">0.01</td>
+<td style="text-align: right;">0.04</td>
+<td style="text-align: right;">0.09</td>
+</tr>
+<tr class="even">
+<td>Raw attention .50</td>
+<td style="text-align: right;">0.03</td>
+<td style="text-align: right;">0.08</td>
+<td style="text-align: right;">0.04</td>
+<td style="text-align: right;">0.00</td>
+<td style="text-align: right;">0.01</td>
+<td style="text-align: right;">0.05</td>
+</tr>
+<tr class="odd">
+<td>Attention rollout .01</td>
+<td style="text-align: right;">0.03</td>
+<td style="text-align: right;">0.07</td>
+<td style="text-align: right;">0.04</td>
+<td style="text-align: right;">0.00</td>
+<td style="text-align: right;">0.02</td>
+<td style="text-align: right;"><strong>0.03</strong></td>
+</tr>
+<tr class="even">
+<td>Attention rollout 1e-5</td>
+<td style="text-align: right;">0.06</td>
+<td style="text-align: right;">0.11</td>
+<td style="text-align: right;">0.07</td>
+<td style="text-align: right;">0.00</td>
+<td style="text-align: right;">0.03</td>
+<td style="text-align: right;">0.05</td>
+</tr>
+<tr class="odd">
+<td>Grad-CAM .50</td>
+<td style="text-align: right;">0.01</td>
+<td style="text-align: right;">0.05</td>
+<td style="text-align: right;">0.18</td>
+<td style="text-align: right;">0.00</td>
+<td style="text-align: right;">0.03</td>
+<td style="text-align: right;">0.16</td>
+</tr>
+<tr class="even">
+<td>ColPali+Pix2Struct .50</td>
+<td style="text-align: right;"><strong>0.38</strong></td>
+<td style="text-align: right;">0.50</td>
+<td style="text-align: right;">0.23</td>
+<td style="text-align: right;">0.28</td>
+<td style="text-align: right;">0.39</td>
+<td style="text-align: right;">0.18</td>
+</tr>
+<tr class="odd">
+<td><strong>DocVXQA .70</strong></td>
+<td style="text-align: right;"><strong>0.38</strong></td>
+<td style="text-align: right;"><strong>0.54</strong></td>
+<td style="text-align: right;">0.23</td>
+<td style="text-align: right;"><strong>0.43</strong></td>
+<td style="text-align: right;"><strong>0.66</strong></td>
+<td style="text-align: right;">0.22</td>
+</tr>
+<tr class="even">
+<td>DocVXQA .80</td>
+<td style="text-align: right;">0.30</td>
+<td style="text-align: right;">0.46</td>
+<td style="text-align: right;">0.11</td>
+<td style="text-align: right;">0.33</td>
+<td style="text-align: right;">0.54</td>
+<td style="text-align: right;">0.13</td>
+</tr>
+</tbody>
+</table></div>
+<p>Equal-area comparisons are most informative. On DocVQA, DocVXQA .70 and ColPali .50 both have Pixel Ratio 0.23: Accuracy ties at 0.38, while ANLS rises 0.50→0.54, <strong>+4 percentage points, or +8% relative</strong>. On PFL, area is 4 pp larger (0.22 versus 0.18), while Accuracy rises 0.28→0.43, <strong>+15pp / +53.6%</strong>; ANLS
+0.39→0.66, <strong>+27pp / +69.2%</strong>. This supports cross-domain value of contextual priors, but is not strictly equal-area.</p>
+<p>A closer-area PFL comparison gives DocVXQA .80 at 0.13 pixels versus raw attention .10 at 0.17: despite 4 pp less area, Accuracy rises 0.04→0.33 (+29 pp) and ANLS 0.10→0.54 (+44 pp). This is the main table's strongest evidence.</p>
+<p>The upper-bound loss must also be noted: the method's unmasked model trails original Pix2Struct by 5 pp Accuracy/3 pp ANLS on DocVQA and 23 pp/13 pp on PFL. Joint mask training does not preserve original task capability; improved explanations incur substantial backbone-utility costs.</p>
+</section><figure class="figure" aria-labelledby="fig-pfl-title"><p class="fig-title" id="fig-pfl-title">PFL-DocVQA: Context priors and masked re-answering</p><p class="fig-sub">Higher ANLS is better; see Table 1 for Pixel Ratios at different operating points.</p><svg class="chart" viewBox="0 0 840 320" role="img" xmlns="http://www.w3.org/2000/svg"><title>PFL-DocVQA ANLS comparison</title><desc>Raw attention 0.05 scores 0.13, 0.10 scores 0.10, ColPali 0.39, DocVXQA 0.80 scores 0.54, and DocVXQA 0.70 scores 0.66.</desc><line x1="65" y1="266" x2="805" y2="266" stroke="var(--grid)"/><line x1="65" y1="56" x2="65" y2="266" stroke="var(--grid)"/><text x="55" y="270" font-size="11" text-anchor="end">0</text><text x="55" y="161" font-size="11" text-anchor="end">0.35</text><text x="55" y="60" font-size="11" text-anchor="end">0.70</text><rect x="100" y="227.0" width="78" height="39.0" rx="5" fill="var(--chart-accent)" tabindex="0" data-tip="Raw .05: ANLS 0.13"/><text x="139" y="288" font-size="12" text-anchor="middle">Raw .05</text><text x="139" y="219.0" font-size="12" text-anchor="middle">0.13</text><rect x="240" y="236.0" width="78" height="30.0" rx="5" fill="var(--chart-accent)" tabindex="0" data-tip="Raw .10: ANLS 0.10"/><text x="279" y="288" font-size="12" text-anchor="middle">Raw .10</text><text x="279" y="228.0" font-size="12" text-anchor="middle">0.10</text><rect x="380" y="149.0" width="78" height="117.0" rx="5" fill="var(--chart-accent)" tabindex="0" data-tip="ColPali: ANLS 0.39"/><text x="419" y="288" font-size="12" text-anchor="middle">ColPali</text><text x="419" y="141.0" font-size="12" text-anchor="middle">0.39</text><rect x="520" y="104.0" width="78" height="162.0" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="DocVXQA .80: ANLS 0.54"/><text x="559" y="288" font-size="12" text-anchor="middle">DocVXQA .80</text><text x="559" y="96.0" font-size="12" text-anchor="middle">0.54</text><rect x="660" y="68.0" width="78" height="198.0" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="DocVXQA .70: ANLS 0.66"/><text x="699" y="288" font-size="12" text-anchor="middle">DocVXQA .70</text><text x="699" y="60.0" font-size="12" text-anchor="middle">0.66</text></svg><figcaption>Source: DocVXQA Table 1 (PDF page 6); hover or keyboard-focus bars for exact values.</figcaption></figure><section class="card" aria-labelledby="8-消融超参敏感性与相变"><h2 id="8-消融超参敏感性与相变">8. Ablations, sensitivity, and transitions</h2>
+<h3 id="81-三目标消融">8.1 Three-objective ablation</h3>
+<p>Table 2 (page 8) row labels are confirmed by the text:</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Target</th>
+<th scope="col" style="text-align: right;">Accuracy</th>
+<th scope="col" style="text-align: right;">ANLS</th>
+<th scope="col" style="text-align: right;">Pixel Ratio</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>S (sufficiency only)</td>
+<td style="text-align: right;"><strong>0.51</strong></td>
+<td style="text-align: right;"><strong>0.65</strong></td>
+<td style="text-align: right;">1.00</td>
+</tr>
+<tr class="even">
+<td>S+M</td>
+<td style="text-align: right;">0.19</td>
+<td style="text-align: right;">0.36</td>
+<td style="text-align: right;"><strong>0.02</strong></td>
+</tr>
+<tr class="odd">
+<td>S+M+TI</td>
+<td style="text-align: right;">0.38</td>
+<td style="text-align: right;">0.54</td>
+<td style="text-align: right;">0.23</td>
+</tr>
+</tbody>
+</table></div>
+<p>From S to S+M, area decreases by <strong>98%</strong>, but Accuracy drops 32 pp and ANLS 29 pp: minimality pushes the model into a collapse regime that merely copies answer characters. Adding TI increases area by 21 pp while recovering 19 pp Accuracy and 18 pp ANLS; the ColPali prior is core anti-degeneration supervision, not a minor adjustment.</p>
+<h3 id="82-top-k-敏感性">8.2 Top-k sensitivity</h3>
+<p>Table 5 (page 14) lists k=1/2/3/4/5/8/10/15/20/50/100. Accuracy rises monotonically from 0.36 to 0.45, ANLS from 0.52 to 0.60, and Pixel Ratio from 0.21 to 0.40; k=3 gives 0.38/0.54/0.24. The authors call k=3 the best tradeoff, but provide no formal utility function or human study locating a breakpoint. In fact, k=4 adds only 1 pp area over k=3 while gaining 1 pp Accuracy/ANLS. There is no data-established sharp transition, only an author-preferred operating point.</p>
+<h3 id="83-权重敏感性">8.3 Weight sensitivity</h3>
+<p>Only (\gamma=0.5,\beta=5) is reported, without grids, curves, or cross-dataset tuning procedures; code additionally specifies
+<code>lambda_reg=0.3</code>, <code>alpha_1=2</code>, <code>alpha_2=1</code>, 100 epochs, and seed 42. Robustness to TI/minimality weights cannot be inferred, nor whether area 0.23 is a stable Pareto solution or a single-point choice.</p>
+<h3 id="84-统计显著性">8.4 Statistical significance</h3>
+<p>The second human evaluation reports 163/252 preferring DocVXQA, namely <strong>64.7%, 95% CI
+[58.4%,70.6%], p≪0.001</strong>(page 9), the paper's only explicit significance result. Main tables, ablations, thresholds, and the first 42-person study provide only point estimates or means±dispersion, without seed/sample-bootstrap CIs. Table 3 does not define ± as SD or SE, preventing precise significance inference.</p>
+</section><section class="card" aria-labelledby="9-人类评价真正证明了什么"><h2 id="9-人类评价真正证明了什么">9. Human evaluation: What is actually demonstrated?</h2>
+<p>Table 3:</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">Context↑</th>
+<th scope="col" style="text-align: right;">Clarity↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Raw attention .25</td>
+<td style="text-align: right;">2.90±0.48</td>
+<td style="text-align: right;">2.75±0.42</td>
+</tr>
+<tr class="even">
+<td>Raw attention .50</td>
+<td style="text-align: right;">2.26±0.54</td>
+<td style="text-align: right;">2.34±0.60</td>
+</tr>
+<tr class="odd">
+<td>ColPali+Pix2Struct</td>
+<td style="text-align: right;">3.97±0.25</td>
+<td style="text-align: right;">3.02±0.42</td>
+</tr>
+<tr class="even">
+<td><strong>DocVXQA .70</strong></td>
+<td style="text-align: right;"><strong>4.49±0.26</strong></td>
+<td style="text-align: right;"><strong>3.56±0.41</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>Relative to ColPali, Context improves +0.52 (+13.1%) and Clarity +0.54 (+17.9%); direct preference in the second study is also significant. Thus masks are preferred and more useful for answering from the mask. However, participants see the question and ground-truth answer (page 8), judging support for a known answer rather than answering blindly or diagnosing errors. High scores do not establish better real-world trust calibration.</p>
+</section><section class="card" aria-labelledby="10-技术来源链解决什么遗留缺口如何回应设计如何传递"><h2 id="10-技术来源链解决什么遗留缺口如何回应设计如何传递">10. Technical lineage: Problems solved, remaining gaps, responses, and inherited designs</h2>
+<h3 id="pix2structicml-2023">Pix2Struct (ICML 2023)</h3>
+<p><a href="https://proceedings.mlr.press/v202/lee23g.html">The paper</a> Uses masked-screenshot→simplified-HTML pretraining and variable-resolution patches to unify vision-language tasks (PDF pages 1–4), providing an OCR-free encoder-decoder for DocVQA. It outputs answers without exposing evidence. DocVXQA retains the 282M base backbone, adds a mask head, and performs a masked second pass. The inheritance is
+<strong>screenshot-parsing representations → learnable patch bottlenecks</strong>. </p>
+<h3 id="grad-camiccv-2017">Grad-CAM (ICCV 2017)</h3>
+<p><a href="https://arxiv.org/abs/1610.02391">The paper</a> Weights convolutional feature maps by target-output gradients to produce localization maps (PDF pages 2–4), without training changes. Autoregressive answers require cross-token aggregation, and gradient maps do not guarantee sufficiency. DocVXQA integrates explanations into training and tests masked re-answering. The inheritance is
+<strong>output-relevance heatmaps → intervenable input masks</strong>. </p>
+<h3 id="information-bottleneck-attention--dib-x-路线">Information Bottleneck attention / DIB-X lineage</h3>
+<p><a
+href="https://research.google/pubs/information-bottleneck-approach-to-self-attention/">IB
+self-attention</a> Treats masks as compressed representations preserving label information while removing input redundancy; DIB-X further proposes minimal/sufficient/interactive principles. High-dimensional MI estimation remains sensitive; the core paper also acknowledges disappointing KDE-MI results. DocVXQA substitutes L1+TV and answer CE for MI, using ColPali priors for interaction. The inheritance is
+<strong>theoretical mutual-information objectives → three optimizable surrogates</strong>. </p>
+<h3 id="colpali2024">ColPali (2024)</h3>
+<p><a href="https://arxiv.org/abs/2407.01449">The paper</a> Combines PaliGemma patch embeddings with ColBERT-style MaxSim late interaction for purely visual document retrieval (PDF pages 3–5). Query-token×image-patch similarities are naturally visualizable, but optimize retrieval rather than answer explanation. DocVXQA uses these maps as teacher priors, merging question-image and answer-image maps. The inheritance is
+<strong>retrieval matching maps → soft supervision for contextual explanations</strong>. </p>
+<h3 id="coexvqa2026后续工作">CoExVQA (2026, subsequent work)</h3>
+<p><a
+href="https://arxiv.org/abs/2605.06058">The paper</a> Chains evidence selection, answer localization, and grounded-region decoding into verifiable explanations (PDF pages 3–6). It addresses DocVXQA masks' conflation of evidence with answer localization, shifting from joint optimization of one heatmap toward
+<strong>staged, verifiable causal paths</strong>. </p>
+<pre class="text"><code>                           ┌─ Grad-CAM / attention rollout: post-hoc correlations
+Black-box DocVQA ─ Pix2Struct ─┤
+                               └─ IB attention / DIB-X: minimal + sufficient masks
+                                         │
+ColBERT MaxSim ─ PaliGemma ─ ColPali: query-token × visual-patch interaction
+                                         │ teacher prior (Q-image + A-image)
+                                         ▼
+                      DocVXQA: CE sufficiency + L1/TV minimality + TI context
+                                  │
+                                  ├─ Single mask + top-k boxes: readable but mixed mechanisms
+                                  ▼
+                CoExVQA: evidence selection → answer localization → grounded decoding</code></pre>
+<p>The field moves from “where is relevance?” to “which regions suffice to support an answer?” and then “can explanation stages be individually verified?” DocVXQA turns retrieval priors into explanation supervision; its risk follows from those priors not being ground-truth reasoning.</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Explanation type</th>
+<th scope="col" style="text-align: right;">Training modified?</th>
+<th scope="col" style="text-align: right;">Answers/labels required?</th>
+<th scope="col">Fidelity test</th>
+<th scope="col">Core gap</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Grad-CAM</td>
+<td>gradient saliency</td>
+<td style="text-align: right;">No</td>
+<td style="text-align: right;">Target output</td>
+<td>Indirect</td>
+<td>Fragile autoregressive aggregation</td>
+</tr>
+<tr class="even">
+<td>Attention rollout</td>
+<td>Attention propagation</td>
+<td style="text-align: right;">No</td>
+<td style="text-align: right;">No</td>
+<td>None</td>
+<td>Attention ≠ causation</td>
+</tr>
+<tr class="odd">
+<td>ColPali</td>
+<td>retrieval similarity</td>
+<td style="text-align: right;">Independently trained</td>
+<td style="text-align: right;">Query; DocVXQA baseline adds answer</td>
+<td>Masked re-answering</td>
+<td>Not the QA decision model</td>
+</tr>
+<tr class="even">
+<td>DocVXQA</td>
+<td>learned mask</td>
+<td style="text-align: right;">Yes</td>
+<td style="text-align: right;">Training-time Q+A prior</td>
+<td>masked answer utility</td>
+<td>Same-model / teacher circularity</td>
+</tr>
+<tr class="odd">
+<td>CoExVQA</td>
+<td>Staged grounding</td>
+<td style="text-align: right;">Yes</td>
+<td style="text-align: right;">Evidence supervision / generation</td>
+<td>grounded decoding</td>
+<td>Stronger causal tests still needed</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="11-真正贡献复用设计与迁移潜力"><h2 id="11-真正贡献复用设计与迁移潜力">11. Actual contributions, reusable designs, and transfer potential</h2>
+<ol type="1">
+<li><strong>Explanations as executable bottlenecks</strong>: Heatmaps are inputs that must support a second answer, not mere displays. This explain→intervene→predict structure could transfer to table QA, chart QA, medical reports, and web agents.</li>
+<li><strong>Report minimality and sufficiency separately</strong>: Table 2 clearly exposes collapse from sparsity alone, more informative than a single IoU or attractive visualization.</li>
+<li><strong>Cross-model teacher priors</strong>: ColPali retrieval representations supply context missing from the QA model, a reusable distillation pattern from external semantic priors to internal explanation heads.</li>
+<li><strong>Human-readable postprocessing</strong>: Connected components + top-k boxes turn patch heatmaps into actionable evidence units for review interfaces; k should remain adjustable by users/SLOs.</li>
+<li><strong>Transfer boundary</strong>: Donut qualitative results show interface adaptability, but no quantitative Donut table exists. This is architectural-compatibility proof of concept, not proven model-agnostic performance.</li>
+</ol>
+</section><section class="card" aria-labelledby="12-论文自述限制与独立批判"><h2 id="12-论文自述限制与独立批判">12. Author-stated limitations and independent critique</h2>
+<h3 id="论文自述限制">Limitations stated by the paper</h3>
+<ol type="1">
+<li><strong>MI-estimation failure</strong>: §3.3 (pages 4–5) explicitly acknowledges KDE-MI sensitivity to high-dimensional images and hyperparameters and disappointing results. The final objective is IB-inspired, not actual optimization of Equation (1).</li>
+<li><strong>Generalization scope</strong>: The conclusion (page 9) lists more DocVQA architectures/datasets and improved explanation–performance tradeoffs as future work.</li>
+<li><strong>Backbone-performance loss</strong>: §4.3 acknowledges performance loss from jointly handling masked/clear images; PFL's 23 pp Accuracy gap is substantial.</li>
+</ol>
+<h3 id="独立批判因为-x所以-y">Independent critique (because X, therefore Y)</h3>
+<ol type="1">
+<li><strong>[Supervision leakage / definition]</strong> The README and
+<code>data.py:114–117</code> explicitly sum question-image and
+<strong>ground-truth answer-image</strong> ColPali maps as training targets, so TI learns relevance conditioned on knowing the answer. It is not purely question-conditioned self-explanation and may explain training-answer patterns even when deployed predictions are wrong.</li>
+<li><strong>[Fidelity circularity]</strong> Sufficiency is measured by the same kind of Pix2Struct re-answering masked images, while the mask head reads decoder attention. High ANLS may indicate a model-friendly visual prompt, not faithful causal explanation of the first unmasked inference.</li>
+<li><strong>[Implementation conflict]</strong> PDF page 4 says the decoder is frozen, but code defaults to <code>decoder_frozen=False</code>
+and optimizes all parameters. The README's default reproduction path conflicts with the paper, leaving Table 1's actual training semantics uncertain.</li>
+<li><strong>[Baseline fairness]</strong> Methods use different thresholds; the ColPali baseline also sees question+answer, while raw attention/rollout/Grad-CAM follow different information/model paths. Rowwise “best” conflates method, information, and area budgets. Equal-Pixel-Ratio Pareto/AUC comparisons are needed instead of selected operating points.</li>
+<li><strong>[Task-capability cost]</strong> PFL unmasked Accuracy falls 0.80→0.57 and ANLS 0.92→0.79, showing explanation training harms core QA generalization. Overall reliability cannot be established only from the explainable-method subtable.</li>
+<li><strong>[Human-evaluation validity]</strong> The 42-person study reveals ground-truth answers and uses only 10 images. It measures apparent support for known answers, not error detection or calibrated trust. “Fosters trust” exceeds direct evidence.</li>
+<li><strong>[Statistics / reproduction]</strong> Main tables lack multiple seeds/CI and the paper omits GPU/time. Public code includes seed42/100 epochs but local absolute paths, preventing assessment of stability and complete reproduction cost. Small 4 pp ANLS gains warrant caution.</li>
+<li><strong>[Postprocessing attribution]</strong> Figure 4 claims that at thresholds ≥0.7 postprocessing improves utility while reducing area, without a complete numerical table; Table 5 shows utility rising monotonically with k. Learned-mask and box-heuristic contributions cannot be isolated.</li>
+</ol>
+</section><section class="card" aria-labelledby="13-开放挑战可操作-head-to-head-实验"><h2 id="13-开放挑战可操作-head-to-head-实验">13. Open challenges: Actionable head-to-head experiments</h2>
+<h3 id="理论">Theory</h3>
+<ul>
+<li><strong>Causal fidelity</strong>: Compare DocVXQA, Grad-CAM, ColPali, and CoExVQA at equal Pixel Ratio using comprehensiveness/sufficiency, mask randomization, model-parameter randomization, and counterfactual evidence swaps; test whether heatmap relevance tracks actual changes in original-model decisions.</li>
+<li><strong>Answer-free priors</strong>: Train Q-only, A-only, Q+A, and ground-truth-evidence-box teachers, testing fidelity on correct and incorrect predictions; quantify answer-conditioned supervision and misleading-explanation risks.</li>
+<li><strong>Pareto optimality</strong>: Jointly sweep β/γ/k, report Accuracy/ANLS–Pixel Ratio curves and hypervolume, choose points on independent validation, and test head-to-head dominance over raw/ColPali curves.</li>
+</ul>
+<h3 id="工程应用">Engineering applications</h3>
+<ul>
+<li><strong>Error-diagnosis human study</strong>: Hide ground-truth answers; ask participants whether to accept model answers on a half-correct/half-incorrect sample. Compare no explanations, DocVXQA, ColPali, and CoExVQA on human–model accuracy, misplaced trust, and reading time.</li>
+<li><strong>Quantitative cross-backbone evaluation</strong>: Use identical evidence metrics for Pix2Struct, Donut, and Qwen-VL/InternVL on DocVQA/PFL/InfographicVQA; report added parameters, two-pass latency, GPU memory, and throughput.</li>
+<li><strong>Reproducible configurations</strong>: Run a 2×2 freeze/unfreeze decoder experiment including encoder settings, with ≥5 fixed seeds and mean±SD; identify whether public defaults or paper descriptions produce Table 1.</li>
+</ul>
+<h3 id="新兴方向">Emerging directions</h3>
+<ul>
+<li><strong>Privacy–explanation conflict</strong>: On PFL-DocVQA, test whether precise explanations leak providers/logos/PII; compare DocVXQA with DP-trained backbones, jointly measuring ANLS, membership-inference AUC, and explanation privacy leakage.</li>
+<li><strong>Multipage agent document reasoning</strong>: Expand single-page masks into page retrieval→region evidence→answer, comparing token budgets and evidence recall; require page/box traceability for each answer and test cross-page numerical reasoning.</li>
+<li><strong>Verifiable structured explanations</strong>: Convert boxes into OCR spans, table cells, or key-value relation graphs; compare pixel heatmaps with structured rationales for human auditing, counterfactual editing, and automated evidence scoring.</li>
+</ul>
+</section><section class="card" aria-labelledby="14-近期工作雷达经验证链接"><h2 id="14-近期工作雷达经验证链接">14. Recent-work radar (verified links)</h2>
+<ol type="1">
+<li><a href="https://arxiv.org/abs/2605.06058">CoExVQA (2026)</a>: Explicitly chains evidence selection, answer localization, and grounded decoding, directly addressing DocVXQA's mixing of inference stages in one heatmap.</li>
+<li><a href="https://huggingface.co/papers/2511.15090">BBox
+DocVQA (2025)</a>: Its paper card reports 3.6K documents, 32K QA pairs, and bounding-box grounding, supporting evaluation with ground-truth evidence IoU/recall instead of same-model re-answering. Conflicting titles appeared in arXiv aggregate metadata during this visit, so only the Hugging Face paper card is provided as a verifiable entry point.</li>
+<li><a href="https://arxiv.org/abs/2502.03692">DocMIA (2025)</a>: Demonstrates document-level membership-inference risks in DocVQA; explanation maps may create another attack surface and should be jointly privacy-audited.</li>
+<li><a
+href="https://arxiv.org/abs/2407.01449">ColPali (2024)</a>: Patch-level late interaction remains foundational for visual document retrieval and weak explanation priors, but retrieval relevance is not automatically an answer's justification.</li>
+<li><a href="https://arxiv.org/abs/2312.10108">PFL-DocVQA /
+Privacy-Aware
+DocVQA</a>: Places document QA in federated and differentially private settings; DocVXQA uses its data domain without evaluating explanations' privacy effects.</li>
+<li><a href="https://github.com/VLR-CVC/DocVQA2026">DocVQA 2026
+competition</a>: Covers eight document types and emphasizes multimodal reasoning, useful for testing whether DocVXQA works beyond extractive single-page answers.</li>
+</ol>
+</section><section class="card" aria-labelledby="15-结论"><h2 id="15-结论">15. Conclusion</h2>
+<p>DocVXQA's most credible finding is that under roughly similar mask budgets on PFL-DocVQA, DocVXQA .70 raises Accuracy from ColPali's 0.28 to 0.43 and ANLS from 0.39 to 0.66; direct human preference reaches 64.7% (163/252, p≪0.001). It shows that boxing answer text alone is insufficient and contextual semantic priors substantially improve explanation usability.</p>
+<p>The central unresolved issues are equally clear: the ColPali teacher sees ground-truth answers during training, fidelity is evaluated through same-family masked re-answering, public decoder defaults conflict with the paper, and PFL unmasked Accuracy loses 23 pp. The more accurate characterization is: <strong>a strong context-support-mask learning method, not an already-validated causal explainer of the original model.</strong></p>
+<hr />
+<p><strong>Generation and validation notes</strong>: The core paper and ColPali, Pix2Struct, Grad-CAM, and CoExVQA PDFs were downloaded and read; every report link was actually visited, with inaccessible weights/videos explicitly marked. HTML uses the Warm Editorial template, self-contained CSS/JS, dual themes, and responsive tables, and passes structural validation. The environment lacks
+<code>/usr/bin/chromium</code> or
+<code>/opt/pw-browsers</code>, so Playwright light/dark/mobile screenshots could not honestly be completed. Responsive CSS, DOM features, and dependency checks were used instead; no browser rendering is falsely claimed. <code>ml-report-index.md</code>
+has been appended with this entry.</p>
+</section>
+  </main>
+
+  <footer>Core sources: ICML/PMLR PDF, arXiv v1, public training code, and data descriptions; generated 2026-08-29.</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ Light' : '☾ Dark';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

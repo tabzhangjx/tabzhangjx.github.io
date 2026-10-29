@@ -1,0 +1,1076 @@
+---
+layout: null
+title: "Alignment Potential"
+date: 2026-08-24
+topic: rl-peft
+tags: ["rl-peft"]
+excerpt: "The teacher\u2013student gap between reward models and current policies guides preference-data selection for alignment."
+permalink: "/blog/2026/08/24/alignment-potential-preference-data-selection/en/"
+blog_post: false
+lang: en
+sitemap: true
+alternate_zh: "/blog/2026/08/24/alignment-potential-preference-data-selection/"
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Alignment Potential Deep Report · 2026-08-24</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #246fca;
+    --chart-comparison: #c95224;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  .card > h2:first-child { margin-top: 0; }
+  .card h3 { margin-top: 1.65em; }
+  .card blockquote { margin: 1rem 0; padding: .8rem 1rem; border-left: 4px solid var(--chart-comparison); background: var(--surface-2); }
+  .card pre { overflow-x: auto; padding: 16px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); }
+  .card code { overflow-wrap: anywhere; }
+  .card .math { overflow-x: auto; display: block; padding: 8px 0; }
+  .card ul, .card ol { padding-left: 1.4rem; }
+  .card li { margin: .45rem 0; }
+  .card table { min-width: 680px; }
+  .card p, .card li { text-align: justify; }
+  @media (max-width:640px){.card p,.card li{text-align:left}.hero{padding-top:56px}.toolbar{right:16px}.chart{min-width:700px}.figure{overflow-x:auto}}
+</style>{% include report-alternates.html %}</head><body>{% include report-navigation.html %}<div class="wrap">
+<div class="toolbar"><button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" aria-pressed="false">☾ Dark</button></div>
+<header class="hero"><p class="eyebrow">ICML 2025 · LLM POST-TRAINING</p><h1>Alignment Potential: Preference Data Value Depends on the Teacher–Student Gap</h1><p class="subtitle">Larger or Smaller Reward Margins to Select Preferences for LLM Alignment?</p><div class="meta"><span class="chip source">PMLR 267</span><span class="chip">2026-08-24</span><span class="chip">Preference data selection</span></div><p class="lede">Select examples the reward model understands confidently but the current policy has not mastered—not simply the largest reward gaps or greatest model uncertainty.</p></header>
+<main><section class="card" aria-label="Report metadata">
+<blockquote>
+<p><strong>Today's field: LLM / NLP—post-training and preference data selection</strong><br />
+<strong>Core paper: Kexin Huang et al., “Larger or Smaller Reward Margins to Select Preferences for LLM Alignment?”, ICML 2025</strong><br />
+<strong>Positioning: rather than choosing between large explicit reward margins and small policy margins, use their difference to identify preferences the reward model knows but the current policy has yet to learn.</strong></p>
+</blockquote>
+</section>
+<figure class="figure" aria-labelledby="figure-main-title">
+  <p class="fig-title" id="figure-main-title">40% data budget: uniform sampling versus Alignment Potential</p>
+  <p class="fig-sub">All six model×metric cells improve; values from Table 6, in win-rate percentage points.</p>
+  <div class="legend" aria-label="Legend"><span><span class="swatch" style="background:#2a78d6"></span> Uniform</span><span><span class="swatch" style="background:#eb6834"></span> M_AP</span></div>
+  <svg class="chart" viewBox="0 0 900 400" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>Uniform versus M_AP across six evaluation cells</title><desc>M_AP outperforms random sampling on Llama/Gemma AlpacaEval 2 and Arena-Hard metrics.</desc>
+    <g stroke="currentColor" opacity=".18"><line x1="92" y1="320" x2="870" y2="320"/><line x1="92" y1="245" x2="870" y2="245"/><line x1="92" y1="170" x2="870" y2="170"/><line x1="92" y1="95" x2="870" y2="95"/></g>
+    <g font-size="12"><text x="55" y="324">0</text><text x="45" y="249">25</text><text x="45" y="174">50</text><text x="45" y="99">75</text></g>
+    <g fill="#2a78d6">
+      <rect x="115" y="195.2" width="34" height="124.8" tabindex="0" data-tip="Llama AE2 LC · Uniform: 41.61"/><rect x="235" y="211.2" width="34" height="108.8" tabindex="0" data-tip="Llama AE2 WR · Uniform: 36.26"/><rect x="355" y="230.3" width="34" height="89.7" tabindex="0" data-tip="Llama Arena-Hard · Uniform: 29.9"/><rect x="475" y="116.2" width="34" height="203.8" tabindex="0" data-tip="Gemma AE2 LC · Uniform: 67.95"/><rect x="595" y="135.8" width="34" height="184.2" tabindex="0" data-tip="Gemma AE2 WR · Uniform: 61.40"/><rect x="715" y="152.9" width="34" height="167.1" tabindex="0" data-tip="Gemma Arena-Hard · Uniform: 55.7"/>
+    </g><g fill="#eb6834">
+      <rect x="151" y="176.5" width="34" height="143.5" tabindex="0" data-tip="Llama AE2 LC · M_AP: 47.83"/><rect x="271" y="184.6" width="34" height="135.4" tabindex="0" data-tip="Llama AE2 WR · M_AP: 45.14"/><rect x="391" y="216.2" width="34" height="103.8" tabindex="0" data-tip="Llama Arena-Hard · M_AP: 34.6"/><rect x="511" y="108.7" width="34" height="211.3" tabindex="0" data-tip="Gemma AE2 LC · M_AP: 70.45"/><rect x="631" y="108.7" width="34" height="211.3" tabindex="0" data-tip="Gemma AE2 WR · M_AP: 70.45"/><rect x="751" y="131.6" width="34" height="188.4" tabindex="0" data-tip="Gemma Arena-Hard · M_AP: 62.8"/>
+    </g>
+    <g font-size="11" text-anchor="middle"><text x="150" y="345">Llama LC</text><text x="270" y="345">Llama WR</text><text x="390" y="345">Llama AH</text><text x="510" y="345">Gemma LC</text><text x="630" y="345">Gemma WR</text><text x="750" y="345">Gemma AH</text></g>
+  </svg><figcaption>Source: core paper Table 6. One Y-axis, 0–75; hover or keyboard-focus bars for exact values.</figcaption>
+</figure><section class="card" aria-label="0. Link verification table"><h2 id="链接验证表">0. Link verification table</h2>
+<p>All links were accessed during preparation. “Not public/not found” means no verifiable paper/official-page entry point, not definitive nonexistence.</p>
+<table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">The paper</th>
+<th scope="col">Conference website / ACL</th>
+<th scope="col">arXiv (verified version)</th>
+<th scope="col">Code</th>
+<th scope="col">Data / weights</th>
+<th scope="col">Project page / videos</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Larger or Smaller Reward Margins… (core)</strong></td>
+<td><a href="https://proceedings.mlr.press/v267/huang25al.html">ICML
+2025 / PMLR 267</a></td>
+<td><a
+href="https://arxiv.org/abs/2503.01864">2503.01864v1</a>, 2025-02-25</td>
+<td><a
+href="https://github.com/Hesse73/Alignment-Potential-Metric">Alignment-Potential-Metric</a></td>
+<td>Repository includes processing/selection scripts; separate weights unavailable</td>
+<td><a
+href="https://openreview.net/forum?id=ncTwQagrj8">OpenReview</a>; video not found</td>
+</tr>
+<tr class="even">
+<td>Direct Preference Optimization (DPO)</td>
+<td><a
+href="https://proceedings.neurips.cc/paper_files/paper/2023/hash/a85b405ed65c6477a4fe8302b5e06ce7-Abstract-Conference.html">NeurIPS
+2023</a></td>
+<td><a
+href="https://arxiv.org/abs/2305.18290">2305.18290v3</a>, 2024-07-29</td>
+<td><a
+href="https://github.com/eric-mitchell/direct-preference-optimization">Reference implementation</a></td>
+<td>Repository configurations; no unified weights page found</td>
+<td>No project page / video found</td>
+</tr>
+<tr class="odd">
+<td>Not All Preference Pairs Are Created Equal</td>
+<td><a href="https://aclanthology.org/2024.findings-emnlp.382/">Findings
+EMNLP 2024</a></td>
+<td><a
+href="https://arxiv.org/abs/2406.17312">2406.17312v2</a>, 2024-10-11</td>
+<td>Official repository not found</td>
+<td>not public</td>
+<td>No project page / video found</td>
+</tr>
+<tr class="even">
+<td>SimPO</td>
+<td><a
+href="https://proceedings.neurips.cc/paper_files/paper/2024/hash/e099c1c9699814af0be873a175361713-Abstract-Conference.html">NeurIPS
+2024</a></td>
+<td><a
+href="https://arxiv.org/abs/2405.14734">2405.14734v3</a>, 2024-11-01</td>
+<td><a
+href="https://github.com/princeton-nlp/SimPO">princeton-nlp/SimPO</a></td>
+<td><a href="https://huggingface.co/princeton-nlp">Model collection</a></td>
+<td>No project page / video found</td>
+</tr>
+<tr class="odd">
+<td>Evolving Alignment via Asymmetric Self-Play (EVA)</td>
+<td><a
+href="https://openreview.net/forum?id=TMYe4rUuTc">OpenReview</a> (ICML
+2025)</td>
+<td><a
+href="https://arxiv.org/abs/2411.00062">2411.00062v3</a>, 2025-04-09</td>
+<td>No separate official repository found</td>
+<td>not public</td>
+<td><a
+href="https://hazelye-bot.github.io/">Entry on the author's website</a>; video not found</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Version note.</strong> The core paper currently has only arXiv v1; the conference final is the PMLR PDF. OpenReview sometimes triggers browser challenges, so accessible PMLR pages establish venue/pages.</p>
+</section><section class="card" aria-label="0.1 Deduplication, candidate pool, and random-selection record"><h2 id="去重候选池与随机选择记录">0.1 Deduplication, candidate pool, and random-selection record</h2>
+<p>Monday fixes the field to LLM/NLP. Before searching, read
+<code>ml-report-index.md</code>: the past 14 days covered diffusion-LLM test-time scaling (HEX), KV-cache compression (DuoAttention), and other topics, excluding identical papers/high-overlap themes. ICML 2025 PMLR, NeurIPS proceedings, ACL Anthology, OpenReview, and arXiv supplied 20 works from the past 24 months with sufficient texts/experiments:</p>
+<table>
+<colgroup>
+<col style="width: 40%" />
+<col style="width: 30%" />
+<col style="width: 30%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">#</th>
+<th scope="col">Candidate work</th>
+<th scope="col">Topic / publication</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td>Scaling LLM Test-Time Compute Optimally</td>
+<td>test-time scaling, ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td>RaLU: LLM Unlearning via Reinforcement Learning</td>
+<td>unlearning, ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td>Test-Time Learning for LLMs</td>
+<td>test-time adaptation, ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td>AMPO</td>
+<td>preference optimization, ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;"><strong>5</strong></td>
+<td><strong>Larger or Smaller Reward Margins…</strong></td>
+<td><strong>Preference data selection, ICML 2025</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td>POROver</td>
+<td>post-training, ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td>Just Enough Shifts</td>
+<td>alignment data, ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">8</td>
+<td>Correlated Errors in LLM Evaluation</td>
+<td>evaluation, ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td>RBench</td>
+<td>reward model benchmark, ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td>LongRoPE2</td>
+<td>long context, ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td>Active Reward Modeling</td>
+<td>active preference labeling, ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">12</td>
+<td>AlphaPO</td>
+<td>preference optimization, ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td>From RAG to Memory</td>
+<td>memory, ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td>Explicit Preference Optimization</td>
+<td>preference optimization, ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td>Data Mixing Optimization</td>
+<td>post-training data, ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">16</td>
+<td>ROPO</td>
+<td>robust preference optimization, ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td>Token Cleaning</td>
+<td>data quality, ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td>Self-Consistency Preference Optimization</td>
+<td>preference optimization, ICML 2025</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">19</td>
+<td>Tokenized Bandit</td>
+<td>bandit / LLM, ICML 2025</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">20</td>
+<td>RLTHF</td>
+<td>human feedback, ICML 2025</td>
+</tr>
+</tbody>
+</table>
+<p>Running <code>shuf -i 1-20 -n 1</code> returned
+<strong>5</strong>, the core paper. Full text, appendices, code, and evaluation tables were available, so <strong>0 redraws</strong>. </p>
+</section><section class="card" aria-label="1. In-depth analysis of the core paper"><h2 id="核心论文深度解析">1. In-depth analysis of the core paper</h2>
+<h3 id="motivation偏好对的价值不是标签置信度一个维度">1.1 Motivation: preference-pair value has more than one dimension of label confidence</h3>
+<p>Preference data typically comprises ((x,y_w,y_l)): for prompt (x), a reward model/human prefers (y_w) to (y_l). Limited training budgets require selecting triples. Existing practice offers apparently conflicting answers: large reward-gap pairs provide clearer, less noisy labels; active-learning methods favor pairs the current policy cannot distinguish, with small implicit reward gaps, as more informative.</p>
+<p>The novelty is not a third heuristic but recognizing different objects: explicit margin (M_r) approximates external supervision's assessed difference; implicit margin (M_) approximates how much the policy has learned. Large (M_r) with small (M_) identifies confident teachers and unmastered students. Both large may be learned already; both small imply ambiguous supervision; small explicit but large policy margins may indicate mislabels or policy–reward conflicts.</p>
+<p>Three quantitative facts motivate the problem. First, at an offline 40% data budget on Llama-3-8B-Instruct, the combined metric raises AlpacaEval 2 length-controlled win rate over uniform sampling from <strong>41.61 to 47.83</strong>(+6.22pp, relative +14.95%), raw win rate from <strong>36.26 to 45.14</strong>(+8.88pp, relative +24.49%), and Arena-Hard from <strong>29.9 to 34.6</strong>(+4.7pp, relative +15.72%) (Table 6, Uniform versus (M_{AP})). Second, Gemma-2-9B-it with 30k selected examples beats all 60k: AlpacaEval 2 LC <strong>74.4 vs 72.1</strong> (+2.3 pp), Arena-Hard <strong>62.8 vs
+59.4</strong>(+3.4pp) (Figure 6). More pairs do not necessarily mean more useful updates. Third, GPT-4 label agreement on the selected Gemma data is <strong>72.5%</strong>, with 10.8% ties and 16.7% disagreement (Figure 3). Absolute values partly filter reward-sign conflict but leave nearly one-sixth disagreements.</p>
+<h3 id="论文故事线从冲突启发式到剩余可学习差距">1.2 Narrative: conflicting heuristics become remaining learnable gaps</h3>
+<p>Four steps organize the argument. First, put large explicit and small implicit margins into the same optimal-policy relation: DPO's reward–policy mapping says optimal RLHF implicit rewards differ from true rewards only by a prompt-dependent constant, so within-prompt pair margins should match. Second, infer the current gap from that equality: larger disagreement means greater distance from reward targets and more training potential.</p>
+<p>Third, handle signs. Direct signed differences ((r_w-r_l)-(r_w-r_l)) can prioritize noisy pairs when reward models mislabel winners/losers. The authors instead subtract the absolute magnitudes of each margin, trading direction information for label-noise robustness. Figure 3's GPT-4 audit supports this, but 16.7% disagreement shows absolute values do not eliminate noise.</p>
+<p>Fourth, embed static selection into EVA self-play. EVA generates harder prompts/responses, while (M_{AP}) selects the most useful new preferences for the current model, closing a loop between distribution expansion and remaining learning opportunities. Each round incurs reward inference and policy log-probability costs to reduce subsequent training data and unproductive gradients.</p>
+<h3 id="方法论与机制解剖">1.3 Methodology and mechanism analysis</h3>
+<p>Given reward model (r) and current language model (_), explicit and implicit margins are:</p>
+<p>[ M_r(x,y_w,y_l)=|r(x,y_w)-r(x,y_l)|, ]</p>
+<p>[ M_(x,y_w,y_l)=|r_(x,y_w)-r_(x,y_l)|. ]</p>
+<p>DPO's KL-regularized optimal policy satisfies</p>
+<p>[ ^*(y|x)=_{ref}(y|x)(), ]</p>
+<p>so the policy can be written as implicit reward</p>
+<p>[ r_{}(x,y)=. ]</p>
+<p>At optimum, (r_{^*}(x,y)=r(x,y)+c(x)); prompt constants cancel, ideally yielding (M_r=M_). Alignment potential is defined as:</p>
+<p>[ M_{AP}=M_r-M_. ]</p>
+<p>When initial and reference policies match, DPO implicit reward gaps vanish. The implementation instead uses SimPO length-normalized log probabilities, normalizing both margins by dataset standard deviations:</p>
+<p>[ M_{AP}= - | -|. ]</p>
+<p>Here () balances label clarity and model uncertainty, tuned over ({0.25,0.5,1,2.5,5}). Offline PairRM data uses (), the other two groups 2.5; extension experiments use 0.5, so this is not a universally fixed constant.</p>
+<pre class="text"><code>Candidate preferences (x, yw, yl)
+      ├── Reward-model scores ──&gt; |rw-rl| / σr ──────────────┐
+      └── Current-policy log-prob ─&gt; |ℓw/|yw|-ℓl/|yl|| / σπ ─┤
+                                                       ↓
+                             MAP = explicit margin - α·implicit margin
+                                                       ↓
+                         Rank by MAP; retain top 20/40/60%
+                                                       ↓
+                     DPO / SimPO / IPO training or EVA self-play</code></pre>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Mechanism / dimension</th>
+<th scope="col">Design choice</th>
+<th scope="col">Motivation</th>
+<th scope="col">Key hyperparameters / implementation</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Explicit value</td>
+<td>Absolute reward-model score gap</td>
+<td>Preference-label clarity</td>
+<td>ArmoRM or PairRM</td>
+</tr>
+<tr class="even">
+<td>Implicit value</td>
+<td>Gap in length-normalized mean log probabilities</td>
+<td>Whether the current model has already learned it</td>
+<td>No reference model required</td>
+</tr>
+<tr class="odd">
+<td>Combination</td>
+<td>Subtract after standard-deviation normalization</td>
+<td>Find clear-teacher/uncertain-student examples</td>
+<td>({0.25,0.5,1,2.5,5})</td>
+</tr>
+<tr class="even">
+<td>Robustification</td>
+<td>Take absolute values of both margins separately</td>
+<td>Avoid amplifying sign errors</td>
+<td>Still cannot remove RM bias</td>
+</tr>
+<tr class="odd">
+<td>Selection rate</td>
+<td>top 20% / 40% / 60%</td>
+<td>Test budget sensitivity</td>
+<td>Main offline setting: top 40%, approximately 24k</td>
+</tr>
+<tr class="even">
+<td>Training objective</td>
+<td>DPO, SimPO, IPO</td>
+<td>Decouple selection metrics from objectives</td>
+<td>1 epoch, batch 128</td>
+</tr>
+<tr class="odd">
+<td>Sequence settings</td>
+<td>Maximum 2048 tokens; prompt maximum 1800</td>
+<td>Consistent with SimPO pipeline</td>
+<td>AdamW, cosine, 10% warmup</td>
+</tr>
+<tr class="even">
+<td>Self-play sampling</td>
+<td>5 responses per prompt; RM selects highest/lowest</td>
+<td>Construct new preference pairs</td>
+<td>top-p=.95, T=.8, max 4096</td>
+</tr>
+</tbody>
+</table>
+<p>Theory treats responses as contextual-bandit actions, defines optimal–current-policy distance, and lets an adversarial sampler choose maximum-gap pairs. Under a single context and specific learning-rate/reward assumptions, Theorem 3.1 bounds expected iterations to error () as (T_{adv}()&lt;12T_u()). This explains why choosing unaligned pairs can accelerate convergence. However, theoretical maximum gap (M_1) is not exactly standardized, absolute-valued, external-RM-estimated (M_{AP}); theory provides directional support rather than an end-to-end LLM guarantee.</p>
+<h3 id="实验设计基准数据与指标">1.4 Experimental design: benchmarks, data, and metrics</h3>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Item</th>
+<th scope="col">Scale / configuration</th>
+<th scope="col">Capability measured</th>
+<th scope="col">Metrics and risks</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>UltraFeedback-derived preferences</td>
+<td>Llama/Gemma, labeled by ArmoRM or PairRM; retain approximately 24k (40%)</td>
+<td>Offline preference quality</td>
+<td>RM labels may import shared-source bias</td>
+</tr>
+<tr class="even">
+<td>AlpacaEval 2</td>
+<td>Open-ended instruction responses</td>
+<td>Preferences against strong reference answers</td>
+<td>LC win rate mitigates length bias; raw WR remains length-sensitive</td>
+</tr>
+<tr class="odd">
+<td>Arena-Hard</td>
+<td>Difficult open-ended prompts</td>
+<td>Dialogue quality against strong baselines</td>
+<td>LLM judge; not equivalent to human Arena rankings</td>
+</tr>
+<tr class="even">
+<td>GPT-4 label audit</td>
+<td>Agree/equal/disagree judgments on selected pairs</td>
+<td>RM-label reliability</td>
+<td>Not blinded human annotation; sample size lacks significance reporting</td>
+</tr>
+<tr class="odd">
+<td>EVA self-play</td>
+<td>Evolved prompts + 5 responses per prompt</td>
+<td>Selection under distribution expansion</td>
+<td>Generation/scoring overhead not converted to GPU-hours</td>
+</tr>
+</tbody>
+</table>
+<h3 id="完整主结果矩阵">1.5 Complete main-results matrix</h3>
+<p>The table comes from <strong>Table 1</strong>(evolve-then-select, 10k new examples). Bold marks best values within each objective/model block only. <code>uf</code>
+denotes random/original UltraFeedback new data, <code>eva</code> EVA selection, and <code>ours</code> (M_{AP}) selection.</p>
+<table>
+<colgroup>
+<col style="width: 11%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">Llama AH WR</th>
+<th scope="col" style="text-align: right;">Llama AE2 LC</th>
+<th scope="col" style="text-align: right;">Llama AE2 WR</th>
+<th scope="col" style="text-align: right;">Gemma AH WR</th>
+<th scope="col" style="text-align: right;">Gemma AE2 LC</th>
+<th scope="col" style="text-align: right;">Gemma AE2 WR</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>SFT</td>
+<td style="text-align: right;">21.4</td>
+<td style="text-align: right;">23.25</td>
+<td style="text-align: right;">23.50</td>
+<td style="text-align: right;">40.7</td>
+<td style="text-align: right;">48.75</td>
+<td style="text-align: right;">36.49</td>
+</tr>
+<tr class="even">
+<td>DPO-uf-10k</td>
+<td style="text-align: right;">23.6</td>
+<td style="text-align: right;">29.80</td>
+<td style="text-align: right;">28.32</td>
+<td style="text-align: right;">46.0</td>
+<td style="text-align: right;">54.00</td>
+<td style="text-align: right;">46.11</td>
+</tr>
+<tr class="odd">
+<td>DPO + uf-10k</td>
+<td style="text-align: right;">35.0</td>
+<td style="text-align: right;">42.67</td>
+<td style="text-align: right;">41.67</td>
+<td style="text-align: right;">56.4</td>
+<td style="text-align: right;">62.56</td>
+<td style="text-align: right;">62.17</td>
+</tr>
+<tr class="even">
+<td>DPO + eva-10k</td>
+<td style="text-align: right;">31.4</td>
+<td style="text-align: right;">39.97</td>
+<td style="text-align: right;">40.74</td>
+<td style="text-align: right;">56.0</td>
+<td style="text-align: right;">63.32</td>
+<td style="text-align: right;">62.10</td>
+</tr>
+<tr class="odd">
+<td><strong>DPO + ours-10k</strong></td>
+<td style="text-align: right;"><strong>35.4</strong></td>
+<td style="text-align: right;"><strong>42.82</strong></td>
+<td style="text-align: right;"><strong>45.00</strong></td>
+<td style="text-align: right;"><strong>56.6</strong></td>
+<td style="text-align: right;"><strong>63.88</strong></td>
+<td style="text-align: right;"><strong>64.52</strong></td>
+</tr>
+<tr class="even">
+<td>SimPO-uf-10k</td>
+<td style="text-align: right;">24.2</td>
+<td style="text-align: right;">28.45</td>
+<td style="text-align: right;">26.23</td>
+<td style="text-align: right;">45.2</td>
+<td style="text-align: right;">56.90</td>
+<td style="text-align: right;">43.80</td>
+</tr>
+<tr class="odd">
+<td>SimPO + uf-10k</td>
+<td style="text-align: right;">28.5</td>
+<td style="text-align: right;">35.75</td>
+<td style="text-align: right;">32.82</td>
+<td style="text-align: right;">53.5</td>
+<td style="text-align: right;">66.43</td>
+<td style="text-align: right;">64.55</td>
+</tr>
+<tr class="even">
+<td>SimPO + eva-10k</td>
+<td style="text-align: right;">32.6</td>
+<td style="text-align: right;">41.12</td>
+<td style="text-align: right;">39.94</td>
+<td style="text-align: right;"><strong>61.0</strong></td>
+<td style="text-align: right;">66.78</td>
+<td style="text-align: right;">66.86</td>
+</tr>
+<tr class="odd">
+<td><strong>SimPO + ours-10k</strong></td>
+<td style="text-align: right;"><strong>34.6</strong></td>
+<td style="text-align: right;"><strong>43.76</strong></td>
+<td style="text-align: right;"><strong>42.00</strong></td>
+<td style="text-align: right;">60.9</td>
+<td style="text-align: right;"><strong>66.85</strong></td>
+<td style="text-align: right;"><strong>68.34</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Against EVA, DPO+ours improves 6/6 columns: Llama +4.0/+2.85/+4.26pp; Gemma +0.6/+0.56/+2.42pp. SimPO+ours improves Llama by +2.0/+2.64/+2.06pp and Gemma AE2 LC/WR by +0.07/+1.48pp, but Gemma Arena-Hard <strong>60.9 is below 61.0 (-0.1pp)</strong>. The strict conclusion is therefore
+<strong>11/12 wins over EVA</strong>, not unconditional wins in every cell.</p>
+<p>The strongest evidence is not a marginal 0.07pp gain but half the data beating all data: Figure 6's 30k selected versus 60k full examples yields Gemma AE2 LC 74.4 versus 72.1 and Arena-Hard 62.8 versus 59.4. This directly supports data-value density, beyond slight improvements over another selector.</p>
+<h3 id="离线选择消融与敏感性">1.6 Offline selection, ablations, and sensitivity</h3>
+<p>Table 6 provides the main top-40% offline controls:</p>
+<table>
+<colgroup>
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 15%" />
+<col style="width: 15%" />
+<col style="width: 15%" />
+<col style="width: 15%" />
+<col style="width: 15%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Model</th>
+<th scope="col">Metric</th>
+<th scope="col" style="text-align: right;">Uniform</th>
+<th scope="col" style="text-align: right;">Large explicit (M_r)</th>
+<th scope="col" style="text-align: right;">Small implicit (M_)</th>
+<th scope="col" style="text-align: right;"><strong>Combined (M_{AP})</strong></th>
+<th scope="col" style="text-align: right;">Relative to the strongest single margin</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Llama</td>
+<td>AE2 LC</td>
+<td style="text-align: right;">41.61</td>
+<td style="text-align: right;">44.60</td>
+<td style="text-align: right;">47.15</td>
+<td style="text-align: right;"><strong>47.83</strong></td>
+<td style="text-align: right;">+0.68 pp / +1.44%</td>
+</tr>
+<tr class="even">
+<td>Llama</td>
+<td>AE2 WR</td>
+<td style="text-align: right;">36.26</td>
+<td style="text-align: right;">40.53</td>
+<td style="text-align: right;">41.22</td>
+<td style="text-align: right;"><strong>45.14</strong></td>
+<td style="text-align: right;">+3.92 pp / +9.51%</td>
+</tr>
+<tr class="odd">
+<td>Llama</td>
+<td>Arena-Hard</td>
+<td style="text-align: right;">29.9</td>
+<td style="text-align: right;">33.5</td>
+<td style="text-align: right;">33.0</td>
+<td style="text-align: right;"><strong>34.6</strong></td>
+<td style="text-align: right;">+1.1 pp / +3.28%</td>
+</tr>
+<tr class="even">
+<td>Gemma</td>
+<td>AE2 LC</td>
+<td style="text-align: right;">67.95</td>
+<td style="text-align: right;">68.63</td>
+<td style="text-align: right;">68.25</td>
+<td style="text-align: right;"><strong>70.45</strong></td>
+<td style="text-align: right;">+1.82 pp / +2.65%</td>
+</tr>
+<tr class="odd">
+<td>Gemma</td>
+<td>AE2 WR</td>
+<td style="text-align: right;">61.40</td>
+<td style="text-align: right;">68.64</td>
+<td style="text-align: right;">69.45</td>
+<td style="text-align: right;"><strong>70.45</strong></td>
+<td style="text-align: right;">+1.00 pp / +1.44%</td>
+</tr>
+<tr class="even">
+<td>Gemma</td>
+<td>Arena-Hard</td>
+<td style="text-align: right;">55.7</td>
+<td style="text-align: right;">59.6</td>
+<td style="text-align: right;">61.9</td>
+<td style="text-align: right;"><strong>62.8</strong></td>
+<td style="text-align: right;">+0.9 pp / +1.45%</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Ablation level 1: change the objective.</strong> Table 2 retains the trend under IPO. On PairRM, Uniform/(M_r)/(M_)/(M_{AP}) LC scores are 30.49/34.15/35.04/ <strong>35.44</strong> and WR 34.15/34.08/35.40/ <strong>36.08</strong>; corresponding ArmoRM LC is 33.17/33.92/38.19/ <strong>40.35</strong> and WR 30.63/30.17/35.73/
+<strong>38.14</strong>. Gains are not solely due to SimPO and the selector sharing a log-probability structure.</p>
+<p><strong>Ablation level 2: selection fraction.</strong> Table 3 (PairRM+SimPO):</p>
+<table>
+<thead>
+<tr class="header">
+<th scope="col" style="text-align: right;">Selection rate</th>
+<th scope="col">Metric</th>
+<th scope="col" style="text-align: right;">Uniform</th>
+<th scope="col" style="text-align: right;">(M_r)</th>
+<th scope="col" style="text-align: right;">(M_)</th>
+<th scope="col" style="text-align: right;">(M_{AP})</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">20%</td>
+<td>AE2 LC</td>
+<td style="text-align: right;">26.02</td>
+<td style="text-align: right;"><strong>28.95</strong></td>
+<td style="text-align: right;">28.46</td>
+<td style="text-align: right;"><strong>30.66</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">20%</td>
+<td>AE2 WR</td>
+<td style="text-align: right;">28.06</td>
+<td style="text-align: right;">30.24</td>
+<td style="text-align: right;"><strong>31.01</strong></td>
+<td style="text-align: right;">30.62</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">40%</td>
+<td>AE2 LC</td>
+<td style="text-align: right;">30.72</td>
+<td style="text-align: right;">36.58</td>
+<td style="text-align: right;">33.53</td>
+<td style="text-align: right;"><strong>37.07</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">40%</td>
+<td>AE2 WR</td>
+<td style="text-align: right;">32.64</td>
+<td style="text-align: right;">36.12</td>
+<td style="text-align: right;">34.75</td>
+<td style="text-align: right;"><strong>36.58</strong></td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">60%</td>
+<td>AE2 LC</td>
+<td style="text-align: right;">33.94</td>
+<td style="text-align: right;">40.77</td>
+<td style="text-align: right;">38.29</td>
+<td style="text-align: right;"><strong>42.86</strong></td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">60%</td>
+<td>AE2 WR</td>
+<td style="text-align: right;">34.72</td>
+<td style="text-align: right;">38.14</td>
+<td style="text-align: right;">37.28</td>
+<td style="text-align: right;"><strong>39.60</strong></td>
+</tr>
+</tbody>
+</table>
+<p>A clear boundary appears at the very low 20% budget: (M_{AP}) raw WR
+<strong>30.62</strong> falls below (M_)'s <strong>31.01</strong> by -0.39pp, although LC remains best. Table 3 does not support superiority at every budget and metric.</p>
+<p><strong>Ablation level 3: reverse selection.</strong> Table 4 selects the lowest-scoring 40%. LC falls from Uniform 41.61 to (M_r) 40.66, (M_) 37.07, and (M_{AP})
+<strong>34.64</strong>; WR falls from 36.26 to 33.36, 32.95, and <strong>29.37</strong>. This is informative falsification: if rankings were random noise, reverse selection should not consistently be worst.</p>
+<p><strong>Ranking baseline.</strong> Table 5's PairRM Uniform/ranking/(M_{AP}) LC scores are 30.72/31.53/ <strong>37.07</strong>, WR 32.64 / 30.40
+/ <strong>36.58</strong>; ArmoRM LC is 41.61/43.48/
+<strong>47.83</strong>, WR 36.26 / 38.47 /
+<strong>45.14</strong>. Reward rank alone is less effective than the explicit–implicit gap.</p>
+<p><strong>Hyperparameter sensitivity and transitions.</strong> The paper selects from ({0.25,0.5,1,2.5,5}) but provides trends/chosen values rather than complete per-dataset/per-metric grids, so no precise () transition point is established. Selection direction does show a structural reversal: top-40% to bottom-40% reduces Llama LC from top-(M_{AP}) 47.83 to 34.64, a decline of <strong>13.19
+pp</strong>. This resembles a transition under reversed ranking more than ordinary fluctuations around neighboring () values.</p>
+<p><strong>Statistical significance.</strong> Table 6 reports AlpacaEval 2 standard deviations around 1.43–1.46 for Llama and 1.38–1.45 for Gemma; Arena-Hard has 95% intervals around ±1.8 to ±3.0. No formal paired tests or multiplicity corrections appear. Gemma AE2 LC +0.07pp and Arena-Hard -0.1pp clearly do not establish stable rankings. Larger 3–9pp gaps are practically more meaningful but still do not replace independent multiseed training statistics.</p>
+<h3 id="真正贡献可复用设计与迁移潜力">1.7 Genuine contributions, reusable designs, and transfer potential</h3>
+<p>Preference value becomes a sample–current-model relationship rather than intrinsic sample quality. The same pair can be valuable to an initial model and redundant once mastered. Selection is naturally online and state-dependent, explaining why static reward rankings often fail.</p>
+<p>Three independently reusable designs follow. First, <strong>teacher confidence minus
+student mastery</strong>
+transfers to refusal, safety, code tests, or multimodal preferences: explicit teachers provide reliability, while policy disagreement provides novelty. Second, normalizing units with () before combination provides practical cross-RM calibration. Third, reverse selection is inexpensive but highly diagnostic, testing whether rankings capture causally relevant signals.</p>
+<p>Potential extensions include token/step-level supervision: replace response-level (r_w-r_l) with verifier gaps and sequence-average log probabilities with local mastery. For multiple rewards, calculate potential separately for helpfulness, safety, and factuality, then use Pareto selection instead of collapsing them into one scalar.</p>
+<h3 id="局限性论文自述">1.8 Author-stated limitations</h3>
+<ol type="1">
+<li><strong>Joint tuning of () and training-side () is required.</strong> Methods on page 5 and page 9's Limitations and future work acknowledge setting-dependent weights; Appendix Table 8 uses different values across models/data/objectives.</li>
+<li><strong>Limited scales and initialization.</strong> Page 9 states only Llama-3-8B-Instruct and Gemma-2-9B-it are evaluated; undisclosed post-training data makes the influence of initial priors on margins difficult to assess.</li>
+<li><strong>Narrow optimizer coverage.</strong> The main focus is DPO/SimPO with supplemental IPO; broader alignment methods/scales remain necessary.</li>
+</ol>
+<h3 id="独立批判有证据的-8-个边界">1.9 Independent critique: 8 evidence-based boundaries</h3>
+<ol type="1">
+<li><strong>[Argument gap] Consistent superiority does not mean every cell wins.</strong> Table 1's Gemma+SimPO Arena-Hard is 60.9 versus EVA's 61.0, so the correct claim is 11/12 wins, not all cells.</li>
+<li><strong>[Hyperparameters/design] Combined selection is not best at very low budgets.</strong> Table 3's top-20% raw WR is 30.62, below small-implicit-margin selection's 31.01, showing complementarity depends on budget and metric.</li>
+<li><strong>[Statistical significance] Small gaps fit within evaluation noise.</strong> AE2 standard deviations are around 1.4 while several main-table gaps are only 0.07–0.6pp. These columns cannot be deterministic wins; training-seed variance and paired tests are absent.</li>
+<li><strong>[Metric validity] Both main benchmarks use LLM judges.</strong> AlpacaEval 2 and Arena-Hard rely on automatic judges, while GPT-4 also audits labels. Style, length, and judge preferences may jointly drive results, without blinded human evaluation as an independent axis.</li>
+<li><strong>[Reproducibility] No end-to-end selection-cost budget.</strong>
+Every candidate requires RM inference and policy log probabilities; EVA additionally generates 5 responses per prompt, up to 4096 tokens each. Without GPU-hours, half the data does not imply half the compute.</li>
+<li><strong>[Out-of-distribution generalization] Only 8B/9B open-ended chat.</strong> No 70B, code, mathematics, safety refusal, or multilingual tasks establish margin-gap calibration across capability regimes.</li>
+<li><strong>[Supervision loop] RMs label and score selection.</strong> Explicit margins come from ArmoRM/PairRM, whose pipelines also form labels. Gains may partly reinforce specific RM preferences; Figure 3's 16.7% GPT-4 disagreement shows noise persists.</li>
+<li><strong>[Theory–practice gap] Convergence theory does not directly cover LLMs.</strong>
+Theorem 3.1 analyzes maximum-gap adversarial contextual-bandit sampling, while practice adds length normalization, standard deviations, (), absolute values, and estimated rewards. Fewer than half the iterations does not imply 2× faster LLM wall-clock training.</li>
+</ol>
+</section><section class="card" aria-label="2.
+Related-work retrospective: the chain of problems and technical origins"><h2 id="相关工作回溯问题与技术来源链">2.
+Related-work retrospective: the chain of problems and technical origins</h2>
+<h3 id="dpo-2023.05-neurips-2023">2.1 DPO — 2023.05 / NeurIPS 2023</h3>
+<p><strong>What it solved.</strong> DPO uses KL-regularized RLHF's closed-form optimum to replace reward-model-plus-PPO pipelines with preference classification. Beyond simplification, it supplies the reward–policy correspondence (r(x,y)=(y|x)/_{ref}(y|x)+c(x)).</p>
+<p><strong>Remaining gap.</strong> DPO assumes given pairs deserve equal training, answering how to learn rather than which examples first under limited budgets. Implicit rewards change with the model, making data value dynamic.</p>
+<p><strong>How the core paper responds.</strong> The core paper uses DPO's correspondence to turn optimal-margin consistency into current learning gaps. Without implicit-reward interpretation, (M_) would be an arbitrary confidence score.</p>
+<p><strong>Inherited design.</strong>
+Policy equivalence to rewards evolves into policy–external-reward gaps as data schedulers; DPO's theoretical bridge moves from training objective to selection metric.</p>
+<h3
+id="not-all-preference-pairs-are-created-equal-2024.06-findings-emnlp-2024">2.2
+Not All Preference Pairs Are Created Equal — 2024.06 / Findings EMNLP
+2024</h3>
+<p><strong>What it solved.</strong>
+This work brings active learning to iterative preference annotation, finding small current-model implicit reward margins often worth labeling and allocating more budget early. It establishes model uncertainty as one data-value axis.</p>
+<p><strong>Remaining gap.</strong> Small-margin selection also admits genuinely ambiguous pairs, nearly equal responses, and unreliable labels. Student uncertainty does not imply a clear teacher answer.</p>
+<p><strong>How the core paper responds.</strong> (M_{AP}) retains small-implicit-margin informativeness while requiring large-explicit-margin teachability. Table 6 improves over (M_) by 0.68–3.92pp in all six model×metric cells.</p>
+<p><strong>Inherited design.</strong> Single-axis uncertainty sampling becomes teacher–student discrepancy, constraining active-learning uncertainty with RM label clarity.</p>
+<h3 id="simpo-2024.05-neurips-2024">2.3 SimPO — 2024.05 / NeurIPS
+2024</h3>
+<p><strong>What it solved.</strong> SimPO uses length-normalized mean log probabilities as reference-free implicit rewards and adds a target margin to Bradley–Terry optimization. Official results report up to +6.4 on AlpacaEval 2 and +7.5 on Arena-Hard over DPO.</p>
+<p><strong>Remaining gap.</strong> SimPO improves the objective but assumes fixed data; normalized rewards measure model mastery rather than external quality.</p>
+<p><strong>How the core paper responds.</strong> The core work computes (M_) with SimPO rewards, avoiding zero DPO ratios when initial/reference policies match, then combines external RM signals. IPO transfer in Table 2 shows gains are not merely structural alignment with SimPO.</p>
+<p><strong>Inherited design.</strong> Length-normalized rewards migrate from objective scoring into student-state estimation for data selection.</p>
+<h3 id="eva-2024.10-icml-2025">2.4 EVA — 2024.10 / ICML 2025</h3>
+<p><strong>What it solved.</strong> EVA frames alignment as asymmetric creator–solver self-play: reward-guided creators evolve informative prompts, and solvers improve on them. Its abstract reports Gemma-2-9B-it Arena-Hard rising 51.6%→60.1% under DPO and 52.3%→60.7% under SimPO.</p>
+<p><strong>Remaining gap.</strong> Harder prompts do not guarantee every preference pair is suitable for the current solver. Evolution broadens distributions without fully solving pair-level gradient value.</p>
+<p><strong>How the core paper responds.</strong> The authors insert (M_{AP}) into EVA selection, distinguishing evolve-then-select from select-then-evolve. Table 1's 11/12 improvements support complementarity, but Gemma+SimPO Arena-Hard's -0.1 shows selection guarantees no universal improvement.</p>
+<p><strong>Inherited design.</strong> Prompt-level curricula become pair-level curricula, closing the loop of task creation, responses, scoring, selection, and updates.</p>
+</section><section class="card" aria-label="3. Technical evolution"><h2 id="技术演进脉络">3. Technical evolution</h2>
+<pre class="text"><code>2023 DPO [policy as implicit reward; simpler preference optimization]
+   ├──────────────────────────────────────┐
+   ↓                                      ↓
+2024 Small-margin selection            2024 SimPO
+[current-model uncertainty; annotation savings] [length-normalized implicit reward; reference-free]
+   └──────────────┬───────────────────────┘
+                  │ Student side: what remains unlearned
+2024 EVA          │
+[creator expands prompt distributions] ──────┐
+                  │                          │
+                  ↓                          ↓
+2025 Alignment Potential [large explicit teacher margin − small implicit student margin]
+                  │
+                  ├─ Offline: less data, higher value density
+                  └─ Online: pair-level curricula within EVA</code></pre>
+<p>The driver shifts from fixed data with new losses to model states determining the next batch. Implicit rewards become observable learning states rather than internal loss quantities, and EVA makes prompt distributions evolvable. Attention moves from final win rates toward annotation efficiency, training-data value density, and online curricula.</p>
+<table>
+<colgroup>
+<col style="width: 15%" />
+<col style="width: 15%" />
+<col style="width: 15%" />
+<col style="width: 15%" />
+<col style="width: 21%" />
+<col style="width: 15%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Publication date</th>
+<th scope="col">Venue / publication</th>
+<th scope="col">Core contribution</th>
+<th scope="col" style="text-align: right;">Representative reported figures</th>
+<th scope="col">Relation to the core work</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DPO</td>
+<td>2023.05</td>
+<td>NeurIPS 2023</td>
+<td>Closed-form policy–reward mapping</td>
+<td style="text-align: right;">Matches/exceeds PPO-RLHF on multiple tasks</td>
+<td>Theoretical basis for implicit rewards</td>
+</tr>
+<tr class="even">
+<td>Not All Preference Pairs…</td>
+<td>2024.06</td>
+<td>Findings EMNLP 2024</td>
+<td>Small-implicit-margin active pair selection</td>
+<td style="text-align: right;">Abstract: small margins usually beat large/random selection</td>
+<td>Student-uncertainty axis</td>
+</tr>
+<tr class="odd">
+<td>SimPO</td>
+<td>2024.05</td>
+<td>NeurIPS 2024</td>
+<td>Length-normalized reference-free rewards</td>
+<td style="text-align: right;">Up to +6.4/+7.5pp over DPO</td>
+<td>Practical implementation of (M_)</td>
+</tr>
+<tr class="even">
+<td>EVA</td>
+<td>2024.10</td>
+<td>ICML 2025</td>
+<td>Creator–solver prompt evolution</td>
+<td style="text-align: right;">SimPO AH 52.3→60.7</td>
+<td>Online evolution framework</td>
+</tr>
+<tr class="odd">
+<td><strong>Alignment Potential</strong></td>
+<td><strong>2025.02</strong></td>
+<td><strong>ICML 2025</strong></td>
+<td><strong>Combined explicit–implicit margin selection</strong></td>
+<td style="text-align: right;"><strong>30k beats 60k: +2.3/+3.4pp</strong></td>
+<td><strong>Point of convergence</strong></td>
+</tr>
+</tbody>
+</table>
+</section><section class="card" aria-label="4. Open challenges and actionable research opportunities"><h2 id="开放挑战与可操作研究机会">4. Open challenges and actionable research opportunities</h2>
+<h3 id="理论层面">4.1 Theory</h3>
+<ol type="1">
+<li><strong>Ranking consistency under estimation errors.</strong> On a fixed pair pool, estimate (M_r) with ArmoRM, PairRM, and several open judges; measure top-k (M_{AP}) Kendall () and final gains. Derive RM-variance thresholds where ranking-reversal probability exceeds 5%.</li>
+<li><strong>From bandits to token MDPs.</strong> At equal data/GPU-hours, compare response-level (M_{AP}) with step-level verifier potential. Test whether theoretical gaps predict actual gradient norms, loss decreases, and final win rates.</li>
+<li><strong>Adaptive () instead of grid search.</strong> Compare fixed () against automatic weighting from margin-calibration error, noise rates, or two-armed bandits. Test whether transfer across models avoids retuning.</li>
+</ol>
+<h3 id="工程与应用层">4.2 Engineering and applications</h3>
+<ol type="1">
+<li><strong>Equal total compute.</strong> On 8×A100 with fixed 200 GPU-hours, compare 60k random training, 30k (M_{AP}) plus scoring, 30k small-implicit-margin selection, and EVA+(M_{AP}). Report generation, RM inference, log probabilities, and training separately, testing whether halved data lowers wall-clock time.</li>
+<li><strong>Blinded humans and cross-judge evaluation.</strong> For Table 1's large Llama DPO raw-WR gap (+4.26pp), sample at least 500 response pairs with three human annotators. Compare agreement with GPT-4/open judges, avoiding one judge both constructing and evaluating data.</li>
+<li><strong>Cross-domain stress tests.</strong> Fix 20k pairs each for mathematics, code, safety refusal, and multilingual tasks. Compare universal () with domain-specific tuning, reporting overall/worst-domain scores to test whether benefits are chat-specific.</li>
+<li><strong>Changing streaming capacity.</strong> Vary memory buffers 5k→20k→5k; compare full reranking, incremental quantile estimates, and reservoir sampling on throughput, forgetting, and selection stability.</li>
+</ol>
+<h3 id="新兴方向">4.3 Emerging directions</h3>
+<ol type="1">
+<li><strong>Multiobjective Pareto potential.</strong>
+Compute potential separately with helpfulness/safety/factuality RMs and compare Pareto fronts with scalar weighted selection at equal budgets, testing whether high helpfulness margins crowd out safety.</li>
+<li><strong>Multimodal preferences.</strong> For medical VLMs or text–image generation, split explicit signals into clinical/visual-grounding scores and use conditional log probabilities for students. Compare against reward-margin-only selection at equal budgets, emphasizing hallucination subsets.</li>
+<li><strong>Privacy and forgetting.</strong> If high potential comes from rare private patterns, selection may amplify memorization. In canary-containing preference pools, compare random, (M_r), (M_), and (M_{AP}) on exposure/utility, plotting privacy–performance boundaries.</li>
+</ol>
+</section><section class="card" aria-label="5. Other recent work worth watching"><h2 id="其他值得关注的近期工作">5. Other recent work worth watching</h2>
+<ol type="1">
+<li><strong>Active Reward Modeling</strong>(ICML 2025): Moves from selecting training pairs to selecting pairs worth annotation costs, suitable for equal-budget closed-loop comparisons with (M_{AP}). <a
+href="https://proceedings.mlr.press/v267/">PMLR volume page</a></li>
+<li><strong>Pre-DPO</strong>(arXiv 2504.15843v3, 2025-12-31): Uses a guiding reference model to estimate suitability for the current model, closely related to model-dependent value. <a
+href="https://arxiv.org/abs/2504.15843">arXiv</a></li>
+<li><strong>Length-Controlled Margin-Based Preference
+Optimization</strong>(arXiv 2502.14643, 2025-02): Incorporates margins and length control into objectives, testing complementarity between selection-side and training-side margins. <a
+href="https://arxiv.org/abs/2502.14643">arXiv</a></li>
+<li><strong>Your Language Model is Secretly a Preference
+Classifier</strong>(arXiv 2502.16182, 2025-02): Explores models classifying preferences themselves, potentially reducing external RM dependence while strengthening bootstrap bias. <a
+href="https://arxiv.org/abs/2502.16182">arXiv</a></li>
+<li><strong>DPO Unchained</strong>(arXiv 2507.07855, 2025-07): Revisits DPO assumptions through broader human-choice theory, contextualizing the premise that reward margins are true targets. <a
+href="https://arxiv.org/abs/2507.07855">arXiv</a></li>
+<li><strong>Asynchronous RLHF</strong>(arXiv 2410.18252, 2024-10): Decouples generation and learning; combining with online (M_{AP}) requires handling stale-policy implicit margins. <a
+href="https://arxiv.org/abs/2410.18252">arXiv</a></li>
+<li><strong>ORPO</strong>(arXiv 2403.07691, 2024-03): Reference-free, single-stage preference training offers another test of cross-objective (M_{AP}) generality. <a
+href="https://arxiv.org/abs/2403.07691">arXiv</a></li>
+</ol>
+</section><section class="card" aria-label="6. Conclusion"><h2 id="结论">6. Conclusion</h2>
+<p>The central idea is: <strong>Training-data value should jointly reflect external goals and the current model state.</strong>
+The strongest evidence—30k selected examples beating all 60k by AE2 LC +2.3pp and Arena-Hard +3.4pp—shows substantial redundancy. But 11/12 rather than 12/12 EVA wins, a -0.39pp counterexample at 20% budget, approximately 1.4 evaluation standard deviations, and missing GPU-hours make this a promising scheduling principle, not a proven universal optimum.</p>
+<hr />
+<p><strong>Data provenance:</strong> Core figures come from directly read PMLR text/appendices, Tables 1–8 and Figures 3/6. Derived pp/percentages are labeled recalculations. Unreported multiseed training variance, significance tests, GPU-hours, and full numerical () curves are not invented.<br />
+<strong>Layout verification:</strong> HTML passed Warm Editorial structural validation (0 errors / 0 warnings), with desktop/dark/mobile responsive rules. This container provided no
+<code>/usr/bin/chromium</code> or <code>/opt/pw-browsers</code>
+browser executable, preventing Playwright screenshots; static checks are not claimed as actual browser rendering.<br />
+<strong>Index status:</strong> This entry was appended to
+<code>ml-report-index.md</code>. </p>
+</section></main>
+<footer>Core sources: <a href="https://proceedings.mlr.press/v267/huang25al.html">ICML 2025 / PMLR</a>. Generated 2026-08-24; all unverifiable resources are explicitly marked.</footer></div><div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ Light' : '☾ Dark';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

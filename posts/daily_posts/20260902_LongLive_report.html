@@ -3,9 +3,12 @@ layout: null
 title: "LongLive"
 date: 2026-09-02
 topic: vlm-vision
-excerpt: "解析 LongLive 如何以流式长视频训练、frame sink 与 KV-recache 实现可持续的长视频生成，并权衡长程质量与速度。"
+tags: ["vlm-vision"]
+excerpt: "How LongLive combines streaming long tuning, frame sinks, and KV-recache for sustainable long-video generation—and where quality, semantics, and speed still trade off."
 permalink: /blog/2026/09/02/longlive-streaming-long-video-generation/
 blog_post: true
+lang: zh-CN
+alternate_en: /blog/2026/09/02/longlive-streaming-long-video-generation/en/
 ---
 <!DOCTYPE html>
 <html lang="zh-CN" data-theme="light">
@@ -58,7 +61,17 @@ blog_post: true
     line-height: 1.75;
   }
   .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
-  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .toolbar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-bottom: 14px; }
+  .language-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1.75;
+    text-decoration: none;
+  }
   .theme-toggle {
     border: 1px solid var(--border);
     border-radius: 999px;
@@ -189,10 +202,11 @@ blog_post: true
     a { color: inherit; }
   }
 </style>
-</head>
-<body>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
 <div class="wrap">
   <div class="toolbar">
+    <a class="language-toggle" href="/blog/2026/09/02/longlive-streaming-long-video-generation/en/" lang="en" hreflang="en">English</a>
     <button class="theme-toggle" id="theme-toggle" type="button" aria-label="切换深浅色主题" aria-pressed="false">☾ 深色</button>
   </div>
 
@@ -257,7 +271,7 @@ href="https://arxiv.org/abs/2506.08009">2506.08009v2，2025-11-10；v1
 </tr>
 <tr class="odd">
 <td>SkyReels-V2</td>
-<td>技术报告，未找到正式主会页</td>
+<td>技术报告</td>
 <td><a
 href="https://arxiv.org/abs/2504.13074">2504.13074v3，2025-04-21</a></td>
 <td><a href="https://github.com/SkyworkAI/SkyReels-V2">GitHub</a></td>
@@ -266,7 +280,7 @@ href="https://arxiv.org/abs/2504.13074">2504.13074v3，2025-04-21</a></td>
 </tr>
 <tr class="even">
 <td>FramePack</td>
-<td>OpenReview 页面未核实接收 venue</td>
+<td>—</td>
 <td><a
 href="https://arxiv.org/abs/2504.12626">2504.12626v3，2025-10-14</a></td>
 <td><a href="https://github.com/lllyasviel/FramePack">GitHub</a></td>
@@ -293,23 +307,7 @@ href="https://github.com/Picsart-AI-Research/StreamingT2V">GitHub</a></td>
 7
 没有给出全部窗口配置的小数，本报告只写“接近”和饱和点，不臆读柱高。论文没有报告多随机种子、标准差或置信区间，故不使用“显著提升”。</p>
 </section>
-<section class="card" aria-labelledby="2-排重候选池与随机选择-title"><h2 id="2-排重候选池与随机选择-title">2. 排重、候选池与随机选择</h2>
-<p>先查 <code>ml-report-index.md</code>，排除近 14 天已覆盖的 DMFM
-Alignment、Q-VDiT 与晶体扩散 KLDM。候选池共 24 篇，覆盖
-ICLR/OpenReview、arXiv、公开项目页与代码：Transition Matching、Mean
-Flows、Self Forcing、LongLive、TurboDiffusion、FLUX.1
-Kontext、Qwen-Image、BAGEL、MAGI-1、UniWorld-V2、Representation
-Autoencoders、Autoregressive Adversarial
-Post-Training、Flow-GRPO、DanceGRPO、DiffusionNFT、SANA-Sprint、Block
-Diffusion、SemanticGen、OmniGen2、OneReward、Goku、Graph Flow
-Matching、Symmetrical Flow Matching、ZeroGVC。完整池见
-<code>candidates_2026-09-02.tsv</code>。</p>
-<p>执行 <code>shuf -i 1-24 -n 1</code> 得 <strong>4</strong>，即
-LongLive。其 ICLR 2026 接收状态、v2 PDF、训练/推理代码、1.3B
-权重和结果表均可核验，故 <strong>重抽 0
-次</strong>。随机规则只决定核心论文，不以热度或主观喜好二次筛选。</p>
-</section>
-<section class="card" aria-labelledby="3-motivation长视频不只是把短片多生成几次-title"><h2 id="3-motivation长视频不只是把短片多生成几次-title">3. Motivation：长视频不只是“把短片多生成几次”</h2>
+<section class="card" aria-labelledby="2-motivation长视频不只是把短片多生成几次-title"><h2 id="2-motivation长视频不只是把短片多生成几次-title">2. Motivation：长视频不只是“把短片多生成几次”</h2>
 <p>短视频扩散通常使用双向时空注意力，画质高但无法自然复用历史 KV；因果
 AR 模型可缓存，却会在滚动生成时不断条件化于自己的错误。LongLive
 把矛盾概括为三组：短训练—长推理的 exposure
@@ -328,7 +326,7 @@ prompt inertia。LongLive
 的工程目标不是一次性生成一条固定长片，而是用户可连续追加
 prompt、系统持续输出且每步成本有界。</p>
 </section>
-<section class="card" aria-labelledby="4-故事线核心假设与权衡-title"><h2 id="4-故事线核心假设与权衡-title">4. 故事线、核心假设与权衡</h2>
+<section class="card" aria-labelledby="3-故事线核心假设与权衡-title"><h2 id="3-故事线核心假设与权衡-title">3. 故事线、核心假设与权衡</h2>
 <p>故事线有三个连续层次。第一，基于 Wan2.1-T2V-1.3B，把短片模型通过
 Self-Forcing/DMD 适配成少步因果生成器。第二，训练不再只看真实短
 clip，而是每轮延伸自身已生成历史 5
@@ -340,7 +338,7 @@ teacher 虽不会生成可靠长片，却可逐段提供局部监督；detach
 仍可泛化到多次切换。权衡是：有界内存换来有限长程信息；首帧锚定可能妨碍应当发生的场景/身份变化；局部
 teacher 继承了基座偏差。</p>
 </section>
-<section class="card" aria-labelledby="5-方程级形式化与伪代码-title"><h2 id="5-方程级形式化与伪代码-title">5. 方程级形式化与伪代码</h2>
+<section class="card" aria-labelledby="4-方程级形式化与伪代码-title"><h2 id="4-方程级形式化与伪代码-title">4. 方程级形式化与伪代码</h2>
 <p>令每个 5 秒 latent chunk 为 (x_t)，提示为 (p_t)，历史缓存为
 (C_t)。因果分解为 [ p_\theta(x_{1:T}|p_{1:T})=\prod_{t=1}^T
 p_\theta(x_t\mid C_{t-1},p_t), \quad
@@ -366,7 +364,7 @@ for 每条最长 60s 训练 rollout:
         只更新当前 chunk；cache 保留 [首帧 sink + 最近 W]
 推理：每个 prompt 边界 recache 一次，其余持续滚动输出</code></pre>
 </section>
-<section class="card" aria-labelledby="6-机制与工程细节-title"><h2 id="6-机制与工程细节-title">6. 机制与工程细节</h2>
+<section class="card" aria-labelledby="5-机制与工程细节-title"><h2 id="5-机制与工程细节-title">5. 机制与工程细节</h2>
 <div class="table-scroll" role="region" tabindex="0" aria-label="数据表，可横向滚动"><table>
 <thead>
 <tr class="header">
@@ -442,7 +440,7 @@ for 每条最长 60s 训练 rollout:
 <strong>17%</strong>（§3.3，p.5）。注意这不是相对所有 baseline，也不是
 20.7 FPS 的完整来源分解。</p>
 </section>
-<section class="card" aria-labelledby="7-数据基准与指标-title"><h2 id="7-数据基准与指标-title">7. 数据、基准与指标</h2>
+<section class="card" aria-labelledby="6-数据基准与指标-title"><h2 id="6-数据基准与指标-title">6. 数据、基准与指标</h2>
 <p>短片用 VBench 官方 prompts，报告
 Total、Quality、Semantic。单提示长片用 VBench-Long：每个 prompt 生成 30
 秒并按官方脚本切片。交互评测是作者自建 <strong>160 条 60
@@ -455,8 +453,8 @@ L，p.17），但主文图 1 未给可直接复算的逐项数值表或置信区
 Self-Forcing 17.0 更可比；对 SkyReels 960×540 或 MAGI 4.5B
 的倍数不能纯归因于算法。</p>
 </section>
-<section class="card" aria-labelledby="8-主结果完整矩阵-title"><h2 id="8-主结果完整矩阵-title">8. 主结果完整矩阵</h2>
-<section class="subsection" aria-labelledby="81-短视频-vbench表-1p7-title"><h3 id="81-短视频-vbench表-1p7-title">8.1 短视频 VBench（表 1，p.7）</h3>
+<section class="card" aria-labelledby="7-主结果完整矩阵-title"><h2 id="7-主结果完整矩阵-title">7. 主结果完整矩阵</h2>
+<section class="subsection" aria-labelledby="71-短视频-vbench表-1p7-title"><h3 id="71-短视频-vbench表-1p7-title">7.1 短视频 VBench（表 1，p.7）</h3>
 <div class="table-scroll" role="region" tabindex="0" aria-label="数据表，可横向滚动"><table>
 <thead>
 <tr class="header">
@@ -568,7 +566,7 @@ Self-Forcing 17.0 更可比；对 SkyReels 960×540 或 MAGI 4.5B
 −5.92%</strong>（本报告复算）。相对 SkyReels-V2 为
 <strong>42.24×</strong> FPS，但分辨率不同。</p>
 </section>
-<section class="subsection" aria-labelledby="82-30-秒-vbench-long表-3p8-title"><h3 id="82-30-秒-vbench-long表-3p8-title">8.2 30 秒 VBench-Long（表 3，p.8）</h3>
+<section class="subsection" aria-labelledby="72-30-秒-vbench-long表-3p8-title"><h3 id="72-30-秒-vbench-long表-3p8-title">7.2 30 秒 VBench-Long（表 3，p.8）</h3>
 <div class="table-scroll" role="region" tabindex="0" aria-label="数据表，可横向滚动"><table>
 <thead>
 <tr class="header">
@@ -615,7 +613,7 @@ Self-Forcing 17.0 更可比；对 SkyReels 960×540 或 MAGI 4.5B
 +1.93%</strong>，对 Semantic 第二名 FramePack 为 <strong>+0.50 /
 +0.66%</strong>。这一表比短片表更支持方法主张。</p>
 </section>
-<section class="subsection" aria-labelledby="83-60-秒交互表-2p7-title"><h3 id="83-60-秒交互表-2p7-title">8.3 60 秒交互（表 2，p.7）</h3>
+<section class="subsection" aria-labelledby="73-60-秒交互表-2p7-title"><h3 id="73-60-秒交互表-2p7-title">7.3 60 秒交互（表 2，p.7）</h3>
 <div class="table-scroll" role="region" tabindex="0" aria-label="数据表，可横向滚动"><table>
 <thead>
 <tr class="header">
@@ -668,7 +666,7 @@ Self-Forcing 17.0 更可比；对 SkyReels 960×540 或 MAGI 4.5B
 −15.70%</strong>，故“稳定”是相对更慢衰减，不是无衰减。</p>
 </section>
 </section>
-<section class="card" aria-labelledby="9-逐层消融超参相变与量化-title"><h2 id="9-逐层消融超参相变与量化-title">9. 逐层消融、超参相变与量化</h2>
+<section class="card" aria-labelledby="8-逐层消融超参相变与量化-title"><h2 id="8-逐层消融超参相变与量化-title">8. 逐层消融、超参相变与量化</h2>
 <p>KV 表 4（p.8）：</p>
 <div class="table-scroll" role="region" tabindex="0" aria-label="数据表，可横向滚动"><table>
 <thead>
@@ -717,7 +715,7 @@ adapter 内最佳，512 反降 0.08，出现明确饱和；但 full 仍高 0.40�
 后续称 FP8 24.8 FPS，而 v2 表 B 是 INT8
 5090，硬件和精度口径不可混用。</p>
 </section>
-<section class="card" aria-labelledby="10-统计显著性与复现性-title"><h2 id="10-统计显著性与复现性-title">10. 统计显著性与复现性</h2>
+<section class="card" aria-labelledby="9-统计显著性与复现性-title"><h2 id="9-统计显著性与复现性-title">9. 统计显著性与复现性</h2>
 <p>论文<strong>未报告</strong>生成随机种子数量、均值±标准差、bootstrap
 CI、VBench item-level 配对检验或用户研究置信区间；26
 名参与者的重复判断也不是 1,248 个独立人。故 0.50 Semantic、0.04
@@ -727,7 +725,7 @@ Background 等差异无法判断统计稳定性。</p>
 <code>v1.0</code> commit；训练依赖 Wan2.1-14B teacher、VidProM
 prompts、Qwen2-72B 合成后续提示和 64 H100，完整复现门槛仍高。</p>
 </section>
-<section class="card" aria-labelledby="11-相关工作问题来源与设计传递-title"><h2 id="11-相关工作问题来源与设计传递-title">11. 相关工作：问题来源与设计传递</h2>
+<section class="card" aria-labelledby="10-相关工作问题来源与设计传递-title"><h2 id="10-相关工作问题来源与设计传递-title">10. 相关工作：问题来源与设计传递</h2>
 <p><strong>StreamingT2V</strong> 解决短 clip 拼接的硬切，使用前一 chunk
 的短期 CAM、第一 chunk 的长期 appearance preservation 与随机
 blending，能生成 80–1,200+ 帧。缺口是多阶段模块推理慢、不是少步因果 KV
@@ -809,7 +807,7 @@ tuning，并把 KV-recache 嵌入同一训练条件。</p>
 </tbody>
 </table></div>
 </section>
-<section class="card" aria-labelledby="12-真正贡献可复用设计与迁移潜力-title"><h2 id="12-真正贡献可复用设计与迁移潜力-title">12. 真正贡献、可复用设计与迁移潜力</h2>
+<section class="card" aria-labelledby="11-真正贡献可复用设计与迁移潜力-title"><h2 id="11-真正贡献可复用设计与迁移潜力-title">11. 真正贡献、可复用设计与迁移潜力</h2>
 <p>真正贡献不是单一新
 loss，而是三层一致性共同成立：训练用自身历史，训练与推理用同一窗口/sink，prompt
 switch 在训练和推理都执行 recache。单独抄 frame sink
@@ -822,7 +820,7 @@ rollout、长音频生成、流式 avatar 和混合 linear/full
 attention。迁移时应把固定首帧改成可检索或可更新的
 memory，否则真正换场景时锚点会成为错误约束。</p>
 </section>
-<section class="card" aria-labelledby="13-论文自述限制-title"><h2 id="13-论文自述限制-title">13. 论文自述限制</h2>
+<section class="card" aria-labelledby="12-论文自述限制-title"><h2 id="12-论文自述限制-title">12. 论文自述限制</h2>
 <ol type="1">
 <li><strong>基座上限。</strong> 附录
 M（p.18）明确说方法是基座之上的高效微调，短片绝对质量不太可能持续超过基座；收益主要是适配与稳定。</li>
@@ -833,7 +831,7 @@ M（p.18）明确说方法是基座之上的高效微调，短片绝对质量不
 只是折中，并非完整历史替代。</li>
 </ol>
 </section>
-<section class="card" aria-labelledby="14-独立批判因为-x所以-y-title"><h2 id="14-独立批判因为-x所以-y-title">14. 独立批判：因为 X，所以 Y</h2>
+<section class="card" aria-labelledby="13-独立批判因为-x所以-y-title"><h2 id="13-独立批判因为-x所以-y-title">13. 独立批判：因为 X，所以 Y</h2>
 <ol type="1">
 <li><strong>[语义代价]</strong> 因为短片 Semantic 76.47 低于
 Self-Forcing 81.28 达 4.81 分（表 1），所以“短片能力不退化”只对
@@ -859,7 +857,7 @@ factorial ablation，所以 20.7 FPS 与长程分数无法逐项归因。</li>
 证明稳态吞吐，不等同于交互服务 SLA。</li>
 </ol>
 </section>
-<section class="card" aria-labelledby="15-可操作开放挑战-title"><h2 id="15-可操作开放挑战-title">15. 可操作开放挑战</h2>
+<section class="card" aria-labelledby="14-可操作开放挑战-title"><h2 id="14-可操作开放挑战-title">14. 可操作开放挑战</h2>
 <section class="subsection" aria-labelledby="理论-title"><h3 id="理论-title">理论</h3>
 <ul>
 <li><strong>锚点 vs 检索记忆：</strong> 固定 9+3 token 预算，比较首帧
@@ -899,7 +897,7 @@ audio sink 与共享 cross-modal memory，测嘴型、说话人和事件同步�
 </ul>
 </section>
 </section>
-<section class="card" aria-labelledby="16-近期联读-title"><h2 id="16-近期联读-title">16. 近期联读</h2>
+<section class="card" aria-labelledby="15-近期联读-title"><h2 id="15-近期联读-title">15. 近期联读</h2>
 <ol type="1">
 <li><a href="https://arxiv.org/abs/2605.18739">LongLive-2.0</a>：把 1.0
 的算法骨架升级为 NVFP4、sequence parallel 与异步 VAE 基础设施，报告 5B
@@ -924,7 +922,7 @@ anti-drift 给出另一条固定上下文路线，适合做动态 memory
 head-to-head。</li>
 </ol>
 </section>
-<section class="card" aria-labelledby="17-结论-title"><h2 id="17-结论-title">17. 结论</h2>
+<section class="card" aria-labelledby="16-结论-title"><h2 id="16-结论-title">16. 结论</h2>
 <p>LongLive
 的重要性在于把长视频生成从“一次昂贵采样”改写为有状态流式系统：状态要定期刷新、训练必须暴露于自身错误、全局与局部记忆必须分工。最关键结果是单
 H100 <strong>20.7 FPS</strong>，30 秒 VBench-Long Total
@@ -932,14 +930,6 @@ H100 <strong>20.7 FPS</strong>，30 秒 VBench-Long Total
 <strong>4.81</strong>、末段 CLIP 仍较首段下降
 <strong>15.70%</strong>。因此最准确的判断是：它建立了很强的长程质量—速度
 Pareto，但没有解决语义衰减、动态长期记忆和服务级尾延迟。</p>
-<hr />
-<p><strong>脚注：</strong> 已更新 <code>ml-report-index.md</code>。HTML
-使用 Warm Editorial
-模板；全部精确数字来自实际读取论文表格/正文。当前环境未发现
-<code>/usr/bin/chromium</code>、<code>chromium-browser</code> 或
-<code>/opt/pw-browsers</code> 中可执行 Chromium，因此无法完成 Playwright
-的浅色、深色与移动端截图检查；本报告不虚报该项，改以模板响应式规则和静态验证器（0
-error / 0 warning）兜底。</p>
 </section>
 </div>
 <figure class="figure" aria-labelledby="fps-title"><p class="fig-title" id="fps-title">同规格 1.3B / 832×480 模型的吞吐</p><p class="fig-sub">LongLive 达到 20.7 FPS，相对 Self-Forcing chunk-wise 提升 21.76%；纵轴为单 H100 FPS。</p><svg class="chart" viewBox="0 0 720 380" role="img" xmlns="http://www.w3.org/2000/svg"><title>LongLive 与同规格基线吞吐比较</title><desc>Wan2.1 0.78，Self-Forcing frame 8.9，Self-Forcing chunk 17.0，LongLive 20.7 FPS。</desc><g stroke="var(--grid)"><line x1="70" y1="320" x2="690" y2="320"/><line x1="70" y1="250" x2="690" y2="250"/><line x1="70" y1="180" x2="690" y2="180"/><line x1="70" y1="110" x2="690" y2="110"/><line x1="70" y1="40" x2="690" y2="40"/></g><g font-size="12"><text x="35" y="324">0</text><text x="35" y="254">5</text><text x="29" y="184">10</text><text x="29" y="114">15</text><text x="29" y="44">20</text></g><g fill="var(--chart-comparison)"><rect tabindex="0" data-tip="Wan2.1：0.78 FPS" x="105" y="309.1" width="90" height="10.9"/><rect tabindex="0" data-tip="Self-Forcing frame：8.9 FPS" x="255" y="195.4" width="90" height="124.6"/><rect tabindex="0" data-tip="Self-Forcing chunk：17.0 FPS" x="405" y="82" width="90" height="238"/></g><g fill="var(--chart-primary)"><rect tabindex="0" data-tip="LongLive：20.7 FPS" x="555" y="30.2" width="90" height="289.8"/></g><g text-anchor="middle" font-size="12"><text x="150" y="345">Wan2.1</text><text x="300" y="345">SF frame</text><text x="450" y="345">SF chunk</text><text x="600" y="345">LongLive</text></g></svg><figcaption>来源：LongLive 表 1，p.7。只画相同参数量、分辨率与硬件口径，避免误导。</figcaption></figure></main>

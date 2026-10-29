@@ -1,0 +1,950 @@
+---
+layout: null
+title: "DPLM-2.1"
+date: 2026-08-16
+topic: ai4science
+tags: ["ai4science"]
+excerpt: "Bit-level supervision, geometric biases, and representation alignment improve multimodal protein structure learning."
+permalink: "/blog/2026/08/16/dplm-2-1-multimodal-protein-language-model/en/"
+blog_post: false
+lang: en
+sitemap: true
+alternate_zh: "/blog/2026/08/16/dplm-2-1-multimodal-protein-language-model/"
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark"><title>DPLM-2.1 In-Depth Report · 2026-08-16</title><style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #246fca;
+    --chart-comparison: #c95224;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  :root { --chart-primary:#2a78d6; --chart-comparison:#eb6834; }
+  :root[data-theme="dark"] { --chart-primary:#3987e5; --chart-comparison:#d95926; }
+  h2 { scroll-margin-top:20px; }
+  h3 { margin-top:1.7em; }
+  h4 { margin-top:1.35em; }
+  .card > p, .card > ul, .card > ol { overflow-wrap:anywhere; }
+  math { overflow-x:auto; max-width:100%; }
+  .chart-scroll { overflow-x:auto; }
+  .chart rect { outline-offset:3px; }
+  @media (max-width:620px) { .chart { min-width:720px; } }
+</style>{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}<div class="wrap"><div class="toolbar"><button class="theme-toggle" id="theme-toggle" type="button" aria-pressed="false">☾ Dark</button></div>
+<header class="hero"><p class="eyebrow">ICML 2025 Spotlight · AI4Science</p><h1>Structure Tokens: The Problem Is Supervision Geometry, Not Just Compression</h1><p class="subtitle">Daily ML/AI Paper Review · 2026-08-16</p><div class="meta"><span class="chip source">ICML 2025 Spotlight</span><span class="chip">Sunday: AI4Science</span><span class="chip">Random selection from 28 candidates</span></div><p class="lede">Bit-level supervision, geometric bias, and structural representation alignment let DPLM-2.1's 650M model reduce PDB time-split RMSD from 5.307 to 2.370. CAMEO results, physical validity, and incomplete reproducibility still define clear limits.</p></header>
+<main><blockquote>
+<p><strong>Date</strong>: 2026-08-16　　<strong>Field</strong>: AI4Science / protein foundation models　　<strong>Core paper</strong>: <em>Elucidating the
+Design Space of Multimodal Protein Language Models</em> (ICML 2025
+Spotlight)</p>
+<p><strong>Positioning in one sentence</strong>: The problem is not just information loss when tokenizing 3D structures; geometrically similar structures become unrelated categorical labels, teaching the language model the wrong supervision geometry. Bit-level supervision, geometric inductive biases, and representation alignment reconnect discrete protein models with continuous 3D space.</p>
+</blockquote>
+<section class="card" aria-labelledby="链接验证表"><h2 id="链接验证表">0. Link verification table</h2>
+<p>All links were visited on 2026-08-16. Not public/not found means no separate entry was verified in the paper, project, venue, or official repository. arXiv dates refer to specific versions.</p>
+<table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">The paper</th>
+<th scope="col">Conference website / publication page</th>
+<th scope="col">arXiv / preprint</th>
+<th scope="col">Code repository</th>
+<th scope="col">Datasets / weights</th>
+<th scope="col">Project page / video</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Core: DPLM-2.1 / Elucidating the Design Space…</strong></td>
+<td><a href="https://proceedings.mlr.press/v267/hsieh25a.html">ICML 2025
+/ PMLR 267</a></td>
+<td><a
+href="https://arxiv.org/abs/2504.11454v3">2504.11454v3, 2025-06-12</a></td>
+<td><a href="https://github.com/bytedance/dplm">bytedance/dplm</a></td>
+<td><a href="https://huggingface.co/airkingbd/dplm2_bit_650m">DPLM-2 Bit 650M weights</a>; <a
+href="https://huggingface.co/datasets/airkingbd/pdb_swissprot">PDB+SwissProt data</a></td>
+<td><a
+href="https://bytedance.github.io/dplm/dplm-2.1/">Project page</a>; video not found</td>
+</tr>
+<tr class="even">
+<td>DPLM</td>
+<td><a href="https://proceedings.mlr.press/v235/wang24ct.html">ICML 2024
+/ PMLR 235</a></td>
+<td><a
+href="https://arxiv.org/abs/2402.18567v2">2402.18567v2, 2024-10-16</a></td>
+<td><a href="https://github.com/bytedance/dplm">Same official repository</a></td>
+<td><a
+href="https://github.com/bytedance/dplm#model-checkpoints">Model entry in repository</a>; see repository for UniRef50</td>
+<td><a href="https://bytedance.github.io/dplm/">Project page</a></td>
+</tr>
+<tr class="odd">
+<td>DPLM-2</td>
+<td><a href="https://arxiv.org/abs/2410.13782">ICLR 2025; arXiv identifies the publication</a></td>
+<td><a
+href="https://arxiv.org/abs/2410.13782v1">2410.13782v1, 2024-10-17</a></td>
+<td><a href="https://github.com/bytedance/dplm">Same official repository</a></td>
+<td><a
+href="https://huggingface.co/datasets/airkingbd/pdb_swissprot">PDB+SwissProt</a>; see repository for multiple model scales</td>
+<td><a href="https://bytedance.github.io/dplm/">Main project page</a></td>
+</tr>
+<tr class="even">
+<td>ESM3</td>
+<td><a
+href="https://www.science.org/doi/10.1126/science.ads0018">Science, 2025-01-16</a></td>
+<td><a
+href="https://www.biorxiv.org/content/10.1101/2024.07.01.600583v1">bioRxiv
+v1, 2024-07-02</a></td>
+<td><a href="https://github.com/Biohub/esm">Biohub/esm</a></td>
+<td>Training data not public; open-model entry in repository</td>
+<td><a
+href="https://www.evolutionaryscale.ai/blog/esm3-release">Official release page</a>; <a
+href="https://www.youtube.com/watch?v=qeqbm8a1-ZA">Public video</a></td>
+</tr>
+<tr class="odd">
+<td>REPA</td>
+<td><a href="https://openreview.net/forum?id=DJSZGGZYVi">ICLR 2025
+OpenReview</a></td>
+<td><a
+href="https://arxiv.org/abs/2410.06940v4">2410.06940v4, 2025-06-18</a></td>
+<td><a href="https://github.com/sihyun-yu/REPA">sihyun-yu/REPA</a></td>
+<td>See repository for pretrained visual encoder dependencies; no standalone dataset/weights found</td>
+<td><a href="https://sihyun.me/REPA/">Project page</a>; video not found</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Reachability Note.</strong> Science returned 403 during automated retrieval, but DOI, PubMed, and the official release corroborate the publication. It is marked as an existing publication link with restricted automated full-text access; no numbers were extracted there. Some OpenReview pages required browser verification and were used only to confirm venue information. Core figures come from readable arXiv v3/PMLR text.</p>
+</section><section class="card" aria-labelledby="候选池与随机抽取记录"><h2 id="候选池与随机抽取记录">0.1 Candidate Pool and Random Selection</h2>
+<p>Candidates came from the official ICML 2025 PMLR 267 directory, matching the AI4Science rotation, a 12-month window, and no overlap with indexed topics from the previous 14 days. There were 28 candidates:</p>
+<ol type="1">
+<li>From Mechanistic Interpretability to Mechanistic Biology; 2. A
+Variational Perspective on Generative Protein Fitness Optimization; 3.
+Boosting Protein Graph Representations through Static-Dynamic Fusion; 4.
+<strong>Elucidating the Design Space of Multimodal Protein Language
+Models</strong>; 5. NMA-tune; 6. Aligning Protein Conformation Ensemble
+Generation with Physical Feedback; 7. Diffusion on Language Model
+Encodings for Protein Sequence Generation; 8. PPDiff; 9.
+Flexibility-conditioned Protein Structure Design; 10. Protriever; 11.
+All-atom Inverse Protein Folding; 12. CFP-Gen; 13. Protein Structure
+Tokenization; 14. ReQFlow; 15. Bridging Protein Sequences and Microscopy
+Images; 16. Beyond Atoms; 17. Pretraining GFlowNets for Molecular Graph
+Generation; 18. Offline Model-based Optimization for Molecular
+Discovery; 19. Foundation Molecular Grammar; 20. Kinetic Langevin
+Diffusion for Crystalline Materials; 21. Open Materials Generation; 22.
+All-atom Diffusion Transformers; 23. OmniArch; 24. LLM-SRBench; 25.
+SCENT; 26. Retrieval Augmented Zero-Shot Enzyme Generation; 27.
+Physics-Informed Weakly Supervised Interatomic Potentials; 28.
+Physics-informed Temporal Alignment for PDE Foundation Models. </li>
+</ol>
+<p>Running <code>shuf -i 1-28 -n 1</code> returned
+<strong>4</strong>. The paper has formal full text, over 14 quantitative tables/appendix tables, code, and weights; evidence was sufficient, with <strong>zero redraws</strong>. Candidate-pool entry: <a
+href="https://proceedings.mlr.press/v267/">ICML 2025 PMLR 267</a>. </p>
+<hr />
+</section><section class="card" aria-labelledby="核心论文深度解析"><h2 id="核心论文深度解析">1. In-depth analysis of the core paper</h2>
+<h3 id="标题与核心定位">1.1 Title and Core Positioning</h3>
+<p>The innovation is not a larger protein model but a decomposition into four testable levels: <strong>supervision labels, generation space, network inductive bias, and training-data coverage</strong>. Tokenizer reconstruction error is only one limit. More critically, classification over topology-free codebook indices misaligns the objective with geometric similarity. The solution shifts from better tokenizers to new prediction units, continuous residuals, pairwise geometry, and teacher-smoothed supervision.</p>
+<h3 id="motivation具体痛点与定量证据">1.2 Motivation: Specific Problems and Quantitative Evidence</h3>
+<p>Multimodal PLMs jointly model amino-acid sequence () and 3D backbone (). An encoder maps structure to continuous latents, quantized into discrete tokens so a language model can process geometry as a vocabulary. This interface creates three measurable failures.</p>
+<p>First, <strong>quantization loss</strong>. Table 1 (PDF p.3) gives continuous-latent reconstruction RMSD 1.3127 and TM-score 0.9733; quantization worsens them to 1.9806 and 0.9385. RMSD rises 0.6679, a <strong>50.88% relative deterioration</strong>, while TM-score falls 0.0348. Discretization is not free compression.</p>
+<p>Second, <strong>better tokenizer reconstruction does not imply better LM generation</strong>. Table 2 (p.3): ESM3's tokenizer RMSD 0.7248 greatly beats DPLM-2's 1.9806, yet with the same model architecture on CAMEO 2022, ESM3 codebooks yield generated RMSD 8.4424 versus 7.7025 for DPLM-2. Reconstruction error decreases by
+<strong>63.41%</strong>, but generation error increases by
+<strong>9.61%</strong>, directly challenging tokenizer reconstruction as the sole objective.</p>
+<p>Third, <strong>index supervision is severely distorted</strong>. Table 3 (p.3): DPLM-2 CAMEO whole-index accuracy is 0.0864 versus bit accuracy 0.7720; PDB time-split values are 0.1188 versus 0.7932. Similar tokens may differ by one bit yet be treated as unrelated softmax classes; numerically nearby indices need not be geometrically close. This identifies more than generic insufficient capacity: <strong>a mismatch between supervision and structural metrics</strong>. </p>
+<p>Why solve it? Unified models support unconditional sequence–structure generation, folding, inverse folding, motif scaffolding, and representations. Coarse structural symbols make that unification superficial. A well-designed 650M model approaching a specialized 3B folder would also lower research compute costs.</p>
+<h3 id="论文故事线从诊断到组合设计">1.3 Narrative: Diagnosis to Combined Design</h3>
+<p>The argument has four turning points.</p>
+<ol type="1">
+<li><strong>Separate the bottlenecks.</strong> Continuous/discrete reconstruction, tokenizer comparisons, and index/bit accuracy distinguish lossy tokenization from poor token prediction.</li>
+<li><strong>Change the supervision unit.</strong> Bit modeling replaces (2^K)-way classification with (K) binary predictions, exposing local differences. ResDiff models quantization residuals; Hybrid FM reinterprets encoder–PLM–decoder as a coordinate denoiser.</li>
+<li><strong>Acknowledge missing geometry in sequence Transformers.</strong> GeoDPLM adds residue-pair representations, pair biases, transitions, and optional triangle operations. REPA uses ESMFold as a teacher for smooth structural semantics.</li>
+<li><strong>Test whether modules are orthogonal.</strong> Table 7 shows more modules need not help: Geo+Bit diversity is 0.900, falling to 0.575 with FM. All* PDB RMSD 2.379 does not beat Bit+FM+ResDiff+SFT's 2.370. The authors recommend <strong>Geo + Bit</strong> rather than every module together.</li>
+</ol>
+<p>Trade-offs are clear: discrete tokens retain scalable unified interfaces but lose continuous geometry; FM improves coordinates while ODE trajectories reduce diversity; SFT improves folding but sacrifices unconditional generation. AlphaFold-like triangle operations slow training 3.9×/6.8× without proportional gains.</p>
+<h3 id="方法论与机制解剖">1.4 Methodology and Mechanisms</h3>
+<h4 id="形式化定义">1.4.1 Formal Definitions</h4>
+<p>A protein has (L) residues:</p>
+<p>[ =(r_1,,r_L),r_i=(s_i,x_i), s_i{1,,20},;x_i^{4}. ]</p>
+<p>DPLM's absorbing discrete-diffusion forward kernel is:</p>
+<p>[ q(<sup>{(t)}</sup>{(t-1)})= !(^{(t)};
+_t^{(t-1)}+(1-<em>t)</em>{noise}), ]</p>
+<p>The reverse objective reduces to noise-level-weighted cross-entropy. DPLM-2 encodes structure () into (_{cont}), with LFQ quantizing dimensionwise:</p>
+<p>[ <em>{cont} </em>{quant}{-1,+1}^{LK}
+z_{index}=<em>{k=1}<sup>{K}(z</sup>{[k]}</em>{quant}&gt;0)2^{k-1} .
+]</p>
+<p>The original multimodal objective predicts sequence and structural indices jointly:</p>
+<p>[ _t=. ]</p>
+<p>Bit-level training expands the structural term into (K) binary predictions:</p>
+<p>[ ^{bit}_t=. ]</p>
+<p>ResDiff models residual (=<em>{cont}-</em>{quant}):</p>
+<p>[ <em>=</em>{r,,t} |-<em>(r_t,t,h,z</em>{quant})|<em>2^2,
+</em>{cont}=z_{quant}+. ]</p>
+<p>Hybrid FM defines a coordinate denoiser (_=DecPLMEnc), with Euler step:</p>
+<p>[ <em>s</em>(_t,t) +_t, ]</p>
+<p>Each step first applies Kabsch alignment. REPA projects PLM hidden states through a three-layer MLP and maximizes cosine similarity to ESMFold representations:</p>
+<p>[ <em>{REPA}=-1L</em>{i=1}^{L} (y_i,h_(h_i)). ]</p>
+<h4 id="流程图">1.4.2 Pipeline</h4>
+<pre class="text"><code>Protein backbone x ──Enc──&gt; Continuous z_cont ──LFQ──&gt; K-bit z_quant ──&gt; index
+    │                         │                   │
+    │                         └─residual r──────────&gt; ResDiff refinement
+    │                                             │
+Sequence s ───────────────&gt; Masked discrete-diffusion PLM &lt;────────┘
+                              │
+                  ┌───────────┼─────────────┐
+                  │           │             │
+             Bit supervision Geo pair bias REPA←ESMFold
+                  │           │             │
+                  └───────────┴─────────────┘
+                              ↓
+               Dec backbone output / FM coordinate sampling</code></pre>
+<h4 id="关键机制与工程细节">1.4.3 Mechanisms and Engineering Details</h4>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Mechanism</th>
+<th scope="col">Design choice</th>
+<th scope="col">Motivation</th>
+<th scope="col">Key reported settings</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Bit supervision</td>
+<td>(K) binary classifiers replace (2^K)-way indices</td>
+<td>Align label distance with local latent variation</td>
+<td>Reuse LFQ bits directly; no separate K sensitivity study</td>
+</tr>
+<tr class="even">
+<td>ResDiff</td>
+<td>Conditional diffusion predicts (z_{cont}-z_{quant})</td>
+<td>Restore local high-frequency details lost in quantization</td>
+<td>Condition on quantized tokens and layer hidden states; Appendix C.1</td>
+</tr>
+<tr class="odd">
+<td>Hybrid FM</td>
+<td>Encoder–PLM–decoder as coordinate denoiser</td>
+<td>Combine discrete pretraining and continuous coordinate precision</td>
+<td>Euler integration, Kabsch each step; roughly 10× fewer sampling steps (p.7)</td>
+</tr>
+<tr class="even">
+<td>GeoDPLM</td>
+<td>Pair bias and pair/structure transitions; optional triangles</td>
+<td>Inject higher-order residue relationships</td>
+<td>Pair dim 128; structure dim 1280; PairFormer TU hidden 128, TA hidden 32; 4/16 heads (Appendix C.4, p.15)</td>
+</tr>
+<tr class="odd">
+<td>REPA</td>
+<td>ESMFold folding-trunk teacher with multilayer weighting</td>
+<td>Replace sharp discrete labels with smooth high-dimensional structural semantics</td>
+<td>Three recycling iterations; three-layer MLP; learnable softmax layer ensemble (Appendix C.5)</td>
+</tr>
+<tr class="even">
+<td>Folding SFT</td>
+<td>Mask structure only, leaving sequence visible</td>
+<td>Specialize for (p(xs))</td>
+<td>Improve folding but lose eligibility for unconditional joint-generation evaluation</td>
+</tr>
+<tr class="odd">
+<td>Multimer</td>
+<td>PDB-Multimer + chain linker / position offset</td>
+<td>Extend monomer modeling to interchain relations</td>
+<td>Full dataset 11,614/291 train/validation; SFT filters to 3,462 examples, length 60–512 (Table 8, p.9)</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="实验设计与定量结果">1.5 Experimental Design and Quantitative Results</h3>
+<h4 id="数据集任务与指标">1.5.1 Data, Tasks, and Metrics</h4>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Data / task</th>
+<th scope="col">Size or split</th>
+<th scope="col">capability</th>
+<th scope="col">Metric interpretation</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>CAMEO 2022 folding</td>
+<td>Uses DPLM-2 evaluation; sample counts not restated</td>
+<td>Temporally held-out folding</td>
+<td>RMSD↓ measures coordinate error; TM-score↑ global topology</td>
+</tr>
+<tr class="even">
+<td>PDB date split folding</td>
+<td>Date-separated; sample counts not restated</td>
+<td>Generalization to recent structures between in- and out-of-distribution settings</td>
+<td>RMSD↓, TM-score↑</td>
+</tr>
+<tr class="odd">
+<td>Unconditional co-generation</td>
+<td>40 samples per protein length (Figure 6)</td>
+<td>Mode coverage in joint sequence–structure generation</td>
+<td>FoldSeek clusters / samples = Diversity↑</td>
+</tr>
+<tr class="even">
+<td>CAMEO inverse folding</td>
+<td>Structure-conditioned sequence generation</td>
+<td>Sequence recovery and structural self-consistency</td>
+<td>AAR↑, self-consistency TM-score↑</td>
+</tr>
+<tr class="odd">
+<td>HumanPPI / DeepLoc</td>
+<td>SaProt protocol</td>
+<td>Structure-aware representations</td>
+<td>Classification accuracy↑</td>
+</tr>
+<tr class="even">
+<td>PDB-Multimer</td>
+<td>11,614 train / 291 validation; mean 2.88±1.66 chains</td>
+<td>Multichain modeling</td>
+<td>RMSD↓, TM-score↑</td>
+</tr>
+</tbody>
+</table></div>
+<p>Main performance results have no repeated-run standard deviations or confidence intervals. PDB-Multimer chain/length deviations describe the dataset, not model uncertainty.</p>
+<h4 id="主结果完整矩阵">1.5.2 Complete Main-Results Matrix</h4>
+<p>Transcribed from Table 7 (PDF p.8): five metrics and ten configurations. Bold indicates the best comparable value per column. Dashes mean not evaluated; no values are invented.</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<colgroup>
+<col style="width: 13%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">PDB RMSD↓</th>
+<th scope="col" style="text-align: right;">PDB TM↑</th>
+<th scope="col" style="text-align: right;">CAMEO RMSD↓</th>
+<th scope="col" style="text-align: right;">CAMEO TM↑</th>
+<th scope="col" style="text-align: right;">Diversity↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DPLM-2 650M</td>
+<td style="text-align: right;">5.307</td>
+<td style="text-align: right;">0.8306</td>
+<td style="text-align: right;">7.703</td>
+<td style="text-align: right;">0.7936</td>
+<td style="text-align: right;">0.700</td>
+</tr>
+<tr class="even">
+<td>Bit</td>
+<td style="text-align: right;">3.221</td>
+<td style="text-align: right;">0.9043</td>
+<td style="text-align: right;">6.403</td>
+<td style="text-align: right;">0.8380</td>
+<td style="text-align: right;">0.825</td>
+</tr>
+<tr class="odd">
+<td>Bit + FM</td>
+<td style="text-align: right;">2.870</td>
+<td style="text-align: right;">0.9099</td>
+<td style="text-align: right;">6.183</td>
+<td style="text-align: right;">0.8418</td>
+<td style="text-align: right;">0.525</td>
+</tr>
+<tr class="even">
+<td>Bit + FM + ResDiff</td>
+<td style="text-align: right;">2.788</td>
+<td style="text-align: right;">0.9146</td>
+<td style="text-align: right;">6.077</td>
+<td style="text-align: right;">0.8456</td>
+<td style="text-align: right;">0.525</td>
+</tr>
+<tr class="odd">
+<td>Bit + FM + ResDiff + SFT</td>
+<td style="text-align: right;"><strong>2.370</strong></td>
+<td style="text-align: right;">0.9270</td>
+<td style="text-align: right;">5.847</td>
+<td style="text-align: right;">0.8442</td>
+<td style="text-align: right;">—</td>
+</tr>
+<tr class="even">
+<td><strong>Geo + Bit (recommended)</strong></td>
+<td style="text-align: right;">2.551</td>
+<td style="text-align: right;">0.9254</td>
+<td style="text-align: right;">5.955</td>
+<td style="text-align: right;"><strong>0.8520</strong></td>
+<td style="text-align: right;"><strong>0.900</strong></td>
+</tr>
+<tr class="odd">
+<td>Geo + Bit + FM</td>
+<td style="text-align: right;">2.443</td>
+<td style="text-align: right;">0.9261</td>
+<td style="text-align: right;">6.172</td>
+<td style="text-align: right;">0.8404</td>
+<td style="text-align: right;">0.575</td>
+</tr>
+<tr class="even">
+<td>Geo + Bit + REPA</td>
+<td style="text-align: right;">2.507</td>
+<td style="text-align: right;">0.9264</td>
+<td style="text-align: right;">6.192</td>
+<td style="text-align: right;">0.8412</td>
+<td style="text-align: right;">0.875</td>
+</tr>
+<tr class="odd">
+<td>Geo + Bit + REPA + SFT</td>
+<td style="text-align: right;">2.404</td>
+<td style="text-align: right;"><strong>0.9322</strong></td>
+<td style="text-align: right;"><strong>5.754</strong></td>
+<td style="text-align: right;">0.8424</td>
+<td style="text-align: right;">—</td>
+</tr>
+<tr class="even">
+<td>All*</td>
+<td style="text-align: right;">2.379</td>
+<td style="text-align: right;">0.9297</td>
+<td style="text-align: right;">6.200</td>
+<td style="text-align: right;">0.8398</td>
+<td style="text-align: right;">—</td>
+</tr>
+</tbody>
+</table></div>
+<p>Relative to DPLM-2 650M, Bit reduces PDB RMSD by 2.086, or
+<strong>39.31%</strong>, and improves TM-score by 0.0737 (<strong>+8.87% relative</strong>). Recommended Geo+Bit reduces PDB RMSD by
+<strong>51.93%</strong>, CAMEO RMSD by
+<strong>22.70%</strong>, and increases diversity by <strong>28.57%</strong>. Specialized SFT reaches PDB RMSD 2.370, a baseline-relative reduction of <strong>55.34%</strong>. </p>
+<blockquote>
+<p><strong>The Strongest Evidence</strong>: Changing supervision while retaining 650M parameters lowers PDB RMSD 5.307→3.221; Geo+Bit reaches 2.551 with diversity 0.900. The main bottleneck is supervision geometry and structural bias rather than parameter count.</p>
+</blockquote>
+<p>Table 4 (p.5) gives external CAMEO/PDB RMSD baselines: ESMFold 3B 3.9900/2.8400, ESM3 1.4B 6.3300/4.9003, MultiFlow 17.8400/15.6400. Bit+FM+ResDiff+SFT's PDB 2.3698 beats ESMFold by
+<strong>16.56%</strong>, but its CAMEO 5.8472 is worse by
+<strong>46.55%</strong>. Matching or beating specialized folders applies only to particular splits/metrics, not universally.</p>
+<h4 id="逐层消融与相变">1.5.3 Incremental Ablations and Behavioral Shifts</h4>
+<figure class="figure" aria-labelledby="rmsd-chart-title">
+  <p class="fig-title" id="rmsd-chart-title">Design choices move the Pareto trade-off between folding RMSD and generative diversity</p>
+  <p class="fig-sub">Bit supervision produces the largest accuracy jump; FM further lowers RMSD while sharply reducing unconditional diversity.</p>
+  <div class="legend" aria-label="Legend"><span><span class="swatch" style="background:#2a78d6"></span> PDB RMSD (lower is better)</span></div>
+  <div class="chart-scroll" role="region" aria-label="Horizontally scrollable chart" tabindex="0">
+  <svg class="chart" viewBox="0 0 900 390" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>PDB date-split RMSD across DPLM-2.1 configurations</title>
+    <desc>DPLM-2: 5.307; Bit: 3.221; Bit+FM: 2.870; Bit+FM+ResDiff: 2.788; Geo+Bit: 2.551; SFT configuration: 2.370.</desc>
+    <g stroke="var(--grid)" stroke-width="1"><line x1="92" y1="315" x2="860" y2="315"/><line x1="92" y1="240" x2="860" y2="240"/><line x1="92" y1="165" x2="860" y2="165"/><line x1="92" y1="90" x2="860" y2="90"/></g>
+    <g fill="var(--muted)" font-size="13"><text x="48" y="320">2.0</text><text x="48" y="245">3.0</text><text x="48" y="170">4.0</text><text x="48" y="95">5.0</text><text x="18" y="42">RMSD</text></g>
+    <g fill="var(--chart-primary)">
+      <rect x="112" y="67" width="78" height="248" rx="5" tabindex="0" data-tip="DPLM-2：RMSD 5.307；Diversity 0.700"/>
+      <rect x="240" y="224" width="78" height="91" rx="5" tabindex="0" data-tip="Bit：RMSD 3.221；Diversity 0.825"/>
+      <rect x="368" y="250" width="78" height="65" rx="5" tabindex="0" data-tip="Bit + FM：RMSD 2.870；Diversity 0.525"/>
+      <rect x="496" y="256" width="78" height="59" rx="5" tabindex="0" data-tip="Bit + FM + ResDiff：RMSD 2.788；Diversity 0.525"/>
+      <rect x="624" y="274" width="78" height="41" rx="5" tabindex="0" data-tip="Geo + Bit: RMSD 2.551; Diversity 0.900 (recommended)"/>
+      <rect x="752" y="288" width="78" height="27" rx="5" tabindex="0" data-tip="Bit + FM + ResDiff + SFT: RMSD 2.370; Diversity not evaluated"/>
+    </g>
+    <g fill="var(--text-secondary)" font-size="11" text-anchor="middle"><text x="151" y="343">Base</text><text x="279" y="343">Bit</text><text x="407" y="343">Bit+FM</text><text x="535" y="343">+ResDiff</text><text x="663" y="343">Geo+Bit</text><text x="791" y="343">+SFT</text><text x="472" y="376">Model configuration</text></g>
+  </svg></div>
+  <figcaption>Source: Table 7 (PDF p.8). One RMSD y-axis only; exact diversity is available via hover/focus tooltips and the adjacent table, without dual axes.</figcaption>
+</figure>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<colgroup>
+<col style="width: 13%" />
+<col style="width: 18%" />
+<col style="width: 18%" />
+<col style="width: 18%" />
+<col style="width: 18%" />
+<col style="width: 13%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Configuration (Table 7)</th>
+<th scope="col" style="text-align: right;">PDB RMSD↓</th>
+<th scope="col" style="text-align: right;">Relative to the previous level</th>
+<th scope="col" style="text-align: right;">CAMEO RMSD↓</th>
+<th scope="col" style="text-align: right;">Diversity↑</th>
+<th scope="col">Explanation</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Base</td>
+<td style="text-align: right;">5.307</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">7.703</td>
+<td style="text-align: right;">0.700</td>
+<td>Index supervision</td>
+</tr>
+<tr class="even">
+<td>+ Bit</td>
+<td style="text-align: right;">3.221</td>
+<td style="text-align: right;">-39.31%</td>
+<td style="text-align: right;">6.403</td>
+<td style="text-align: right;">0.825</td>
+<td>Largest single-step gain</td>
+</tr>
+<tr class="odd">
+<td>+ FM</td>
+<td style="text-align: right;">2.870</td>
+<td style="text-align: right;">-10.90%</td>
+<td style="text-align: right;">6.183</td>
+<td style="text-align: right;">0.525</td>
+<td>Better accuracy, sharply lower diversity</td>
+</tr>
+<tr class="even">
+<td>+ ResDiff</td>
+<td style="text-align: right;">2.788</td>
+<td style="text-align: right;">-2.86%</td>
+<td style="text-align: right;">6.077</td>
+<td style="text-align: right;">0.525</td>
+<td>Small marginal global-metric gain</td>
+</tr>
+<tr class="odd">
+<td>+ SFT</td>
+<td style="text-align: right;">2.370</td>
+<td style="text-align: right;">-14.99%</td>
+<td style="text-align: right;">5.847</td>
+<td style="text-align: right;">Not evaluated</td>
+<td>Task specialization prevents joint-generation comparison</td>
+</tr>
+</tbody>
+</table></div>
+<p>Geometry ablation (Table 5, p.6): without SFT, Base scores 5.521/7.703; pair bias/transition gives 4.823/7.244, adding structure transition gives 3.883/6.550. Triangle updates regress to 4.837/7.197 and triangle attention to 4.415/6.973. These complex modules slow training <strong>3.9× and 6.8×</strong>(p.6) without beating inexpensive transitions.</p>
+<p><strong>Highlighted Behavioral Shifts.</strong> Index→bit produces a large performance jump: PDB index accuracy 0.1188→0.2641, bit accuracy 0.7932→0.8648, and RMSD 5.3071→3.2213 (Table 3, p.3). Bit→Bit+FM changes the objective trade-off: RMSD improves another 10.90%, but diversity falls 0.825→0.525, or
+<strong>36.36%</strong>. This is not smooth improvement with added modules; moving from stochastic discrete denoising to more deterministic ODE trajectories abruptly changes mode coverage.</p>
+<h4 id="repa逆折叠与表征学习">1.5.4 REPA, Inverse Folding, and Representations</h4>
+<p>Table 6 (p.7): REPA reduces DPLM-2 PDB RMSD 5.521→4.919 (−10.90%) and GeoDPLM 4.823→4.340 (−10.01%), helping both architectures. Table 13 (p.16): CAMEO inverse-folding AAR rises from 0.4962 for DPLM-2 650M to 0.5586 for Bitwise and 0.5681 for Geo+Bit+REPA, +0.0719 absolute (relative
+<strong>14.49%</strong>). Table 14 (p.17): Bitwise reaches HumanPPI 88.89%, beating SaProt 86.41% and DPLM-2 84.44%, but DeepLoc 83.39% trails SaProt 85.57%. Transfer exists but is not universal.</p>
+<h4 id="多链数据">1.5.5 Multichain Data</h4>
+<p>Table 9 (p.8): increasing monomer tokenizer data from 200K by 1.2M reduces PDB-Multimer reconstruction RMSD 9.973→6.873 (−31.08%) and raises TM-score 0.694→0.784, showing local geometric transfer. Table 10 (p.9): positional offsets reduce tokenizer RMSD 6.873→5.886 (−14.36%), but ESMFold's folding TM-score 0.850 still beats DPLM-2/concatenation/offset at 0.768/0.771/0.767. Table 11: multimer-only SFT worsens CAMEO RMSD to 10.989; restoring SwissProt recovers 6.410. Multichain data should supplement, not replace, monomer data.</p>
+<h4 id="超参敏感性与统计显著性">1.5.6 Hyperparameter Sensitivity and Statistical Significance</h4>
+<p>No systematic sweeps cover learning rate, K, codebook size, FM steps, REPA weight, or positional offsets; no multi-seed mean±SD is given. Confirmed details are pair/structure dimensions, attention heads, three ESMFold recycles, speed logged every 10K steps, and roughly 10× fewer FM sampling steps.</p>
+<p>Thus 5.307→3.221 is a <strong>large effect under the paper's setting</strong>, not a demonstrated statistically significant result. Whether bit modeling plateaus beyond some K is unknown. Table 7 shows a behavioral trade-off, not a phase transition established through a continuous sweep.</p>
+<h3 id="价值分析">1.6 Value Analysis</h3>
+<p><strong>The Substantive Contribution</strong> is a diagnose–design–combine framework. Tokenizer reconstruction alone is insufficient; jointly inspect predictability, coordinates, topology, diversity, and transfer. This framework may outlast individual modules.</p>
+<p>Three reusable designs follow. LFQ/VQ models can test bitwise or hierarchical labels instead of false equidistance among indices. REPA can align general generators with specialized scientific hidden representations rather than only final predictions. Combined ablations must report <strong>orthogonality</strong>: Geo, Bit, FM, and REPA helping separately does not imply they help together.</p>
+<p>Potential transfers include RNA, small-molecule conformations, crystals, and protein–ligand complexes: discrete modalities coexist with continuous symmetric geometry. Bits suit the discrete side, equivariant/pairwise modules the geometric side, and physical energy the constraint side. Geo+Bit is particularly economical, retaining folding and diversity without FM sampling or teacher precomputation.</p>
+<h3 id="局限性">1.7 Limitations</h3>
+<h4 id="论文自述限制">1.7.1 Author-Acknowledged Limitations</h4>
+<p>Appendix B, Discussions and Limitations (PDF p.14), acknowledges four points:</p>
+<ol type="1">
+<li><strong>Discrete representations remain lossy.</strong> Bits only mitigate quantization and cannot capture full continuous geometry. Residue/backbone modeling omits all-atom interactions.</li>
+<li><strong>No physical constraints.</strong>
+Without explicit energy priors, improved structural metrics do not establish physical realizability.</li>
+<li><strong>Scaling remains unverified.</strong> Analysis extends only to 3B; effectiveness at larger scales is unknown.</li>
+<li><strong>Scarce high-quality multichain data.</strong> Length-filtered PDB-Multimer SFT has only 3,462 examples, limiting family-external generalization.</li>
+</ol>
+<h4 id="补充批判">1.7.2 Additional Criticisms</h4>
+<ol type="1">
+<li><p><strong>[Argument gap] Claims of beating specialized folders depend on the split.</strong>
+Table 4's SFT model beats ESMFold on PDB RMSD 2.3698 vs 2.8400 (16.56%), but loses on CAMEO 5.8472 vs 3.9900 (46.55% worse). Matching/outperforming claims need dataset qualifications.</p></li>
+<li><p><strong>[Metric validity] RMSD and TM-score do not establish biological function or synthesizability.</strong>
+All main results measure structural similarity. The paper provides no wet-lab validation, stability after energy relaxation, Rosetta energy, pLDDT/calibration, or functional assays. An RMSD of 2.370 therefore does not establish that a generated protein performs the intended function.</p></li>
+<li><p><strong>[Statistical significance] No multiple-seed results.</strong> Tables 4–7 and 13–14 provide neither performance standard deviations nor confidence intervals. Gains such as REPA improving GeoDPLM's CAMEO TM-score from 0.8128 to 0.8217, a difference of 0.0089, may be affected by training variability. These are observed improvements, not demonstrated statistically significant gains.</p></li>
+<li><p><strong>[Experimental design] Baseline values differ across tables.</strong> DPLM-2's PDB RMSD is 5.3071/5.307 in Tables 4/7 but 5.521 in Tables 5/6; the abstract states 5.52→2.36. Different training or evaluation configurations are insufficiently distinguished in the overall narrative, making the relative improvement range from 55.34% to 57.07%.</p></li>
+<li><p><strong>[Module interactions] All* is not optimal, weakening the case for stacking everything.</strong>
+All* achieves PDB RMSD 2.379, worse than the SFT route's 2.370, and CAMEO 6.200, worse than 5.754. Modules therefore interact negatively: the design space is not an additive collection of components. The authors report this candidly but do not provide controlled second-order experiments explaining the interactions.</p></li>
+<li><p><strong>[Underperforming subtask] FM trades diversity for accuracy.</strong> Bit→Bit+FM improves PDB RMSD from 3.221 to 2.870, but diversity falls from 0.825 to 0.525 (−36.36%). FM may therefore be the wrong choice when diverse backbone discovery is the objective. The paper attributes this to ODE properties but does not test that causal explanation against a stochastic sampler.</p></li>
+<li><p><strong>[Missing fair comparisons with key competitors] Model sizes and task specialization are asymmetric.</strong> ESMFold 3B is a dedicated folding model, ESM3 1.4B is a multimodal model trained on different data, and the core configuration includes folding SFT. Parameter efficiency cannot therefore be separated from task supervision and training data. A head-to-head comparison needs matched training tokens, structure data, and SFT.</p></li>
+<li><p><strong>[Reproducibility risk] The public release is incomplete.</strong>
+The official repository explicitly provides DPLM-2 Bit weights, but its README still says “full implementation will be released soon.” The verifiable checkpoint is the 2.62GB 650M Bit model; equally clear end-to-end reproduction instructions for the full GeoDPLM, ResDiff, FM, and REPA combinations are unavailable. This makes the combined results in Table 7 difficult to verify end to end.</p></li>
+</ol>
+<hr />
+</section><section class="card" aria-labelledby="相关工作回溯问题与技术来源链"><h2 id="相关工作回溯问题与技术来源链">2.
+Related-work retrospective: the chain of problems and technical origins</h2>
+<h3 id="dplm-2024.07icml-2024">2.1 DPLM — 2024.07, ICML 2024</h3>
+<p><strong>Problem solved.</strong> DPLM introduces absorbing discrete diffusion into protein sequence language modeling, bringing unconditional generation, representation learning, motif scaffolding, and conditional inverse folding into one model. It addresses the unnatural autoregressive ordering of protein sequences and inflexible condition composition, providing the sequence-pretrained foundation for this work.</p>
+<p><strong>Remaining gap.</strong> DPLM natively handles only discrete amino-acid sequences; structure can be an external condition but cannot be jointly generated. Plausible sequences do not guarantee plausible 3D backbones, leaving unified protein models without a structural channel.</p>
+<p><strong>How the core paper responds.</strong> DPLM-2.1 retains discrete diffusion and its scalability, discretizes structure for joint training, and then addresses the supervision and geometry problems introduced by discrete structure.</p>
+<p><strong>Inherited design.</strong> Denoising language modeling at arbitrary mask ratios carries over from DPLM to DPLM-2/2.1. The core change concerns the granularity of structural targets, not the diffusion framework.</p>
+<h3 id="dplm-2-2024.10-预印本-iclr-2025">2.2 DPLM-2 — October 2024 preprint / ICLR 2025</h3>
+<p><strong>Problem solved.</strong> DPLM-2 compresses 3D backbones into structural tokens using an LFQ tokenizer and models them jointly with sequence tokens. This supports sequence–structure co-generation, folding, inverse folding, and motif scaffolding. It is the direct baseline and experimental platform for the focal paper.</p>
+<p><strong>Remaining gap.</strong> The unified interface is established, but tokenizer quantization loses detail, index prediction accuracy is low, and the sequence Transformer lacks geometric bias. The CAMEO index accuracy of 0.0864 in Table 3 directly measures this gap.</p>
+<p><strong>How the core paper responds.</strong> DPLM-2.1 reframes “whether to discretize” as “how to discretize, supervise, and recover continuous information,” proposing Bit, ResDiff, FM, Geo, and REPA.</p>
+<p><strong>Inherited design.</strong> LFQ's bitwise quantization was originally an internal tokenizer implementation detail. Here it becomes an explicit language-model supervision unit—the key transition from a hidden design choice to a learning objective.</p>
+<h3 id="esm3-2024.07-预印本-2025.01-science">2.3 ESM3 — July 2024 preprint / January 2025 Science</h3>
+<p><strong>Problem solved.</strong> ESM3 encodes sequence, structure, and function as multiple tracks of discrete tokens and scales to 98B parameters. Its central contribution is demonstrating that multimodal protein language models can accept arbitrary modality combinations as prompts and generate experimentally validated, evolutionarily distant fluorescent proteins.</p>
+<p><strong>Remaining gap.</strong> Scale alone does not establish whether a structural tokenizer suits language modeling. The controlled comparison in Table 2 shows that the ESM3 tokenizer reconstructs well at RMSD 0.7248, yet produces generation RMSD 8.4424 when inserted into the same DPLM-2 architecture, worse than the DPLM-2 tokenizer's 7.7025.</p>
+<p><strong>How the core paper responds.</strong> The paper uses ESM3 to show that reconstruction quality is an insufficient proxy, and instead optimizes predictability and geometric bias. Larger codebooks and lower reconstruction error are therefore not its only priorities.</p>
+<p><strong>Inherited design.</strong> The work inherits ESM3's unified multitrack discrete interface, adding bit-level correlations and continuous repair to retain that language interface while reducing geometric costs.</p>
+<h3 id="repa-2024.10-预印本-iclr-2025-oral">2.4 REPA — October 2024 preprint / ICLR 2025 Oral</h3>
+<p><strong>Problem solved.</strong> REPA aligns noisy-state hidden representations in image diffusion Transformers with pretrained visual encoders, reporting 17.5× faster training and FID 1.42. It recasts difficulty in generation as difficulty in learning high-quality representations.</p>
+<p><strong>Remaining gap.</strong> Original REPA targets images, 2D patches, and DINO-like teachers. Its transfer to discrete protein structures, and the appropriate scientific teacher, remained open questions.</p>
+<p><strong>How the core paper responds.</strong> DPLM-2.1 transfers REPA to residue-level structural representations using the ESMFold folding trunk as teacher. Table 6 shows benefits for both the pure LM and GeoDPLM.</p>
+<p><strong>Inherited design.</strong>
+The transfer evolves from a self-supervised visual teacher guiding an image generator to a specialized folding model guiding a general protein generator. A learnable multilayer ensemble removes the need to choose alignment layers manually.</p>
+<hr />
+</section><section class="card" aria-labelledby="技术演进脉络"><h2 id="技术演进脉络">3. Technical evolution</h2>
+<pre class="text"><code>2024 DPLM [discrete diffusion; sequence only; unified generation/representation]
+      │
+      ├──&gt; 2024/2025 DPLM-2 [LFQ structure tokens; joint sequence–structure distribution]
+      │          │
+      │          ├── Gap A: lost quantization residuals ──&gt; ResDiff / Hybrid FM
+      │          ├── Gap B: index labels lack geometry ─&gt; Bit supervision
+      │          └── Gap C: Transformer lacks 3D bias ─&gt; GeoDPLM
+      │
+2024 ESM3 [sequence/structure/function tracks; massive scale]
+      └── Lesson: a unified discrete interface scales, but tokenizer reconstruction ≠ generation quality
+
+2024 REPA [external representations smooth generative supervision]
+      └──&gt; 2025 DPLM-2.1 [alignment with an ESMFold teacher]
+
+2025 DPLM-2.1 convergence
+      [Bit + Geo as the recommended backbone; choose FM/ResDiff/SFT by objective; Multimer expands data coverage]</code></pre>
+<p>The underlying driver is not simply model scaling, but a shift <strong>from a unified interface to consistent metrics</strong>: early work asks whether sequences and structures can both become tokens. Later, token predictability, geometric proximity, and coordinate accuracy prove misaligned, prompting the return of continuous models, equivariant biases, and specialized teachers. The turning point is acknowledging that linguistic unification does not imply physical unification. Community attention also shifts from folding accuracy alone to the three objectives of accuracy, diversity, and efficiency, as reflected in Table 7 and the training-speed analysis.</p>
+</section><section class="card" aria-labelledby="跨论文对标"><h2 id="跨论文对标">4. Cross-paper comparison</h2>
+<table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Publication date</th>
+<th scope="col">Conference/publication</th>
+<th scope="col">Core contribution</th>
+<th scope="col">Representative evidence</th>
+<th scope="col">Relationship to the core paper</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DPLM</td>
+<td>2024.07</td>
+<td>ICML 2024</td>
+<td>Discrete diffusion LM for protein sequences</td>
+<td>Unified generation, representation, and conditional control</td>
+<td>Provides the diffusion language-model framework</td>
+</tr>
+<tr class="even">
+<td>DPLM-2</td>
+<td>2024.10 / 2025</td>
+<td>ICLR 2025</td>
+<td>LFQ structure tokens + joint sequence–structure modeling</td>
+<td>Focal paper's baseline PDB RMSD: 5.307</td>
+<td>Direct source of the problem</td>
+</tr>
+<tr class="odd">
+<td>ESM3</td>
+<td>2025.01</td>
+<td>Science</td>
+<td>Sequence/structure/function tracks scaled to 98B</td>
+<td>Controlled experiment: tokenizer reconstruction RMSD 0.7248, but generation RMSD 8.4424</td>
+<td>Shows that low reconstruction error is insufficient</td>
+</tr>
+<tr class="even">
+<td>REPA</td>
+<td>2025.04</td>
+<td>ICLR Oral</td>
+<td>External teacher representation alignment for generative models</td>
+<td>Original paper reports 17.5× training acceleration and FID 1.42</td>
+<td>Source technique, transferred to an ESMFold teacher</td>
+</tr>
+<tr class="odd">
+<td><strong>DPLM-2.1</strong></td>
+<td><strong>2025.07</strong></td>
+<td><strong>ICML Spotlight</strong></td>
+<td><strong>Design space of Bit + Geo + continuous repair</strong></td>
+<td><strong>650M: PDB RMSD 5.307→2.370; Geo+Bit diversity
+0.900</strong></td>
+<td><strong>An integrating and diagnostic framework</strong></td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="开放挑战与可操作研究机会"><h2 id="开放挑战与可操作研究机会">5. Open challenges and actionable research opportunities</h2>
+<h3 id="理论层面">5.1 Theory</h3>
+<ol type="1">
+<li><strong>Bounds on label–metric consistency.</strong> Fix the LFQ encoder, codebook, and parameter count; compare index CE, bit BCE, Gray code, hierarchical softmax, and latent-distance-based soft labels. Under identical training-token budgets, determine the tightest upper bound on structural RMSD implied by token classification error.</li>
+<li><strong>Identifiability of joint discrete–continuous representations.</strong> Compare pure tokens, tokens + residuals, and direct SE(3) flow on identical data, controlling compute and supervision. Test whether residuals only repair local bond lengths or can change global topology.</li>
+<li><strong>Causal explanations for non-orthogonal modules.</strong> Run a full (2^4) factorial experiment over Bit/Geo/FM/REPA with at least 3 seeds and fit second-order interaction terms. Test whether REPA and Bit actually saturate each other's benefits because they duplicate supervision smoothing.</li>
+</ol>
+<h3 id="工程与应用层">5.2 Engineering and Applications</h3>
+<ol type="1">
+<li><strong>Fair folding comparisons under equal budgets.</strong> Match PDB/SwissProt data, 650M parameters, training FLOPs, folding SFT, and sampling time across DPLM-2.1, ESMFold-small, ESM3-open, and Proteina. Report CAMEO/PDB results, inference seconds, and peak memory together.</li>
+<li><strong>The accuracy–diversity Pareto frontier.</strong> Add stochastic interpolants, temperature, or noise injection to Bit+FM and compare directly with the pure ODE. Fix 40 samples/length and plot RMSD against FoldSeek diversity on a single Pareto chart to test whether the 36.36% diversity loss can be recovered.</li>
+<li><strong>Additional physical-feasibility evaluation.</strong> Evaluate clash rate, Ramachandran outliers, Rosetta/Amber relaxation, and short MD stability on the same generated structures. Correlate these with RMSD/TM-score to test whether structural metrics proxy actual physical quality.</li>
+<li><strong>The reproduction gap.</strong> Once all Geo/ResDiff/FM/REPA configurations are public, reproduce Table 7 using default repository commands. Record wall-clock time, GPU-hours, and the cost of precomputing ESMFold representations to estimate the compute cost per 1% RMSD improvement.</li>
+</ol>
+<h3 id="新兴方向">5.3 Emerging Directions</h3>
+<ol type="1">
+<li><strong>All-atom and ligand conditioning.</strong> Extend the 4 backbone atoms to side chains and ligands, comparing residue tokens + atom residuals with all-atom flow. Evaluate protein–ligand poses, interface RMSD, and binding energy instead of single-chain TM-score alone.</li>
+<li><strong>Long-tail generalization across multiple chains.</strong> Stratify by chain count, interface area, and homologous family; compare monomer-only, multimer-only, and mixed curricula. In particular, revisit the source of negative transfer behind the reported multimer-only CAMEO RMSD of 10.989.</li>
+<li><strong>An experimental feedback loop.</strong> Select equal numbers of candidates from Geo+Bit and Bit+FM generations and blindly evaluate expression rate, thermal stability, and function. Use experimental success rates to test whether diversity 0.900 predicts discovery value better than RMSD 2.370.</li>
+<li><strong>Uncertainty and abstention.</strong> Beyond CAMEO/PDB, construct low-homology, very long, and disordered-protein sets. Use ensemble/conformal methods to provide folding-error intervals and compare them with point TM-score predictions, establishing thresholds for when generated structures should not be trusted.</li>
+</ol>
+<hr />
+</section><section class="card" aria-labelledby="其他值得关注的近期工作"><h2 id="其他值得关注的近期工作">6. Other recent work worth watching</h2>
+<p><strong>Protein Structure Tokenization: Benchmarking and New
+Recipe</strong> (2025.07, ICML 2025)<br />
+Systematically evaluates tokenizers through local substructures, efficiency, and codebook utilization. AminoAseed improves over ESM3 by an average 6.31% across 24 supervised tasks, making it a strong candidate for DPLM-2.1's next tokenizer head-to-head comparison. <a
+href="https://proceedings.mlr.press/v267/yuan25i.html">The paper</a> | <a
+href="https://github.com/KatarinaYuan/StructTokenBench">Code/weights</a></p>
+<p><strong>Retrieval Augmented Zero-Shot Enzyme Generation for Specified
+Substrate</strong> (2025.07, ICML 2025)<br />
+Combines substrate-similarity retrieval with conditional discrete diffusion to define zero-shot substrate-specific enzyme generation. Its connection from general sequence generation to evaluable catalytic objectives merits attention.
+<a href="https://proceedings.mlr.press/v267/du25i.html">The paper</a> | Code not found</p>
+<p><strong>Foundation Molecular Grammar</strong> (2025.07, ICML
+2025)<br />
+Uses multimodal foundation models to induce interpretable molecular graph grammars connecting images, text, and molecular graphs. Its route of obtaining structured symbols before generation parallels the metric problem of protein structure tokens. <a
+href="https://proceedings.mlr.press/v267/sun25aa.html">The paper</a> | <a
+href="https://github.com/shiningsunnyday/induction">Code</a></p>
+<p><strong>Open Materials Generation with Stochastic
+Interpolants</strong> (2025.07, ICML 2025)<br />
+Handles periodic lattices, coordinates, and atom types within a unified stochastic-interpolation framework, providing an important reference for transferring joint continuous/discrete generation to crystals.
+<a href="https://proceedings.mlr.press/v267/hollmer25a.html">The paper</a> |
+<a href="https://github.com/FERMat-ML/OMatG">Code</a></p>
+<p><strong>All-atom Diffusion Transformers</strong> (2025.07, ICML
+2025)<br />
+Uses a shared latent space to generate both periodic materials and nonperiodic molecules, scaling to 500 million parameters. In contrast to DPLM-2.1, it reduces domain-specific inductive biases in exchange for unification and speed. <a
+href="https://proceedings.mlr.press/v267/joshi25a.html">The paper</a> | <a
+href="https://github.com/facebookresearch/all-atom-diffusion-transformer">Code</a></p>
+<p><strong>LLM-SRBench</strong> (2025.07, ICML 2025)<br />
+Across 239 symbolic-regression problems in four scientific domains, the best system achieves only 31.5% symbolic accuracy. This underscores the need for AI4Science evaluations to guard against memorization and distinguish discovery from reproducing formulas. <a
+href="https://proceedings.mlr.press/v267/shojaee25a.html">The paper</a> | Code link on the conference page</p>
+<p><strong>Bridging Protein Sequences and Microscopy Images with Unified
+Diffusion Models</strong> (2025.07, ICML 2025)<br />
+CELL-Diff generates bidirectionally between protein sequences and fluorescence microscopy images, extending protein multimodality from sequence–structure to sequence–cellular-localization phenotype.
+<a href="https://proceedings.mlr.press/v267/zheng25e.html">The paper</a> | Code not found</p>
+<hr />
+</section><section class="card" aria-labelledby="结论"><h2 id="结论">7. Conclusion</h2>
+<p>DPLM-2.1's most important conclusion is not a single SOTA number, but an engineering principle broadly relevant to multimodal scientific models: <strong>A symbolic interface must preserve neighborhood relationships in the underlying continuous space; otherwise, scalable language modeling optimizes the wrong metric.</strong>
+The 650M model reduces PDB RMSD from 5.307 to 3.221 through Bit, then achieves a more balanced point with Geo+Bit at RMSD 2.551 and diversity 0.900, demonstrating that design can substitute for some parameter scaling.</p>
+<p>The limitations remain: it still trails ESMFold substantially on CAMEO; main results lack multiple seeds; no physical-energy or experimental validation is provided; the full combination is not optimal; and complete component implementations are not equally public. The most reliable next step is therefore equal-budget Pareto evaluation across splits with physical and experimental endpoints, rather than continued module stacking.</p>
+<hr />
+<h3 id="来源与核验说明">Sources and verification notes</h3>
+<ul>
+<li>All core quantitative data come from <a
+href="https://arxiv.org/pdf/2504.11454v3">arXiv 2504.11454v3
+PDF (2025-06-12)</a>: Tables 1–3 (page 3), Table 4 (page 5), Table 5 (page 6), Table 6 (page 7), Tables 7–9 (page 8), Tables 10–11 (page 9), limitations (page 14), Table 13 (page 16), and Table 14 (page 17). Page numbers refer to the PDF's displayed pages.</li>
+<li>Conference and publication information was verified through <a
+href="https://proceedings.mlr.press/v267/hsieh25a.html">PMLR</a>
+; code, weights, and data were checked by visiting the official project page, GitHub, and Hugging Face.</li>
+<li>Relative improvements were recalculated from the original table values and rounded to two decimal places; unreported items remain “—”.</li>
+<li>Limits of this report: no model training or protein-structure evaluation was run. Missing paper details cannot establish seed variability, total training FLOPs, complete hyperparameter curves, or wet-lab success rates.</li>
+<li>The HTML passed Warm Editorial structure and offline-dependency validation (0 warnings). Although the environment contained the Playwright package, the specified
+<code>/usr/bin/chromium</code> with <code>/opt/pw-browsers</code>
+were absent, and no other Chromium executable was found. Following the instruction not to run playwright install, this report could not include real-browser screenshot comparisons for light, dark, and mobile layouts. Responsive, theme, and print rules therefore received static checks only; visual-rendering acceptance was not claimed.</li>
+</ul>
+<p><strong>Index status</strong>: local <code>ml-report-index.md</code>
+has been updated; persistent synchronization occurs at delivery.</p>
+</section></main><footer>Core sources: <a href="https://proceedings.mlr.press/v267/hsieh25a.html">ICML 2025 / PMLR</a> · <a href="https://arxiv.org/abs/2504.11454v3">arXiv 2504.11454v3</a> · Generated on 2026-08-16</footer></div><div class="tip" id="tip" role="tooltip" aria-live="polite"></div><script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ Light' : '☾ Dark';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script></body></html>

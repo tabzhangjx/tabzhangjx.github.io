@@ -1,0 +1,947 @@
+---
+layout: null
+title: "Agent-STAR"
+date: 2026-08-06
+topic: rl-peft
+tags: ["rl-peft"]
+excerpt: "Long-horizon tool-use reinforcement learning through curriculum data, reward design, and generalization."
+permalink: "/blog/2026/08/06/agent-star-long-horizon-tool-agents/en/"
+blog_post: false
+lang: en
+sitemap: true
+alternate_zh: "/blog/2026/08/06/agent-star-long-horizon-tool-agents/"
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent-STAR Deep Dive · 2026-08-06 · Daily ML/AI Paper Tracking</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --accent-soft: #cde2fb;
+    --good: #006300;
+    --crit: #d03b3b;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --accent-soft: #184f95;
+    --good: #0ca30c;
+    --crit: #e66767;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  header.hero {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 32px 34px;
+    margin-bottom: 34px;
+  }
+  .eyebrow {
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; margin: 0 0 10px;
+  }
+  h1 { font-size: 30px; line-height: 1.3; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .subtitle { font-size: 17px; color: var(--text-secondary); margin: 0 0 18px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    font-size: 12.5px; padding: 4px 11px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--text-secondary);
+    background: var(--page);
+  }
+  .chip.venue { border-color: var(--series-1); color: var(--series-1); font-weight: 600; }
+  .chip.warn { border-color: var(--series-2); color: var(--series-2); font-weight: 600; }
+  .lede {
+    border-left: 3px solid var(--series-1);
+    padding: 4px 0 4px 18px; margin: 20px 0 0;
+    color: var(--text-secondary); font-size: 15.5px;
+  }
+  h2 {
+    font-size: 22px; margin: 52px 0 16px; padding-bottom: 10px;
+    border-bottom: 1px solid var(--border); letter-spacing: -0.01em;
+  }
+  h3 { font-size: 18px; margin: 34px 0 12px; }
+  h3:first-child { margin-top: 0; }
+  h4 { font-size: 15.5px; margin: 24px 0 8px; color: var(--text-secondary); }
+  p { margin: 0 0 14px; }
+  section.card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 26px 30px; margin-bottom: 20px;
+  }
+  a { color: var(--series-1); text-decoration: none; border-bottom: 1px solid transparent; }
+  a:hover { border-bottom-color: var(--series-1); }
+  code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px; background: var(--page); padding: 1.5px 5px;
+    border-radius: 4px; border: 1px solid var(--border);
+  }
+  .formula {
+    background: var(--page); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 16px; margin: 12px 0; font-family: ui-monospace, Menlo, monospace;
+    font-size: 13.5px; overflow-x: auto; color: var(--text-primary);
+  }
+  .tblwrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0 20px; font-size: 14.5px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--grid); }
+  th { color: var(--muted); font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: .05em; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.best td { background: var(--accent-soft); font-weight: 600; }
+  :root[data-theme="dark"] tr.best td { background: rgba(57,135,229,.18); }
+  td.pos { color: var(--good); font-weight: 600; }
+  td.neg { color: var(--crit); font-weight: 600; }
+  ol, ul { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 8px; }
+  .callout {
+    border-left: 3px solid var(--series-2); background: var(--page);
+    padding: 14px 18px; border-radius: 0 8px 8px 0; margin: 18px 0;
+    font-size: 15px; color: var(--text-secondary);
+  }
+  .callout strong { color: var(--text-primary); }
+  .callout.key { border-left-color: var(--series-1); }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  button.tgl {
+    font: inherit; font-size: 13px; padding: 6px 14px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface-1);
+    color: var(--text-secondary); cursor: pointer;
+  }
+  button.tgl:hover { color: var(--text-primary); }
+
+  /* chart */
+  .figure { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 24px 26px; margin: 24px 0; }
+  .fig-title { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+  .fig-sub { font-size: 13.5px; color: var(--muted); margin: 0 0 18px; }
+  .legend { display: flex; gap: 20px; margin-bottom: 16px; font-size: 13.5px; color: var(--text-secondary); flex-wrap: wrap; }
+  .legend span.sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 7px; vertical-align: -1px; }
+  svg.chart { width: 100%; height: auto; display: block; }
+  svg.chart text { font-family: system-ui, sans-serif; }
+  svg.chart rect.bar { cursor: pointer; }
+  svg.chart rect.bar:hover { opacity: .82; }
+  .tip {
+    position: fixed; pointer-events: none; opacity: 0; transition: opacity .1s;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 12px; font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,.14);
+    z-index: 50; color: var(--text-primary); white-space: nowrap;
+  }
+  .flow {
+    background: var(--page); border: 1px solid var(--border); border-radius: 10px;
+    padding: 20px 22px; font-family: ui-monospace, Menlo, monospace;
+    font-size: 13px; line-height: 1.85; overflow-x: auto; color: var(--text-secondary);
+    white-space: pre;
+  }
+  footer { margin-top: 60px; padding-top: 22px; border-top: 1px solid var(--border); font-size: 13.5px; color: var(--muted); }
+  footer a { color: var(--muted); border-bottom: 1px solid var(--border); }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    h1 { font-size: 23px; }
+    .subtitle { font-size: 15px; }
+    section.card { padding: 20px 16px; }
+    header.hero { padding: 22px 18px; }
+    table { font-size: 12.5px; }
+    th, td { padding: 6px 7px; }
+    .figure { padding: 18px 14px; }
+    .flow { font-size: 11px; padding: 14px 12px; }
+    h2 { font-size: 19px; margin: 38px 0 14px; }
+  }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+
+  <div class="toolbar">
+    <button class="tgl" onclick="const r=document.documentElement; r.setAttribute('data-theme', r.getAttribute('data-theme')==='dark'?'light':'dark'); this.textContent = r.getAttribute('data-theme')==='dark'?'☀ Light':'☾ Dark';">☾ Dark</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">2026-08-06 · Thursday · Reinforcement Learning / Agents / Embodied Intelligence</p>
+    <h1>RL for Long-Horizon Tool Agents: A Five-Axis Dissection of Agent-STAR and an Underappreciated Reverse Trend</h1>
+    <p class="subtitle">Demystifying Reinforcement Learning for Long-Horizon Tool-Using Agents: A Comprehensive Recipe</p>
+    <div class="meta">
+      <span class="chip venue">arXiv 2603.21972v1</span>
+      <span class="chip">2026-03-23</span>
+      <span class="chip">CUHK · IDEA Research · UM</span>
+      <span class="chip">TravelPlanner</span>
+      <span class="chip warn">Venue unconfirmed</span>
+    </div>
+    <p class="lede"><strong>Positioning in one sentence:</strong> The RL recipe for long-horizon tool agents is not a fixed set of hyperparameters but a function of model capacity: precisely what 1.5B needs is what 7B should avoid.</p>
+  </header>
+
+  <section class="card">
+    <h3>Before reading: disclosure of limitations</h3>
+    <ol>
+      <li><strong>Venue attribution:</strong> The Comments field on the core paper's arXiv page <strong>only lists the code URL and does not claim acceptance at any conference</strong>. Its HTML formatting appears to use the ICLR conference template, but on OpenReview I <strong>could not find a corresponding submission page</strong>, so I classify it as a <strong>high-quality arXiv preprint</strong>. Reason for relaxing the venue requirement: the paper fully releases its data, SFT trajectories, and six checkpoints, making it substantially more reproducible than contemporary work on the same topic.</li>
+      <li><strong>Deduplication index unavailable:</strong> This was a scheduled cloud task, and the user's desktop was not connected; <code>ml-report-index.md</code> could not be accessed, so <strong>the 14-day duplicate check could not be performed</strong>. The candidate pool contained 25 papers; <code>shuf -i 1-25 -n 3</code> → [3, 17, 15]; selected #3. <strong>Redraws: 0</strong>. </li>
+      <li><strong>Source boundaries:</strong> All performance numbers come from Tables 1–4 and Appendix Tables 8–9 of the arXiv HTML full text, v1. <strong>Figures 5/6/7/8 are raster images</strong>; values in those figures, such as exact success rates at 5%/10% tool failure and the 500-prompt setting, <strong>could not be extracted</strong>. Each affected location is explicitly marked below.</li>
+      <li><strong>Statistical significance:</strong> I <strong>I found no standard deviations, confidence intervals, or multi-seed description anywhere in the full text</strong>. All percentage-point differences below are <strong>differences between point estimates from single runs</strong>. </li>
+    </ol>
+  </section>
+
+  <h2>Part I · Link Verification Table</h2>
+
+  <section class="card">
+    <p>All links below were actually visited and confirmed accessible (2026-08-06). Items that could not be verified are explicitly marked “not found.”</p>
+    <div class="tblwrap">
+    <table>
+      <tr>
+        <th>The paper</th><th>Conference / OpenReview</th><th>arXiv</th><th>Code</th><th>Datasets / weights</th>
+      </tr>
+      <tr class="best">
+        <td><strong>Core · Agent-STAR</strong></td>
+        <td>Not found</td>
+        <td><a href="https://arxiv.org/abs/2603.21972">2603.21972v1</a> · <a href="https://arxiv.org/html/2603.21972v1">HTML</a></td>
+        <td><a href="https://github.com/WxxShirley/Agent-STAR">WxxShirley/Agent-STAR</a></td>
+        <td><a href="https://huggingface.co/datasets/xxwu/Agent-STAR-TravelDataset">TravelDataset</a> · <a href="https://huggingface.co/datasets/xxwu/Agent-STAR-TravelDatabase">TravelDatabase</a> · 6 checkpoints</td>
+      </tr>
+      <tr>
+        <td>TravelPlanner</td>
+        <td>ICML 2024 Spotlight · <a href="https://osu-nlp-group.github.io/TravelPlanner/">Project page</a></td>
+        <td><a href="https://arxiv.org/abs/2402.01622">2402.01622v4</a></td>
+        <td>See project homepage</td>
+        <td>1,225 intents + ~4M records</td>
+      </tr>
+      <tr>
+        <td>Search-R1</td>
+        <td><a href="https://openreview.net/forum?id=Rwhi91ideu">OpenReview</a></td>
+        <td><a href="https://arxiv.org/abs/2503.09516">2503.09516v5</a></td>
+        <td><a href="https://github.com/PeterGriffinJin/Search-R1">PeterGriffinJin/Search-R1</a></td>
+        <td>Checkpoints released</td>
+      </tr>
+      <tr>
+        <td>DAPO</td>
+        <td>No separate conference page found</td>
+        <td><a href="https://arxiv.org/abs/2503.14476">2503.14476v2</a></td>
+        <td>Open-source implementation based on verl</td>
+        <td>Dataset released</td>
+      </tr>
+      <tr>
+        <td>ARPO</td>
+        <td><strong>ICLR 2026 Poster</strong> · <a href="https://iclr.cc/virtual/2026/poster/10009306">iclr.cc</a> · <a href="https://openreview.net/forum?id=TX4k7BF6aO">OpenReview</a></td>
+        <td><a href="https://arxiv.org/abs/2507.19849">2507.19849</a></td>
+        <td><a href="https://github.com/RUC-NLPIR/ARPO">RUC-NLPIR/ARPO</a></td>
+        <td>Released</td>
+      </tr>
+      <tr>
+        <td>Planner-R1</td>
+        <td><a href="https://openreview.net/forum?id=CmOaD42eAT">ICLR 2026 Under review</a></td>
+        <td><a href="https://arxiv.org/abs/2509.25779">2509.25779v2</a></td>
+        <td>Not found</td>
+        <td>Not found</td>
+      </tr>
+    </table>
+    </div>
+  </section>
+
+  <h2>Part II · In-depth analysis of the core paper</h2>
+
+  <section class="card">
+    <h3>2.1 Motivation: A 0.6% That Has Remained Unsolved for Two Years</h3>
+    <p>The paper targets not a vague claim that “agents are hard to train,” but a strikingly concrete set of numbers:</p>
+    <ul>
+      <li>On TravelPlanner, <strong>GPT-4's final pass rate is 0.6%</strong>(original TravelPlanner paper, ICML 2024)</li>
+      <li>Two years later, <strong>even top-tier models such as Kimi-K2.5 still achieve below 15% success</strong>(STAR introduction)</li>
+      <li>STAR's own starting point: Qwen2.5-Instruct 1.5B <strong>0.0%</strong>, 3B <strong>0.0%</strong>, 7B <strong>0.1%</strong>(Table 1, Base row)</li>
+    </ul>
+    <div class="callout key">
+      <strong>Key implication:</strong> This benchmark has not been naturally solved through “emergent capability” over two years. That contrasts with MATH, GSM8K, and even SWE-bench, whose state of the art rose rapidly with base-model iterations. TravelPlanner's stubbornness suggests that the capabilities it tests—joint satisfaction of multiple constraints and long tool sequences—<strong>have not been solved as a side effect of general pretraining / post-training</strong>.
+    </div>
+
+    <h4>Why it is worth solving, ranked by persuasiveness</h4>
+    <ol>
+      <li><strong>It is a clean slice of “long-horizon” behavior.</strong> Each trajectory requires an average of <strong>9.2 tool calls and 10.3K tokens</strong>(Appendix Table 8). By contrast, Search-R1-style tasks typically converge after 1–3 retrievals. A length of 9.2 means that any step-level error can be amplified by later steps.</li>
+      <li><strong>Its reward is naturally decomposable.</strong> The evaluation protocol separates constraints into commonsense and hard-constraint dimensions, each with micro (fraction) and macro (0/1) levels—<strong>a ready-made four-level ladder of reward density</strong>, requiring no manually designed process reward model. This makes STAR's density ablations possible.</li>
+      <li><strong>It is an extreme case of sparse rewards.</strong> A base success rate of 0.0% means that with a success-only reward, <strong>all initial gradients are zero</strong>. </li>
+    </ol>
+
+    <h4>Novelty relative to predecessors: From One Axis to Five</h4>
+    <div class="tblwrap">
+    <table>
+      <tr><th>Axis</th><th>Variable</th><th>Value</th></tr>
+      <tr><td>Reward shaping</td><td>reward function</td><td>Sum / Macro / Success / Curriculum</td></tr>
+      <tr><td>Model size</td><td>params</td><td>1.5B / 3B / 7B</td></tr>
+      <tr><td>Data composition</td><td>difficulty mix &amp; size</td><td>Easy / Medium / Hard / Mixed × 100 / 1K / 2K</td></tr>
+      <tr><td>Algorithm selection</td><td>RL algorithm</td><td>GRPO / DAPO / ARPO</td></tr>
+      <tr><td>Environment stability</td><td>tool failure rate</td><td>0% / 5% / 10%</td></tr>
+    </table>
+    </div>
+    <p>The common weakness of predecessors is <strong>single-axis optimization</strong>: Search-R1 adjusts rewards, DAPO adjusts algorithms, and Planner-R1 adjusts reward shaping. A complete 4×3×4×3×3 grid is infeasible, so STAR ablates one axis at a time while fixing the others. This is both what makes the study feasible and its greatest methodological weakness (see Critique ⑥ in 2.6).</p>
+  </section>
+
+  <section class="card">
+    <h3>2.2 The Paper's Narrative: A Chain of Elimination</h3>
+    <p>STAR's argument is not “we propose X → X works,” but a chain of elimination forced by the evidence:</p>
+    <ol>
+      <li><strong>Why not apply RL directly?</strong> Base success is 0.0% → all samples in each GRPO group receive the same reward → the advantage-normalization denominator is 0 → no gradient. <strong>An SFT warm start is necessary.</strong> This step is forced, rather than a design preference.</li>
+      <li><strong>Where does the SFT data come from?</strong> Manually annotating 9.2-step trajectories is too expensive → run ReAct using DeepSeek-V3.2-Exp-Thinking → rejection-sample only successful trajectories → <strong>1,198 retained from 5K queries (24.0% retention)</strong>. That 24% is itself a signal: <strong>even a top-tier teacher fails on TravelPlanner 76% of the time</strong>. </li>
+      <li><strong>How dense should the reward be?</strong> Base success is 0 → dense rewards are needed → but dense rewards may overfit the task-specific scoring function → design three density levels, Sum / Macro / Success, plus a Curriculum transition. <strong>The implicit tradeoff is stated explicitly: exchange in-domain convergence speed for OOD generalization.</strong></li>
+      <li><strong>What counterintuitive result appears?</strong> Curriculum is best at both 1.5B (34.9) and 3B (49.9), but at 7B it <strong>falls to 57.0, trailing Sum's 62.8 by 5.8 pp</strong>. This overturns the default assumption that “smarter reward scheduling is always better.” The authors infer that <strong>model capacity itself supplies exploration ability; once capacity is sufficient, external exploration assistance becomes noise.</strong></li>
+      <li><strong>Does that inference generalize?</strong> Table 4 checks the algorithm axis: at 1.5B, ARPO (37.5) &gt; DAPO(36.9) &gt; GRPO (30.1), while at 7B the ordering reverses completely, GRPO (62.8) &gt; DAPO(58.4) ≈ ARPO(58.3). <strong>Two independent axes support the same conclusion—the strongest part of the paper's argument.</strong></li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <h3>2.3 Dissecting the methodology and mechanisms</h3>
+
+    <h4>Formal definition: Evaluation components directly serve as reward primitives</h4>
+    <div class="formula">s_cs^micro   ∈ [0,1]   Fraction of commonsense checks satisfied
+s_cs^macro   ∈ {0,1}   = 1 iff s_cs^micro = 1
+s_hard^micro ∈ [0,1]   Fraction of hard-constraint checks satisfied
+s_hard^macro ∈ {0,1}   = 1 iff s_hard^micro = 1
+s^success    ∈ {0,1}   = 1 iff s_cs^macro = 1 and s_hard^macro = 1</div>
+    <div class="formula">r_sum        = s_cs^micro + s_cs^macro + s_hard^micro + s_hard^macro + s^success   Range [0,5]  Dense
+r_macro      = s_cs^macro + s_hard^macro + s^success                              Range {0..3} Semi-sparse
+r_success    = s^success                                                          Range {0,1}  Sparse
+r_curriculum = Staged: early r_sum → late r_success                               Decreasing density</div>
+    <div class="callout">
+      <strong>A structural property the paper does not discuss:</strong> Because macro is an indicator function of micro, <code>r_sum</code> at micro = 1, <strong>is discontinuous (a +1 jump)</strong>. This creates a strong incentive to “finish the last step,” but may also create a step in the optimization landscape. The paper does not analyze it.
+    </div>
+
+    <h4>GRPO objective (KL-free variant)</h4>
+    <div class="formula">J_GRPO(θ) = E_{q~D, {H^(i)}~π_old} [ 1/Σ|H^(i)| · Σ_i Σ_j min( ρ_j^(i)·Â^(i),
+                                       clip(ρ_j^(i), 1-ε_low, 1+ε_high)·Â^(i) ) ]
+
+ρ_j^(i): Importance-sampling ratio        Â^(i): Within-group normalized advantage
+Key changes: ① Remove the KL penalty   ② ε_high &gt; ε_low (clip-high, borrowed from DAPO)</div>
+
+    <h4>STAR's Three-Stage Pipeline</h4>
+    <div class="flow">┌─────────────────────────────────────────────────────────────────┐
+│  Stage 1 · Data synthesis                                        │
+│  Sample atomic travel elements → 10K+ queries → sandbox feasibility checks │
+│  GPT-OSS-120B / DeepSeek-V3.2-Exp back-translate to natural-language intents │
+│  Difficulty: easy / medium / hard (by constraint count and type)  │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │ Sample 5K queries
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Stage 2 · SFT warm start                                        │
+│  DeepSeek-V3.2-Exp-Thinking performs ReAct rollouts                │
+│  Rejection sampling: retain successful trajectories only → 1,198 (24.0%) │
+│  Trajectory statistics: 10.3K tokens / 9.2 tool calls on average (Appendix Table 8) │
+│  Fine-tune Qwen2.5-Instruct {1.5B, 3B, 7B}                        │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │ Sample 1K queries (easy:medium:hard = 4:3:3)
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  Stage 3 · RL                                                    │
+│  GRPO (KL-free + clip-high), G = 8, 5 epochs                      │
+│  Reward ∈ {Sum, Macro, Success, Curriculum}                       │
+│  Protocol constraint: formatting error → reward = 0              │
+│  Overlong trajectories: exclude from loss, retain for group advantage normalization │
+│  Context: 30K training / 32K inference                            │
+└─────────────────────────────────────────────────────────────────┘</div>
+
+    <h4>Key Mechanisms</h4>
+    <div class="tblwrap">
+    <table>
+      <tr><th>Mechanism / dimension</th><th>Design choice</th><th>Motivation</th><th>Key hyperparameters / values</th></tr>
+      <tr><td>Cold start</td><td>Teacher distillation + rejection sampling</td><td>Base success is 0.0%; RL has no gradient</td><td class="num">5K → 1,198 (24.0%)</td></tr>
+      <tr><td>reward density</td><td>Four-level ladder</td><td>The interaction between density and size is the object of study</td><td class="num">[0,5] / {0..3} / {0,1}</td></tr>
+      <tr><td>Data difficulty mixture</td><td>Mixed 4:3:3</td><td>All-hard rewards are sparse; all-easy data lacks challenge</td><td class="num">4:3:3</td></tr>
+      <tr><td>Data scale</td><td>1K prompts</td><td>Tradeoff point between in-domain and OOD</td><td class="num">100 / 1K / 2K</td></tr>
+      <tr><td>RL algorithm</td><td>GRPO + KL-free + clip-high</td><td>Remove KL to open exploration space</td><td class="num">G = 8, 5 epochs</td></tr>
+      <tr><td>Overlong trajectories</td><td>Exclude from loss, retain for normalization</td><td>Avoid length penalties contaminating gradients while preserving the signal</td><td class="num">30K / 32K</td></tr>
+      <tr><td>Format violations</td><td>Force reward = 0</td><td>Enforce ReAct protocol compliance</td><td class="num">—</td></tr>
+      <tr><td>Environment noise</td><td>Randomly inject tool failures</td><td>Simulate unstable real-world APIs</td><td class="num">0% / 5% / 10%</td></tr>
+    </table>
+    </div>
+
+    <div class="callout">
+      <strong>Two unvalidated engineering decisions.</strong> First, <strong>excluding overlong trajectories from loss while retaining them for normalization</strong>: removing them entirely would systematically raise the within-group advantage baseline, since failed samples are often longer. Retaining them for normalization effectively makes overlong samples implicit negatives—<strong>the paper does not ablate this choice</strong>. Second, <strong>the cost of being KL-free</strong>: without a KL anchor, the policy can drift arbitrarily far from the SFT distribution. The 7B row of Table 2 (SFT OOD 41.9 → Sum RL OOD 36.7) may well reflect this choice, but the paper attributes it to “overly dense rewards” and <strong>does not compare KL-on against KL-off to disentangle the two factors</strong>.
+    </div>
+  </section>
+
+  <h2>Part III · Quantitative Results</h2>
+
+  <section class="card">
+    <h3>3.1 Main Results Matrix (Table 1, TravelPlanner Test Set of 1,000 Cases, Success %)</h3>
+    <div class="tblwrap">
+    <table>
+      <tr><th>Method</th><th class="num">1.5B</th><th class="num">3B</th><th class="num">7B</th><th class="num">1.5B→7B gain</th></tr>
+      <tr><td>Base (untrained)</td><td class="num">0.0</td><td class="num">0.0</td><td class="num">0.1</td><td class="num">—</td></tr>
+      <tr><td>SFT</td><td class="num">6.9</td><td class="num">12.2</td><td class="num">19.7</td><td class="num">+12.8pp</td></tr>
+      <tr class="best"><td>Sum (dense)</td><td class="num">33.1</td><td class="num">47.0</td><td class="num">62.8</td><td class="num">+29.7pp</td></tr>
+      <tr><td>Macro (semi-sparse)</td><td class="num">30.1</td><td class="num">48.2</td><td class="num">58.9</td><td class="num">+28.8pp</td></tr>
+      <tr><td>Success (sparse)</td><td class="num">33.8</td><td class="num">46.6</td><td class="num">60.9</td><td class="num">+27.1pp</td></tr>
+      <tr><td>Curriculum (staged)</td><td class="num">34.9</td><td class="num">49.9</td><td class="num">57.0</td><td class="num">+22.1pp</td></tr>
+      <tr><td><strong>Best at this size</strong></td><td class="num">Curriculum 34.9</td><td class="num">Curriculum 49.9</td><td class="num">Sum 62.8</td><td class="num">—</td></tr>
+    </table>
+    </div>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">Figure 1 · The Size-Dependent Reversal in Reward Design</p>
+    <p class="fig-sub">TravelPlanner test Success (%). Curriculum leads at 1.5B / 3B, but Sum overtakes it by 5.8 pp at 7B. Source: Table 1. Hover for values.</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-1)"></span> Sum (dense reward)</span>
+      <span><span class="sw" style="background:var(--series-2)"></span> Curriculum (staged reward)</span>
+    </div>
+    <svg class="chart" viewBox="0 0 900 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Bar chart of the performance reversal in reward design across model sizes">
+      <g stroke="var(--grid)" stroke-width="1">
+        <line x1="70" y1="300" x2="870" y2="300" stroke="var(--baseline)"/>
+        <line x1="70" y1="261.4" x2="870" y2="261.4"/>
+        <line x1="70" y1="222.9" x2="870" y2="222.9"/>
+        <line x1="70" y1="184.3" x2="870" y2="184.3"/>
+        <line x1="70" y1="145.7" x2="870" y2="145.7"/>
+        <line x1="70" y1="107.1" x2="870" y2="107.1"/>
+        <line x1="70" y1="68.6" x2="870" y2="68.6"/>
+        <line x1="70" y1="30" x2="870" y2="30"/>
+      </g>
+      <g fill="var(--muted)" font-size="13" text-anchor="end">
+        <text x="60" y="305">0</text><text x="60" y="266">10</text><text x="60" y="227">20</text>
+        <text x="60" y="189">30</text><text x="60" y="150">40</text><text x="60" y="111">50</text>
+        <text x="60" y="73">60</text><text x="60" y="34">70</text>
+      </g>
+      <text x="24" y="170" fill="var(--muted)" font-size="13" text-anchor="middle" transform="rotate(-90 24 170)">Success (%)</text>
+
+      <rect class="bar" x="128" y="172.3" width="70" height="127.7" fill="var(--series-1)" rx="3" data-l="1.5B · Sum" data-v="33.1%"/>
+      <rect class="bar" x="208" y="165.4" width="70" height="134.6" fill="var(--series-2)" rx="3" data-l="1.5B · Curriculum" data-v="34.9% （+1.8pp）"/>
+      <rect class="bar" x="395" y="118.7" width="70" height="181.3" fill="var(--series-1)" rx="3" data-l="3B · Sum" data-v="47.0%"/>
+      <rect class="bar" x="475" y="107.6" width="70" height="192.4" fill="var(--series-2)" rx="3" data-l="3B · Curriculum" data-v="49.9% （+2.9pp）"/>
+      <rect class="bar" x="662" y="57.8" width="70" height="242.2" fill="var(--series-1)" rx="3" data-l="7B · Sum" data-v="62.8% （+5.8pp）"/>
+      <rect class="bar" x="742" y="80.2" width="70" height="219.8" fill="var(--series-2)" rx="3" data-l="7B · Curriculum" data-v="57.0%"/>
+
+      <g fill="var(--text-primary)" font-size="12.5" text-anchor="middle" font-weight="600">
+        <text x="163" y="165">33.1</text><text x="243" y="158">34.9</text>
+        <text x="430" y="111">47.0</text><text x="510" y="100">49.9</text>
+        <text x="697" y="50">62.8</text><text x="777" y="73">57.0</text>
+      </g>
+      <g fill="var(--text-secondary)" font-size="14" text-anchor="middle" font-weight="600">
+        <text x="203" y="326">1.5B</text><text x="470" y="326">3B</text><text x="737" y="326">7B</text>
+      </g>
+      <g font-size="12.5" text-anchor="middle">
+        <text x="203" y="346" fill="var(--series-2)">Curriculum leads</text>
+        <text x="470" y="346" fill="var(--series-2)">Curriculum leads</text>
+        <text x="737" y="346" fill="var(--series-1)">↺ Reversal: Sum leads</text>
+      </g>
+    </svg>
+  </div>
+
+  <section class="card">
+    <h3>3.2 Complete Table 1 (Six Metrics × Three Sizes × Six Methods)</h3>
+    <div class="tblwrap">
+    <table>
+      <tr><th>Scale</th><th>Method</th><th class="num">CS Micro</th><th class="num">CS Macro</th><th class="num">HC Micro</th><th class="num">HC Macro</th><th class="num">Success</th></tr>
+      <tr><td>1.5B</td><td>Base</td><td class="num">30.1</td><td class="num">0.0</td><td class="num">0.0</td><td class="num">0.0</td><td class="num">0.0</td></tr>
+      <tr><td>1.5B</td><td>SFT</td><td class="num">65.9</td><td class="num">15.4</td><td class="num">17.2</td><td class="num">12.1</td><td class="num">6.9</td></tr>
+      <tr><td>1.5B</td><td>Sum</td><td class="num">95.1</td><td class="num">71.6</td><td class="num">51.4</td><td class="num">33.4</td><td class="num">33.1</td></tr>
+      <tr><td>1.5B</td><td>Macro</td><td class="num">93.4</td><td class="num">68.4</td><td class="num">47.9</td><td class="num">31.6</td><td class="num">30.1</td></tr>
+      <tr><td>1.5B</td><td>Success</td><td class="num">93.9</td><td class="num">68.2</td><td class="num">51.0</td><td class="num">34.7</td><td class="num">33.8</td></tr>
+      <tr class="best"><td>1.5B</td><td>Curriculum</td><td class="num">93.9</td><td class="num">70.2</td><td class="num">51.0</td><td class="num">35.4</td><td class="num">34.9</td></tr>
+      <tr><td>3B</td><td>Base</td><td class="num">46.5</td><td class="num">0.0</td><td class="num">0.0</td><td class="num">0.0</td><td class="num">0.0</td></tr>
+      <tr><td>3B</td><td>SFT</td><td class="num">70.4</td><td class="num">24.6</td><td class="num">28.6</td><td class="num">20.0</td><td class="num">12.2</td></tr>
+      <tr><td>3B</td><td>Sum</td><td class="num">97.6</td><td class="num">82.5</td><td class="num">64.8</td><td class="num">47.6</td><td class="num">47.0</td></tr>
+      <tr><td>3B</td><td>Macro</td><td class="num">95.1</td><td class="num">79.6</td><td class="num">68.8</td><td class="num">52.3</td><td class="num">48.2</td></tr>
+      <tr><td>3B</td><td>Success</td><td class="num">90.6</td><td class="num">76.1</td><td class="num">62.6</td><td class="num">47.7</td><td class="num">46.6</td></tr>
+      <tr class="best"><td>3B</td><td>Curriculum</td><td class="num">95.3</td><td class="num">83.0</td><td class="num">67.6</td><td class="num">51.0</td><td class="num">49.9</td></tr>
+      <tr><td>7B</td><td>Base</td><td class="num">55.8</td><td class="num">0.1</td><td class="num">0.7</td><td class="num">0.7</td><td class="num">0.1</td></tr>
+      <tr><td>7B</td><td>SFT</td><td class="num">77.1</td><td class="num">33.1</td><td class="num">40.6</td><td class="num">31.3</td><td class="num">19.7</td></tr>
+      <tr class="best"><td>7B</td><td>Sum</td><td class="num">96.9</td><td class="num">87.4</td><td class="num">78.7</td><td class="num">66.5</td><td class="num">62.8</td></tr>
+      <tr><td>7B</td><td>Macro</td><td class="num">97.0</td><td class="num">89.8</td><td class="num">77.3</td><td class="num">60.0</td><td class="num">58.9</td></tr>
+      <tr><td>7B</td><td>Success</td><td class="num">91.4</td><td class="num">78.3</td><td class="num">73.4</td><td class="num">64.0</td><td class="num">60.9</td></tr>
+      <tr><td>7B</td><td>Curriculum</td><td class="num">96.1</td><td class="num">85.1</td><td class="num">76.6</td><td class="num">60.4</td><td class="num">57.0</td></tr>
+    </table>
+    </div>
+
+    <h4>Three Nontrivial Observations</h4>
+    <ol>
+      <li><strong>CS Micro is already saturated, but Success is far from saturated.</strong> 7B-Sum achieves 96.9% CS Micro but only 62.8% Success. The bottleneck is <strong>entirely at the macro level of hard constraints</strong>(66.5%): the remaining errors are not “commonsense mistakes,” but failures to satisfy the final budget / preference constraint.</li>
+      <li><strong>The transition lies between 3B and 7B.</strong> From 3B→7B, Curriculum improves by only 7.1 pp (49.9→57.0), while Sum improves by 15.8 pp (47.0→62.8)—<strong>an 8.7 pp gap in gains, the strongest directional reversal in the table</strong>. </li>
+      <li><strong>RL is the main contributor in-domain.</strong> 7B: SFT 19.7 → RL 62.8. RL contributes +43.1 pp, 2.2 times the SFT contribution (19.6 pp). <strong>The OOD data in the next section sharply challenges this conclusion.</strong></li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <h3>3.3 OOD Results Matrix (Table 2, Seven Knowledge-Intensive QA Benchmarks, %)</h3>
+    <p>The tool environment is replaced with local Wikipedia retrieval. This transfer setting has <strong>the same tool form but entirely different task semantics</strong>, testing whether “tool orchestration ability,” rather than “travel knowledge,” transfers.</p>
+    <div class="tblwrap">
+    <table>
+      <tr><th>Scale</th><th>Method</th><th class="num">NQ</th><th class="num">TriviaQA</th><th class="num">PopQA</th><th class="num">HotpotQA</th><th class="num">2Wiki</th><th class="num">Musique</th><th class="num">Bamboogle</th><th class="num">Avg.</th></tr>
+      <tr><td>1.5B</td><td>Base</td><td class="num">7.1</td><td class="num">22.4</td><td class="num">9.9</td><td class="num">5.9</td><td class="num">4.3</td><td class="num">2.6</td><td class="num">8.0</td><td class="num">8.6</td></tr>
+      <tr><td>1.5B</td><td>SFT</td><td class="num">13.5</td><td class="num">21.4</td><td class="num">13.5</td><td class="num">11.6</td><td class="num">7.0</td><td class="num">1.2</td><td class="num">12.0</td><td class="num">11.5</td></tr>
+      <tr><td>1.5B</td><td>Search-R1</td><td class="num">39.4</td><td class="num">51.0</td><td class="num">39.7</td><td class="num">14.6</td><td class="num">24.4</td><td class="num">2.2</td><td class="num">4.0</td><td class="num">25.0</td></tr>
+      <tr><td>1.5B</td><td>Sum</td><td class="num">32.1</td><td class="num">44.5</td><td class="num">30.9</td><td class="num">26.0</td><td class="num">14.8</td><td class="num">5.3</td><td class="num">16.8</td><td class="num">24.3</td></tr>
+      <tr class="best"><td>1.5B</td><td>Macro</td><td class="num">29.6</td><td class="num">45.1</td><td class="num">28.8</td><td class="num">26.9</td><td class="num">19.4</td><td class="num">6.3</td><td class="num">23.2</td><td class="num">25.6</td></tr>
+      <tr><td>1.5B</td><td>Success</td><td class="num">24.8</td><td class="num">36.9</td><td class="num">21.3</td><td class="num">24.2</td><td class="num">17.7</td><td class="num">4.6</td><td class="num">23.2</td><td class="num">21.8</td></tr>
+      <tr><td>1.5B</td><td>Curriculum</td><td class="num">20.6</td><td class="num">28.5</td><td class="num">20.5</td><td class="num">16.0</td><td class="num">11.7</td><td class="num">3.5</td><td class="num">17.6</td><td class="num">16.9</td></tr>
+      <tr><td>3B</td><td>Base</td><td class="num">10.6</td><td class="num">28.8</td><td class="num">10.8</td><td class="num">14.9</td><td class="num">24.4</td><td class="num">2.0</td><td class="num">2.4</td><td class="num">13.4</td></tr>
+      <tr><td>3B</td><td>SFT</td><td class="num">35.1</td><td class="num">52.5</td><td class="num">31.3</td><td class="num">32.0</td><td class="num">24.4</td><td class="num">9.0</td><td class="num">30.4</td><td class="num">30.7</td></tr>
+      <tr><td>3B</td><td>Search-R1</td><td class="num">34.1</td><td class="num">54.5</td><td class="num">37.8</td><td class="num">32.4</td><td class="num">31.9</td><td class="num">10.3</td><td class="num">26.4</td><td class="num">32.5</td></tr>
+      <tr><td>3B</td><td>Sum</td><td class="num">38.2</td><td class="num">54.9</td><td class="num">34.3</td><td class="num">34.2</td><td class="num">23.3</td><td class="num">8.8</td><td class="num">27.2</td><td class="num">31.6</td></tr>
+      <tr><td>3B</td><td>Macro</td><td class="num">37.0</td><td class="num">54.5</td><td class="num">34.9</td><td class="num">37.9</td><td class="num">29.9</td><td class="num">11.6</td><td class="num">33.6</td><td class="num">34.2</td></tr>
+      <tr><td>3B</td><td>Success</td><td class="num">37.5</td><td class="num">54.1</td><td class="num">34.0</td><td class="num">33.7</td><td class="num">19.4</td><td class="num">10.3</td><td class="num">32.0</td><td class="num">31.6</td></tr>
+      <tr class="best"><td>3B</td><td>Curriculum</td><td class="num">41.0</td><td class="num">56.8</td><td class="num">36.2</td><td class="num">39.5</td><td class="num">27.7</td><td class="num">12.4</td><td class="num">32.0</td><td class="num">35.0</td></tr>
+      <tr><td>7B</td><td>Base</td><td class="num">13.4</td><td class="num">40.8</td><td class="num">14.0</td><td class="num">18.3</td><td class="num">25.0</td><td class="num">3.1</td><td class="num">12.0</td><td class="num">18.1</td></tr>
+      <tr><td>7B</td><td>SFT</td><td class="num">41.2</td><td class="num">59.7</td><td class="num">37.6</td><td class="num">47.0</td><td class="num">37.8</td><td class="num">16.3</td><td class="num">53.6</td><td class="num">41.9</td></tr>
+      <tr><td>7B</td><td>Search-R1</td><td class="num">39.3</td><td class="num">61.0</td><td class="num">39.7</td><td class="num">37.0</td><td class="num">41.4</td><td class="num">14.6</td><td class="num">36.8</td><td class="num">38.5</td></tr>
+      <tr><td>7B</td><td>Sum</td><td class="num">35.5</td><td class="num">54.5</td><td class="num">34.8</td><td class="num">44.8</td><td class="num">34.6</td><td class="num">15.4</td><td class="num">37.6</td><td class="num">36.7</td></tr>
+      <tr class="best"><td>7B</td><td>Macro</td><td class="num">42.2</td><td class="num">61.2</td><td class="num">39.6</td><td class="num">48.8</td><td class="num">38.3</td><td class="num">17.4</td><td class="num">52.8</td><td class="num">42.9</td></tr>
+      <tr><td>7B</td><td>Success</td><td class="num">38.7</td><td class="num">55.9</td><td class="num">35.2</td><td class="num">45.8</td><td class="num">38.4</td><td class="num">15.5</td><td class="num">41.6</td><td class="num">38.7</td></tr>
+      <tr><td>7B</td><td>Curriculum</td><td class="num">41.1</td><td class="num">58.7</td><td class="num">37.7</td><td class="num">48.4</td><td class="num">38.5</td><td class="num">17.4</td><td class="num">45.6</td><td class="num">41.1</td></tr>
+    </table>
+    </div>
+  </section>
+
+  <section class="card" style="border-color: var(--series-2); border-width: 2px;">
+    <h3>🔴 The Paper's Most Persuasive Quantitative Evidence (Derived from Table 2, Not Explicitly Stated)</h3>
+    <p>List the “net OOD contribution of RL relative to SFT” by model size alongside the in-domain contribution at the same size:</p>
+    <div class="tblwrap">
+    <table>
+      <tr><th>Size</th><th class="num">SFT OOD Avg</th><th class="num">Best RL OOD Avg</th><th class="num">Net OOD contribution of RL</th><th class="num">Net in-domain RL contribution at the same size</th></tr>
+      <tr><td>1.5B</td><td class="num">11.5</td><td class="num">25.6 (Macro)</td><td class="num pos">+14.1pp</td><td class="num">+28.0pp (6.9→34.9)</td></tr>
+      <tr><td>3B</td><td class="num">30.7</td><td class="num">35.0 (Curriculum)</td><td class="num pos">+4.3pp</td><td class="num">+37.7pp (12.2→49.9)</td></tr>
+      <tr><td>7B</td><td class="num">41.9</td><td class="num">42.9 (Macro)</td><td class="num pos">+1.0pp</td><td class="num">+43.1pp (19.7→62.8)</td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>A clear monotonic decrease: +14.1 → +4.3 → +1.0. At each size increase, RL's net OOD contribution shrinks by roughly 3×.</strong> Meanwhile, RL's net in-domain contribution increases monotonically: +28.0 → +37.7 → +43.1.
+    </div>
+    <p>These diverging trends imply that <strong>as models grow, RL increasingly resembles “task-specific overfitting” rather than teaching transferable tool orchestration ability.</strong> Extrapolating beyond 7B would put the net OOD contribution below 0. Indeed, at 7B, choosing Curriculum, recommended for 1.5B/3B, or Sum, the strongest in-domain reward, already produces negative OOD returns:</p>
+    <ul>
+      <li>7B Sum: 36.7 vs SFT 41.9 = <strong style="color:var(--crit)">−5.2pp</strong>(RL makes the model worse on OOD than SFT alone)</li>
+      <li>7B Curriculum: 41.1 vs SFT 41.9 = <strong style="color:var(--crit)">−0.8pp</strong></li>
+    </ul>
+    <p>The paper's Takeaway 2 merely says “overly dense rewards have an alignment tax,” but the data support a stronger proposition: <strong>at 7B, two of the four rewards give RL a negative net OOD return; the other two give gains no greater than +1.0 pp</strong>. In other words, <strong>STAR's OOD competitiveness at 7B comes almost entirely from DeepSeek-V3.2 distillation during SFT, rather than RL</strong>. </p>
+    <p><strong>Supporting evidence:</strong> 7B-SFT's OOD Avg (41.9) already <strong>exceeds Search-R1 (38.5), trained natively on NQ+HotpotQA, by 3.4 pp</strong>. A model that has never seen QA data and was distilled only on travel-planning trajectories beats an in-domain-trained specialized baseline on OOD—<strong>a victory for distillation, not RL</strong>. </p>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">Figure 2 · Divergence: RL's Net Contribution Relative to SFT, In-Domain vs. OOD</p>
+    <p class="fig-sub">Units: pp (percentage points). Net in-domain contribution rises with size, while net OOD contribution approaches zero. Derived from Tables 1 and 2. Hover for values.</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-1)"></span> Net in-domain contribution (TravelPlanner Success)</span>
+      <span><span class="sw" style="background:var(--series-2)"></span> Net OOD contribution (mean over seven QA benchmarks)</span>
+    </div>
+    <svg class="chart" viewBox="0 0 900 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Bar chart showing divergence between RL&#x27;s net in-domain and OOD contributions">
+      <g stroke="var(--grid)" stroke-width="1">
+        <line x1="70" y1="300" x2="870" y2="300" stroke="var(--baseline)"/>
+        <line x1="70" y1="240" x2="870" y2="240"/>
+        <line x1="70" y1="180" x2="870" y2="180"/>
+        <line x1="70" y1="120" x2="870" y2="120"/>
+        <line x1="70" y1="60" x2="870" y2="60"/>
+      </g>
+      <g fill="var(--muted)" font-size="13" text-anchor="end">
+        <text x="60" y="305">0</text><text x="60" y="245">10</text><text x="60" y="185">20</text>
+        <text x="60" y="125">30</text><text x="60" y="65">40</text>
+      </g>
+      <text x="24" y="170" fill="var(--muted)" font-size="13" text-anchor="middle" transform="rotate(-90 24 170)">Net contribution (pp)</text>
+
+      <rect class="bar" x="128" y="132" width="70" height="168" fill="var(--series-1)" rx="3" data-l="1.5B · in-domain" data-v="+28.0pp（6.9 → 34.9）"/>
+      <rect class="bar" x="208" y="215.4" width="70" height="84.6" fill="var(--series-2)" rx="3" data-l="1.5B · OOD" data-v="+14.1pp（11.5 → 25.6）"/>
+      <rect class="bar" x="395" y="73.8" width="70" height="226.2" fill="var(--series-1)" rx="3" data-l="3B · in-domain" data-v="+37.7pp（12.2 → 49.9）"/>
+      <rect class="bar" x="475" y="274.2" width="70" height="25.8" fill="var(--series-2)" rx="3" data-l="3B · OOD" data-v="+4.3pp（30.7 → 35.0）"/>
+      <rect class="bar" x="662" y="41.4" width="70" height="258.6" fill="var(--series-1)" rx="3" data-l="7B · in-domain" data-v="+43.1pp（19.7 → 62.8）"/>
+      <rect class="bar" x="742" y="294" width="70" height="6" fill="var(--series-2)" rx="3" data-l="7B · OOD" data-v="+1.0pp（41.9 → 42.9）"/>
+
+      <g fill="var(--text-primary)" font-size="12.5" text-anchor="middle" font-weight="600">
+        <text x="163" y="124">+28.0</text><text x="243" y="208">+14.1</text>
+        <text x="430" y="66">+37.7</text><text x="510" y="267">+4.3</text>
+        <text x="697" y="34">+43.1</text><text x="777" y="287">+1.0</text>
+      </g>
+      <g fill="var(--text-secondary)" font-size="14" text-anchor="middle" font-weight="600">
+        <text x="203" y="326">1.5B</text><text x="470" y="326">3B</text><text x="737" y="326">7B</text>
+      </g>
+      <path d="M 250 222 Q 480 250 780 292" stroke="var(--series-2)" stroke-width="2" fill="none" stroke-dasharray="5 4" opacity=".7"/>
+      <text x="737" y="346" fill="var(--series-2)" font-size="12.5" text-anchor="middle">OOD gains approach zero →</text>
+    </svg>
+  </div>
+
+  <section class="card">
+    <h3>3.4 Data Difficulty Composition Ablation (Table 3, 3B, Curriculum, 1K Prompts)</h3>
+    <div class="tblwrap">
+    <table>
+      <tr><th>Configuration</th><th class="num">CS Micro</th><th class="num">CS Macro</th><th class="num">HC Micro</th><th class="num">HC Macro</th><th class="num">Success</th><th class="num">vs Mixed</th></tr>
+      <tr><td>Easy-1K</td><td class="num">92.8</td><td class="num">79.7</td><td class="num">62.8</td><td class="num">46.9</td><td class="num">45.3</td><td class="num neg">−4.6pp</td></tr>
+      <tr><td>Medium-1K</td><td class="num">94.9</td><td class="num">69.2</td><td class="num">66.2</td><td class="num">49.0</td><td class="num">41.1</td><td class="num neg">−8.8pp</td></tr>
+      <tr><td>Hard-1K</td><td class="num">90.0</td><td class="num">48.4</td><td class="num">65.5</td><td class="num">47.2</td><td class="num">25.9</td><td class="num neg">−24.0pp</td></tr>
+      <tr class="best"><td>Mixed-1K (4:3:3)</td><td class="num">95.3</td><td class="num">83.0</td><td class="num">67.6</td><td class="num">51.0</td><td class="num">49.9</td><td class="num">—</td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>A detail the paper mentions only briefly but deserves separate attention:</strong> the collapse of Hard-1K <strong>is not a collapse across the board</strong>. Its HC Micro (65.5) and HC Macro (47.2) trail Mixed (67.6 / 51.0) by only 2.1 pp and 3.8 pp, but <strong>CS Macro plunges from 83.0 to 48.4, a drop of 34.6 pp</strong>. In other words, <strong>training only on difficult examples teaches hard constraints but makes the model “forget commonsense.”</strong> Mechanistic explanation: rewards on hard examples come almost entirely from hard-constraint terms; commonsense terms saturate early and lose gradient weight, allowing the policy to drift along the commonsense dimension. This directly exposes, in <code>r_sum</code>, the risk of leaving all components unweighted (all coefficients equal to 1)—<strong>the paper never discusses weighting reward components</strong>.
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>3.5 RL Algorithm Ablation and Cost (Table 4)</h3>
+    <div class="tblwrap">
+    <table>
+      <tr><th>Scale</th><th>Algorithm</th><th class="num">Success</th><th class="num">GPU hours</th><th class="num">Time per step (min)</th><th class="num">Performance vs. GRPO</th><th class="num">Cost vs. GRPO</th></tr>
+      <tr><td>1.5B</td><td>GRPO</td><td class="num">30.1</td><td class="num">164</td><td class="num">8.0</td><td class="num">—</td><td class="num">—</td></tr>
+      <tr><td>1.5B</td><td>DAPO</td><td class="num">36.9</td><td class="num">183</td><td class="num">8.2</td><td class="num pos">+6.8pp</td><td class="num">+11.6%</td></tr>
+      <tr class="best"><td>1.5B</td><td>ARPO</td><td class="num">37.5</td><td class="num">195</td><td class="num">9.5</td><td class="num pos">+7.4pp</td><td class="num">+18.9%</td></tr>
+      <tr class="best"><td>3B</td><td>GRPO</td><td class="num">48.2</td><td class="num">176</td><td class="num">8.6</td><td class="num">—</td><td class="num">—</td></tr>
+      <tr><td>3B</td><td>DAPO</td><td class="num">45.6</td><td class="num">184</td><td class="num">8.9</td><td class="num neg">−2.6pp</td><td class="num">+4.5%</td></tr>
+      <tr><td>3B</td><td>ARPO</td><td class="num">47.5</td><td class="num">273</td><td class="num">13.3</td><td class="num neg">−0.7pp</td><td class="num">+55.1%</td></tr>
+      <tr class="best"><td>7B</td><td>GRPO</td><td class="num">62.8</td><td class="num">368</td><td class="num">9.0</td><td class="num">—</td><td class="num">—</td></tr>
+      <tr><td>7B</td><td>DAPO</td><td class="num">58.4</td><td class="num">390</td><td class="num">9.5</td><td class="num neg">−4.4pp</td><td class="num">+6.0%</td></tr>
+      <tr><td>7B</td><td>ARPO</td><td class="num">58.3</td><td class="num">547</td><td class="num">13.3</td><td class="num neg">−4.5pp</td><td class="num">+48.6%</td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>Transition highlighted:</strong> At 1.5B, ARPO exchanges <strong>+18.9% cost for +7.4 pp</strong>; at 7B, it exchanges <strong>+48.6% cost for −4.5 pp</strong>. The same algorithm changes from “highly cost-effective” to “paying for worse performance” over just a 4.7× increase in parameters.
+    </div>
+    <p>Practical implication: <strong>Entropy-driven adaptive rollout methods such as ARPO gain by “compensating for insufficient exploration in small models,” rather than by “improving credit assignment itself.”</strong> The original ARPO paper (ICLR 2026 Poster) claims better results on 13 benchmarks with half the tool budget, but its experiments mainly use models at or below 7B—<strong>STAR's Table 4 effectively draws a boundary on ARPO's applicability, precisely around the sizes used in ARPO's own experiments</strong>. This is an interesting case of papers corroborating and constraining one another.</p>
+  </section>
+
+  <section class="card">
+    <h3>3.6 Data-Scale Sweep and Environment Stability</h3>
+    <div class="tblwrap">
+    <table>
+      <tr><th>Number of training prompts</th><th class="num">In-domain Success</th><th class="num">OOD Avg</th><th>Explanation</th></tr>
+      <tr><td>100</td><td class="num">37.5</td><td class="num">Not extracted</td><td>—</td></tr>
+      <tr><td>500</td><td class="num">Not extracted</td><td class="num">Not extracted</td><td>Only in Figure 5; values could not be read from the raster image</td></tr>
+      <tr class="best"><td>1K</td><td class="num">49.9</td><td class="num">35.0</td><td>The paper's identified sweet spot</td></tr>
+      <tr><td>2K</td><td class="num">50.8</td><td class="num">32.2</td><td>Higher in-domain, lower OOD</td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>This is the weakest evidence in the paper.</strong> Takeaway 4, “1K is the sweet spot,” rests entirely on the 1K→2K change of <strong>+0.9 pp in-domain and −2.8 pp OOD</strong> . With <strong>no standard deviations and no multiple seeds</strong> , both +0.9 pp and −2.8 pp fall within typical RL training variance. Confidence in this takeaway should be substantially lower than in Takeaways 1 and 6, whose effect sizes are a 5.8 pp reversal and a +7.4 pp/−4.5 pp reversal, respectively, and are much more robust.
+    </div>
+    <h4>Environment stability (Figure 6, 3B only)</h4>
+    <p>The paper states that at ≤5% tool failure, “test performance remains relatively stable, with only minor fluctuations”; at 10%, “final test success drops substantially, with all metrics declining together.” The training curves (Figure 6a) show slower convergence and greater variance.</p>
+    <p><strong>⚠ I could not read the exact values in Figure 6</strong>(there is no corresponding table). The quantitative strength of Takeaway 7 <strong>cannot be verified</strong>. This is also a presentation weakness of the paper: it is the only one of the five axes with a figure but no table.</p>
+  </section>
+
+  <h2>Part IV · Value and Limitations</h2>
+
+  <section class="card">
+    <h3>4.1 The Real Contribution</h3>
+    <p>It is not “we trained a TravelPlanner state of the art” (62.8% will soon be surpassed), but <strong>establishing the proposition that “agentic RL design choices are a function of model capacity,” with empirical evidence in the same direction along two independent axes: reward density and algorithm selection</strong>. </p>
+    <p>This proposition <strong>changes how papers should be read</strong>: whenever an agentic RL paper claims “method X beats Y,” the reader's first question should be “at what scale?” STAR elevates a hidden, rarely reported experimental dimension—model size—to first-class status.</p>
+
+    <h4>Reusable Designs Independent of This Paper, Ranked by Transferability</h4>
+    <ol>
+      <li><strong>The construction of a four-level reward-density ladder</strong>(micro/macro × multiple dimensions). Any task whose <strong>evaluation protocol decomposes into multiple binary checks</strong> can directly adopt it: micro = pass fraction, macro = indicator of passing all checks, combined for the desired density. It depends on no travel-planning-specific property. <strong>This is the paper's most reusable contribution.</strong></li>
+      <li><strong>The “exclude from loss / retain for normalization” treatment of overlong trajectories</strong>. Applicable to any combination of group-based RL and long trajectories.</li>
+      <li><strong>Rejection-sampling retention rate as a diagnostic of task difficulty</strong>. The 24.0% rate signals in advance that the task is difficult even for a strong teacher and can quantify whether an SFT warm start is needed.</li>
+      <li><strong>The “algorithm gain vs. size” comparison-table format</strong>(Table 4). Reporting GPU hours alongside performance is a rare act of transparency in agentic RL papers and should become routine.</li>
+    </ol>
+
+    <h4>Implications for Future Work</h4>
+    <ul>
+      <li><strong>The hypothesis that “capacity substitutes for exploration assistance” deserves independent testing.</strong> If it holds, the entire research direction of designing smarter exploration mechanisms for LLM agents has a finite value window that closes as base models improve.</li>
+      <li><strong>The decline in net OOD gains with size opens a new question</strong>: does agentic RL “teach capabilities” or “adjust alignment”? If the latter, all current work marketed through in-domain gains needs an OOD control.</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h3>4.2 Limitations · Category I: Author-Reported (Four Points in the Limitations Section)</h3>
+    <ol>
+      <li><strong>Simulated environment</strong>: “While TravelPlanner is a challenging testbed, it remains simulated.”</li>
+      <li><strong>Limited OOD evaluation</strong>: “Our OOD evaluation is currently restricted to the knowledge-intensive QA task. This limits our conclusions to single-domain generalization.”</li>
+      <li><strong>Unknown behavior of larger models</strong>: “Due to computational constraints, our study focuses on models up to 7B parameters.”</li>
+      <li><strong>Task-specific decomposition and single-factor analysis</strong>: “we primarily isolated individual axes, leaving the complex, simultaneous interactions among all dimensions unexplored. Furthermore, our reward shaping relies on task-specific, trajectory-level formulations.”</li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <h3>4.3 Limitations · Category II: Additional Critique (8 Independent Observations)</h3>
+
+    <h4>① No statistical significance reporting, while several takeaways depend on &lt;1 pp differences <span class="chip">Experimental design issues</span></h4>
+    <p>No std / CI / seed count appears anywhere. All evidence for Takeaway 4 (the 1K sweet spot) is the 1K→2K in-domain change of <strong>+0.9pp</strong>; by comparison, the effect size for Takeaway 1 is <strong>5.8pp</strong>. <strong>Using the same variance-free experiments to support two conclusions whose effect sizes differ by 6.4× necessarily implies different confidence levels. Yet the paper presents all seven takeaways on an equal footing without distinguishing confidence.</strong></p>
+
+    <h4>② The key negative result—“RL contributes only +1.0 pp net OOD at 7B”—is sidestepped <span class="chip">Gaps in the argument</span></h4>
+    <p>Data chain: 7B SFT OOD 41.9 → best RL OOD 42.9 (Macro) = +1.0 pp; 7B Sum is 36.7 = <strong style="color:var(--crit)">−5.2pp</strong>. Takeaway 2 says “overly dense rewards impose an alignment tax,” a <strong>weaker formulation that assigns responsibility to a single reward design</strong>. The actual data support a stronger proposition: <strong>at 7B, the expected OOD contribution of the RL stage is near zero, and half the configurations are negative</strong>. The positive phrasing “Macro offers the best balance” obscures this fact.</p>
+
+    <h4>③ No head-to-head comparison with the most direct competitor, Planner-R1 <span class="chip">Missing comparison with a key competitor</span></h4>
+    <p>STAR cites Planner-R1 in related work, and it <strong>does the same thing on the same benchmark</strong>, reporting <strong>56.9% final-pass rate with only 180 training queries and an 8B model</strong>. STAR's best 7B result is 62.8%, at the cost of <strong>1,198 teacher-distilled SFT trajectories + 1K RL queries ≈ 2,198 examples</strong>——<strong>12.2× Planner-R1's sample count for only +5.9 pp</strong>. In STAR's Tables 1 and 4, <strong>not a single row is Planner-R1</strong>; the claim of “significantly outperforming leading LLMs” compares against general LLMs such as Kimi-K2.5, rather than comparable specialized methods.</p>
+    <p><em>Disclosure: Planner-R1 uses 8B while STAR uses 7B, and their SFT setups differ, so these are not strictly identical experimental conditions. Precisely for that reason, a controlled head-to-head is needed instead of separate reported numbers.</em></p>
+
+    <h4>④ “Curriculum is best at 1.5B” conflicts with “Curriculum has the worst OOD at 1.5B” within the recipe <span class="chip">Gaps in the argument</span></h4>
+    <p>Table 1: Curriculum's Success at 1.5B is 34.9 (first place). Table 2: the same 1.5B-Curriculum has OOD Avg of <strong>16.9, last among all four rewards</strong>, below first-place Macro (25.6) by <strong>8.7pp</strong>, and even 7.4 pp below Sum (24.3). Takeaway 1 recommends “staged rewards for small models,” while Takeaway 2 recommends “avoiding overly dense rewards to preserve OOD”—<strong>these recommendations directly conflict at 1.5B, and the paper gives no criterion for choosing between them</strong>. A practitioner reading only the takeaways rather than Table 2 would choose Curriculum for 1.5B and obtain the worst generalization in the table.</p>
+
+    <h4>⑤ KL-free training and “overly dense rewards” are not disentangled <span class="chip">Experimental design issues</span></h4>
+    <p>STAR's GRPO variant makes two changes simultaneously—removing KL and using clip-high—both of which amplify policy drift. Sum's OOD degradation at 7B (−5.2 pp vs. SFT) is attributed to reward density, but <strong>there is no KL-on / KL-off comparison</strong>. Without it, “reward density causes the alignment tax” is <strong>a causal claim that has not been isolated and tested</strong>. </p>
+
+    <h4>⑥ One-axis-at-a-time ablations use conditions inconsistent with the recommended configuration <span class="chip">Experimental design issues</span></h4>
+    <p>The paper acknowledges single-factor analysis but underestimates its cost: <strong>Table 3 (data difficulty) and Appendix Table 9 (data scale) both use only 3B + Curriculum</strong>. Yet according to Takeaway 1, Curriculum is precisely <strong>not</strong> the best reward at 7B. Thus the “Mixed 4:3:3” and “1K sweet spot” conclusions <strong>come from a configuration known to be suboptimal for 7B</strong>, with no evidence that they transfer to 7B. This is a concrete mismatch in conditions, not an abstract issue of unexplored interactions.</p>
+
+    <h4>⑦ The environment-stability axis has only a figure, no table, one model size, and one noise type <span class="chip">Reproducibility risks</span></h4>
+    <p>The only axis of five without a table. It tests only 3B and only “globally random tool-call failures.” Real API failures include timeouts, partial responses, dirty data, and rate limits—<strong>random failure is “no information,” while dirty data is “wrong information”; the latter is more damaging to the policy</strong>. As engineering guidance, Takeaway 7 has very limited external validity.</p>
+
+    <h4>⑧ Teacher performance is unreported, so whether RL exceeds the distillation ceiling is unknown <span class="chip">Gaps in the argument</span></h4>
+    <p>SFT trajectories come from DeepSeek-V3.2-Exp-Thinking, with a 24.0% rejection-sampling retention rate. Yet the paper <strong>never reports the teacher's score on TravelPlanner's official test set</strong>. Whether 7B-Sum's 62.8% means “student surpasses teacher” or “teacher was already better,”<strong>readers cannot tell</strong>. If the teacher already achieves 60%+, STAR's entire pipeline can be redescribed as “compressing a large model's capabilities into 7B,” downgrading RL from “creating capability” to “improving distillation efficiency.”</p>
+
+    <h4>⑨ Gaps in My Own Analysis</h4>
+    <ul>
+      <li>Figures 5/6/7/8 are raster images, so exact coordinates could not be extracted. Some environment-stability and data-scale values are missing and explicitly marked where relevant.</li>
+      <li>I could not verify that STAR and Planner-R1 used exactly the same test split, so point ③ should be treated as <strong>a rough comparison of separately published numbers, not a strictly controlled comparison</strong>. </li>
+      <li>I did not run the code; all judgments about implementation details come from the paper's descriptions.</li>
+    </ul>
+  </section>
+
+  <h2>Part V · Tracing Related Work</h2>
+
+  <section class="card">
+    <h3>5.1 TravelPlanner — 2024.02 (v4: 2024.10), ICML 2024 Spotlight</h3>
+    <p><strong>Problem addressed.</strong> When LLM agent evaluation generally relied on single-step tool calls or short QA, TravelPlanner constructed the first realistic planning benchmark <strong>requiring both long tool sequences and joint satisfaction of multiple constraints</strong>: 1,225 planning intents, nearly 4 million sandbox records, and a two-dimensional evaluation protocol. In one sentence, <strong>it turned the vague question “can LLMs really plan?” into the number 0.6%.</strong></p>
+    <p><strong>What gap remained?</strong> This is a <strong>purely diagnostic</strong> paper. It established 0.6% and qualitatively identified three failure modes, but <strong>did not intend to provide any training method</strong>. The remaining gap was exceptionally clear: <strong>how can that 0.6% be raised?</strong> More subtly, its <strong>two-dimensional, four-level evaluation protocol was itself an unused resource</strong>: the micro/macro decomposition was merely an evaluation tool in the original paper, and nobody recognized that it could directly serve as a density knob for the reward function.</p>
+    <p><strong>How the core paper responds.</strong> STAR did two things: raised 0.6% to 62.8%; and <strong>directly reused TravelPlanner's evaluation protocol as reward primitives</strong>. All five reward components <strong>are native TravelPlanner evaluation components</strong>: the four reward-density levels were not invented; they were <strong>“read out” of the benchmark's evaluation protocol</strong>. </p>
+    <p><strong>Transfer of key designs.</strong> Directly translating an “evaluation protocol” into a “reward function”—a <strong>redefinition of function</strong> rather than a technical improvement: the same formulas were a scorecard in 2024 and a training signal in 2026. This also explains why STAR's reward shaping is task-specific.</p>
+  </section>
+
+  <section class="card">
+    <h3>5.2 Search-R1 — 2025.03 (v5: 2025.08)</h3>
+    <p><strong>Problem addressed.</strong> It was the first systematic extension of R1-style pure RL training <strong>to interleaved reasoning and tool use</strong>. Two key technical choices: <strong>retrieved token masking</strong>(retrieved tokens are excluded from policy gradients to avoid learning to repeat them), and <strong>pure outcome-based rewards</strong>. Across seven QA benchmarks, Qwen2.5-7B improved by 41% relatively and 3B by 20%.</p>
+    <p><strong>What gap remained?</strong> Two gaps, both fatal in long-horizon settings: <strong>(1) A single tool and short horizon</strong>—typical trajectories use 1–3 calls. Outcome rewards work only if initial base success is substantially above 0 (Qwen2.5-7B base achieves 18.1% on QA); on TravelPlanner, the same base achieves only <strong>0.1%</strong>, causing a pure outcome reward to degenerate into zero gradients. <strong>(2) Reward density was never examined</strong>—because outcome rewards sufficed in its setting.</p>
+    <p><strong>How the core paper responds.</strong> STAR's entire reward-density axis is essentially <strong>a direct challenge to Search-R1's implicit premise</strong>: the viability of outcome rewards depends on initial success, which depends on task horizon. Table 1's Success column reads 33.8 / 46.6 / 60.9 across three sizes—<strong>it works, but only after an SFT warm start raises success from 0.0% to 6.9%–19.7%</strong>. This is a specific boundary condition on the R1 narrative that “pure RL needs no SFT.” STAR also uses Search-R1 as an OOD baseline, but as Part III shows, <strong>7B-SFT alone already wins, and the victory comes from distillation rather than RL</strong>. </p>
+    <p><strong>Transfer of key designs.</strong>“Outcome reward as the default starting point” is inherited, but demoted to <strong>one of four options</strong>—an increase in abstraction from “method” to “design dimension.”</p>
+  </section>
+
+  <section class="card">
+    <h3>5.3 DAPO — 2025.03 (v2: 2025.05), ByteDance Seed</h3>
+    <p><strong>Problem addressed.</strong> Against a backdrop of hidden o1 / R1 technical details, DAPO fully released a large-scale RL system. Qwen2.5-32B base scored 50 on AIME 2024, <strong>exceeding the previous state of the art, DeepSeek-R1-Zero-Qwen-32B's 47, with only 50% of the training steps</strong>. Four core techniques: <strong>Clip-Higher</strong>(decoupled clipping bounds to prevent entropy collapse), <strong>Dynamic Sampling</strong>(filtering zero-gradient samples), <strong>Token-Level Policy Gradient Loss</strong>, <strong>Overlong Reward Shaping</strong>. </p>
+    <p><strong>What gap remained?</strong> All four techniques <strong>were designed for single-turn, long-CoT mathematical reasoning</strong>. Every premise must be rechecked for multi-turn tool interactions: Clip-Higher prevents entropy collapse, but <strong>entropy in multi-turn agentic settings also comes from external randomness in tool responses</strong>, which may consume the added exploration space. DAPO does not explain how to distribute the soft Overlong Reward Shaping penalty across a 9.2-step trajectory. Most importantly, <strong>DAPO was validated entirely at 32B and never answered whether its techniques remain effective at 1.5B or are already unnecessary at 7B</strong>. </p>
+    <p><strong>How the core paper responds.</strong> Two levels. <strong>Surface level</strong>: DAPO enters Table 4 as an algorithm option, yielding a size-dependent result of +6.8 pp at 1.5B and −4.4 pp at 7B. <strong>Deeper level</strong>: STAR's GRPO baseline <strong>already incorporates two DAPO techniques</strong>(KL-free and clip-high are defaults)—DAPO therefore serves as both <strong>Control group</strong> and <strong>infrastructure</strong> in STAR.</p>
+    <p><strong>Transfer of key designs.</strong><code>Clip-Higher</code> → STAR's default configuration (inherited unconditionally); <code>Overlong Reward Shaping</code> → “exclude from loss / retain for normalization” (changed form); <code>Dynamic Sampling</code> → implemented by STAR through “balanced data difficulty” at the <strong>data level</strong> rather than the algorithm level. The third is most interesting: <strong>the same problem—waste from zero-gradient samples—is solved algorithmically by DAPO and through data composition by STAR.</strong></p>
+  </section>
+
+  <section class="card">
+    <h3>5.4 ARPO — 2025.07, ICLR 2026 Poster</h3>
+    <p><strong>Problem addressed.</strong> The closest predecessor to STAR's problem domain. Its key observation is a concrete empirical phenomenon: <strong>token entropy rises substantially immediately after a tool-call response</strong>—tool responses inject uncertainty. This motivates <strong>entropy-based adaptive rollout</strong>(dynamically increasing step-level sampling at high-entropy steps), combined with <strong>advantage attribution estimation</strong>. Result: better performance on 13 benchmarks, while <strong>using only half the tool-call budget of existing methods</strong>. </p>
+    <p><strong>What gap remained?</strong> The entire design <strong>rests on the assumption that insufficient exploration is the primary bottleneck</strong>. This holds at the scales tested, mainly 7B and below, but ARPO <strong>does not vary model size to test the boundary of that assumption</strong>, implicitly treating smarter exploration as monotonically beneficial.</p>
+    <p><strong>How the core paper responds.</strong> Table 4 provides a direct counterexample: 1.5B <strong>+7.4pp</strong>(+18.9% cost) → 3B −0.7 pp (+55.1% cost) → 7B <strong>−4.5pp</strong>(+48.6% cost). <strong>ARPO's gains already turn negative between 1.5B and 3B.</strong> STAR consequently proposes Takeaway 6: “the need for complex exploration mechanisms is inversely related to model capability.” This is <strong>an adversarial response rather than an inherited extension</strong>—STAR does not improve on ARPO, but <strong>sets an upper boundary on ARPO's applicability, and that boundary lies inside ARPO's own experimental scale range</strong>. </p>
+    <p><strong>Transfer of key designs.</strong> Form of technical transfer: <strong>from “explicit step-level exploration scheduling” → “implicit capacity-driven exploration”</strong>. </p>
+  </section>
+
+  <section class="card">
+    <h3>5.5 Planner-R1 — 2025.09 (v2: 2025.10), ICLR 2026 Under review</h3>
+    <p><strong>Problem addressed.</strong> The work that <strong>most directly competes</strong> with STAR: the same benchmark and the same claim. Results: <strong>56.9% final-pass rate with only 180 training queries</strong>; an 8B model matches 32B performance, with <strong>3.5× compute efficiency and 1.5× memory efficiency</strong>; a 2.7× improvement over GPT-5's 21.2% baseline; and “broadly maintains or exceeds baseline” on OOD tasks including Multi-IF, NaturalPlan, and τ-Bench.</p>
+    <p><strong>What gap remained?</strong>(1) <strong>Limited scale validation</strong>—only 8B and 32B, insufficient to characterize the trend's shape; (2) <strong>code not publicly available</strong>(I found no public repository), raising reproducibility concerns; (3) it claims reward shaping is the main lever but <strong>does not include RL algorithm choice as a control axis</strong>, so it cannot rule out gains arising from the algorithm rather than the reward.</p>
+    <p><strong>How the core paper responds.</strong> STAR expands Planner-R1's two-point observation into a curve with three samples and adds algorithm, data, and environment axes beyond reward, making its validation a strict superset. <strong>Precisely for that reason, the lack of a head-to-head with Planner-R1 is a serious omission</strong>: published numbers give Planner-R1 56.9% from 180 queries and STAR 62.8% from ≈2,198 examples. <strong>If Planner-R1's sample efficiency holds, STAR's “comprehensive recipe” is outperformed by contemporary work on data efficiency</strong>—the very dimension STAR's Takeaway 4 presents as a core value.</p>
+    <p><strong>Transfer of key designs.</strong> STAR fully reproduces and refines the finding that “dense process-level rewards work better for small models.” Transfer takes the form: <strong>from “a qualitative conclusion based on two points” → “locating a transition on a three-point curve”</strong>. </p>
+  </section>
+
+  <h2>Part VI · Technical Evolution</h2>
+
+  <section class="card">
+    <div class="flow">                    2023 · ReAct [interleaved reasoning and action, prompt-driven, no learning signal]
+                              │
+                              │  Gap: agents can be prompted, but not trained
+                              ▼
+              2024.02 · TravelPlanner (ICML'24 Spotlight)
+              [Long horizon + multiple constraints | GPT-4 = 0.6% | Two-dimensional, four-level evaluation]
+                              │
+                              │  Gap: diagnosed 0.6%, but supplied no training path
+                              │  Foreshadowing: evaluation could serve as a reward function (unused)
+                              ▼
+        ┌─────────────────────┴──────────────────────┬────────────────────┐
+        │                                            │                    │
+   2025.03 · Search-R1                        2025.03 · DAPO       2025.07 · ARPO (ICLR'26)
+   [RL + interleaved retrieval]                [Large-scale RL]      [Entropy-driven adaptive rollout]
+   [outcome reward]                            [Clip-Higher]        [advantage attribution]
+   [token masking]                             [Dynamic Sampling]   [Half the tool budget]
+   [7B +41% / 3B +20%]                         [AIME24: 50 vs 47]
+        │                                       [50% training steps]       │
+        │                                            │                    │
+   Gap: one tool, short horizon                Gap: single-turn     Gap: assumes insufficient
+   outcome reward depends on                   long CoT; only 32B   exploration is always the
+   initial success &gt;&gt; 0                        no small models      bottleneck; no size sweep
+        │                                            │                    │
+        │                        2025.09 · Planner-R1 (ICLR'26 under review)
+        │                        [Reward shaping on TravelPlanner]
+        │                        [56.9% @ 180 queries | 8B ≈ 32B]
+        │                        [3.5× compute / 1.5× memory efficiency]
+        │                              │
+        │                        Gap: only 8B/32B; no public code
+        │                              no algorithm-axis control
+        └──────────────────┬───────────┴────────────────────┘
+                           │  Each fills one dimension, but remains single-axis
+                           ▼
+      ═══════════════════════════════════════════════════════════
+       2026.03 · Agent-STAR  [Convergence point]
+       Five-axis controlled ablation: reward × size × data × algorithm × environment
+       Core proposition: design choices are functions of capacity, not constants
+       · Reward-axis reversal: 3B→7B (Curriculum → Sum, 5.8 pp gap)
+       · Algorithm-axis reversal: 1.5B→3B (ARPO +7.4 pp → −0.7 pp)
+       · 7B SOTA: 62.8% (vs GPT-4 0.6% / Kimi-K2.5 &lt;15%)
+       ⚠ Unexamined axis: net OOD gains approach zero with size (+14.1 → +4.3 → +1.0 pp)
+      ═══════════════════════════════════════════════════════════</div>
+
+    <h4>The internal logic of the evolution</h4>
+    <p><strong>The driving force</strong> can be summarized in one sentence—<strong>from “getting agents to act” to “getting agents to learn to act” to “knowing how to teach them”</strong>. </p>
+    <ul>
+      <li><strong>Stage 1 (2023–2024.02): Demonstrating and falsifying capabilities.</strong> ReAct showed that prompts can make LLMs use tools; TravelPlanner's 0.6% showed that this route does not reach long horizons. <strong>Turning-point signal: 0.6% is too low to explain away as merely needing more prompt engineering.</strong></li>
+      <li><strong>Stage 2 (2025.03–2025.07): Building the RL machinery.</strong> Search-R1 addresses interleaving RL and tools, DAPO addresses scaling without collapse, and ARPO addresses credit assignment in multi-turn settings. These are <strong>parallel infrastructure efforts that do not cite one another</strong>. <strong>Shared blind spot: everyone optimizes methods; nobody treats model size as an experimental variable.</strong></li>
+      <li><strong>Stage 3 (2025.09–2026.03): Recipes and boundaries.</strong> Planner-R1 first asks what reward density fits what model size; STAR expands the question to five axes. <strong>Key turn: the object of study shifts from algorithms to interactions between algorithms and capacity.</strong></li>
+    </ul>
+
+    <h4>Three Shifts in Community Attention</h4>
+    <ol>
+      <li><strong>Accuracy → Data efficiency</strong>: Search-R1 reports relative gains, Planner-R1 reports “180 queries,” and STAR reports the “1K sweet spot.”<strong>Sample budgets move from background information to first-class metrics.</strong></li>
+      <li><strong>Performance → Performance/cost ratio</strong>: STAR's Table 4 puts GPU hours alongside Success; ARPO's “half the tool budget” is an early signal of the same trend.</li>
+      <li><strong>In-domain → Generalization tax</strong>: this transition <strong>is not yet complete</strong>. STAR is among the first to systematically report OOD degradation, but as Part III shows, its own data support a stronger conclusion than it acknowledges. <strong>This is the next turning point in the lineage, and no paper has yet taken that position.</strong></li>
+    </ol>
+
+    <div class="callout">
+      <strong>A Reverse Observation.</strong> This evolutionary trajectory contains <strong>an implicit, untested consensus</strong>—all work assumes “better RL = better agents.” STAR's Table 2 offers initial counterevidence: <strong>at 7B, RL contributes +1.0 pp net OOD, while SFT distillation contributes +23.8 pp (18.1 → 41.9)</strong>. If this ratio worsens at larger sizes, the value proposition of the entire trajectory must be re-established.
+    </div>
+  </section>
+
+  <h2>Part VII · Related-Work Comparison</h2>
+
+  <section class="card">
+    <div class="tblwrap">
+    <table>
+      <tr><th>Work</th><th>Year/month</th><th>Venue / publication</th><th>Core contribution</th><th>Key metrics</th><th>Relationship to the core paper</th></tr>
+      <tr><td>ReAct</td><td>2022.10</td><td>ICLR 2023</td><td>Interleaved reasoning–action paradigm</td><td>—</td><td>Origin of the paradigm (mentioned only in the lineage)</td></tr>
+      <tr><td>TravelPlanner</td><td>2024.02</td><td><strong>ICML 2024 Spotlight</strong></td><td>Long-horizon, multi-constraint benchmark + two-dimensional, four-level evaluation</td><td>GPT-4 = <strong>0.6%</strong>; 1,225 intent</td><td><strong>Source of the problem</strong>; evaluation protocol reused as reward primitives</td></tr>
+      <tr><td>Search-R1</td><td>2025.03</td><td>arXiv (with OpenReview)</td><td>RL + interleaved retrieval; token masking</td><td>7B <strong>+41%</strong> / 3B <strong>+20%</strong></td><td><strong>Technical source + OOD baseline</strong></td></tr>
+      <tr><td>DAPO</td><td>2025.03</td><td>arXiv (ByteDance Seed)</td><td>Four large-scale RL techniques</td><td>AIME24 <strong>50</strong> vs 47, <strong>50% of the steps</strong></td><td><strong>Infrastructure + control</strong></td></tr>
+      <tr><td>ARPO</td><td>2025.07</td><td><strong>ICLR 2026 Poster</strong></td><td>Entropy-driven adaptive rollout + advantage attribution</td><td>Better on 13 benchmarks, <strong>half the tool budget</strong></td><td><strong>STAR establishes its upper applicability boundary</strong>: 1.5B +7.4pp → 7B −4.5pp</td></tr>
+      <tr><td>Planner-R1</td><td>2025.09</td><td>ICLR 2026 Under review</td><td>Reward shaping on TravelPlanner</td><td><strong>56.9% @ 180 queries</strong>; 8B ≈ 32B</td><td><strong>Most direct competitor, but no head-to-head in STAR</strong></td></tr>
+      <tr class="best"><td><strong>Agent-STAR</strong></td><td><strong>2026.03</strong></td><td><strong>arXiv preprint</strong></td><td><strong>Five-axis controlled ablations; scale-dependent recipes</strong></td><td><strong>7B = 62.8%</strong>; ARPO gains reverse</td><td><strong>Point of convergence</strong></td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>How to read the table:</strong> From top to bottom, the nature of the “key metrics” column changes—from task scores (0.6%) to relative gains (+41%), efficiency ratios (half the budget, 50% of steps, 180 queries), and finally STAR's reversal points (+7.4 pp → −4.5 pp). <strong>The language of metrics itself records this subfield's maturation.</strong>
+    </div>
+  </section>
+
+  <h2>Part VIII · Open Challenges and Research Opportunities</h2>
+
+  <section class="card">
+    <h3>8.1 Theory</h3>
+
+    <h4>① Does RL's net OOD contribution monotonically approach zero with capacity? Where is the crossing?</h4>
+    <p>An immediately executable experiment: <strong>at 1.5B / 3B / 7B / 14B / 32B, hold SFT and RL data fixed and measure only “OOD mean of the best RL configuration − SFT OOD mean”</strong>. STAR already gives +14.1 / +4.3 / +1.0 at three points; <strong>extrapolation predicts a negative value at 14B</strong>. If the crossing is indeed around 10B, industry needs to price in the OOD cost of agentic RL on 30B+ models. <strong>High value, low barrier</strong>—reuse STAR's open-source pipeline and add only two model sizes.</p>
+
+    <h4>② Is weighting reward components more important than reward density?</h4>
+    <p>STAR's <code>r_sum</code> five component coefficients are all 1. Table 3's Hard-1K setting shows CS Macro collapsing by 34.6 pp under data-distribution shift while HC components barely move—<strong>suggesting that effective component gradient weights are determined by the data distribution rather than reward coefficients</strong>. Concrete experiment: <strong>hold Mixed-1K fixed and sweep <code>r = α·s_cs^micro + β·s_cs^macro + γ·s_hard^micro + δ·s_hard^macro + ε·s^success</code> 's coefficient simplex, testing whether the Success response surface contains a point better than (1,1,1,1,1), and whether the optimum moves with size.</strong> This expands the one-dimensional reward-density knob to five dimensions and tests whether Takeaway 1 is a spurious transition caused by a low-dimensional projection.</p>
+
+    <h4>③ The mechanism of “capacity substitutes for exploration” is missing</h4>
+    <p>STAR establishes the phenomenon but not the mechanism. Operational test: <strong>measure within-group rollout trajectory diversity at 1.5B / 3B / 7B, such as variance in tool-sequence edit distances</strong>. If the hypothesis holds, GRPO's within-group diversity at 7B should <strong>already approach or exceed</strong> ARPO's diversity at 1.5B. This direct measurement needs no new training.</p>
+  </section>
+
+  <section class="card">
+    <h3>8.2 Engineering and Applications</h3>
+
+    <h4>④ A Controlled Planner-R1 vs. Agent-STAR Head-to-Head</h4>
+    <p>The clearest experimental gap in the field. <strong>Suggested setup: identical base (Qwen2.5-7B), GPU budget, and test split; total supervised sample budget (180 / 500 / 1K / 2198) on the horizontal axis, Success and mean OOD on the vertical axis.</strong> The curves' crossing directly answers how far reward shaping's sample-efficiency advantage persists. Current separate numbers—56.9% @ 180 vs. 62.8% @ 2198—<strong>cannot distinguish method differences from budget differences</strong>. </p>
+
+    <h4>⑤ A Benchmark of Environment-Noise Types</h4>
+    <p>STAR tests only random global failure. Real tool failures have at least four types with different levels of harm:</p>
+    <div class="tblwrap">
+    <table>
+      <tr><th>Noise type</th><th>Semantics</th><th>Expected harm</th></tr>
+      <tr><td>Random failure (tested by STAR)</td><td>No information</td><td>Low—the model can learn to retry</td></tr>
+      <tr><td>Timeout / rate limiting</td><td>No information + temporal coupling</td><td>Moderate—disrupts planning rhythm</td></tr>
+      <tr><td>Partial response (truncation)</td><td><strong>Incomplete information</strong></td><td>Moderate to high—the model does not know what it does not know</td></tr>
+      <tr><td>Dirty data (incorrect but correctly formatted)</td><td><strong>Incorrect information</strong></td><td>High—directly contaminates constraint checking</td></tr>
+    </table>
+    </div>
+    <p><strong>Concrete opportunity: build a configurable noise-injection layer and sweep 0/5/10/20% for each of the four types, producing a 4×4 robustness matrix.</strong> Such environment-side benchmarks are currently absent, and the barrier is low: STAR's sandbox is open source.</p>
+
+    <h4>⑥ Do Recipes Change in Online / Streaming Settings?</h4>
+    <p>All existing work uses fixed offline datasets. <strong>Real agent deployments are streaming: tasks arrive continuously, and difficulty distributions drift over time.</strong> Concrete question: <strong>when difficulty distributions drift, does static “Mixed 4:3:3” remain optimal, or is adaptive difficulty sampling needed, such as inverse weighting by the current policy's success rate?</strong> This can be instantiated directly in STAR: divide 1K prompts into 10 batches presented in different difficulty orders and compare static mixing with adaptive sampling.</p>
+
+    <h4>⑦ Quantifying the Teacher Ceiling</h4>
+    <p>Following critique ⑧. <strong>Concrete experiment: report DeepSeek-V3.2-Exp-Thinking's Success on the official TravelPlanner test set</strong> and compute “distillation efficiency ratio” = 62.8% / teacher score. If the ratio is &gt; 1, RL has created capabilities the teacher lacked; if &lt; 1, the entire pipeline should be reframed as compression rather than training. <strong>Extremely low cost, but a major impact on interpreting the conclusions.</strong></p>
+  </section>
+
+  <section class="card">
+    <h3>8.3 Emerging Directions</h3>
+
+    <h4>⑧ Reward Decomposition for Multimodal Long-Horizon Tool Orchestration</h4>
+    <p>STAR's four-level density ladder assumes evaluation decomposes into binary checks. <strong>In multimodal agents, such as GUI interaction and embodied navigation, success is often continuous or requires a VLM judge. How should micro/macro decomposition be defined?</strong> Concrete question: <strong>When a noisy VLM judge produces the macro indicator, judge noise smooths its discontinuity. Does <code>r_sum</code> 's “finish the last step” incentive then fail?</strong> This must be answered before transferring STAR's methodology to embodied / GUI domains.</p>
+
+    <h4>⑨ Do Scale-Dependent Recipes Also Apply to SFT?</h4>
+    <p>STAR ablates model size only during RL; the SFT stage's 1,198 trajectories are <strong>exactly identical</strong>. Yet Table 1 shows very different post-SFT starting points (6.9 / 12.2 / 19.7). <strong>Concrete opportunity: should 1.5B use more but simpler SFT trajectories, and 7B fewer but harder ones?</strong> In other words, move the data-difficulty-mixture axis from RL upstream to SFT.</p>
+
+    <h4>⑩ Forgetting and Safety Boundaries in Long-Horizon Agents</h4>
+    <p>KL-free training lets the policy drift arbitrarily from the SFT distribution. <strong>What does the model lose while gaining 43.1 pp in-domain?</strong> STAR tests only QA-style OOD. <strong>Concrete opportunity: evaluate STAR checkpoints on safety / instruction following / refusal consistency, such as Multi-IF and harmful-instruction refusal rate, to quantify agentic RL's “alignment drift.”</strong> All six checkpoints are public. This experiment can be completed within a day, and <strong>no agentic RL paper currently reports this kind of data</strong>. </p>
+  </section>
+
+  <h2>Part IX · Other Recent Work Worth Watching</h2>
+
+  <section class="card">
+    <p><em>The following papers were in this issue's candidate pool but are not examined in depth. <strong>I have not read them closely; assessments rely on abstracts and search results. Consult the originals.</strong></em></p>
+
+    <h4>Agentic Reinforced Policy Optimization (ARPO) — 2025.07, ICLR 2026 Poster</h4>
+    <p>Already discussed as related work, but still worth reading independently: the observation that token entropy rises after tool responses is a reusable diagnostic signal. It does not conflict with STAR's critique—ARPO's +7.4 pp at small sizes is real.<br>
+    <a href="https://arxiv.org/abs/2507.19849">arXiv</a> | <a href="https://github.com/RUC-NLPIR/ARPO">Code</a> | <a href="https://iclr.cc/virtual/2026/poster/10009306">ICLR page</a></p>
+
+    <h4>A Practitioner's Guide to Multi-turn Agentic Reinforcement Learning — 2025.10, NeurIPS 2025</h4>
+    <p>Like STAR, this is an empirical recipe study, but it emphasizes general multi-turn interaction rather than a single benchmark. <strong>Reading it alongside STAR can test whether scale dependence holds robustly across tasks</strong>—precisely the OOD limitation STAR acknowledges.<br>
+    <a href="https://arxiv.org/abs/2510.01132">arXiv</a> | <a href="https://neurips.cc/virtual/2025/127960">NeurIPS page</a></p>
+
+    <h4>Rethinking Agentic Reinforcement Learning In Large Language Models — 2026.04, arXiv</h4>
+    <p>The title suggests a systematic challenge to agentic RL's basic assumptions, potentially echoing this report's derived finding that net OOD RL contributions approach zero. <strong>Prioritize checking whether it reports OOD controls.</strong><br>
+    <a href="https://arxiv.org/abs/2604.27859">arXiv</a></p>
+
+    <h4>From Reasoning to Agentic: Credit Assignment in RL for LLMs — 2026.04, arXiv</h4>
+    <p>Credit assignment is central to 9.2-step trajectories, whereas STAR's reward axis uses density to work around assignment. This paper addresses assignment directly and complements STAR.<br>
+    <a href="https://arxiv.org/abs/2604.09459">arXiv</a> | <a href="https://huggingface.co/papers/2604.09459">HF Papers</a></p>
+
+    <h4>RL for LLM-based Multi-Agent Systems through Orchestration Traces — 2026.05, arXiv</h4>
+    <p>Extends STAR's single-agent long-horizon problem to multi-agent orchestration. <strong>If scale dependence holds for a single agent, the appropriate size of each agent becomes a new design dimension in multi-agent systems.</strong><br>
+    <a href="https://arxiv.org/abs/2605.02801">arXiv</a></p>
+
+    <h4>Benchmarking and Improving GUI Agents in High-Dynamic Environments — 2026.04, arXiv</h4>
+    <p>Directly addresses the environment-noise taxonomy gap proposed in 8.2 ⑤, but for GUIs rather than tool APIs. <strong>It is an existing instance of that research opportunity; first check how far it goes.</strong><br>
+    <a href="https://arxiv.org/html/2604.25380">arXiv</a></p>
+
+    <h4>Finetuning VLA Models Requires Fewer Layers Than You Think — 2026.06, arXiv</h4>
+    <p>Embodied intelligence. Shares STAR's argumentative structure: something assumed necessary may not be necessary. <strong>Read together, the papers reveal a common tendency toward subtraction in this wave of 2026 empirical studies.</strong><br>
+    <a href="https://arxiv.org/abs/2606.20246">arXiv</a></p>
+
+    <h4>Planner-R1: Reward Shaping Enables Efficient Agentic RL with Smaller LLMs — 2025.09</h4>
+    <p>Already discussed in Part V; repeated here because it is <strong>the most direct comparison for testing STAR's conclusions</strong>, and if its 180-query sample-efficiency claim holds, the implications extend far beyond TravelPlanner.<br>
+    <a href="https://arxiv.org/abs/2509.25779">arXiv</a> | <a href="https://openreview.net/forum?id=CmOaD42eAT">OpenReview</a></p>
+  </section>
+
+  <footer>
+    <p><strong>Index not updated:</strong> This was a scheduled cloud task, and the user's desktop was disconnected; <code>ml-report-index.md</code> could not be accessed or appended to. This issue's entry requires manual addition: <code>2026-08-06 | RL/Agents/Embodied Intelligence | Demystifying RL for Long-Horizon Tool-Using Agents (Agent-STAR) | arXiv 2603.21972 | Optimal agentic RL configurations depend on model capacity; yet at 7B, RL contributes only +1.0 pp net OOD</code></p>
+    <p><strong>Candidate Pool and Sampling:</strong> 25 candidates, <code>shuf -i 1-25 -n 3</code> → [3, 17, 15]; selected #3. Zero redraws.</p>
+    <p><strong>Data Provenance:</strong> Tables 1–4 and Appendix Tables 8–9 are sourced from <a href="https://arxiv.org/html/2603.21972v1">the arXiv:2603.21972v1 HTML full text</a>. Figures 5–8 are raster images; affected values are marked as not extracted.</p>
+    <p><strong>Generated:</strong> 2026-08-06 · Daily In-Depth ML/AI Paper Tracking · All links verified accessible on that date</p>
+  </footer>
+
+</div>
+<div class="tip" id="tip"></div>
+<script>
+(function(){
+  var tip = document.getElementById('tip');
+  document.querySelectorAll('svg.chart rect.bar').forEach(function(el){
+    el.addEventListener('mousemove', function(e){
+      tip.innerHTML = '<strong>' + el.getAttribute('data-l') + '</strong> &nbsp; ' + el.getAttribute('data-v');
+      tip.style.opacity = 1;
+      var x = e.clientX + 14, y = e.clientY - 12;
+      if (x + 260 > window.innerWidth) x = e.clientX - 250;
+      tip.style.left = x + 'px';
+      tip.style.top = y + 'px';
+    });
+    el.addEventListener('mouseleave', function(){ tip.style.opacity = 0; });
+  });
+})();
+</script>
+</body>
+</html>

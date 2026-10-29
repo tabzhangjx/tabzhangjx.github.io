@@ -1,0 +1,602 @@
+---
+layout: null
+title: "AgeMem"
+date: 2026-07-29
+topic: agent-memory
+tags: ["agent-memory"]
+excerpt: "Unified long- and short-term memory management for language-model agents, with a close look at policy design and evaluation."
+permalink: "/blog/2026/07/29/agemem/en/"
+blog_post: false
+lang: en
+sitemap: true
+alternate_zh: "/blog/2026/07/29/agemem/"
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Memory Daily Review · 2026-07-29 · AgeMem (ACL 2026)</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --accent-soft: #cde2fb;
+    --good: #006300;
+    --crit: #d03b3b;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --accent-soft: #184f95;
+    --good: #0ca30c;
+    --crit: #e66767;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  header.hero {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 32px 34px;
+    margin-bottom: 34px;
+  }
+  .eyebrow {
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; margin: 0 0 10px;
+  }
+  h1 { font-size: 30px; line-height: 1.3; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .subtitle { font-size: 17px; color: var(--text-secondary); margin: 0 0 18px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    font-size: 12.5px; padding: 4px 11px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--text-secondary);
+    background: var(--page);
+  }
+  .chip.venue { border-color: var(--series-1); color: var(--series-1); font-weight: 600; }
+  .lede {
+    border-left: 3px solid var(--series-1);
+    padding: 4px 0 4px 18px; margin: 20px 0 0;
+    color: var(--text-secondary); font-size: 15.5px;
+  }
+  h2 {
+    font-size: 22px; margin: 52px 0 16px; padding-bottom: 10px;
+    border-bottom: 1px solid var(--border); letter-spacing: -0.01em;
+  }
+  h3 { font-size: 18px; margin: 34px 0 12px; }
+  h4 { font-size: 15.5px; margin: 24px 0 8px; color: var(--text-secondary); }
+  p { margin: 0 0 14px; }
+  section.card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 26px 30px; margin-bottom: 20px;
+  }
+  a { color: var(--series-1); text-decoration: none; border-bottom: 1px solid transparent; }
+  a:hover { border-bottom-color: var(--series-1); }
+  code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px; background: var(--page); padding: 1.5px 5px;
+    border-radius: 4px; border: 1px solid var(--border);
+  }
+  .formula {
+    background: var(--page); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 16px; margin: 12px 0; font-family: ui-monospace, Menlo, monospace;
+    font-size: 13.5px; overflow-x: auto; color: var(--text-primary);
+  }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0 20px; font-size: 14.5px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--grid); }
+  th { color: var(--muted); font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: .05em; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.best td { background: var(--accent-soft); font-weight: 600; }
+  :root[data-theme="dark"] tr.best td { background: rgba(57,135,229,.18); }
+  ol, ul { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 8px; }
+  .callout {
+    border-left: 3px solid var(--series-2); background: var(--page);
+    padding: 14px 18px; border-radius: 0 8px 8px 0; margin: 18px 0;
+    font-size: 15px; color: var(--text-secondary);
+  }
+  .callout strong { color: var(--text-primary); }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  button.tgl {
+    font: inherit; font-size: 13px; padding: 6px 14px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface-1);
+    color: var(--text-secondary); cursor: pointer;
+  }
+  button.tgl:hover { color: var(--text-primary); }
+
+  /* chart */
+  .figure { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 24px 26px; margin: 24px 0; }
+  .fig-title { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+  .fig-sub { font-size: 13.5px; color: var(--muted); margin: 0 0 18px; }
+  .legend { display: flex; gap: 20px; margin-bottom: 16px; font-size: 13.5px; color: var(--text-secondary); }
+  .legend span.sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 7px; vertical-align: -1px; }
+  #chart { width: 100%; height: auto; display: block; }
+  #chart text { font-family: system-ui, sans-serif; }
+  .tip {
+    position: fixed; pointer-events: none; opacity: 0; transition: opacity .1s;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 12px; font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,.14);
+    z-index: 50; color: var(--text-primary); white-space: nowrap;
+  }
+  .flow {
+    background: var(--page); border: 1px solid var(--border); border-radius: 10px;
+    padding: 20px 22px; font-family: ui-monospace, Menlo, monospace;
+    font-size: 13px; line-height: 1.85; overflow-x: auto; color: var(--text-secondary);
+    white-space: pre;
+  }
+  footer { margin-top: 60px; padding-top: 22px; border-top: 1px solid var(--border); font-size: 13.5px; color: var(--muted); }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    h1 { font-size: 24px; }
+    section.card { padding: 20px 18px; }
+    table { font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+
+<div class="toolbar"><button class="tgl" id="themeBtn">Switch to dark</button></div>
+
+<header class="hero">
+  <p class="eyebrow">Agent Memory Daily Review · 2026-07-29</p>
+  <h1>AgeMem: Unifying Long- and Short-Term Memory Within the Agent Policy</h1>
+  <p class="subtitle">Agentic Memory: Learning Unified Long-Term and Short-Term Memory Management for Large Language Model Agents</p>
+  <div class="meta">
+    <span class="chip venue">ACL 2026 main-conference long paper</span>
+    <span class="chip">pp. 21457–21483 · San Diego</span>
+    <span class="chip">arXiv:2601.01885v2 · 2026-04-30</span>
+    <span class="chip">Wuhan University · Alibaba Group</span>
+  </div>
+  <p class="lede">In one sentence: AgeMem integrates long- and short-term memory management into the agent's policy, using three-stage progressive reinforcement learning to learn when and what to store, delete, and compress. Memory becomes part of the model's behavior rather than an external system wrapped around it.</p>
+</header>
+
+<h2>1. Links</h2>
+
+<section class="card">
+<h3>1.1 Core work</h3>
+<table>
+  <tr><th>Item</th><th>Link</th></tr>
+  <tr><td>Conference page</td><td><a href="https://aclanthology.org/2026.acl-long.981/" target="_blank">aclanthology.org/2026.acl-long.981</a></td></tr>
+  <tr><td>Conference PDF</td><td><a href="https://aclanthology.org/2026.acl-long.981.pdf" target="_blank">2026.acl-long.981.pdf</a></td></tr>
+  <tr><td>arXiv</td><td><a href="https://arxiv.org/abs/2601.01885" target="_blank">arxiv.org/abs/2601.01885</a> (v2, 2026-04-30)</td></tr>
+  <tr><td>DOI</td><td>10.18653/v1/2026.acl-long.981</td></tr>
+  <tr><td>Code / data</td><td><span style="color:var(--crit)">Neither the main paper nor appendix provides a public repository URL</span>; implementation uses AgentScope + Trinity-RFT</td></tr>
+  <tr><td>Framework dependencies</td><td><a href="https://github.com/modelscope/agentscope" target="_blank">AgentScope</a> · <a href="https://github.com/modelscope/Trinity-RFT" target="_blank">Trinity-RFT</a></td></tr>
+</table>
+<p style="font-size:14.5px;color:var(--text-secondary);margin:0"><strong>Authors</strong>: Yi Yu, Liuyi Yao, Yuexiang Xie, Qingquan Tan, Jiaqi Feng, Yaliang Li, Libing Wu　|　<strong>Affiliations</strong>: School of Cyber Science and Engineering, Wuhan University; Alibaba Group</p>
+</section>
+
+<section class="card">
+<h3>1.2 Five related papers revisited</h3>
+<table>
+  <tr><th>#</th><th>Work</th><th>Venue / status</th><th>The paper</th><th>Code</th></tr>
+  <tr>
+    <td>R1</td><td><strong>MemGPT</strong><br><span style="font-size:13px;color:var(--muted)">Towards LLMs as Operating Systems</span></td>
+    <td>arXiv 2023-10<br><span style="font-size:12.5px;color:var(--muted)">Predecessor of Letta</span></td>
+    <td><a href="https://arxiv.org/abs/2310.08560" target="_blank">2310.08560</a></td>
+    <td><a href="https://github.com/letta-ai/letta" target="_blank">letta-ai/letta</a><br><a href="https://research.memgpt.ai" target="_blank">research.memgpt.ai</a></td>
+  </tr>
+  <tr>
+    <td>R2</td><td><strong>A-MEM</strong><br><span style="font-size:13px;color:var(--muted)">Agentic Memory for LLM Agents</span></td>
+    <td><strong style="color:var(--series-1)">NeurIPS 2025</strong></td>
+    <td><a href="https://arxiv.org/abs/2502.12110" target="_blank">2502.12110</a><br><a href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/19909c36f51abc4856b4560aff3d36d6-Abstract-Conference.html" target="_blank">NeurIPS proceedings</a></td>
+    <td><a href="https://github.com/agiresearch/A-mem" target="_blank">agiresearch/A-mem</a><br><a href="https://github.com/WujiangXu/A-mem-sys" target="_blank">A-mem-sys</a></td>
+  </tr>
+  <tr>
+    <td>R3</td><td><strong>Mem0</strong><br><span style="font-size:13px;color:var(--muted)">Production-Ready AI Agents with Scalable Long-Term Memory</span></td>
+    <td>arXiv 2025-04<br><span style="font-size:12.5px;color:var(--muted)">De facto industry standard</span></td>
+    <td><a href="https://arxiv.org/abs/2504.19413" target="_blank">2504.19413</a></td>
+    <td><a href="https://github.com/mem0ai/mem0" target="_blank">mem0ai/mem0</a><br><span style="font-size:12.5px">LOCOMO evaluation set</span></td>
+  </tr>
+  <tr>
+    <td>R4</td><td><strong>Memory-R1</strong><br><span style="font-size:13px;color:var(--muted)">Manage and Utilize Memories via RL</span></td>
+    <td>arXiv 2025-08<br><span style="font-size:12.5px;color:var(--muted)">v5 → 2026-01</span></td>
+    <td><a href="https://arxiv.org/abs/2508.19828" target="_blank">2508.19828</a></td>
+    <td><a href="https://github.com/yansikuan/memory-r1" target="_blank">yansikuan/memory-r1</a></td>
+  </tr>
+  <tr>
+    <td>R5</td><td><strong>MemAct</strong><br><span style="font-size:13px;color:var(--muted)">Memory as Action: Autonomous Context Curation</span></td>
+    <td><strong style="color:var(--series-1)">ACL 2026 Findings</strong><br><span style="font-size:12.5px;color:var(--muted)">pp. 19149–19164</span></td>
+    <td><a href="https://aclanthology.org/2026.findings-acl.956/" target="_blank">2026.findings-acl.956</a><br><a href="https://arxiv.org/abs/2510.12635" target="_blank">2510.12635</a></td>
+    <td><a href="https://github.com/ADaM-BJTU/MemAct" target="_blank">ADaM-BJTU/MemAct</a></td>
+  </tr>
+</table>
+<p style="font-size:14px;color:var(--muted);margin:0">Common benchmarks: ALFWorld · SciWorld · BabyAI · PDDL (AgentBoard) · HotpotQA · LOCOMO · LongMemEval · MSC</p>
+</section>
+
+<h2>2. In-Depth Analysis of the Core Work</h2>
+
+<section class="card">
+<h3>2.1 Abstract</h3>
+<p>Limited context windows constrain long-horizon reasoning in language-model agents, making memory management essential. Existing approaches usually treat long-term memory (LTM) and short-term memory (STM) as separate components governed by heuristics or additional controllers, limiting adaptability and end-to-end optimization. The paper introduces <strong>AgeMem</strong>, a unified framework embedding LTM and STM management directly into the agent policy. Memory operations are exposed as <strong>tool-like actions</strong> so agents decide when and what to store, retrieve, update, summarize, or discard. To train this unified behavior, the authors propose <strong>three-stage progressive reinforcement learning</strong> and design <strong>step-wise GRPO</strong> to address sparse, discontinuous rewards from memory operations. Across five long-horizon benchmarks and multiple backbones, AgeMem consistently outperforms strong memory-augmented baselines, improving task performance, long-term memory quality, and context utilization.</p>
+</section>
+
+<section class="card">
+<h3>2.2 Motivation and narrative</h3>
+<p>AgeMem follows a clear three-part argument: <strong>identify fragmentation, explain why patches cannot resolve it, and propose unification within a policy.</strong></p>
+
+<h4>Step 1 · Two parallel memory-research strands reach their limits</h4>
+<p>Short-term memory—primarily retrieval augmentation and context compression—relies on predefined schedules or heuristics. These can both overlook infrequent but critical details and introduce unnecessary noise. Long-term approaches fall into two categories, each with weaknesses: <strong>Trigger-based</strong> systems perform fixed operations at preset times and are rigid; <strong>Agent-based</strong> systems rely on handcrafted rules or extra expert models, limiting adaptability and increasing complexity.</p>
+
+<h4>Step 2 · Fragmentation itself is the root problem</h4>
+<p>LTM and STM are typically separate, loosely coupled modules, producing fragmented memory construction and suboptimal long-horizon reasoning. Deciding whether to preserve information in a long-term store and whether to compress it out of the current context are fundamentally <strong>the same information-value judgment at two timescales</strong>. Independent heuristics inevitably risk irreversible loss, such as discarding short-term information before saving it long term.</p>
+
+<h4>Step 3 · Three tractable technical challenges</h4>
+<ul>
+  <li><strong>C1: Coordinating heterogeneous functions</strong>: LTM and STM pursue different objectives—persistence versus immediate availability—and need unified orchestration.</li>
+  <li><strong>C2: Mismatched training paradigms</strong>: existing RL frameworks use substantially different training strategies for the two memory types. Standard RL conflicts with fragmented, discontinuous memory experiences: writing a memory yields no immediately observable benefit, which may emerge only much later when answering a question.</li>
+  <li><strong>C3: Deployment costs</strong>: auxiliary expert LLMs for memory control substantially increase inference costs and training complexity.</li>
+</ul>
+
+<div class="callout"><strong>The solution's premise:</strong> If memory operations are ordinary tools in the agent's action space, memory management needs no separate controller and can be optimized jointly with task solving under one RL objective. AgeMem's design follows from this premise.</div>
+</section>
+
+<section class="card">
+<h3>2.3 Methodology</h3>
+
+<h4>2.3.1 State representation</h4>
+<p>At time <code>t</code> , the state is defined as <code>s_t = (C_t, M_t, T)</code>: <code>C_t</code> is the short-term context, a message list; <code>M_t</code> is the long-term store, with content, embedding, and metadata per entry; <code>T</code> is the task specification, comprising query <code>q</code>, contextual information <code>I_q</code>, and expected answer <code>A_q</code>). </p>
+
+<h4>2.3.2 Six memory tools: A unified action space</h4>
+<p>The paper's central abstraction is: <strong>LTM and STM operations share one tool table and are invoked by one policy.</strong></p>
+<table>
+  <tr><th>Tool</th><th>Scope</th><th>Semantics</th></tr>
+  <tr><td><code>ADD</code></td><td>LTM writing</td><td>Insert an entry into persistent storage: content + embedding + metadata</td></tr>
+  <tr><td><code>UPDATE</code></td><td>LTM writing</td><td>Using <code>memory_id</code> , modify an existing entry's content and timestamp</td></tr>
+  <tr><td><code>DELETE</code></td><td>LTM writing</td><td>Delete outdated entries to prevent stale knowledge accumulating</td></tr>
+  <tr><td><code>RETRIEVE</code></td><td>STM reading</td><td>Retrieve top-k memories by cosine similarity and inject them into context</td></tr>
+  <tr><td><code>SUMMARY</code></td><td>STM control</td><td>Compress a conversation span with an LLM, supporting <code>all</code> or the most recent <code>N</code> turns</td></tr>
+  <tr><td><code>FILTER</code></td><td>STM control</td><td>Remove redundant messages whose semantic similarity exceeds threshold <code>θ_f</code>(default 0.6)</td></tr>
+</table>
+<div class="formula">RETRIEVE(q, k) = TopK( M_t , sim(q, m_i) , k )
+sim(q, m_i) = enc(q)ᵀ·enc(m_i) / ( ‖enc(q)‖ · ‖enc(m_i)‖ )</div>
+<p>Notice the direction of <code>FILTER</code> : it deletes messages with <strong>excessively high similarity</strong>, suppressing repetition rather than removing supposedly irrelevant content. This conservatively protects critical low-frequency information.</p>
+
+<h4>2.3.3 Three-stage progressive RL curriculum</h4>
+<p>Each trajectory <code>τ = (τ⁽¹⁾, τ⁽²⁾, τ⁽³⁾)</code> has total length <code>T = T₁+T₂+T₃</code>. Between stages, <strong>context resets combined with long-term memory retention</strong> are the key curriculum mechanism.</p>
+<table>
+  <tr><th>Stage</th><th>Activity</th><th>Key mechanism</th></tr>
+  <tr><td><strong>① LTM construction</strong></td><td>Encounter contextual information during casual conversation, <code>I_q</code>, identify salient details, and write them with ADD/UPDATE/DELETE into <code>M_t</code></td><td>Intermediate rewards are zero; <code>M_t</code> is carried forward</td></tr>
+  <tr><td><strong>② STM control under distraction</strong></td><td>Receive irrelevant distractor messages generated by <code>DISTRACTORGEN</code> and proactively clean context with FILTER / SUMMARY</td><td><strong><code>C_t</code> is reset</strong> to prevent information leakage, while <code>M_t</code> is retained, forcing genuine retrieval</td></tr>
+  <tr><td><strong>③ Integrated reasoning</strong></td><td>Receive the actual query <code>q</code> and coordinate retrieval, context management, and answer generation</td><td>Terminal reward <code>R(τ)</code> is issued at the trajectory's end</td></tr>
+</table>
+<div class="callout">Between stages, <strong>context resets</strong> force genuine LTM retrieval instead of letting the model reread the source, while LTM's <strong>cross-stage persistence</strong> lets first-stage storage decisions affect third-stage outcomes. This causal chain makes what to store learnable, and the curriculum can be reused independently of AgeMem.</div>
+
+<h4>2.3.4 Reward design</h4>
+<div class="formula">R(τ) = wᵀR + P_penalty ,  R = [ R_task , R_context , R_memory ]ᵀ</div>
+<table>
+  <tr><th>Component</th><th>Composition</th><th>Purpose</th></tr>
+  <tr><td><code>R_task</code></td><td>LLM-judge score <code>S_judge(A_pred, A_q) ∈ [0,1]</code>; penalty if no answer</td><td>Task completion</td></tr>
+  <tr><td rowspan="3"><code>R_context</code><br><span style="font-size:12.5px;color:var(--muted)">Equal weights α=1/3</span></td><td><code>R_compression = max(0, 1 − T_used/T_max)</code></td><td>Token efficiency</td></tr>
+  <tr><td><code>R_preventive = 1[tool invoked before overflow]</code></td><td><strong>Rewards changing course before hitting the limit</strong>, making context management proactive rather than remedial</td></tr>
+  <tr><td><code>R_preservation = 1_preserve</code></td><td>Task-critical tokens must be retained</td></tr>
+  <tr><td rowspan="3"><code>R_memory</code><br><span style="font-size:12.5px;color:var(--muted)">Equal weights β=1/3</span></td><td><code>R_storage = N_high_quality / max(1, N_total)</code></td><td>Proportion of high-quality stored entries</td></tr>
+  <tr><td><code>R_maintenance = 1[update or delete executed]</code></td><td>Encourages active maintenance instead of append-only accumulation</td></tr>
+  <tr><td><code>R_relevance = S_LLM(R, q)</code></td><td>Semantic relevance of retrieved results to the query</td></tr>
+  <tr><td><code>P_penalty</code></td><td>Exceeding turn limit: −1; context overflow: −0.5</td><td>Hard constraints</td></tr>
+</table>
+
+<h4>2.3.5 Step-wise GRPO: Addressing C2</h4>
+<div class="formula">Group-normalized advantage: A_T^(k,q) = ( r_T^(k,q) − μ_Gq ) / ( σ_Gq + ε )
+Advantage broadcast:        A_t^(k,q) = A_T^(k,q), ∀ t ∈ [1, T]
+Policy update:             J(θ) = E[ ρ_t·A_t − β·D_KL( π_θ ‖ π_ref ) ]
+                           ρ_t = π_θ(a_t|s_t) / π_θ_old(a_t|s_t)</div>
+<p>The terminal advantage is <strong>broadcast uniformly to all preceding timesteps</strong> for long-horizon credit assignment, allowing final outcomes to supervise every intermediate memory decision across all three stages. The tradeoff is explicit: broadcasting <strong>sacrifices step-level credit-assignment precision</strong> for trainability under extremely sparse rewards.</p>
+</section>
+
+<section class="card">
+<h3>2.4 Experimental design</h3>
+<p><strong>Five long-horizon benchmarks</strong> cover embodied tasks, science, symbolic planning, navigation, and multihop QA: ALFWorld (household tasks), SciWorld (interactive scientific experiments), PDDL (symbolic planning), BabyAI (compositional grid-navigation instructions), and HotpotQA (Wikipedia multihop questions).</p>
+<p><strong>Backbone</strong>: Qwen2.5-7B-Instruct, Qwen3-4B-Instruct　|　<strong>Baseline</strong>: LangMem, A-Mem, Mem0, Mem0ᵍ, AgeMem-noRL, No-Memory</p>
+<p><strong>Metric</strong>: success rate SR on ALFWorld/SciWorld/BabyAI, progress rate PR on PDDL, and LLM-as-a-Judge on HotpotQA; memory quality MQ (0–1); average prompt tokens and tool calls.</p>
+
+<div class="figure">
+  <p class="fig-title">Five-benchmark average: AgeMem versus memory-augmented baselines</p>
+  <p class="fig-sub">Average performance across five benchmarks on two backbones; higher is better. Values from Table 2.</p>
+  <div class="legend">
+    <span><span class="sw" style="background:var(--series-1)"></span> Qwen2.5-7B-Instruct</span>
+    <span><span class="sw" style="background:var(--series-2)"></span> Qwen3-4B-Instruct</span>
+  </div>
+  <svg id="chart" viewBox="0 0 760 400" role="img" aria-label="Bar chart comparing methods&#x27; five-benchmark averages"></svg>
+</div>
+
+<h4>Main results · Qwen2.5-7B-Instruct</h4>
+<table>
+  <tr><th>Method</th><th class="num">ALFWorld</th><th class="num">SciWorld</th><th class="num">PDDL</th><th class="num">BabyAI</th><th class="num">HotpotQA</th><th class="num">Average</th></tr>
+  <tr><td>No-Memory</td><td class="num">27.16</td><td class="num">13.80</td><td class="num">10.15</td><td class="num">50.80</td><td class="num">38.36</td><td class="num">28.05</td></tr>
+  <tr><td>LangMem</td><td class="num">38.27</td><td class="num">28.29</td><td class="num">15.85</td><td class="num">51.34</td><td class="num">37.43</td><td class="num">34.23</td></tr>
+  <tr><td>A-Mem</td><td class="num">34.68</td><td class="num">28.06</td><td class="num"><strong>18.39</strong></td><td class="num">58.82</td><td class="num">43.95</td><td class="num">36.78</td></tr>
+  <tr><td>Mem0</td><td class="num">37.49</td><td class="num">26.99</td><td class="num">13.96</td><td class="num">60.58</td><td class="num">46.66</td><td class="num">37.14</td></tr>
+  <tr><td>Mem0ᵍ</td><td class="num">35.34</td><td class="num">30.50</td><td class="num">14.86</td><td class="num">58.78</td><td class="num">42.06</td><td class="num">36.31</td></tr>
+  <tr class="best"><td>AgeMem</td><td class="num">41.07</td><td class="num">35.55</td><td class="num">17.31</td><td class="num">61.42</td><td class="num">54.44</td><td class="num">41.96</td></tr>
+</table>
+
+<h4>Main results · Qwen3-4B-Instruct</h4>
+<table>
+  <tr><th>Method</th><th class="num">ALFWorld</th><th class="num">SciWorld</th><th class="num">PDDL</th><th class="num">BabyAI</th><th class="num">HotpotQA</th><th class="num">Average</th></tr>
+  <tr><td>No-Memory</td><td class="num">38.51</td><td class="num">47.89</td><td class="num">30.14</td><td class="num">55.83</td><td class="num">47.48</td><td class="num">43.97</td></tr>
+  <tr><td>LangMem</td><td class="num">40.89</td><td class="num">50.42</td><td class="num">28.42</td><td class="num">53.80</td><td class="num">42.70</td><td class="num">43.25</td></tr>
+  <tr><td>A-Mem</td><td class="num">34.31</td><td class="num">50.14</td><td class="num">34.41</td><td class="num">61.35</td><td class="num">48.48</td><td class="num">45.74</td></tr>
+  <tr><td>Mem0</td><td class="num">41.17</td><td class="num">51.38</td><td class="num">31.72</td><td class="num">60.05</td><td class="num">39.16</td><td class="num">44.70</td></tr>
+  <tr><td>Mem0ᵍ</td><td class="num">36.69</td><td class="num">47.76</td><td class="num">29.61</td><td class="num">57.59</td><td class="num">38.12</td><td class="num">41.95</td></tr>
+  <tr class="best"><td>AgeMem</td><td class="num">48.97</td><td class="num">59.48</td><td class="num">35.07</td><td class="num">72.56</td><td class="num">55.49</td><td class="num">54.31</td></tr>
+</table>
+<p>On Qwen2.5-7B, AgeMem improves 49.59% over No-Memory and exceeds strongest baseline Mem0 by 4.82 pp. On Qwen3-4B, relative improvement is 23.52%, exceeding strongest baseline A-Mem by 8.57 pp. RL training itself contributes 8.53 pp / 8.72 pp.</p>
+<div class="callout">An easily overlooked detail: <strong>LangMem and Mem0ᵍ both underperform No-Memory on Qwen3-4B</strong>(43.25 / 41.95 versus 43.97). This directly supports the motivation: heuristic memory pipelines may burden stronger backbones when injected noise exceeds information gains.</div>
+
+<h4>A transition in tool-use behavior (HotpotQA · Qwen2.5-7B)</h4>
+<table>
+  <tr><th>Tool</th><th class="num">Before RL</th><th class="num">After RL</th><th>Interpretation</th></tr>
+  <tr><td><code>ADD</code></td><td class="num">0.92</td><td class="num">1.64</td><td>More proactive storage</td></tr>
+  <tr><td><code>UPDATE</code></td><td class="num" style="color:var(--crit)"><strong>0.00</strong></td><td class="num">0.13</td><td rowspan="2">The untrained LLM <strong>never proactively maintains memory</strong> and only accumulates entries</td></tr>
+  <tr><td><code>DELETE</code></td><td class="num" style="color:var(--crit)"><strong>0.00</strong></td><td class="num">0.08</td></tr>
+  <tr><td><code>RETRIEVE</code></td><td class="num">2.31</td><td class="num">1.95 ↓</td><td>Better storage reduces repeated remedial retrieval</td></tr>
+  <tr><td><code>SUMMARY</code></td><td class="num">1.08</td><td class="num">0.82 ↓</td><td>Less after-the-fact compression</td></tr>
+  <tr><td><code>FILTER</code></td><td class="num">0.02</td><td class="num">0.31 ↑</td><td>Proactive context control</td></tr>
+</table>
+<p>This table is the paper's most convincing qualitative evidence: <code>UPDATE</code>/<code>DELETE</code> before training, <strong>is exactly zero</strong> and becomes active after training; meanwhile, <code>RETRIEVE</code> decreases. This marks a shift from reactive to proactive memory behavior.</p>
+
+<h4>Ablations</h4>
+<table>
+  <tr><th>Benchmark</th><th class="num">Base</th><th class="num">+LTM</th><th class="num">+LTM/RL</th><th class="num">+LTM/STM/RL</th></tr>
+  <tr><td>ALFWorld</td><td class="num">27.16</td><td class="num">37.73</td><td class="num">38.88</td><td class="num"><strong>41.07</strong></td></tr>
+  <tr><td>SciWorld</td><td class="num">13.80</td><td class="num">27.98</td><td class="num">32.49</td><td class="num"><strong>35.55</strong></td></tr>
+  <tr><td>HotpotQA</td><td class="num">38.36</td><td class="num">45.76</td><td class="num">52.04</td><td class="num"><strong>54.44</strong></td></tr>
+</table>
+<p><strong>Reward ablation</strong>(HotpotQA · Qwen2.5-7B): Answer-Only yields J=0.509 / MQ=0.479 / 2,078 tokens / 3.93 calls; All-Returns yields J=0.544 / MQ=0.533 / 2,117 tokens / 4.92 calls. Full rewards converge faster and improve memory quality at a modest token cost.<br>
+<strong>FILTER threshold sensitivity</strong>: <code>θ_f ∈ [0.4, 0.8]</code> is stable within this range, with 0.5 best (J=0.551); 0.4 overfilters and 0.7 is too permissive. The method is relatively insensitive to this hyperparameter.</p>
+</section>
+
+<section class="card">
+<h3>2.5 Value analysis</h3>
+<ol>
+  <li><strong>Conceptual contribution: Redefining memory from a system component into policy behavior.</strong> This distinguishes AgeMem from previous work. The MemGPT-to-Mem0 lineage treats memory as <em>an external system around an LLM</em>, with storage rules in prompts or code and the model passively receiving retrieved results. AgeMem treats memory management as <em>an intrinsic part</em> of task solving, optimized jointly with reasoning. In the tool-use table, the shift in <code>UPDATE</code>/<code>DELETE</code> from zero to nonzero directly supports this claim.</li>
+  <li><strong>Methodological contribution: A three-stage curriculum makes memory behavior learnable.</strong> The value of writing memory is <em>unobservable at write time</em>. Context resets and LTM persistence construct a causal chain from storage to task outcome, turning delayed value into a learning signal. This curriculum has independent methodological value for the field.</li>
+  <li><strong>Engineering contribution: Removing auxiliary controllers.</strong> A-Mem and Mem0 require extra LLM calls for extraction and update decisions; folding these into the main policy simplifies inference costs.</li>
+  <li><strong>Substantial experimental scope.</strong> Five cross-domain benchmarks × two backbone generations × six baselines, plus component, reward, and hyperparameter ablations, form a comparatively strong evaluation for memory research.</li>
+</ol>
+</section>
+
+<section class="card">
+<h3>2.6 Limitations</h3>
+<h4>Acknowledged by the paper</h4>
+<ol>
+  <li><strong>Fixed tool set</strong>: a clear and effective abstraction, but extensible toward finer-grained control.</li>
+  <li><strong>Controlled evaluation settings</strong>: the benchmarks remain controlled relative to open-ended deployment; persistent conversations and real-user interactions are important next steps.</li>
+  <li><strong>Dependence on a single training source</strong>: three-stage trajectories currently originate from HotpotQA.</li>
+</ol>
+
+<h4>Additional critical observations</h4>
+<ol start="4">
+  <li><strong>Advantage broadcasting sacrifices credit-assignment precision.</strong> Uniform terminal-advantage broadcasting in step-wise GRPO reinforces <em>every</em> memory action in a successful trajectory equally, including redundant, ineffective, or harmful actions later compensated for by other steps. <code>ADD</code> The paper does not analyze whether the rise from 0.92 to 1.64 consists entirely of useful storage.</li>
+  <li><strong>Efficiency gains are modest relative to the narrative.</strong> Tokens decrease by only 3.1% / 5.1%, compared against AgeMem-RAG rather than all baselines. Meanwhile, All-Returns uses <em>more</em> tokens (2,117 versus 2,078) and calls than Answer-Only, creating tension with the compression reward's intent.</li>
+  <li><strong>MQ has limited discriminatory power.</strong> The MQ advantage over the strongest baseline is only 0.006 / 0.018, versus task gains of 4.82 pp / 8.57 pp. MQ may <em>fail to capture</em> what drives performance: STM context management and retrieval timing may matter more than stored-content quality.</li>
+  <li><strong style="color:var(--crit)">Missing direct RL competitors is the most obvious evidential gap.</strong> Related work cites Memory-R1 (RL+LTM) and MemAct (RL+STM), but <em>neither appears among the baselines</em>, which are all heuristic. Testing the central claim that unification beats separation requires comparisons with one-sided RL methods. Current experiments establish only RL superiority over heuristics.</li>
+  <li><strong>A-Mem wins on PDDL.</strong> For Qwen2.5-7B, 17.31 versus 18.39 is AgeMem's sole loss, without detailed analysis. Symbolic planning needs structured memory, where A-Mem's explicit links may have an inherent advantage, suggesting a ceiling for flat entries plus semantic retrieval.</li>
+  <li><strong>Scaling limits remain unknown.</strong> Backbones stop at 7B. Does three-stage RL still help at 30B/70B, or do native long-context capabilities absorb the gain? Supersede's recent finding of a 15 pp accuracy cliff in frontier models under bounded memory suggests the problem persists, but direct testing is needed.</li>
+</ol>
+</section>
+
+<h2>3. Revisiting Related Work</h2>
+
+<section class="card">
+<h3>R1 · MemGPT: Towards LLMs as Operating Systems (2023-10)</h3>
+<p style="font-size:14px;color:var(--muted)">Charles Packer, Sarah Wooders, Kevin Lin, Vivian Fang, Shishir G. Patil, Ion Stoica, Joseph E. Gonzalez (UC Berkeley)</p>
+<p><strong>Problem addressed</strong>: systematically introduces the operating-system analogy of <strong>virtual-memory hierarchies</strong> to LLMs: paging exchanges information between main context (RAM) and external storage (disk), initiated through model function calls, while interrupts let the agent resume tasks after memory operations. It establishes that LLMs can <strong>manage their own memory</strong>, originating the memory-as-tools paradigm.</p>
+<p><strong>Remaining problems</strong>: memory policies are entirely driven by <strong>prompt engineering</strong>. Paging times and storage choices are specified in system prompts. Policies cannot improve from experience, are sensitive to wording, and largely fail on small models without GPT-4-level instruction following. MemGPT also focuses on overflowing context rather than independently asking what deserves long-term retention.</p>
+<p><strong>AgeMem's response</strong>: retains tool-based memory actions but moves decisions from prompts into <strong>trainable policy parameters</strong>. Its gains on open 4B/7B models arise because memory behavior no longer relies solely on innate instruction following.</p>
+</section>
+
+<section class="card">
+<h3>R2 · A-MEM: Agentic Memory for LLM Agents (NeurIPS 2025)</h3>
+<p style="font-size:14px;color:var(--muted)">Wujiang Xu, Zujie Liang, Kai Mei, Hang Gao, Juntao Tan, Yongfeng Zhang (Rutgers and collaborators)</p>
+<p><strong>Problem addressed</strong>: most post-MemGPT systems use <strong>flat entry collections</strong> with semantic retrieval but no relationships among memories. A-MEM introduces <strong>Zettelkasten principles</strong>: new memories become structured notes with context descriptions, keywords, and tags; the system automatically identifies existing-memory <strong>Link</strong> and supports <strong>memory evolution</strong>, where new entries trigger updates to old ones. Storage becomes a self-organizing knowledge network, exceeding contemporary SOTA across six foundation models.</p>
+<p><strong>Remaining problems</strong>: link creation and evolution remain <strong>LLM-prompt-driven</strong> without an optimization objective, so the system cannot know whether its links help downstream tasks. Incorrect updates can also cascade through the network, a risk later demonstrated as error propagation by ACL 2026's <em>How Memory Management Impacts LLM Agents</em> . A-MEM manages only long-term memory, leaving short-term context to external RAG.</p>
+<p><strong>AgeMem's response</strong>: uses A-MEM as a main baseline and beats it overall (45.74→54.31 on Qwen3-4B). Task rewards replace prompting heuristics, giving maintenance behavior <strong>a correctness signal</strong>. However, <strong style="color:var(--crit)">AgeMem loses to A-MEM on PDDL</strong>, suggesting explicit links retain advantages on highly structured tasks that AgeMem's flat representation lacks. These technical strands remain uncombined.</p>
+</section>
+
+<section class="card">
+<h3>R3 · Mem0: Production-Ready AI Agents with Scalable Long-Term Memory (2025-04)</h3>
+<p style="font-size:14px;color:var(--muted)">Prateek Chhikara, Dev Khant, Saket Aryan, Taranjeet Singh, Deshraj Yadav (Mem0 team)</p>
+<p><strong>Problem addressed</strong>: moves memory from research prototypes toward <strong>production readiness</strong>. A memory-centric extract–update pipeline dynamically extracts and retrieves conversational information, with graph variant Mem0ᵍ. It beats six baseline families on LOCOMO; relative to full context, engineering gains include <strong>91% lower p95 latency and over 90% token-cost savings</strong>, alongside a 26% relative improvement over the OpenAI approach. It is currently a de facto open-source memory-layer standard in industry.</p>
+<p><strong>Remaining problems</strong>: each extract–update threshold and rule is <strong>manually tuned</strong>, requiring retuning across domains. More fundamentally, extraction optimizes the <em>proxy objective</em> of correctly extracting information rather than helping the agent complete tasks. These objectives need not align. Separate extraction/update LLM calls also create AgeMem's C3 cost.</p>
+<p><strong>AgeMem's response</strong>: outperforms Mem0 and Mem0ᵍ on both backbones, folds extraction decisions into the main policy, and replaces proxy objectives with task rewards. However, Mem0's LOCOMO conversational setting differs from AgeMem's agentic tasks; <strong>AgeMem does not validate conversational memory</strong>, precisely the concern in its second acknowledged limitation.</p>
+</section>
+
+<section class="card">
+<h3>R4 · Memory-R1: Manage and Utilize Memories via RL (2025-08)</h3>
+<p style="font-size:14px;color:var(--muted)">Sikuan Yan, Xiufeng Yang, Zuchao Huang, Ercong Nie, Zifeng Ding, and colleagues (LMU Munich / TU Darmstadt / Edinburgh; Hinrich Schütze, Volker Tresp)</p>
+<p><strong>Problem addressed</strong>: <strong>First introduces RL to memory management</strong>, using two specialized agents: <strong>Memory Manager</strong>, which chooses ADD/UPDATE/DELETE/NOOP, and <strong>Answer Agent</strong>, which distills retrieved memories before answering. PPO and GRPO train them using downstream QA correctness. Particularly striking data efficiency comes from <strong>only 152 training QA pairs</strong>, outperforming strong baselines and generalizing across LoCoMo, MSC, LongMemEval, and 3B–14B scales.</p>
+<p><strong>Remaining problems</strong>: <strong>The two-agent architecture is exactly the separation AgeMem aims to remove.</strong> Memory Manager and Answer Agent are optimized independently. The manager does not directly know the answerer's needs, and the answerer cannot directly alter storage decisions; rewards couple them indirectly. Memory-R1 also covers only LTM writing and <strong>does not address short-term context management</strong> such as compression, filtering, or overflow, while maintaining two parameter sets.</p>
+<p><strong>AgeMem's response</strong>: Memory-R1 is AgeMem's most direct predecessor and target for unification. One policy handles management and solving, with STM tools in the same action space. Unfortunately, <strong style="color:var(--crit)">AgeMem does not empirically compare against Memory-R1</strong>, leaving superiority over two-agent designs unproven.</p>
+</section>
+
+<section class="card">
+<h3>R5 · MemAct — Memory as Action: Autonomous Context Curation (ACL 2026 Findings)</h3>
+<p style="font-size:14px;color:var(--muted)">Yuxiang Zhang, Jiangming Shu, Ye Ma, Xueyuan Lin, Shangxi Wu, Jitao Sang (ADaM Lab, Beijing Jiaotong University)</p>
+<p><strong>Problem addressed</strong>: complements Memory-R1 by <strong>formalizing short-term context management as learnable policy actions</strong>. Even larger-context LLMs need careful working-memory management to mitigate <strong>attention dilution</strong> in long tasks. MemAct proactively curates context with RL-trained deletion and insertion, enabling <strong>substantially smaller models</strong> to achieve competitive accuracy while reducing context length by <strong>roughly half</strong>. </p>
+<p><strong>Remaining problems</strong>: MemAct only inserts and deletes within context, with <strong>no persistent external memory store</strong>. Deleted information is permanently lost and cannot be recovered in later sessions. This may suit single long tasks but undermines persistent interaction, and leaves cross-task retention unresolved.</p>
+<p><strong>AgeMem's response</strong>: <code>FILTER</code> with <code>SUMMARY</code> serve MemAct's role, but AgeMem's context cleanup and LTM <code>ADD</code> share <strong>one action space</strong>. Its policy can learn to save information long term before deleting it from context, whereas MemAct can only delete or retain. This is an architectural benefit of unification. Nevertheless, MemAct's roughly halved context far exceeds AgeMem's 3–5% savings, so AgeMem does not dominate specialized methods on efficiency.</p>
+</section>
+
+<h2>4. Technical Evolution</h2>
+
+<section class="card">
+<div class="flow">2023  MemGPT ────────────── Memory as tools (prompt-driven, not learned)
+        │                   “LLMs can manage their own memory”
+        │
+2025  ├─ A-MEM (NeurIPS'25) ─ Structured memory (Zettelkasten links + evolution)
+      │                       Gap: no supervision of link quality
+      │
+      ├─ Mem0 ─────────────── Production memory (extract–update pipeline)
+      │                       Gap: manual thresholds + auxiliary LLM overhead
+      │
+      ├─ Memory-R1 ────────── Learnable memory (RL, two agents)
+      │                       Gap: separate management/solving; LTM only
+      │
+      └─ MemAct (ACL'26 F.) ─ Learnable context (RL, deletion/insertion)
+                              Gap: no persistent store; STM only
+                                         │
+                                         ▼
+2026                     AgeMem (ACL'26 main-conference long paper)
+                         LTM + STM unified in one policy
+                         Three-stage progressive RL + step-wise GRPO</div>
+<p style="margin-top:18px">The underlying trajectory is one of <strong>progressive internalization</strong>: decisions move from prompts to code rules to trained auxiliary models and finally into the agent's own policy. Each step reduces human priors and increases learning from experience. AgeMem is the current endpoint of this path, while its fixed tools and flat representation suggest what to internalize next.</p>
+</section>
+
+<h2>5. Open Challenges and Research Opportunities</h2>
+
+<section class="card">
+<ol>
+  <li><strong>Unification versus separation lacks a decisive experiment.</strong> Memory-R1 (RL+LTM), MemAct (RL+STM), and AgeMem (RL+unification) occupy three points in the design space, but <strong>no paper evaluates all three under the same setup</strong>. A rigorous controlled study could establish or falsify a central architectural claim at relatively low entry cost.</li>
+  <li><strong>Structured representations and learnability remain unreconciled.</strong> AgeMem's PDDL loss to A-MEM suggests limits to flat entries and semantic retrieval. Incorporating explicit A-MEM links, MAGMA's multigraph architecture, or EverMemOS's self-organization into learnable actions—for example, adding <code>LINK</code>/<code>MERGE</code> tools—is a natural next step, but enlarges the action space and complicates credit assignment.</li>
+  <li><strong>Credit-assignment granularity.</strong> Uniform step-wise GRPO broadcasting is a pragmatic workaround. Achieving <em>genuine step-level</em> credit under extremely sparse, cross-stage memory rewards—for example, asking counterfactually whether a task would succeed without a stored memory—is a central technical challenge.</li>
+  <li><strong>Evaluation validity.</strong> The MQ/performance disconnect (0.006 versus 4.82 pp) suggests LLM-rated memory quality may miss what matters. LongMemEval-V2, AMA-Bench, and Supersede's supersession gap—continued use of stale values after factual updates—approach this problem from different angles.</li>
+  <li><strong>Memory security and governance.</strong> Learnable memory is also vulnerable to contamination. Work in 2026 includes a long-term memory security survey (arXiv:2604.16548), SSGM governance (arXiv:2603.11768), and ACL 2026 error-propagation studies. How RL-trained rather than handcrafted write policies change attack surfaces is largely unexplored.</li>
+  <li><strong>Real-world settings and scale.</strong> Current evaluations use controlled benchmarks. Persistent multisession interaction, memory evolution over weeks or months, and whether these methods remain necessary above 30B parameters are essential deployment questions.</li>
+</ol>
+</section>
+
+<h2>6. Other Recent Work Worth Following</h2>
+
+<section class="card">
+<table>
+  <tr><th>Work</th><th>Link</th><th>Summary</th></tr>
+  <tr><td>Supersede: Diagnosing and Training the Memory-Update Gap</td><td><a href="https://arxiv.org/abs/2606.27472" target="_blank">2606.27472</a></td><td>Introduces the supersession gap: frontier models lose 15 pp accuracy under bounded memory</td></tr>
+  <tr><td>Agent-Memory-Paper-List (accompanying survey <em>Memory in the Age of AI Agents</em>)</td><td><a href="https://github.com/Shichun-Liu/Agent-Memory-Paper-List" target="_blank">GitHub</a></td><td>An active paper-tracking repository for the field</td></tr>
+  <tr><td>ICLR 2026 Workshop MemAgents</td><td><a href="https://sites.google.com/view/memagent-iclr26/" target="_blank">Official website</a></td><td>First major-conference workshop dedicated to agent memory</td></tr>
+  <tr><td>MAGMA: Multi-Graph based Agentic Memory Architecture</td><td><a href="https://arxiv.org/abs/2601.03236" target="_blank">2601.03236</a></td><td>Multigraph memory architecture</td></tr>
+  <tr><td>EverMemOS: Self-Organizing Memory Operating System</td><td><a href="https://arxiv.org/abs/2601.02163" target="_blank">2601.02163</a></td><td>Self-organizing memory operating system</td></tr>
+  <tr><td>MemRL: Self-Evolving Agents via Runtime RL on Episodic Memory</td><td><a href="https://arxiv.org/abs/2601.03192" target="_blank">2601.03192</a></td><td>Runtime RL + episodic memory</td></tr>
+  <tr><td>How Memory Management Impacts LLM Agents</td><td><a href="https://aclanthology.org/2026.acl-long.27/" target="_blank">ACL 2026</a></td><td>Empirical studies of experience-following and error propagation</td></tr>
+</table>
+</section>
+
+<footer>Agent Memory Daily Review · Generated on 2026-07-29 · Evidence from the original paper; performance values from AgeMem (ACL 2026), Table 2</footer>
+
+</div>
+
+<div class="tip" id="tip"></div>
+
+<script>
+(function () {
+  // theme toggle
+  var btn = document.getElementById('themeBtn');
+  btn.addEventListener('click', function () {
+    var root = document.documentElement;
+    var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    btn.textContent = next === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+    draw();
+  });
+
+  var data = [
+    { m: 'AgeMem',    a: 41.96, b: 54.31, hi: true },
+    { m: 'Mem0',      a: 37.14, b: 44.70 },
+    { m: 'A-Mem',     a: 36.78, b: 45.74 },
+    { m: 'Mem0ᵍ', a: 36.31, b: 41.95 },
+    { m: 'LangMem',   a: 34.23, b: 43.25 },
+    { m: 'No-Memory', a: 28.05, b: 43.97 }
+  ];
+
+  var svg = document.getElementById('chart');
+  var tip = document.getElementById('tip');
+  var W = 760, H = 400, L = 96, R = 28, TP = 14, BT = 40;
+  var plotW = W - L - R, plotH = H - TP - BT;
+  var maxV = 60;
+
+  function cssv(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+  function el(t, attrs) {
+    var e = document.createElementNS('http://www.w3.org/2000/svg', t);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+
+  function draw() {
+    svg.innerHTML = '';
+    var c1 = cssv('--series-1'), c2 = cssv('--series-2');
+    var grid = cssv('--grid'), muted = cssv('--muted'), base = cssv('--baseline');
+    var ink = cssv('--text-primary'), surf = cssv('--surface-1');
+
+    // gridlines + x ticks
+    for (var v = 0; v <= maxV; v += 10) {
+      var x = L + (v / maxV) * plotW;
+      svg.appendChild(el('line', { x1: x, y1: TP, x2: x, y2: TP + plotH, stroke: v === 0 ? base : grid, 'stroke-width': 1 }));
+      var t = el('text', { x: x, y: TP + plotH + 20, fill: muted, 'font-size': 11.5, 'text-anchor': 'middle' });
+      t.textContent = v;
+      svg.appendChild(t);
+    }
+    var xl = el('text', { x: L + plotW / 2, y: H - 6, fill: muted, 'font-size': 11.5, 'text-anchor': 'middle' });
+    xl.textContent = 'Five-benchmark mean';
+    svg.appendChild(xl);
+
+    var rowH = plotH / data.length;
+    var barH = 13, gap = 2;
+
+    data.forEach(function (d, i) {
+      var cy = TP + i * rowH + rowH / 2;
+      var lbl = el('text', { x: L - 12, y: cy + 4, fill: ink, 'font-size': 13, 'text-anchor': 'end', 'font-weight': d.hi ? 600 : 400 });
+      lbl.textContent = d.m;
+      svg.appendChild(lbl);
+
+      [[d.a, c1, 'Qwen2.5-7B-Instruct', -(barH + gap) / 2], [d.b, c2, 'Qwen3-4B-Instruct', (barH + gap) / 2]]
+        .forEach(function (s) {
+          var w = Math.max(2, (s[0] / maxV) * plotW);
+          var y = cy + s[3] - barH / 2;
+          var r = el('rect', { x: L, y: y, width: w, height: barH, rx: 4, fill: s[1] });
+          r.style.cursor = 'default';
+          r.addEventListener('mousemove', function (e) {
+            tip.innerHTML = '<strong>' + d.m + '</strong> · ' + s[2] + '<br>Five-benchmark mean <strong>' + s[0].toFixed(2) + '</strong>';
+            tip.style.left = (e.clientX + 14) + 'px';
+            tip.style.top = (e.clientY - 10) + 'px';
+            tip.style.opacity = 1;
+          });
+          r.addEventListener('mouseleave', function () { tip.style.opacity = 0; });
+          svg.appendChild(r);
+
+          // direct label on AgeMem only (selective)
+          if (d.hi) {
+            var vt = el('text', { x: L + w + 8, y: y + barH - 2.5, fill: ink, 'font-size': 12, 'font-weight': 600 });
+            vt.textContent = s[0].toFixed(2);
+            svg.appendChild(vt);
+          }
+        });
+    });
+
+    // left axis
+    svg.appendChild(el('line', { x1: L, y1: TP, x2: L, y2: TP + plotH, stroke: base, 'stroke-width': 1 }));
+  }
+
+  draw();
+})();
+</script>
+</body>
+</html>

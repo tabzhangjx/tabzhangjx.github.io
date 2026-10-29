@@ -1,0 +1,996 @@
+---
+layout: null
+title: "OCR-Memory"
+date: 2026-08-07
+topic: agent-memory
+tags: ["agent-memory"]
+excerpt: "Visual representations for long-term memory: optical context retrieval and the tradeoffs between capacity, cost, and fidelity."
+permalink: "/blog/2026/08/07/ocr-memory-visual-context-retrieval/en/"
+blog_post: false
+lang: en
+sitemap: true
+alternate_zh: "/blog/2026/08/07/ocr-memory-visual-context-retrieval/"
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OCR-Memory Deep Dive · 2026-08-07 · Daily Agent Memory Literature</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --accent-soft: #cde2fb;
+    --good: #006300;
+    --crit: #d03b3b;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --accent-soft: #184f95;
+    --good: #0ca30c;
+    --crit: #e66767;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  header.hero {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 32px 34px;
+    margin-bottom: 34px;
+  }
+  .eyebrow {
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; margin: 0 0 10px;
+  }
+  h1 { font-size: 30px; line-height: 1.3; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .subtitle { font-size: 17px; color: var(--text-secondary); margin: 0 0 18px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    font-size: 12.5px; padding: 4px 11px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--text-secondary);
+    background: var(--page);
+  }
+  .chip.venue { border-color: var(--series-1); color: var(--series-1); font-weight: 600; }
+  .chip.warn { border-color: var(--series-2); color: var(--series-2); font-weight: 600; }
+  .lede {
+    border-left: 3px solid var(--series-1);
+    padding: 4px 0 4px 18px; margin: 20px 0 0;
+    color: var(--text-secondary); font-size: 15.5px;
+  }
+  h2 {
+    font-size: 22px; margin: 52px 0 16px; padding-bottom: 10px;
+    border-bottom: 1px solid var(--border); letter-spacing: -0.01em;
+  }
+  h3 { font-size: 18px; margin: 34px 0 12px; }
+  h3:first-child { margin-top: 0; }
+  h4 { font-size: 15.5px; margin: 24px 0 8px; color: var(--text-secondary); }
+  p { margin: 0 0 14px; }
+  section.card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 26px 30px; margin-bottom: 20px;
+  }
+  a { color: var(--series-1); text-decoration: none; border-bottom: 1px solid transparent; }
+  a:hover { border-bottom-color: var(--series-1); }
+  code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px; background: var(--page); padding: 1.5px 5px;
+    border-radius: 4px; border: 1px solid var(--border);
+  }
+  .formula {
+    background: var(--page); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 16px; margin: 12px 0; font-family: ui-monospace, Menlo, monospace;
+    font-size: 13.5px; overflow-x: auto; color: var(--text-primary); white-space: pre;
+  }
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0 20px; font-size: 14.5px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: .05em; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--accent-soft); font-weight: 600; }
+  :root[data-theme="dark"] tr.best td { background: rgba(57,135,229,.18); }
+  tr.derived td { color: var(--text-secondary); font-size: 13.5px; font-style: italic; }
+  table.compact { font-size: 13px; }
+  table.compact th, table.compact td { padding: 7px 6px; }
+  table.compact tr.derived td { font-size: 12.5px; }
+  table.compact td:first-child, table.compact th:first-child { min-width: 132px; }
+  .up { color: var(--good); font-weight: 600; }
+  .down { color: var(--crit); font-weight: 600; }
+  ol, ul { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 8px; }
+  .callout {
+    border-left: 3px solid var(--series-2); background: var(--page);
+    padding: 14px 18px; border-radius: 0 8px 8px 0; margin: 18px 0;
+    font-size: 15px; color: var(--text-secondary);
+  }
+  .callout strong { color: var(--text-primary); }
+  .callout.blue { border-left-color: var(--series-1); }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  button.tgl {
+    font: inherit; font-size: 13px; padding: 6px 14px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface-1);
+    color: var(--text-secondary); cursor: pointer;
+  }
+  button.tgl:hover { color: var(--text-primary); }
+
+  .figure { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 24px 26px; margin: 24px 0; }
+  .fig-title { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+  .fig-sub { font-size: 13.5px; color: var(--muted); margin: 0 0 18px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 16px; font-size: 13.5px; color: var(--text-secondary); }
+  .legend span.sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 7px; vertical-align: -1px; }
+  svg.chart { width: 100%; height: auto; display: block; overflow: visible; }
+  svg.chart text { font-family: system-ui, -apple-system, "PingFang SC", sans-serif; }
+  .tip {
+    position: fixed; pointer-events: none; opacity: 0; transition: opacity .1s;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 12px; font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,.14);
+    z-index: 50; color: var(--text-primary); white-space: nowrap;
+  }
+  .flow {
+    background: var(--page); border: 1px solid var(--border); border-radius: 10px;
+    padding: 20px 22px; font-family: ui-monospace, Menlo, monospace;
+    font-size: 12.5px; line-height: 1.8; overflow-x: auto; color: var(--text-secondary);
+    white-space: pre;
+  }
+  footer { margin-top: 60px; padding-top: 22px; border-top: 1px solid var(--border); font-size: 13.5px; color: var(--muted); }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    header.hero { padding: 22px 18px; }
+    h1 { font-size: 23px; }
+    h2 { font-size: 19px; margin-top: 38px; }
+    section.card, .figure { padding: 20px 16px; }
+    table { font-size: 12.5px; }
+    th, td { padding: 7px 8px; }
+    .flow { font-size: 11px; }
+  }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+
+  <div class="toolbar">
+    <button class="tgl" onclick="const r=document.documentElement; r.setAttribute('data-theme', r.getAttribute('data-theme')==='dark'?'light':'dark'); this.textContent = r.getAttribute('data-theme')==='dark'?'☀ Light':'☾ Dark';">☾ Dark</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">Daily Agent Memory Literature Tracking · 2026-08-07</p>
+    <h1>OCR-Memory: Rendering Agent Memory as Images</h1>
+    <p class="subtitle">Optical Context Retrieval for Long-Horizon Agent Memory — When the Compression–Fidelity Tradeoff in Text Space Reaches Its Limit, Change the Representation Space</p>
+    <div class="meta">
+      <span class="chip venue">ACL 2026 Main · Long</span>
+      <span class="chip">arXiv 2604.26622</span>
+      <span class="chip">HKU / UNT / Tsukuba / Yonsei</span>
+      <span class="chip">Memory compression · Multimodal representation</span>
+      <span class="chip warn">No public code</span>
+    </div>
+    <p class="lede"><strong>Positioning in one sentence:</strong> What OCR-Memory compresses is not memory itself, but the map used to find it. Verbatim text remains intact on disk (1.47&nbsp;MB per episode); only the visual index used for localization is compressed 10×. This distinction explains both its strongest results—no hallucinations and verbatim fidelity—and its awkward cost: 81.7× the disk footprint of text RAG.</p>
+  </header>
+
+  <section class="card">
+    <h3>Search Notes for This Issue</h3>
+    <p>This issue covered ACL Anthology 2026 main track / Findings, EACL 2026, OpenReview (ICLR 2026 + MemAgents Workshop), and arXiv cs.CL/cs.AI, screening 20+ candidates. ACL 2026 main-track long-paper candidates included <code>2026.acl-long.27</code>(the Experience-Following study), <code>2026.acl-long.474</code> (OCR-Memory), <code>2026.acl-long.1600</code> (GAM), <code>2026.acl-long.1607</code> (Adaptive Memory Distillation), <code>2026.acl-long.1709</code>(MAGMA); EACL 2026 included H-MEM and Amory; Findings included RecMem.</p>
+    <p>The final selection was <strong>OCR-Memory</strong> for three reasons: (1) ACL 2026 main-track long paper, posted to arXiv in 2026-04 and sufficiently recent; (2) it opens the <strong>modality dimension of memory representation</strong>, whereas MemGPT / A-MEM / Mem0 / Memory-R1 / MemAct / AgeMem covered initially are all text-only <strong>orthogonal</strong>; (3) it first fully transfers the context optical compression lineage emerging in 2025Q4 into agent memory, with a clear technical genealogy.</p>
+    <div class="callout">
+      <strong>Disclosure.</strong> <code>tabzhangjx.github.io/year-archive/</code> returned access-permission errors three times in this run, preventing online verification of past selections. Deduplication instead used the explicitly listed previously covered papers. Also, OCR-Memory <strong>has no publicly released code repository</strong>; neither the main text nor appendix links GitHub. All engineering details below therefore rely solely on the paper and cannot be cross-checked against implementation.
+    </div>
+  </section>
+
+  <h2>Link Manifest</h2>
+
+  <section class="card">
+    <h3>Core paper</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Item</th><th>Link</th><th>State</th></tr>
+      <tr><td>ACL Anthology</td><td><a href="https://aclanthology.org/2026.acl-long.474/">2026.acl-long.474</a></td><td>✅ Verified</td></tr>
+      <tr><td>ACL PDF</td><td><a href="https://aclanthology.org/2026.acl-long.474.pdf">2026.acl-long.474.pdf</a></td><td>✅ Verified</td></tr>
+      <tr><td>arXiv</td><td><a href="https://arxiv.org/abs/2604.26622">arXiv:2604.26622</a></td><td>✅ Verified</td></tr>
+      <tr><td>arXiv HTML (v1)</td><td><a href="https://arxiv.org/html/2604.26622v1">html/2604.26622v1</a></td><td>✅ Full text readable</td></tr>
+      <tr><td>DOI</td><td><a href="https://doi.org/10.18653/v1/2026.acl-long.474">10.18653/v1/2026.acl-long.474</a></td><td>✅ Provided by Anthology</td></tr>
+      <tr><td>Code repository</td><td>—</td><td>❌ <strong>Not found</strong>(not provided by the paper)</td></tr>
+    </table>
+    </div>
+    <p style="font-size:14.5px;color:var(--text-secondary)"><strong>Bibliography:</strong> Jinze Li, Yang Zhang, Xin Yang, Jiayi Qu, Jinfeng Xu, Shuo Yang, Junhua Ding, Edith Cheuk-Han Ngai. <em>OCR-Memory: Optical Context Retrieval for Long-Horizon Agent Memory.</em> ACL 2026 (Volume 1: Long Papers), San Diego, California, July 2026. Affiliations: University of Hong Kong / University of North Texas / University of Tsukuba / Yonsei University.</p>
+
+    <h3>Related Work Traced</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Work</th><th>Venue / publication</th><th>arXiv</th><th>Code</th></tr>
+      <tr><td><strong>MemoryBank</strong></td><td><a href="https://ojs.aaai.org/index.php/AAAI/article/view/29946">AAAI 2024</a></td><td><a href="https://arxiv.org/abs/2305.10250">2305.10250</a></td><td><a href="https://github.com/zhongwanjun/MemoryBank-SiliconFriend">GitHub</a></td></tr>
+      <tr><td><strong>AWM</strong></td><td>No formal conference page found</td><td><a href="https://arxiv.org/abs/2409.07429">2409.07429</a></td><td><a href="https://github.com/zorazrw/agent-workflow-memory">GitHub</a></td></tr>
+      <tr><td><strong>ACON</strong></td><td>ICML 2026</td><td><a href="https://arxiv.org/abs/2510.00615">2510.00615</a> (v1 2025-10-01 / v3 2026-06-01)</td><td><a href="https://github.com/microsoft/acon">GitHub</a></td></tr>
+      <tr><td><strong>DeepSeek-OCR</strong></td><td>Technical report, 2025-10-21</td><td><a href="https://arxiv.org/abs/2510.18234">2510.18234</a></td><td><a href="https://github.com/deepseek-ai/DeepSeek-OCR">GitHub</a></td></tr>
+      <tr><td><strong>Set-of-Mark</strong></td><td>arXiv 2023-10-17</td><td><a href="https://arxiv.org/abs/2310.11441">2310.11441</a></td><td><a href="https://github.com/microsoft/SoM">GitHub</a></td></tr>
+      <tr><td><strong>Glyph</strong></td><td>arXiv 2025-10-20</td><td><a href="https://arxiv.org/abs/2510.17800">2510.17800</a></td><td><a href="https://github.com/thu-coai/Glyph">GitHub</a></td></tr>
+    </table>
+    </div>
+
+    <h3>Evaluation Benchmarks / Datasets</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Benchmark</th><th>Link</th><th>Use</th></tr>
+      <tr><td>Mind2Web (Cross-Task)</td><td><a href="https://github.com/OSU-NLP-Group/Mind2Web">GitHub</a> · <a href="https://osu-nlp-group.github.io/Mind2Web/">Homepage</a></td><td>Main web-navigation experiment</td></tr>
+      <tr><td>AppWorld</td><td><a href="https://aclanthology.org/2024.acl-long.850/">ACL 2024</a> · <a href="https://arxiv.org/abs/2407.18901">arXiv</a> · <a href="https://github.com/StonyBrookNLP/appworld">GitHub</a></td><td>Main API-interaction experiment</td></tr>
+      <tr><td>HotpotQA</td><td><a href="https://hotpotqa.github.io/">hotpotqa.github.io</a></td><td>Retrieval-module fine-tuning</td></tr>
+      <tr><td>NIAH</td><td>❌ <strong>Not found</strong>(the paper provides no specific implementation link)</td><td>Compression–accuracy scaling</td></tr>
+    </table>
+    </div>
+  </section>
+
+  <h2>1. Deep Dive into the Core Work</h2>
+
+  <section class="card">
+    <h3>1.1 Abstract and Positioning</h3>
+    <p>The paper describes OCR-Memory as using the visual modality as a high-density representation of agent experience, enabling arbitrarily long histories with minimal prompt overhead. It renders interaction histories into images with <strong>unique visual identifiers</strong> and retrieves through a <strong>locate-and-transcribe paradigm</strong>: visual anchors select relevant regions, then return <strong>the corresponding verbatim text</strong>, bypassing errors from generative retrieval.</p>
+    <div class="callout blue">
+      <strong>Positioning in One Sentence (This Report's Deliberately Distinct Interpretation):</strong> OCR-Memory compresses the map used to find memory, not memory itself. Vision is responsible only for <em>localization</em>, while verbatim disk text still provides content—both the reason for hallucination-free retrieval and for the 81.7× disk expansion.
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>1.2 Motivation and Problem Argument</h3>
+    <p>The paper frames the problem as a <strong>three-way dilemma</strong>: full long-horizon trajectories are valuable but do not fit, and all three existing escape routes fail differently.</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Approach</th><th>Representative work</th><th>Paper's criticism (original wording)</th><th>Failure point</th></tr>
+      <tr><td>Retrieved fragments</td><td>RAG, MemGPT, MemoryBank, Self-RAG, Memory-R1</td><td>“Retrieved snippets may be topically related yet <strong>logically irrelevant</strong>, especially when tasks hinge on causality or long-range dependencies”</td><td>Semantic similarity ≠ logical relevance</td></tr>
+      <tr><td>Experience abstraction</td><td>AWM, skill / workflow abstraction</td><td>“Abstraction can <strong>discard crucial low-level details</strong> (e.g., exact error messages, intermediate states)”</td><td>Abstraction means information loss</td></tr>
+      <tr><td>Context compression</td><td>ACON, LLMLingua family, attention sinks</td><td>“Text-centric compression inevitably <strong>trades off compression ratio against information fidelity</strong>”</td><td>Compression and fidelity trade off</td></tr>
+    </table>
+    </div>
+    <p><strong>Quantitative Argument:</strong> Per-step inference context on Mind2Web goes from <strong>3,980 → 596 tokens (6.7×)</strong>(Table 7); on NIAH, across 4k–32k, a stable <strong>10.2×–10.7×</strong> compression ratio accompanies accuracy of 98.5 → 94.1 (Table 4).</p>
+    <p><strong>Novelty:</strong> All three previous approaches trade off <strong>within text space</strong> and therefore lie on the same rate–distortion curve. OCR-Memory argues that <strong>changing representation space to pixels changes the curve</strong>—a modality-level jump rather than movement along one curve.</p>
+    <p><strong>Why it is worth solving:</strong> All methods achieve only 2.2%–4.8% Task SR on Mind2Web (Table 1), leaving end-to-end long-horizon web-agent success near the floor. Context budgets are a direct constraint; the paper fixes the context window at 4096 tokens.</p>
+  </section>
+
+  <section class="card">
+    <h3>1.3 The Paper's Narrative and Argument Structure</h3>
+    <p>The argument is not simply “we propose X,” but a <strong>four-step progression</strong>: </p>
+    <p><strong>Step 1: Reframe “what to store” as “which representation to store it in.”</strong> If compression versus fidelity in text space is zero-sum, is there a representation naturally denser than token sequences? DeepSeek-OCR provides empirical motivation: a document page encoded with 100 visual tokens can beat GOT-OCR2.0 using 256 tokens.</p>
+    <p><strong>Step 2 (the Key Turn): Acknowledge the New Visual Failure Mode, Then Bypass It.</strong> This is the paper's smartest move. Asking a VLM to <em>decode text</em> from rendered images directly inserts OCR errors into the agent's reasoning chain. DeepSeek-OCR's own curve shows that at compression &lt;10×, accuracy is 97%, but at 20× it falls to about 60%. The authors infer: <em>if decoding is unreliable, do not decode</em>. The VLM's output is therefore limited to <strong>paragraph indices</strong>(0/1 labels), with text retrieved verbatim from disk.</p>
+    <div class="callout">
+      <strong>Argument Logic:</strong> Observing a fidelity cliff in optical decoding leads the authors to assign vision only the localization role, never content reconstruction.
+    </div>
+    <p><strong>Step 3: Turn Indexing into a Trainable Visual Task.</strong> Borrow Set-of-Mark: draw red boxes and numbers on rendered images, so the VLM need only identify relevant numbers. This turns open-ended generation into <strong>bounded multilabel classification</strong> that can be fine-tuned with weighted BCE and calibrated with softmax over “1”/“0” logits.</p>
+    <p><strong>Step 4: Add Time, Automatically Demoting Older Memories.</strong> Keep the latest 5 steps at high resolution and the rest at low resolution. Once a low-resolution memory is retrieved, active recall restores high fidelity. This turns a <strong>forgetting curve</strong> into a <strong>resolution curve</strong>. </p>
+    <div class="callout">
+      <strong>Key Assumption (Unverified; See §1.7-⑥):</strong> Relevance judgment requires much less information than content reconstruction, so low resolution suffices for localization. This assumption underlies the entire age-aware design but is never measured directly.
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>1.4 Methodology and Mechanisms</h3>
+
+    <h4>1.4.1 Formal Definitions</h4>
+    <p><strong>Memory Structure (Eq. 5)</strong>—note that text is not discarded.</p>
+    <div class="formula">𝓜 = { m_i }_{i=1..N},   m_i = ( I_i , { s_{i,k} }_{k=1..K_i} , π_i )
+
+  I_i      : Marked image rendered from a trajectory chunk
+  s_{i,k}  : Verbatim stored text fragments
+  π_i      : Metadata (timestamp, episode id)</div>
+
+    <p><strong>Two-Stage Retrieval (Eq. 6)</strong></p>
+    <div class="formula">Ŝ(q) = g_θ(q, 𝓜)          ← Vision model outputs only an index set
+E    = Fetch(Ŝ(q), 𝓜)     ← Deterministically fetch original disk text, no generation</div>
+
+    <p><strong>Set-of-Mark Binary Relevance (Eq. 7–8) and Probability Calibration (Eq. 11)</strong></p>
+    <div class="formula">ŷ_i(q) = (ŷ_{i,1}, ..., ŷ_{i,K_i}) ∈ {0,1}^{K_i}
+Ŝ(q)   = { (i,k) | ŷ_{i,k} = 1 }
+
+p_{i,k}(q) = exp(z_{i,k}(1)) / [ exp(z_{i,k}(1)) + exp(z_{i,k}(0)) ]</div>
+
+    <p><strong>Inference Threshold + Top-K Fallback (Eq. 12)</strong></p>
+    <div class="formula">Ŝ_i(q) = { (i,k) | p_{i,k}(q) ≥ τ }  ∪  TopK({p_{i,k}(q)}_{k=1..K_i}, K)</div>
+
+    <p><strong>Age-Aware Multiresolution (Eq. 13) and Active Recall (Eq. 14–15)</strong></p>
+    <div class="formula">ℓ_i = ρ(Δt_i)                                    ← Monotonic aging function
+I_i = φ_{ℓ_i}( I_i^hi )                          ← Downsample by level
+
+If ∃(i,k) ∈ Ŝ(q) with ℓ_i &gt; ℓ_min, set I_i ← I_i^hi   ← Restore original fidelity on a hit</div>
+
+    <p><strong>Training Objective (Eq. 20)</strong>—weighted BCE, deliberately favoring recall.</p>
+    <div class="formula">ℒ_BCE(θ) = -Σ_n Σ_k [ w₊ · y_k log p_k + w₋ · (1-y_k) log(1-p_k) ]
+           w₊ = 2.0,  w₋ = 1.0</div>
+
+    <h4>1.4.2 Key Mechanism Comparison</h4>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Mechanism</th><th>Input</th><th>Output</th><th>Failure mode addressed</th><th>Cost</th></tr>
+      <tr><td>Visual storage</td><td>Trajectory text chunks</td><td>Marked rendered images</td><td>Context-window overflow</td><td>Disk ×81.7</td></tr>
+      <tr><td>Set-of-Mark indexing</td><td>Image + query</td><td>Paragraph indices, 0/1</td><td>Generative-retrieval hallucinations</td><td>Requires fine-tuning a 3B VLM</td></tr>
+      <tr><td>Locate-and-Transcribe</td><td>Index set</td><td>Verbatim original text</td><td>OCR decoding errors</td><td>Must retain a complete text copy</td></tr>
+      <tr><td>Age-aware downsampling</td><td>Elapsed time Δt</td><td>Resolution level ℓ</td><td>Token budget grows linearly with time</td><td>Step SR −0.4pp (Table 3)</td></tr>
+      <tr><td>Active-recall upsampling</td><td>Retrieved records</td><td>Restore high resolution</td><td>Declining localization accuracy for old memories</td><td>Does not fully close the high-resolution gap</td></tr>
+    </table>
+    </div>
+
+    <h4>1.4.3 Hyperparameters and Engineering Details (All from Appendix A)</h4>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Category</th><th>Parameter</th><th class="num">Value</th></tr>
+      <tr><td>Retrieval</td><td>Threshold τ</td><td class="num">0.4</td></tr>
+      <tr><td>Retrieval</td><td>Top-K fallback (per image)</td><td class="num">5</td></tr>
+      <tr><td>Retrieval</td><td>Maximum returned paragraphs per query</td><td class="num">20</td></tr>
+      <tr><td>resolution</td><td>High resolution</td><td class="num">1024² → 256 vis-tok</td></tr>
+      <tr><td>resolution</td><td>Low resolution</td><td class="num">512² → 64 vis-tok</td></tr>
+      <tr><td>resolution</td><td>Deployment policy</td><td class="num">Latest 5 steps at high resolution</td></tr>
+      <tr><td>Training</td><td>Backbone</td><td class="num">DeepSeek-OCR 3B (frozen vision encoder)</td></tr>
+      <tr><td>Training</td><td>LoRA</td><td class="num">r=16, α=32, dropout=0.05</td></tr>
+      <tr><td>Training</td><td>Optimizer</td><td class="num">AdamW, β=(0.9, 0.95), wd=0.1</td></tr>
+      <tr><td>Training</td><td>Learning rate</td><td class="num">1e-5 peak, 10% warmup</td></tr>
+      <tr><td>Training</td><td>Batch / Epochs</td><td class="num">global 128 / 3 ep (HotpotQA)</td></tr>
+      <tr><td>Training</td><td>Resolution curriculum π</td><td class="num">[0.3, 0.7] over {1024², 512²}</td></tr>
+      <tr><td>Render</td><td>Boxes / numbers</td><td class="num">RGB(255,0,0), 3px / Arial 36pt, white text on red</td></tr>
+      <tr><td>Render</td><td>Resize interpolation</td><td class="num">Bicubic</td></tr>
+    </table>
+    </div>
+
+    <h4>1.4.4 Three-Stage Workflow</h4>
+    <div class="flow">┌─ Write ────────────────────────────────────────────────────────┐
+│  Trajectory fragments s_{i,1..K}                                │
+│      │                                                          │
+│      ├──► Store verbatim ────────────────► {s_{i,k}} (1.47MB/ep) │
+│      │                                                          │
+│      └──► Render + red boxes + numbering ─► I_i^hi (1024²,256tok)│
+│                    │                                            │
+│                    └── ρ(Δt) aging ──────► I_i^lo (512²,64tok) │
+└─────────────────────────────────────────────────────────────────┘
+                          │
+┌─ Locate ────────────────▼───────────────────────────────────────┐
+│  query q + {I_i}  ──► DeepSeek-OCR(3B, LoRA) ──► p_{i,k}        │
+│                       (Only "0"/"1" logits; never generates text)│
+│                            │ τ=0.4 ∪ TopK(5), limit 20 per query │
+│                            ▼                                    │
+│                        Ŝ(q) = {(i,k)}                           │
+└─────────────────────────────────────────────────────────────────┘
+                          │
+┌─ Transcribe ────────────▼───────────────────────────────────────┐
+│  Fetch(Ŝ(q)) ──► Verbatim text E ──► Agent prompt (596 tokens)  │
+│  Also: retrieved low-res memories ──► restore high-res (active recall)│
+└─────────────────────────────────────────────────────────────────┘</div>
+  </section>
+
+  <h2>1.5 Experimental Design and Quantitative Results</h2>
+
+  <section class="card">
+    <h3>1.5.1 Experimental Setup</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Item</th><th>Setting</th></tr>
+      <tr><td>Reasoning backbone</td><td><strong>GPT-4</strong>, temperature = 0</td></tr>
+      <tr><td>Generalization backbone</td><td><strong>Qwen3-32B</strong></td></tr>
+      <tr><td>Retrieval module</td><td>DeepSeek-OCR (3B), LoRA fine-tuned</td></tr>
+      <tr><td>Context budget</td><td><strong>Strictly 4096 tokens</strong>(default)</td></tr>
+      <tr><td>Main benchmarks</td><td>Mind2Web (Cross-Task split), AppWorld (Easy / Med / Hard)</td></tr>
+      <tr><td>Auxiliary benchmarks</td><td>NIAH (scaling), HotpotQA (retrieval training)</td></tr>
+      <tr><td>Random seed</td><td>⚠️ <strong>No multiple seeds or error bars reported</strong></td></tr>
+    </table>
+    </div>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">Figure 1 · Main Results (Source: Table 1)</p>
+    <p class="fig-sub">Six methods on Mind2Web Element Accuracy and AppWorld mean success. Hover for exact values and relative gains.</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-1)"></span> Mind2Web · Element Accuracy (%)</span>
+      <span><span class="sw" style="background:var(--series-2)"></span> AppWorld · Avg Success Rate (%)</span>
+    </div>
+    <svg class="chart" viewBox="0 0 900 385" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Main-results bar chart">
+      <!-- gridlines -->
+      <g stroke="var(--grid)" stroke-width="1">
+        <line x1="70" y1="310" x2="880" y2="310" stroke="var(--baseline)"/>
+        <line x1="70" y1="254" x2="880" y2="254"/>
+        <line x1="70" y1="198" x2="880" y2="198"/>
+        <line x1="70" y1="142" x2="880" y2="142"/>
+        <line x1="70" y1="86"  x2="880" y2="86"/>
+        <line x1="70" y1="30"  x2="880" y2="30"/>
+      </g>
+      <g fill="var(--muted)" font-size="12" text-anchor="end">
+        <text x="58" y="314">0</text>
+        <text x="58" y="258">20</text>
+        <text x="58" y="202">40</text>
+        <text x="58" y="146">60</text>
+        <text x="58" y="90">80</text>
+        <text x="58" y="34">100</text>
+      </g>
+
+      <!-- Zero-Shot -->
+      <rect class="bar" x="90.5"  y="197.72" width="44" height="112.28" fill="var(--series-1)" rx="2" data-tip="Zero-Shot · Mind2Web Ele Acc = 40.1%"/>
+      <rect class="bar" x="140.5" y="192.68" width="44" height="117.32" fill="var(--series-2)" rx="2" data-tip="Zero-Shot · AppWorld Avg = 41.9%"/>
+      <!-- Retrieval -->
+      <rect class="bar" x="225.5" y="194.36" width="44" height="115.64" fill="var(--series-1)" rx="2" data-tip="Retrieval (dense RAG) · Ele Acc = 41.3% (+1.2pp vs Zero-Shot)"/>
+      <rect class="bar" x="275.5" y="180.64" width="44" height="129.36" fill="var(--series-2)" rx="2" data-tip="Retrieval (dense RAG) · AppWorld Avg = 46.2% (+4.3pp)"/>
+      <!-- MemoryBank -->
+      <rect class="bar" x="360.5" y="187.36" width="44" height="122.64" fill="var(--series-1)" rx="2" data-tip="MemoryBank · Ele Acc = 43.8% (+3.7pp vs Zero-Shot)"/>
+      <rect class="bar" x="410.5" y="164.12" width="44" height="145.88" fill="var(--series-2)" rx="2" data-tip="MemoryBank · AppWorld Avg = 52.1% (+10.2pp)"/>
+      <!-- AWM -->
+      <rect class="bar" x="495.5" y="172.52" width="44" height="137.48" fill="var(--series-1)" rx="2" data-tip="AWM · Ele Acc = 49.1% — best baseline"/>
+      <rect class="bar" x="545.5" y="156"    width="44" height="154"    fill="var(--series-2)" rx="2" data-tip="AWM · AppWorld Avg = 55.0%"/>
+      <!-- ACON -->
+      <rect class="bar" x="630.5" y="175.04" width="44" height="134.96" fill="var(--series-1)" rx="2" data-tip="ACON · Ele Acc = 48.2% — below AWM; text compression struggles with DOMs"/>
+      <rect class="bar" x="680.5" y="152.64" width="44" height="157.36" fill="var(--series-2)" rx="2" data-tip="ACON · AppWorld Avg = 56.2% — best baseline"/>
+      <!-- OCR-Memory -->
+      <rect class="bar" x="765.5" y="159.36" width="44" height="150.64" fill="var(--series-1)" rx="2" data-tip="OCR-Memory · Ele Acc = 53.8% (+4.7 pp / +9.6% vs. runner-up AWM)"/>
+      <rect class="bar" x="815.5" y="147.32" width="44" height="162.68" fill="var(--series-2)" rx="2" data-tip="OCR-Memory · AppWorld Avg = 58.1% (+1.9 pp / +3.4% vs. runner-up ACON)"/>
+
+      <!-- value labels for winner -->
+      <text x="787.5" y="153" fill="var(--series-1)" font-size="12" font-weight="600" text-anchor="middle">53.8</text>
+      <text x="837.5" y="141" fill="var(--series-2)" font-size="12" font-weight="600" text-anchor="middle">58.1</text>
+
+      <!-- x labels -->
+      <g fill="var(--text-secondary)" font-size="12.5" text-anchor="middle">
+        <text x="137.5" y="332">Zero-Shot</text>
+        <text x="272.5" y="332">Retrieval</text>
+        <text x="407.5" y="332">MemoryBank</text>
+        <text x="542.5" y="332">AWM</text>
+        <text x="677.5" y="332">ACON</text>
+        <text x="812.5" y="332" font-weight="700" fill="var(--text-primary)">OCR-Memory</text>
+      </g>
+      <text x="475" y="362" fill="var(--muted)" font-size="12" text-anchor="middle">Values: % | One shared vertical scale, 0–100, for both series</text>
+    </svg>
+  </div>
+
+  <section class="card">
+    <h3>1.5.2 Main Results Matrix (Table 1) + Relative Gains</h3>
+    <p style="font-size:14px;color:var(--muted)">Absolute values are from Table 1; “Δ vs. runner-up” and relative gains were calculated here from that table.</p>
+    <div class="tablewrap">
+    <table class="compact">
+      <tr>
+        <th>Method</th>
+        <th class="num">M2W<br>Ele Acc</th><th class="num">M2W<br>F1</th><th class="num">M2W<br>Step SR</th><th class="num">M2W<br>Task SR</th>
+        <th class="num">AW<br>Easy</th><th class="num">AW<br>Med</th><th class="num">AW<br>Hard</th><th class="num">AW<br>Avg</th>
+      </tr>
+      <tr><td>Zero-Shot</td><td class="num">40.1</td><td class="num">46.2</td><td class="num">37.9</td><td class="num">2.2</td><td class="num">68.7</td><td class="num">36.2</td><td class="num">20.9</td><td class="num">41.9</td></tr>
+      <tr><td>Retrieval (dense RAG)</td><td class="num">41.3</td><td class="num">48.2</td><td class="num">38.9</td><td class="num">2.7</td><td class="num">72.5</td><td class="num">44.8</td><td class="num">21.4</td><td class="num">46.2</td></tr>
+      <tr><td>MemoryBank</td><td class="num">43.8</td><td class="num">49.5</td><td class="num">39.2</td><td class="num">3.3</td><td class="num">81.3</td><td class="num">50.1</td><td class="num">24.9</td><td class="num">52.1</td></tr>
+      <tr><td>AWM</td><td class="num">49.1</td><td class="num">55.7</td><td class="num"><em>42.6</em></td><td class="num"><em>4.3</em></td><td class="num">84.1</td><td class="num">53.6</td><td class="num">27.2</td><td class="num">55.0</td></tr>
+      <tr><td>ACON</td><td class="num">48.2</td><td class="num">54.1</td><td class="num">41.4</td><td class="num">4.1</td><td class="num"><em>84.8</em></td><td class="num"><em>55.1</em></td><td class="num"><em>28.7</em></td><td class="num"><em>56.2</em></td></tr>
+      <tr class="best"><td>OCR-Memory</td><td class="num">53.8</td><td class="num">59.2</td><td class="num">46.1</td><td class="num">4.8</td><td class="num">86.2</td><td class="num">57.4</td><td class="num">30.8</td><td class="num">58.1</td></tr>
+      <tr class="derived"><td>Δ vs. runner-up (pp)</td><td class="num">+4.7</td><td class="num">+3.5</td><td class="num">+3.5</td><td class="num">+0.5</td><td class="num">+1.4</td><td class="num">+2.3</td><td class="num">+2.1</td><td class="num">+1.9</td></tr>
+      <tr class="derived"><td>Relative gain vs. runner-up</td><td class="num up">+9.6%</td><td class="num">+6.3%</td><td class="num">+8.2%</td><td class="num">+11.6%</td><td class="num">+1.7%</td><td class="num">+4.2%</td><td class="num up">+7.3%</td><td class="num">+3.4%</td></tr>
+      <tr class="derived"><td>Relative gain vs. zero-shot</td><td class="num">+34.2%</td><td class="num">+28.1%</td><td class="num">+21.6%</td><td class="num up">+118.2%</td><td class="num">+25.5%</td><td class="num">+58.6%</td><td class="num">+47.4%</td><td class="num">+38.7%</td></tr>
+    </table>
+    </div>
+    <p><em>Italics = column runner-up; highlighted row = best method.</em></p>
+    <div class="callout">
+      <strong>Structural Finding ①: AppWorld Relative Gains Increase Monotonically with Difficulty.</strong> Easy +1.7% → Med +4.2% → Hard <strong>+7.3%</strong>. This supports the claim that advantages grow for long horizons and tight budgets: harder tasks mean longer trajectories and greater context pressure. It is the table's strongest trend supporting the central argument.
+    </div>
+    <div class="callout">
+      <strong>Structural Finding ②: All Mind2Web Task SR Values Remain Near the Floor (2.2–4.8).</strong> Every method achieves below 5% end-to-end success, directly affecting interpretability; see additional critique ① in §1.7.
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>1.5.3 Ablations</h3>
+
+    <h4>(a) Set-of-Mark Mechanism (Table 2)</h4>
+    <p>This directly answers the counterfactual of replacing it with end-to-end OCR decoding.</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Configuration</th><th class="num">Ele Acc (%)</th><th class="num">Step SR (%)</th><th class="num">Latency (s)</th><th class="num">Δ Ele Acc</th><th class="num">Latency multiplier</th></tr>
+      <tr class="best"><td>OCR-Memory (Full)</td><td class="num">53.8</td><td class="num">46.1</td><td class="num">1.7</td><td class="num">—</td><td class="num">1.0×</td></tr>
+      <tr><td>w/o SoM (text-generating retrieval instead)</td><td class="num">46.5</td><td class="num">39.2</td><td class="num">5.3</td><td class="num down">−7.3pp</td><td class="num down">3.1×</td></tr>
+      <tr><td>w/o SoM (bounding boxes only, no numbers)</td><td class="num">49.2</td><td class="num">44.5</td><td class="num">2.1</td><td class="num down">−4.6pp</td><td class="num">1.2×</td></tr>
+    </table>
+    </div>
+    <p><strong>Interpretation:</strong> Removing SoM for generative retrieval reduces Ele Acc by 7.3 pp and increases latency 3.1×—<strong>accuracy and efficiency collapse together</strong>, experimentally validating Step 2 of §1.3. Boxes without numbers still lose 4.6 pp, showing that <strong>discrete numbering itself, not visual segmentation, accounts for most of the gain</strong>: the model needs an identifiable <em>discrete symbolic anchor</em>, not merely a spatial region.</p>
+
+    <h4>(b) Multiresolution Strategy (Table 3)</h4>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Policy</th><th class="num">Step SR (%)</th><th class="num">Task SR (%)</th><th class="num">Average tokens</th><th class="num">Tokens relative to high resolution</th></tr>
+      <tr><td>Static Low-Res (512²)</td><td class="num">39.7</td><td class="num">2.9</td><td class="num">65</td><td class="num">0.25×</td></tr>
+      <tr><td>Static High-Res (1024²)</td><td class="num">46.5</td><td class="num">4.9</td><td class="num">256</td><td class="num">1.00×</td></tr>
+      <tr class="best"><td>Dynamic (this work)</td><td class="num">46.1</td><td class="num">4.8</td><td class="num">82</td><td class="num">0.32×</td></tr>
+    </table>
+    </div>
+    <p><strong>Interpretation:</strong> Dynamic uses <strong>32% of the tokens</strong> to obtain <strong>99.1% of Step SR</strong>(46.1 / 46.5). However, <strong>Table 1's headline 46.1 uses Dynamic; the paper's own best configuration is Static High-Res at 46.5</strong>. Reporting the slightly lower but cheaper configuration is methodologically transparent. It also means <strong>active-recall upsampling does not fully recover downsampling losses (0.4 pp residual)</strong>; see §1.7-④.</p>
+    <div class="callout">
+      <strong>Missing Layered Ablations.</strong> The paper <strong>does not provide</strong> an <code>base / +SoM / +multiresolution / +active recall</code> incremental ablation table. Tables 2 and 3 are independent single-factor ablations, so they cannot reveal the two modules' <strong>interaction effects</strong>.
+    </div>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">Figure 2 · NIAH Scaling: Constant Compression, Log-Linear Accuracy Decay (Source: Table 4)</p>
+    <p class="fig-sub">As context grows from 4k to 32k (8×), compression barely changes (10.2–10.7×), while accuracy loses 4.4 pp. Hover for compression ratios.</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-1)"></span> NIAH retrieval accuracy (%)</span>
+      <span><span class="sw" style="background:var(--series-2)"></span> Compression ratio at each setting (tooltip / annotation)</span>
+    </div>
+    <svg class="chart" viewBox="0 0 900 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="NIAH accuracy line chart">
+      <g stroke="var(--grid)" stroke-width="1">
+        <line x1="90" y1="223.33" x2="860" y2="223.33"/>
+        <line x1="90" y1="186.67" x2="860" y2="186.67"/>
+        <line x1="90" y1="150"    x2="860" y2="150"/>
+        <line x1="90" y1="113.33" x2="860" y2="113.33"/>
+        <line x1="90" y1="76.67"  x2="860" y2="76.67"/>
+        <line x1="90" y1="40"     x2="860" y2="40"/>
+      </g>
+      <line x1="90" y1="260" x2="860" y2="260" stroke="var(--baseline)" stroke-width="1"/>
+      <g fill="var(--muted)" font-size="12" text-anchor="end">
+        <text x="78" y="227">94</text>
+        <text x="78" y="190">95</text>
+        <text x="78" y="154">96</text>
+        <text x="78" y="117">97</text>
+        <text x="78" y="80">98</text>
+        <text x="78" y="44">99</text>
+      </g>
+
+      <polyline points="140,58.33 360,106 580,157.33 800,219.67" fill="none" stroke="var(--series-1)" stroke-width="2.5" stroke-linejoin="round"/>
+
+      <g>
+        <circle cx="140" cy="58.33"  r="6" fill="var(--series-1)" data-tip="4k context · Accuracy 98.5% · Compression 10.3×"/>
+        <circle cx="360" cy="106"    r="6" fill="var(--series-1)" data-tip="8k context · Accuracy 97.2% (−1.3 pp) · Compression 10.2×"/>
+        <circle cx="580" cy="157.33" r="6" fill="var(--series-1)" data-tip="16k context · Accuracy 95.8% (−2.7 pp) · Compression 10.7×"/>
+        <circle cx="800" cy="219.67" r="6" fill="var(--series-1)" data-tip="32k context · Accuracy 94.1% (−4.4 pp) · Compression 10.6×"/>
+      </g>
+
+      <g fill="var(--text-primary)" font-size="12.5" font-weight="600" text-anchor="middle">
+        <text x="140" y="44">98.5</text>
+        <text x="360" y="92">97.2</text>
+        <text x="580" y="143">95.8</text>
+        <text x="800" y="206">94.1</text>
+      </g>
+      <g fill="var(--series-2)" font-size="11.5" text-anchor="middle">
+        <text x="140" y="84">10.3×</text>
+        <text x="360" y="131">10.2×</text>
+        <text x="580" y="183">10.7×</text>
+        <text x="800" y="245">10.6×</text>
+      </g>
+      <g fill="var(--text-secondary)" font-size="12.5" text-anchor="middle">
+        <text x="140" y="282">4k</text>
+        <text x="360" y="282">8k</text>
+        <text x="580" y="282">16k</text>
+        <text x="800" y="282">32k</text>
+      </g>
+      <text x="475" y="307" fill="var(--muted)" font-size="12" text-anchor="middle">Context length | One vertical scale (accuracy %); compression shown as text, not a second axis</text>
+    </svg>
+  </div>
+
+  <section class="card">
+    <h3>1.5.4 Scaling and Compression (Table 4)</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Context length</th><th class="num">Compression ratio</th><th class="num">NIAH accuracy</th><th class="num">Δ accuracy vs. 4k</th></tr>
+      <tr class="best"><td>4k</td><td class="num">10.3×</td><td class="num">98.5</td><td class="num">—</td></tr>
+      <tr><td>8k</td><td class="num">10.2×</td><td class="num">97.2</td><td class="num down">−1.3pp</td></tr>
+      <tr><td>16k</td><td class="num">10.7×</td><td class="num">95.8</td><td class="num down">−2.7pp</td></tr>
+      <tr><td>32k</td><td class="num">10.6×</td><td class="num">94.1</td><td class="num down">−4.4pp</td></tr>
+    </table>
+    </div>
+    <p><strong>Key Observation:</strong> Compression ratio <strong>almost constant</strong>(10.2–10.7×, variation &lt;5%). This suggests compression is <strong>a constant property of the renderer</strong> rather than adaptive to context length, in tension with the abstract's “retention of arbitrarily long histories” (§1.7-②). Accuracy decays approximately log-linearly, about −1.5 pp per doubling.</p>
+
+    <h3>1.5.5 Backbone Generalization (Table 5)</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Method</th><th>Backbone</th><th class="num">Ele Acc</th><th class="num">Step SR</th><th class="num">Task SR</th></tr>
+      <tr><td>Text Retrieval (RAG)</td><td>GPT-4</td><td class="num">41.3</td><td class="num">38.9</td><td class="num">2.7</td></tr>
+      <tr class="best"><td>OCR-Memory</td><td>GPT-4</td><td class="num">53.8</td><td class="num">46.1</td><td class="num">4.8</td></tr>
+      <tr><td>Text Retrieval (RAG)</td><td>Qwen3-32B</td><td class="num">35.2</td><td class="num">31.5</td><td class="num">1.8</td></tr>
+      <tr><td>OCR-Memory</td><td>Qwen3-32B</td><td class="num">48.6</td><td class="num">42.3</td><td class="num">3.9</td></tr>
+      <tr class="derived"><td colspan="2">Δ(OCR − RAG) on GPT-4</td><td class="num">+12.5pp</td><td class="num">+7.2pp</td><td class="num">+2.1pp</td></tr>
+      <tr class="derived"><td colspan="2">Δ(OCR − RAG) on Qwen3-32B</td><td class="num">+13.4pp</td><td class="num">+10.8pp</td><td class="num">+2.1pp</td></tr>
+    </table>
+    </div>
+    <p>Gains across the two backbones are <strong>stable or slightly larger</strong>(Qwen3-32B Ele Acc gain +13.4 pp &gt; GPT-4's +12.5 pp). A plausible explanation: retrieval uses the same frozen 3B VLM, so evidence quality has greater marginal value for a weaker reasoning backbone.</p>
+
+    <h3>1.5.6 Retrieval-Level Evaluation (Table 6)</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Method</th><th class="num">Recall@1</th><th class="num">Recall@5</th><th class="num">Recall@10</th><th class="num">MRR</th></tr>
+      <tr><td>Dense Text-RAG</td><td class="num">52.7</td><td class="num">74.3</td><td class="num">82.1</td><td class="num">0.61</td></tr>
+      <tr class="best"><td>OCR-Memory</td><td class="num">78.6</td><td class="num">93.4</td><td class="num">96.2</td><td class="num">0.84</td></tr>
+      <tr class="derived"><td>Relative gain</td><td class="num up">+49.1%</td><td class="num">+25.7%</td><td class="num">+17.2%</td><td class="num">+37.7%</td></tr>
+    </table>
+    </div>
+    <p>Relative Recall@1 gain <strong>+49.1%</strong> is the paper's largest individual improvement—but also the figure requiring the greatest discount; see §1.7-③ on unequal comparisons.</p>
+
+    <h3>1.5.7 System Overheads (Table 7)</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Method</th><th class="num">Disk / episode</th><th class="num">Text tokens / step</th><th class="num">Retrieval latency / step</th></tr>
+      <tr><td>Text-RAG</td><td class="num">18 KB</td><td class="num">3,980</td><td class="num">0.3 s</td></tr>
+      <tr class="best"><td>OCR-Memory</td><td class="num">1.47 MB</td><td class="num">596</td><td class="num">1.7 s</td></tr>
+      <tr class="derived"><td>Multiple</td><td class="num down">81.7× worse</td><td class="num up">6.7× better</td><td class="num down">5.7× worse</td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>This is the most transparent table and the easiest to overlook.</strong> OCR-Memory's fundamental exchange is: <strong>82× disk space + 5.7× latency for a 6.7× reduction in prompt tokens</strong>. This can pay off when token costs dominate, such as long-context billing, but not necessarily for latency-sensitive real-time agents.
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>1.5.8 🔺 Transition Highlight: Divergence Under Tight Token Budgets</h3>
+    <div class="callout blue">
+      <strong>The Paper's Most Persuasive Qualitative Evidence.</strong> Figure 2 shows that over budgets of 1024–8192 tokens, the OCR-Memory versus text-RAG performance gap <strong>widens monotonically as the budget tightens</strong>; at the <strong>extreme 1024-token budget,</strong>“OCR-Memory remains functional while text-RAG degrades substantially.”
+    </div>
+    <p>This is a characteristic <strong>transition-like divergence</strong>: the curves may converge under generous budgets, although no data above 8192 are provided, but change qualitatively under tight ones. Text-RAG's smallest usable unit is a complete text passage; OCR-Memory's is a thumbnail of 64 visual tokens. Below the former's granularity floor, text-RAG does not merely deteriorate—it <strong>fails</strong>. </p>
+    <p style="color:var(--muted);font-size:14px"><strong>Disclosure:</strong> Figure 2's exact values are not tabulated, so this report can only describe its qualitative trend, not cite exact numbers. This is a limitation of the analysis.</p>
+  </section>
+
+  <section class="card">
+    <h3>1.6 Value Analysis</h3>
+    <p>The real contribution is not storing memory as images, but three transferable design principles:</p>
+    <p><strong>① Separate Representation from Responsibility: Vision Localizes; Text Supplies Content.</strong><br>Why it matters: it separates a modality's <em>Advantages</em>(high density and spatial addressability) from its <em>weaknesses</em>(lossy decoding), using only the strengths. This principle transfers to any dense but lossy representation—latent memory, KV-cache compression, or vector-quantized indices. A representation that cannot reliably reconstruct compressed content can instead serve as an <strong>index</strong> rather than <strong>storage</strong>. </p>
+    <p><strong>② Reduce Open-Ended Generation to Bounded Classification: SoM as a Retrieval Interface.</strong><br>Why it matters: generative retrieval is hard to verify or calibrate and has high latency (Table 2: 5.3s). SoM turns it into K binary logits, making it <strong>fine-tunable, calibratable (Eq. 11), thresholdable (Eq. 12), and class-weightable (Eq. 20)</strong>—four engineering controls at once.</p>
+    <p><strong>③ Forgetting Means Resolution Degradation, Not Deletion.</strong><br>Why it matters: MemoryBank-style forgetting <strong>irreversibly</strong>; OCR-Memory's forgetting is <strong>lossy but reversible</strong>: active recall restores fidelity after downsampling. Conceptually, this resembles the distinction between retrieval failure and storage failure in human memory. <strong>The framework lets us transfer the idea to other layers</strong>: tiered KV-cache precision, embedding dimensions, or summary granularity.</p>
+    <div class="callout">
+      <strong>Implications for Future Work:</strong> If localization requires much less information than reconstruction—an assumption not directly tested—then <strong>every memory system's index layer can be aggressively compressed while its content layer remains lossless</strong>. This is an architectural route fundamentally different from end-to-end compression.
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>1.7 Limitations</h3>
+
+    <h4>(A) Author-Reported Limitations (Original Quotations)</h4>
+    <ol>
+      <li><strong>Training overhead:</strong>“unlike training-free retrieval baselines, our framework requires fine-tuning a specialized optical retrieval model, which incurs additional training resource overhead.”</li>
+      <li><strong>Rendering and storage overhead:</strong>“the process of rendering interaction logs into images is computationally more expensive than direct text storage, and storing visual histories inevitably consumes more disk space than raw text logs.”</li>
+      <li><strong>Deployment memory footprint:</strong>“deploying the system imposes an extra memory footprint, as the parameters of the vision encoder must be maintained in memory alongside the primary language model.”</li>
+    </ol>
+
+    <h4>(B) Additional Critique (Eight Independent Observations)</h4>
+
+    <p><strong>① [Metric Validity] The +0.5 pp Mind2Web Task SR Gain Likely Falls Within Noise.</strong><br>
+    OCR-Memory 4.8 vs. AWM 4.3, an absolute gap of 0.5 pp. The Mind2Web Cross-Task test set contains hundreds of tasks, so 0.5 pp corresponds to <strong>a single-digit number of tasks</strong>. The paper <strong>reports no random seeds, error bars, or significance tests</strong>. By contrast, the +4.7 pp Ele Acc gain is more persuasive. <em>Conclusion: the four Mind2Web metrics presented equally in the abstract are not equally persuasive; Task SR deserves less weight.</em></p>
+
+    <p><strong>② [Argument Gap] “Arbitrarily Long Histories” Exceeds the Evidence's 32k Limit.</strong><br>
+    The abstract claims “enabling retention of <em>arbitrarily long</em> histories,” but Table 4's scaling experiment ends at <strong>32k</strong>, with accuracy already falling monotonically from 98.5 to 94.1 (−4.4 pp). Extrapolating −1.5 pp per doubling gives about 91% at 128k and 87% at 1M. More importantly, compression <strong>remains ~10.5× rather than adapting to length</strong>: each 10× history expansion also increases visual tokens 10×, with no mechanism preventing eventual context overflow. <em>“Arbitrarily long” lacks evidentiary support; the accurate claim is “within 32k, near-constant 10× compression at an accuracy cost of &lt;5 pp.”</em></p>
+
+    <p><strong>③ [Missing Key Competitor] Table 6's Retrieval Comparison Is Unequal.</strong><br>
+    OCR-Memory's retrieval module is <strong>fine-tuned for 3 epochs on HotpotQA</strong>, while Dense Text-RAG is described as <strong>off-the-shelf dense retrieval without fine-tuning</strong>. Under this setup, Recall@1 rising from 52.7 to 78.6 (+49.1%) <strong>cannot be attributed to modality</strong>: it is confounded at least by fine-tuned versus zero-shot retrieval. <em>Missing key experiment: fine-tune a comparably sized text retriever—E5 / ColBERTv2 / 3B text reranker—on the same HotpotQA data. Without this row, the central claim that visual indices outperform text indices is untested.</em></p>
+
+    <p><strong>④ [Experimental Design] Active Recall Does Not Recover Downsampling Losses and Lacks a Direct Ablation.</strong><br>
+    Table 3: Dynamic 46.1 vs. Static High-Res 46.5, a residual of <strong>−0.4pp</strong>; Task SR 4.8 vs. 4.9, −0.1 pp. If active recall fully worked, restoring high resolution on hits, Dynamic should <strong>match</strong> High-Res. The persistent 0.4 pp gap implies restoration is too late or incomplete: memories can be <strong>missed because they are already low-resolution and thus never get the chance to be restored</strong>—self-fulfilling forgetting. The paper <strong>does not ablate “Dynamic without active recall”</strong>, so its contribution is unknown: it might raise 39.7 to 46.1, or add only 1 pp. <em>This is the paper's most important missing ablation.</em></p>
+
+    <p><strong>⑤ [Argument Gap] No Upper-Bound Control Lets a Long-Context LLM Read the Full Text.</strong><br>
+    All experiments <strong>hard-cap context at 4096 tokens</strong>. This is a 2023-era budget, while GPT-4-family and Qwen3-32B models supported roughly 128k context at writing time. The missing comparison is: <strong>with a 32k budget, does text-RAG still lose to OCR-Memory at 4k?</strong> Table 4 shows OCR-Memory accuracy falling to 94.1 at 32k, while 32k text-RAG performance is unknown. <em>Without this upper bound, limited context is a motivation manufactured by experimental settings rather than demonstrated empirically.</em></p>
+
+    <p><strong>⑥ [Argument Gap] Localization Requiring Much Less Information Than Reconstruction Is Never Directly Measured.</strong><br>
+    Directly test this by measuring, on the same memories, (i) low-resolution retrieval Recall and (ii) low-resolution OCR reconstruction accuracy. The paper provides only downstream metrics in Table 3 (39.7 Step SR), an indirect signal diluted by agent reasoning. <strong>Indirect evidence supports the assumption</strong>: DeepSeek-OCR reports about 60% OCR accuracy at 20× compression, while OCR-Memory at 512² still achieves 39.7 Step SR versus 37.9 zero-shot. Localization indeed does not collapse alongside reconstruction. <em>But this is this report's inference, not the paper's proof.</em></p>
+
+    <p><strong>⑦ [Experimental Design] Backbone Choice and Scale Coverage Are Too Narrow.</strong><br>
+    Only GPT-4 and Qwen3-32B are used, and <strong>GPT-4 is already an outdated baseline for an ACL 2026 paper</strong>. There are no 7B/8B small-model results, whereas ACON reports gains up to 46% for small models, suggesting different context-management behavior at smaller scales. <em>If OCR-Memory's gains vanish on 8B because a smaller VLM cannot interpret dense renderings, its applicability shrinks substantially. This cannot currently be assessed.</em></p>
+
+    <p><strong>⑧ [Engineering Reproducibility] No Public Code, Despite Highly Sensitive Rendering Details.</strong><br>
+    The paper specifies font (Arial 36pt), border width (3px), color (pure red), and interpolation (bicubic), precisely indicating that <strong>results are sensitive to rendering configuration</strong>. Glyph even uses LLM-driven genetic search to optimize rendering. Without code, third parties must blindly search the entire layout-hyperparameter space. <em>The paper does not mention this among its limitations, yet it has the greatest practical impact.</em></p>
+  </section>
+
+  <h2>2. Related Work: A Chain from Discarding Information to Keeping It All</h2>
+
+  <section class="card">
+    <p>These five papers are not a parallel list but a history of <strong>successively peeling away the same problem</strong>: first it does not fit; then it fits but selection is inaccurate; then abstraction loses detail; compression still loses information; finally, store the index in another space without discarding a single word of content.</p>
+
+    <h3>2.1 MemoryBank — AAAI 2024</h3>
+    <p><strong>Problem addressed.</strong> LLM dialogue systems lacked cross-session long-term memory. MemoryBank established a full storage → retrieval → update cycle and <strong>introduced the Ebbinghaus forgetting curve</strong> to evolve memory strength with time and rehearsal frequency. In one sentence, <em>it first made forgetting a first-class design element of LLM memory systems.</em></p>
+    <p><strong>Unresolved problem.</strong> Its forgetting is <strong>irreversible deletion-based decay</strong>: once strength falls below a threshold, the record disappears permanently. Retrieval still uses pure semantic similarity—the “topically related yet logically irrelevant” behavior OCR-Memory criticizes. The opening is: <em>can memory decay without being destroyed?</em></p>
+    <p><strong>How the core paper responds.</strong> OCR-Memory rewrites forgetting from <em>deletion</em> into <em>resolution degradation</em>(Eq. 13), paired with active-recall upsampling (Eq. 14–15): memory blurs but never disappears, restoring original fidelity when retrieved. This is a <strong>direct adversarial rewrite</strong> of MemoryBank's forgetting. Quantitatively: Mind2Web Ele Acc <strong>43.8 → 53.8 (+10.0pp / +22.8%)</strong>, AppWorld Avg 52.1 → 58.1 (+6.0pp). </p>
+    <p><strong>Transfer of key designs.</strong> MemoryBank's time-dependent strength function directly corresponds to OCR-Memory's aging function <code>ρ(Δt)</code>: almost isomorphic forms, but the range changes from a [0,1] strength scalar to a discrete resolution level ℓ.</p>
+
+    <h3>2.2 Agent Workflow Memory (AWM) — arXiv 2409.07429, 2024-09</h3>
+    <p><strong>Problem addressed.</strong> Web agents start from scratch each time. AWM <strong>induces reusable workflows from past trajectories</strong> and injects them into prompts as needed. Original abstract figures: Mind2Web <strong>+24.6% relative success</strong>, WebArena <strong>+51.1% relative success</strong>, fewer steps for successful tasks; online AWM exceeds baselines across task / website / domain settings by <strong>8.9–14.0 absolute points</strong>. In one sentence, <em>memory need not be raw experience; it can be procedural knowledge distilled from experience.</em></p>
+    <p><strong>Unresolved problem.</strong> Abstraction is <strong>one-way and lossy</strong>. Once a workflow is induced, exact errors, intermediate states, and button wording cannot be recovered. The opening is: <em>can abstraction's reusability coexist with raw-level traceability?</em></p>
+    <p><strong>How the core paper responds.</strong> OCR-Memory's answer is <strong>Integration Rather Than Opposition</strong>: retain a high-level index—the visual map—but require verbatim text beneath it (Eq. 5's <code>{s_{i,k}}</code>). Locate-and-transcribe is a two-level structure: locate in abstraction, then fetch from the original. OCR-Memory beats AWM throughout Table 1 (Ele Acc 49.1→53.8, +9.6%; AW Avg 55.0→58.1, +5.6%), but <strong>the gap is smaller than against MemoryBank</strong>, indicating that abstraction works; OCR-Memory wins by preserving the raw foundation beneath it.</p>
+    <p><strong>Transfer of key designs.</strong> AWM's selective workflow provision evolves into <code>τ=0.4 ∪ TopK(5)</code>, capped at 20 paragraphs per query, a <strong>bounded injection policy</strong> that changes the question from which workflows to inject to which original passages to inject.</p>
+
+    <h3>2.3 ACON — arXiv 2510.00615 (v3 2026-06), ICML 2026</h3>
+    <p><strong>Problem addressed.</strong> Long-horizon agents' contexts grow without bound. ACON uses <strong>natural-language optimization</strong>—analyzing failures and iteratively rewriting compression guidelines—to compress both observations and history, <strong>without fine-tuning</strong>. The abstract reports peak-token reductions versus existing compression baselines of <strong>26–54%</strong> and gains on small models of <strong>up to +46%</strong> on AppWorld / OfficeBench / Multi-objective QA. In one sentence, <em>compression guidelines themselves can be optimized, through natural language rather than gradients.</em></p>
+    <p><strong>Unresolved problem.</strong> ACON is OCR-Memory's strongest representative of text-centric compression, whose fate is summarized as: “Text-centric compression inevitably trades off compression ratio against information fidelity.” ACON produces <strong>rewritten text</strong>; however good the guidelines, discarded words are gone. The opening is: <em>is there a compression route outside text space?</em></p>
+    <p><strong>How the core paper responds.</strong> This is the most direct transfer of the problem. OCR-Memory responds not by compressing better but by <strong>changing spaces</strong>: moving rate–distortion tradeoffs to pixels and using locate-and-transcribe to make distortion <strong>zero in the content dimension</strong>, leaving loss only in localization. ACON is runner-up at all three AppWorld difficulty levels (84.8 / 55.1 / 28.7), with OCR-Memory adding +1.4 / +2.3 / +2.1 pp. Yet ACON trails AWM on Mind2Web (48.2 vs. 49.1), suggesting <strong>general text compression struggles with highly structured observations such as web DOMs</strong>. </p>
+    <p><strong>Transfer of key designs.</strong> ACON's iterative failure-driven compression optimization is replaced by a <strong>gradient-based version</strong>: weighted BCE (w₊=2.0 to favor recall) embodies the same failure-driven preference for including extra context rather than missing crucial evidence, moving from prompt-level natural-language optimization to parameters.</p>
+
+    <h3>2.4 DeepSeek-OCR: Contexts Optical Compression — arXiv 2510.18234, 2025-10</h3>
+    <p><strong>Problem addressed.</strong> It proposed and <strong>experimentally validated</strong> a previously intuitive proposition: rendered text can be represented by far fewer visual tokens. Abstract figures: compression <strong>&lt;10× gives 97% decoding accuracy</strong>, <strong>20× gives about 60%</strong>; 100 visual tokens beat GOT-OCR2.0 at 256 tokens/page, and &lt;800 tokens beat MinerU2.0's average 6000+ tokens; one A100-40G produces 200,000+ training pages daily. In one sentence, <em>optical compression is not a metaphor: it has a measurable rate–distortion curve.</em></p>
+    <p><strong>Unresolved problem.</strong> DeepSeek-OCR targets <strong>document parsing</strong>, where success means reading the words correctly, binding it to <strong>reconstruction</strong>—the steepest part of the curve, dropping toward 60% beyond 10×. The gap is: <em>if the downstream task does not require reconstruction, does that curve still apply? Can redefining the task widen its usable range?</em></p>
+    <p><strong>How the core paper responds.</strong> OCR-Memory's entire design answers this question: <strong>switching from reconstruction to localization changes the usable portion of the curve.</strong> It also yields a previously non-obvious implication: OCR-Memory empirically operates at <strong>10.2–10.7×</strong> (Table 4), <strong>right at the edge of DeepSeek-OCR's 97% curve</strong>. This is no coincidence: the encoder's fidelity cliff fixes the operating point. It also explains why the paper avoids 20×, where DeepSeek-OCR falls to 60%.</p>
+    <p><strong>Transfer of key designs.</strong> The most direct technical transfer: OCR-Memory's backbone <strong>are</strong> DeepSeek-OCR (3B), with the vision encoder fully frozen and LoRA only on the language decoder (r=16). <em>OCR-Memory inherits how DeepSeek-OCR sees and replaces how it speaks</em>—from text to 0/1 indices.</p>
+
+    <h3>2.5 Set-of-Mark Prompting — arXiv 2310.11441, 2023-10</h3>
+    <p><strong>Problem addressed.</strong> GPT-4V understands images but struggles to specify which object it means. SoM's solution is strikingly simple: <strong>draw segmented regions directly on the image and label them with numbers</strong> so the model cites numbers rather than describes positions. In one sentence, <em>discrete, identifiable symbolic anchors turn visual grounding from generation into selection.</em></p>
+    <p><strong>Unresolved problem.</strong> SoM originally addresses <strong>spatial understanding of a single image</strong>. It does not answer whether the mechanism holds when images are rendered text rather than real scenes, marks grow from dozens to hundreds or thousands, and queries ask semantic relevance rather than spatial location.</p>
+    <p><strong>How the core paper responds.</strong> OCR-Memory reinterprets SoM's spatial anchors as <strong>addresses of memory paragraphs</strong>(Eq. 7–8), with two upgrades: (1) output changes from free-text references to <strong>one binary logit per paragraph</strong>, enabling calibration (Eq. 11), thresholds, and TopK fallback (Eq. 12); (2) weighted BCE <strong>Training</strong> this identification ability instead of zero-shot prompting. Table 2 quantifies the transfer: <strong>bounding boxes without numbers lose 4.6 pp Ele Acc relative to full SoM</strong>, showing that <strong>discrete numbering</strong> as a symbolic anchor, rather than visual segmentation itself, drives the gain. This independently validates SoM's original conclusion in a new setting.</p>
+    <p><strong>Transfer of key designs.</strong> The red-box-plus-number rendering convention is inherited almost unchanged: RGB 255,0,0 / 3px / Arial 36pt white on red. Only the marked objects change, from image objects to trajectory paragraphs.</p>
+
+    <h3>2.6 Glyph (Parallel Work) — arXiv 2510.17800, 2025-10</h3>
+    <p><strong>Problem addressed.</strong> Another optical-compression approach appearing in the same month as DeepSeek-OCR, targeting not OCR but <strong>long-context modeling itself</strong>: render long text as images for VLM processing and use <strong>LLM-driven genetic search</strong> to optimize rendering. Abstract figures: <strong>3–4× token compression</strong>, about <strong>4× prefill/decode acceleration</strong>, about <strong>2× SFT acceleration</strong>, at accuracy comparable to Qwen3-8B.</p>
+    <div class="callout">
+      <strong>Cross-Paper Evidence: The Glyph–OCR-Memory Difference Is Highly Informative.</strong> Glyph asks the VLM to <em>reason directly over rendered images</em>, so it conservatively compresses 3–4× to preserve comprehension. OCR-Memory asks the VLM to <em>only localize, returning original text to a text model for reasoning</em>, allowing 10× compression. <strong>The same technical foundation supports compression rates differing by 3× because responsibilities differ.</strong> This provides cross-paper evidence for §1.6's first principle: removing reconstruction responsibility from vision directly enables a threefold compression increase.
+    </div>
+    <p>Glyph also leaves a problem OCR-Memory does not address: <strong>rendering configurations require search-based optimization</strong>. OCR-Memory fixes layout parameters manually without sensitivity analysis (§1.7-⑧); attaching Glyph's genetic search to its renderer is an almost ready-made improvement.</p>
+  </section>
+
+  <h2>3. Technical evolution</h2>
+
+  <section class="card">
+    <h3>3.1 Evolution Tree (Nonlinear)</h3>
+    <div class="flow">                       ┌── Problem: agent history does not fit ──┐
+                       │                                      │
+2023  MemGPT [virtual-memory paging, prompt-driven] ───────────┐
+        │  Gap: paging policy relies on prompts, not learning  │
+        ▼                                                      │
+2024  MemoryBank [Ebbinghaus forgetting curve, AAAI'24]         │
+        │  ✦ Forgetting becomes first-class                    │
+        │  Gap: irreversible deletion; pure semantic retrieval │
+        ▼                                                      │
+      ┌─────────────── Fork: how to store less? ───────────────┤
+      │                                                        │
+      ▼ (Abstraction)                    ▼ (Compression)       │
+2024 AWM [workflow induction]   2025 ACON [NL-optimized compression, ICML'26]
+      │ ✦ Memory = procedural knowledge   │ ✦ Guidelines can be optimized
+      │ M2W +24.6% rel                    │ peak tokens −26~54%
+      │ Gap: lost low-level details       │ Gap: zero-sum text-space rate–distortion
+      │                                    │
+      └────────────┬───────────────────────┘
+                   │  Shared dead end: both trade off in text space
+                   │
+      ┌────────────┴──── External techniques (2025 Q4)─────────┐
+      │                                                       │
+      ▼ (Modality foundation)                 ▼ (Visual interface)
+2025 DeepSeek-OCR [optical compression]  2023 Set-of-Mark [discrete symbolic anchors]
+      │ ✦ &lt;10× → 97%; 20× → 60%           │ ✦ Grounding: generation → selection
+      │ Gap: curve tied to reconstruction   │ Gap: tested only on single-image spatial understanding
+      │                                     │
+      │        2025 Glyph [visual–text compression] ──┤
+      │          ✦ 3–4×, but VLM reasons directly    │
+      │          → Control: retaining reconstruction responsibility limits compression
+      │                                     │
+      └──────────────┬──────────────────────┘
+                     │
+                     ▼
+2026 ★ OCR-Memory [ACL'26 Main]
+      “Vision localizes; text supplies content”
+      ├─ To MemoryBank: forgetting = reversible resolution degradation, not deletion
+      ├─ To AWM: keep verbatim originals under abstractions (locate-and-transcribe)
+      ├─ To ACON: compress in pixel space rather than text space
+      ├─ From DeepSeek-OCR: frozen vision encoder, decoder-only LoRA
+      └─ From SoM: red boxes + numbers → binary logits, calibratable and trainable</div>
+
+    <h3>3.2 The Internal Logic of Evolution</h3>
+    <p>The driving force can be summarized as a <strong>chain of progressively retreating failures</strong>: </p>
+    <div class="flow">Does not fit → store only part (retrieval)
+        → selection is inaccurate (semantic ≠ logical)
+        → store higher-level abstractions
+        → low-level details disappear
+        → compress rather than abstract (preserve structure, shorten expression)
+        → text-space compression and fidelity are zero-sum
+        → change spaces (pixels)
+        → the new space adds loss (OCR errors)
+        → assign the new space localization, not content responsibility ★</div>
+
+    <div class="tablewrap">
+    <table>
+      <tr><th>Stage</th><th>Time</th><th>What memory is</th><th>What decides what to remember</th><th>Representative</th></tr>
+      <tr><td>I. Prompt-driven</td><td>2023</td><td>Paged copies of context</td><td>Handwritten paging rules</td><td>MemGPT</td></tr>
+      <tr><td>II. Encoded rules</td><td>2024</td><td>Knowledge entries with decaying strength</td><td>Time functions / induction algorithms</td><td>MemoryBank, AWM</td></tr>
+      <tr><td>III. Learned compression</td><td>2025</td><td>Optimized context</td><td>Optimizable compression guidelines (NL or gradients)</td><td>ACON</td></tr>
+      <tr class="best"><td>IV. Modality reconstruction</td><td>2026</td><td>Original text + visual index</td><td>A trained cross-modal localizer</td><td>OCR-Memory</td></tr>
+    </table>
+    </div>
+    <p><strong>Changes in the Nature of the Turning Points:</strong> I→II moves from human-written rules to evolving rules; II→III from rules to objective-driven optimization; and <strong>III→IV alone changes memory's physical representation</strong>. The first three ask how to cut text; the fourth first asks why it must be text.</p>
+    <div class="callout blue">
+      <strong>Relationship to the Initial Report's Main Thread.</strong> This line and the MemGPT → A-MEM / Mem0 / Memory-R1 / MemAct → AgeMem line of <strong>policy internalization</strong> are <strong>orthogonal</strong>: that line asks who decides memory operations, moving from prompts to RL; this one asks how memory is represented. They have <strong>not yet converged</strong>: no work combines RL-trained memory policies with optical memory, one of §4's clearest gaps.
+    </div>
+  </section>
+
+  <h2>4. Open Challenges and Research Opportunities</h2>
+
+  <section class="card">
+    <h3>4.1 Theory</h3>
+    <p><strong>(T1) Measure the Separation Between Localization and Reconstruction Information — High Value, Low Barrier.</strong><br>
+    Rather than broadly studying visual-memory theory, specifically: <strong>fix a corpus, vary rendering resolution, and jointly measure (a) retrieval Recall@k and (b) character-level OCR reconstruction accuracy; plot both curves.</strong> If (a) decays much more slowly than (b), this directly supports the central assumption (§1.7-⑥) and supplies a principled minimum resolution, replacing the handcrafted “latest 5 steps at high resolution.” With public DeepSeek-OCR weights and any long-document corpus, <strong>one A100 can finish this in a day</strong>. </p>
+    <p><strong>(T2) Rate–Distortion Bounds for Optical Memory.</strong><br>
+    DeepSeek-OCR's 97%@10× / 60%@20× is an empirical curve for a <strong>particular encoder</strong>, not an information-theoretic bound. Given d×d pixels and a fixed font, what is the <strong>maximum achievable compression ratio</strong> for paragraph relevance classification? This determines whether 10× is near the limit or far below it.</p>
+    <p><strong>(T3) Quantify Cross-Layer Tradeoffs.</strong><br>
+    OCR-Memory trades three resources: prompt tokens (−6.7×), disk (+81.7×), and latency (+5.7×). No work currently provides an <strong>equivalent exchange rate</strong> among them. An operational formalization: define <code>Cost = α·tokens + β·bytes + γ·latency</code> and sweep (α,β,γ) to identify the <strong>parameter-region boundary</strong> where OCR-Memory beats text-RAG. This directly answers which deployment scenarios suit optical memory.</p>
+
+    <h3>4.2 Engineering and applications</h3>
+    <p><strong>(E1) Add the Missing Control: A Fine-Tuned Text Retriever.</strong><br>
+    As §1.7-③ explains, visual indexing's superiority over text indexing has <strong>not been fairly tested</strong>. Fine-tune a ~3B text reranker on the same HotpotQA distractor data for 3 epochs, then report Recall@1/5/10 and MRR under identical Mind2Web / AppWorld settings. <strong>The missing head-to-head needed to establish A over B is the most important next gap.</strong></p>
+    <p><strong>(E2) Break the Artificial 4096 Ceiling.</strong><br>
+    Run text-RAG and OCR-Memory at 4k / 8k / 16k / 32k / 128k budgets and locate the crossing. Below 16k, applicability narrows to edge / small-model deployment; above 128k, it becomes a general long-context solution. <strong>This experiment would be more informative than any existing table in the paper.</strong></p>
+    <p><strong>(E3) Automatically Search Rendering Configurations.</strong><br>
+    Attach Glyph's LLM-driven genetic search to OCR-Memory's renderer, searching font size, line spacing, column width, border width, numbering style, and number of resolution levels L. Current values are fixed manually without sensitivity analysis; Glyph suggests these parameters <strong>are not second-order effects</strong>. </p>
+    <p><strong>(E4) Aging Functions in Dynamic Online Settings.</strong><br>
+    OCR-Memory's <code>ρ(Δt)</code> depends only on time, whereas MemoryBank's Ebbinghaus curve also considers <strong>rehearsal frequency</strong>. A direct improvement: <code>ρ(Δt, n_recall)</code>—slow aging according to n for a memory retrieved by active recall n times. Nearly free, since hits are already logged, this can alleviate §1.7-④'s self-fulfilling forgetting.</p>
+    <p><strong>(E5) Natively Multimodal Trajectories.</strong><br>
+    Web-agent trajectories already contain screenshots. Current OCR-Memory <em>renders text logs into images</em>, but screenshots are images already. Naturally extend memory images to contain both rendered text and original screenshots under the same SoM index. This is an <strong>exclusive</strong> extension opportunity for optical versus text memory, untouched by the paper.</p>
+
+    <h3>4.3 Emerging directions</h3>
+    <p><strong>(N1) Attach RL Memory Policies to Optical Memory — The First Meeting of Two Lines.</strong><br>
+    Memory-R1 / MemAct / AgeMem's policy internalization has not met OCR-Memory's modality reconstruction. Concretely, <strong>make paragraph grouping into images, upsampling timing, and τ selection the RL action space</strong>, rewarded by task success. All three decisions are currently handcrafted constants.</p>
+    <p><strong>(N2) Generalize Reversible Compression.</strong><br>
+    Locate-and-transcribe is fundamentally lossy indexing plus lossless storage. Can it extend to <strong>KV cache</strong>(low-precision KV for attention routing, loading high-precision KV on a hit)? Or <strong>embedding</strong>(low-dimensional filtering, high-dimensional reranking—similar to two-stage ANN retrieval, but permanent promotion on a hit introduces new active-recall semantics)?</p>
+    <p><strong>(N3) Shared Visual Memory and Security in Multi-Agent Systems.</strong><br>
+    Rendered images are <strong>readable across models</strong>: paragraphs indexed by a 3B VLM can be consumed by any text model, naturally supporting shared agent memory pools. But adversarial layouts—hidden text or misleading numbers—create a new memory-poisoning surface. <strong>No work currently studies optical-memory security.</strong></p>
+    <p><strong>(N4) Directly Attack Storage Costs.</strong><br>
+    The 81.7× disk expansion (Table 7) is the largest engineering weakness and <strong>can be optimized directly</strong>: current storage duplicates rendered images and complete text. If images reconstruct most text reliably—DeepSeek-OCR achieves &lt;97% at 10×—could text copies be retained only for <strong>high-uncertainty paragraphs</strong>? This might bring disk expansion down to a single-digit factor.</p>
+  </section>
+
+  <h2>5. Related-Work Comparison</h2>
+
+  <section class="card">
+    <div class="tablewrap">
+    <table>
+      <tr><th>Work</th><th>Publication date</th><th>Venue / publication</th><th>Core contribution</th><th>Main metric (source)</th><th>Relationship to the core paper</th></tr>
+      <tr>
+        <td><strong>MemoryBank</strong></td><td>2023-05 / 2024</td><td>AAAI 2024</td>
+        <td>Long-term memory driven by the Ebbinghaus forgetting curve</td>
+        <td>OCR-Memory Table 1: M2W Ele Acc 43.8 / AW Avg 52.1</td>
+        <td><strong>Adversarially rewritten</strong>: forgetting changes from deletion to reversible resolution degradation</td>
+      </tr>
+      <tr>
+        <td><strong>AWM</strong></td><td>2024-09</td><td>arXiv (no formal conference page found)</td>
+        <td>Reusable workflows induced from trajectories</td>
+        <td>Original abstract: M2W +24.6% relative SR, WebArena +51.1% relative SR; OCR-Memory Table 1: Ele Acc 49.1 / AW Avg 55.0</td>
+        <td><strong>Synthesized</strong>: retain a high-level index, but require verbatim originals beneath it</td>
+      </tr>
+      <tr>
+        <td><strong>ACON</strong></td><td>2025-10 / 2026-06 (v3)</td><td>ICML 2026</td>
+        <td>Natural-language-optimized context-compression guidelines</td>
+        <td>Original abstract: peak tokens −26–54%, small models +46%; OCR-Memory Table 1: Ele Acc 48.2 / AW Avg 56.2 (runner-up at all three AW levels)</td>
+        <td><strong>Directly challenged</strong>: text-space compression–fidelity tradeoffs are zero-sum, so change modality</td>
+      </tr>
+      <tr>
+        <td><strong>DeepSeek-OCR</strong></td><td>2025-10</td><td>Technical report</td>
+        <td>Measurable optical-context-compression curve</td>
+        <td>Original abstract:&lt;10× → 97% OCR accuracy; 20× → ~60%; 100 visual tokens &gt; GOT-OCR2.0 (256 tok)</td>
+        <td><strong>Technical foundation</strong>: backbone directly reused (3B, frozen vision encoder)</td>
+      </tr>
+      <tr>
+        <td><strong>Set-of-Mark</strong></td><td>2023-10</td><td>arXiv</td>
+        <td>Discrete symbolic anchors unlock visual grounding</td>
+        <td>OCR-Memory Table 2: removing numbers (boxes only) reduces Ele Acc by 4.6 pp</td>
+        <td><strong>Interface source</strong>: spatial grounding → memory-paragraph addressing + binary logits</td>
+      </tr>
+      <tr>
+        <td><strong>Glyph</strong></td><td>2025-10</td><td>arXiv</td>
+        <td>Visual–text compression + genetic search of rendering configurations</td>
+        <td>Original abstract: 3–4× compression, ~4× prefill/decode speedup, ~2× SFT speedup</td>
+        <td><strong>Parallel control</strong>: direct VLM reasoning limits compression to 3–4×, indirectly demonstrating the value of offloading reconstruction</td>
+      </tr>
+      <tr class="best">
+        <td>★ <strong>OCR-Memory</strong></td><td>2026-04 / 2026-07</td><td>ACL 2026 Main, Long</td>
+        <td>Agent memory with visual indexing + verbatim transcription</td>
+        <td>Reported Table 1: M2W Ele Acc 53.8 / AW Avg 58.1; Table 4: 10.2–10.7×; Table 7: tokens −6.7×, disk +81.7×</td>
+        <td>—</td>
+      </tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>Two Trends Visible in This Table.</strong><br>
+      <strong>① A Clear Performance Ladder:</strong> Mind2Web Ele Acc increases monotonically: MemoryBank 43.8 → ACON 48.2 → AWM 49.1 → OCR-Memory 53.8, but <strong>the largest single jump (+4.7 pp) occurs precisely at the modality switch</strong>—the most direct evidence that changing spaces beats optimizing within one.<br>
+      <strong>② Three Compression Tiers:</strong> ACON (text space, peak tokens −26–54%, roughly 1.3–2.2×) → Glyph (pixels with reasoning responsibility, 3–4×) → OCR-Memory (pixels with localization only, <strong>10.5×</strong>). <strong>lighter responsibilities allow higher compression</strong>—a pattern spanning three papers.
+    </div>
+  </section>
+
+  <h2>6. Other recent work worth watching</h2>
+
+  <section class="card">
+    <p><strong>How Memory Management Impacts LLM Agents: An Empirical Study of Experience-Following Behavior</strong> (ACL 2026 Main, Long)</p>
+    <ul>
+      <li>Proposes and empirically establishes experience-following: when task inputs closely match retrieved memory, agents produce highly similar outputs. This yields <strong>error accumulation</strong> with <strong>ineffective replay</strong> as failure modes and motivates using evaluation outcomes as memory-quality signals. The only selected candidate here that is <strong>purely empirical and proposes no new method</strong>, providing a failure-mode inventory for write policies.</li>
+      <li><a href="https://aclanthology.org/2026.acl-long.27/">ACL</a> | <a href="https://aclanthology.org/2026.acl-long.27.pdf">PDF</a> | Code: not found</li>
+    </ul>
+
+    <p><strong>GAM: Hierarchical Graph-based Agentic Memory for LLM Agents</strong> (ACL 2026 Main, Long, pp. 34647–34664)</p>
+    <ul>
+      <li>Explicit <strong>Decouples memory encoding from consolidation</strong>, representing ongoing conversations in an event progression graph and integrating them into topic networks upon semantic drift. An interesting contrast: both use two levels, but GAM's levels are graph topology and OCR-Memory's are modalities.</li>
+      <li><a href="https://aclanthology.org/2026.acl-long.1600/">ACL</a> | <a href="https://aclanthology.org/2026.acl-long.1600.pdf">PDF</a> | Code: not found</li>
+    </ul>
+
+    <p><strong>MAGMA: A Multi-Graph based Agentic Memory Architecture for AI Agents</strong> (ACL 2026 Main, Long, pp. 36848–36865)</p>
+    <ul>
+      <li>Criticizes semantic-similarity retrieval over monolithic stores for entangling temporal, causal, and entity information, replacing it with <strong>four separate semantic / temporal / causal / entity graphs</strong>. This and OCR-Memory's “topically related yet logically irrelevant” critique are <strong>two remedies for the same diagnosis</strong>—one separates graphs, the other changes modality. Worth reading together.</li>
+      <li><a href="https://aclanthology.org/2026.acl-long.1709/">ACL</a> | <a href="https://aclanthology.org/2026.acl-long.1709.pdf">PDF</a> | Code: not found</li>
+    </ul>
+
+    <p><strong>Adaptive Memory Distillation for LLM Agents</strong> (ACL 2026 Main, Long)</p>
+    <ul>
+      <li>ACL 2026 main-track memory-distillation work, extending AWM's abstraction line into 2026. Paired with OCR-Memory, it offers the latest abstraction-versus-no-abstraction comparison.</li>
+      <li><a href="https://aclanthology.org/2026.acl-long.1607.pdf">PDF</a> | Code: not found</li>
+    </ul>
+
+    <p><strong>H-MEM: Hierarchical Memory for High-Efficiency Long-Term Reasoning in LLM Agents</strong> (EACL 2026, Long)</p>
+    <ul>
+      <li>Efficiency-oriented hierarchical memory. Compare its semantic-abstraction hierarchy directly with OCR-Memory's hierarchy of information fidelity.</li>
+      <li><a href="https://aclanthology.org/2026.eacl-long.15/">ACL</a> | <a href="https://aclanthology.org/2026.eacl-long.15.pdf">PDF</a></li>
+    </ul>
+
+    <p><strong>RecMem: Recurrence-based Memory Consolidation</strong> (Findings of ACL 2026)</p>
+    <ul>
+      <li>Uses recurrence for consolidation, along the parametric-versus-external-memory line. OCR-Memory is extremely externalized, with even the content on disk; RecMem moves in the opposite direction and serves as the other endpoint.</li>
+      <li><a href="https://aclanthology.org/2026.findings-acl.1619.pdf">PDF</a></li>
+    </ul>
+
+    <p><strong>Amory: Building Coherent Narrative-Driven Agent Memory</strong> (EACL 2026, Long)</p>
+    <ul>
+      <li>Narrative-coherence-driven organization focuses on relationships among records rather than individual representations, complementing this issue's theme.</li>
+      <li><a href="https://aclanthology.org/2026.eacl-long.183.pdf">PDF</a></li>
+    </ul>
+
+    <p><strong>Governed Shared Memory for Multi-Agent LLM Systems</strong> (arXiv 2606.24535, 2026-06)</p>
+    <ul>
+      <li>A governance framework for multi-agent shared memory, directly related to §4.3-N3, but focused on text memory; <strong>optical-memory poisoning remains unstudied</strong>. </li>
+      <li><a href="https://arxiv.org/abs/2606.24535">arXiv</a></li>
+    </ul>
+
+    <p><strong>From Recall to Forgetting: Benchmarking Long-Term Memory for Personalized Agents</strong> (arXiv 2604.20006, 2026-04)</p>
+    <ul>
+      <li>A benchmark making forgetting itself the evaluation target. OCR-Memory's reversible forgetting needs exactly such a testbed; currently it is verified only indirectly on Mind2Web / AppWorld.</li>
+      <li><a href="https://arxiv.org/abs/2604.20006">arXiv</a></li>
+    </ul>
+  </section>
+
+  <h2>Appendix: Limitations of This Report</h2>
+
+  <section class="card">
+    <ol>
+      <li><strong>Exact Figure 2 values cannot be cited</strong>: the token-budget sweep is plotted without a table, so §1.5.8's transition analysis only describes qualitative trends.</li>
+      <li><strong>OCR-Memory has no public code</strong>, preventing implementation cross-checking. The analytic form of the aging function <code>ρ</code> is actually <strong>not specified</strong>; it is only described as monotonic.</li>
+      <li><strong><code>tabzhangjx.github.io/year-archive/</code> Fetch failed</strong>: deduplication used the explicit list in the task prompt rather than the online archive.</li>
+      <li><strong>The paper does not state the exact Mind2Web Cross-Task test-set size</strong>: §1.7-①'s inference that 0.5 pp is a single-digit task difference uses the public understanding that this split has hundreds of tasks. If the actual size is much larger, that critique weakens.</li>
+      <li><strong>AWM's formal conference publication could not be confirmed</strong>: only its arXiv page was found, not proceedings, so it is labeled a preprint.</li>
+      <li><strong>No hyperparameter sensitivity sweeps are reported</strong>(τ, resolution levels L, high-resolution step count). This report does not invent curves; §4 lists these as missing experiments.</li>
+    </ol>
+  </section>
+
+  <footer>
+    <p>Daily Agent Memory Literature Tracking · 2026-08-07 · Core work: <a href="https://aclanthology.org/2026.acl-long.474/">OCR-Memory (ACL 2026)</a> · <a href="https://arxiv.org/abs/2604.26622">arXiv:2604.26622</a></p>
+    <p>All performance numbers identify their source tables; percentages without a source are derived from those tables. Generated by an automated literature-tracking task.</p>
+  </footer>
+
+</div>
+<div class="tip" id="tip"></div>
+<script>
+(function(){
+  var tip = document.getElementById('tip');
+  document.addEventListener('mouseover', function(e){
+    var t = e.target.closest('[data-tip]');
+    if (!t) return;
+    tip.textContent = t.getAttribute('data-tip');
+    tip.style.opacity = '1';
+  });
+  document.addEventListener('mousemove', function(e){
+    if (tip.style.opacity !== '1') return;
+    var x = e.clientX + 14, y = e.clientY + 14;
+    var w = tip.offsetWidth, h = tip.offsetHeight;
+    if (x + w > window.innerWidth - 8) x = e.clientX - w - 14;
+    if (y + h > window.innerHeight - 8) y = e.clientY - h - 14;
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
+  });
+  document.addEventListener('mouseout', function(e){
+    if (e.target.closest('[data-tip]')) tip.style.opacity = '0';
+  });
+})();
+</script>
+</body>
+</html>

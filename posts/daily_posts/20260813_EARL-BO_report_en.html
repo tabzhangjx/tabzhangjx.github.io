@@ -1,0 +1,1206 @@
+---
+layout: null
+title: "EARL-BO"
+date: 2026-08-13
+topic: rl-peft
+tags: ["rl-peft"]
+excerpt: "Multistep query policies learned inside a Gaussian-process world model for nonmyopic Bayesian optimization."
+permalink: "/blog/2026/08/13/earl-bo-reinforcement-learning-bayesian-optimization/en/"
+blog_post: false
+lang: en
+sitemap: true
+alternate_zh: "/blog/2026/08/13/earl-bo-reinforcement-learning-bayesian-optimization/"
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>EARL-BO: in-depth revised report · 2026-08-13 · Revised 2026-08-24</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #246fca;
+    --chart-comparison: #c95224;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  blockquote { margin: 18px 0; padding: 14px 18px; border-left: 3px solid var(--chart-comparison); border-radius: 0 8px 8px 0; background: var(--page); color: var(--text-secondary); }
+  blockquote > :last-child { margin-bottom: 0; }
+  strong { color: var(--text-primary); }
+  .card h2 { scroll-margin-top: 18px; }
+  .card h3 { padding-top: 4px; border-top: 1px solid var(--grid); }
+  .card > h3:first-of-type { border-top: 0; }
+  table th:first-child, table td:first-child { min-width: 9rem; }
+  table td { vertical-align: top; }
+  pre code { white-space: pre; }
+  .figure { overflow: hidden; }
+  @media (max-width: 640px) {
+    .chart { min-width: 760px; }
+    .figure { overflow-x: auto; }
+    .figure .fig-title, .figure .fig-sub, .figure .legend, .figure figcaption { min-width: 0; position: sticky; left: 0; }
+  }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" aria-pressed="false">☾ Dark</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">Reinforcement learning × Bayesian optimization · ICML 2025</p>
+    <h1>EARL-BO: in-depth revised report</h1>
+    <p class="subtitle">When multistep Bayesian optimization becomes training a planner in an imperfect world model</p>
+    <div class="meta" aria-label="Report metadata">
+      <span class="chip source">ICML 2025 / PMLR 267</span>
+      <span class="chip">2026-08-13 · Revised 2026-08-24</span>
+      <span class="chip">Non-myopic BO · PPO · GP world model</span>
+    </div>
+    <p class="lede">EARL-BO replaces explicit scenario trees with policy training in a GP world model, making 30D multistep planning tractable. Its practical operating range is nevertheless constrained by 14–27 minutes per step, TuRBO fallback, and posterior mismatch.</p>
+  </header>
+
+  <main>
+<section class="card" aria-label="Report overview"><blockquote>
+<p><strong>Positioning in one sentence</strong>: EARL-BO no longer explicitly computes a rollout acquisition that grows exponentially with lookahead depth. Instead, it treats the current Gaussian process as a temporary world model, compresses the growing observation set with Attention–DeepSets, and uses PPO to learn a multistep query policy inside that model.</p>
+</blockquote>
+<p><strong>Date</strong>: 2026-08-13<br />
+<strong>Today's field</strong>: Reinforcement learning / agents / embodied intelligence (Thursday rotation)<br />
+<strong>Core paper</strong>: Mujin Cheon, Jay H. Lee, Dong-Yeun Koh, Calvin Tsay. <em>EARL-BO: Reinforcement Learning for Multi-Step Lookahead, High-Dimensional Bayesian Optimization</em>. ICML 2025, PMLR 267:10182–10198.<br />
+<strong>Sampling record</strong>: 24-paper candidate pool; ran <code>shuf -i 1-24 -n 1</code> and selected paper 10. The full text, official conference page, and v2 were accessible; no redraw was needed.<br />
+<strong>Evidence policy</strong>: Numbers in the main text come from v2/the ICML version. Main performance results appear only as curves, without pointwise numerical tables. This report does not estimate endpoints from pixels or fabricate a precise five-benchmark × six-method matrix; it instead provides a matrix of what the paper actually reports and its only exact runtime table.</p>
+<blockquote>
+<p><strong>Central assessment of this revision</strong>: EARL-BO's contribution is not that RL is stronger than BO. It shifts the computational bottleneck of multistep BO from <strong>expanding an exponentially growing scenario tree online</strong> to <strong>repeatedly training a finite-horizon policy in the current GP posterior</strong>. This makes 30D nonmyopic planning tractable in the paper's setting, but still requires 14–27 minutes of CPU planning before each real query, and the policy can amplify GP model bias. Its useful regime is therefore one where a real experiment is much more expensive than planning and the posterior is already sufficiently trustworthy—not general HPO.</p>
+</blockquote></section>
+<section class="card" aria-labelledby="section-1" data-section="0.0 Decision summary: start with the evidence table"><h2 id="section-1">0.0 Decision summary: start with the evidence table</h2>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0"><table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Key question</th>
+<th scope="col">Answer supported by the paper</th>
+<th scope="col">Strength of evidence</th>
+<th scope="col">Evidence location</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Does it extend multistep BO to higher dimensions?</td>
+<td><strong>Yes: demonstrated feasibility on 30D synthetic functions and 19D HPO-B</strong></td>
+<td>Moderate</td>
+<td>Figures 3 and 4; no strong high-dimensional nonmyopic baseline</td>
+</tr>
+<tr class="even">
+<td>Is it faster than traditional rollout?</td>
+<td><strong>Yes: 840±147s at 8D/H=3, versus a timeout beyond 3600s for Rollout-EI</strong></td>
+<td>Strong</td>
+<td>Appendix Table 2</td>
+</tr>
+<tr class="odd">
+<td>Is it computationally efficient?</td>
+<td><strong>Efficient relative to rollout, extremely slow relative to TuRBO</strong></td>
+<td>Strong</td>
+<td>840s vs 0.27s, approximately 3111×</td>
+</tr>
+<tr class="even">
+<td>Is a longer horizon always better?</td>
+<td><strong>No: H=3/5 perform best; H=7 is worse through most stages</strong></td>
+<td>Moderate</td>
+<td>Figure A6, 8D Ackley only</td>
+</tr>
+<tr class="odd">
+<td>Is it reliable with sparse high-dimensional data?</td>
+<td><strong>No: the advantage disappears when initial points drop from 50 to 5 in 19D</strong></td>
+<td>Moderate</td>
+<td>Figure A2, one HPO-B search space only</td>
+</tr>
+<tr class="even">
+<td>Does it establish a near-optimal policy?</td>
+<td><strong>no</strong></td>
+<td>Weak / missing</td>
+<td>No theoretical optimality bound or exact-DP gap</td>
+</tr>
+<tr class="odd">
+<td>Can it be independently reproduced?</td>
+<td><strong>Not fully at present</strong></td>
+<td>Weak / missing</td>
+<td>Core code, main-curve CSVs, and seeds are not public</td>
+</tr>
+</tbody>
+</table></div>
+<p>This table also explains how to read the revision: <strong>exact numbers are reported only when provided by the paper; curves support qualified ordinal comparisons; authors' causal explanations are distinguished from observed patterns.</strong></p></section>
+<section class="card" aria-labelledby="section-2" data-section="0. Link verification table"><h2 id="section-2">0. Link verification table</h2>
+<p>All links below were accessed when this report was generated. The currently readable arXiv version is <strong>2411.00171v2, 2026-04-23</strong>; v1 dates to 2024-10-31.</p>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">The paper</th>
+<th scope="col">Conference page / formal publication</th>
+<th scope="col">arXiv</th>
+<th scope="col">Code repository</th>
+<th scope="col">Datasets / weights</th>
+<th scope="col">Project page / video</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>EARL-BO (focal paper)</strong></td>
+<td><a href="https://proceedings.mlr.press/v267/cheon25a.html">ICML 2025 / PMLR</a></td>
+<td><a href="https://arxiv.org/abs/2411.00171">2411.00171v2</a>, 2026-04-23</td>
+<td><strong>Not public / not found</strong></td>
+<td><a href="https://github.com/machinelearningnuremberg/HPO-B">Official HPO-B repository</a>; model weights not applicable</td>
+<td><a href="https://icml.cc/media/icml-2025/Slides/44958.pdf">ICML slides</a></td>
+</tr>
+<tr class="even">
+<td>Efficient Rollout Strategies for BO</td>
+<td><a href="https://proceedings.mlr.press/v124/lee20a.html">UAI 2020 / PMLR</a></td>
+<td><a href="https://arxiv.org/abs/2002.10539">2002.10539v3</a>, 2020-06-19</td>
+<td><a href="https://github.com/erichanslee/lookahead_release">Official code</a></td>
+<td>Not released separately</td>
+<td>Not found</td>
+</tr>
+<tr class="odd">
+<td>One-Shot Multi-Step Trees</td>
+<td><a href="https://proceedings.neurips.cc/paper/2020/hash/d1d5923fc822531bbfd9d87d4760914b-Abstract.html">NeurIPS 2020</a></td>
+<td><a href="https://arxiv.org/abs/2006.15779">2006.15779v1</a>, 2020-06-29</td>
+<td><a href="https://github.com/pytorch/botorch/blob/main/botorch/acquisition/multi_step_lookahead.py">BoTorch qMultiStepLookahead source</a></td>
+<td>Not applicable</td>
+<td>Not found</td>
+</tr>
+<tr class="even">
+<td>TuRBO</td>
+<td><a href="https://proceedings.neurips.cc/paper/2019/hash/6c990b7aca7bc7058f5e98ea909e924b-Abstract.html">NeurIPS 2019</a></td>
+<td><a href="https://arxiv.org/abs/1910.01739">1910.01739v4</a>, 2020-02-24</td>
+<td><a href="https://github.com/uber-research/TuRBO">Official code</a></td>
+<td>Repository includes the benchmark</td>
+<td><a href="https://botorch.org/docs/v0.17.1/tutorials/turbo_1">BoTorch tutorial</a></td>
+</tr>
+<tr class="odd">
+<td>SAASBO</td>
+<td><a href="https://proceedings.mlr.press/v161/eriksson21a.html">UAI 2021 / PMLR</a></td>
+<td><a href="https://arxiv.org/abs/2103.00349">2103.00349v2</a>, 2021-06-10</td>
+<td><a href="https://botorch.org/docs/tutorials/saasbo">BoTorch implementation</a></td>
+<td>Tutorial includes examples</td>
+<td><a href="https://research.facebook.com/blog/2021/7/high-dimensional-bayesian-optimization-with-sparsity-inducing-priors/">Meta overview</a></td>
+</tr>
+<tr class="even">
+<td>RL-BO (Cheon et al., 2024)</td>
+<td><a href="https://www.sciencedirect.com/science/article/abs/pii/S0098135424000425">Journal page</a></td>
+<td>Not found</td>
+<td>Not public / not found</td>
+<td>not public</td>
+<td>Not found</td>
+</tr>
+<tr class="odd">
+<td>HPO-B benchmark</td>
+<td><a href="https://datasets-benchmarks-proceedings.neurips.cc/paper_files/paper/2021/hash/ec8956637a99787bd197eacd77acce5e-Abstract-round2.html">NeurIPS 2021 Datasets &amp; Benchmarks</a></td>
+<td><a href="https://arxiv.org/abs/2106.06257">2106.06257v2</a>, 2021-10-11</td>
+<td><a href="https://github.com/machinelearningnuremberg/HPO-B">Official repository and data access</a></td>
+<td>HPO-B v1/v2/v3</td>
+<td>Not found</td>
+</tr>
+</tbody>
+</table></div></section>
+
+<figure class="figure" aria-labelledby="runtime-chart-title">
+  <p class="fig-title" id="runtime-chart-title">Time per BO decision: EARL-BO is cheaper only relative to explicit rollout</p>
+  <p class="fig-sub">The horizontal axis uses logarithmic seconds. Rollout_EI denotes the paper's 3,600-second timeout lower bound, not a completed runtime.</p>
+  <div class="legend" aria-label="Legend">
+    <span><span class="swatch" style="background:var(--chart-primary)"></span> EARL-BO</span>
+    <span><span class="swatch" style="background:var(--chart-comparison)"></span> Explicit rollout lower bound</span>
+    <span><span class="swatch" style="background:var(--muted)"></span> Myopic/high-dimensional baselines</span>
+  </div>
+  <svg class="chart" viewBox="0 0 900 410" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>Time per BO decision on 8-dimensional Ackley</title>
+    <desc>EI: 0.28 seconds; TuRBO: 0.27 seconds; SAASBO: 168.6 seconds; EARL-BO three-step: 840 seconds; five-step: 1075 seconds; Rollout EI three-step: over 3600 seconds. The horizontal axis is logarithmic.</desc>
+    <g font-size="12">
+      <line x1="170" y1="350" x2="850" y2="350" stroke="var(--grid)"/>
+      <line x1="170" y1="42" x2="170" y2="350" stroke="var(--grid)"/>
+      <g fill="var(--text-secondary)" text-anchor="middle">
+        <text x="170" y="374">0.1 s</text><text x="319" y="374">1 s</text><text x="468" y="374">10 s</text>
+        <text x="617" y="374">100 s</text><text x="766" y="374">1,000 s</text><text x="850" y="374">3,600 s</text>
+      </g>
+      <g stroke="var(--grid)" stroke-dasharray="3 5">
+        <line x1="319" y1="42" x2="319" y2="350"/><line x1="468" y1="42" x2="468" y2="350"/>
+        <line x1="617" y1="42" x2="617" y2="350"/><line x1="766" y1="42" x2="766" y2="350"/>
+      </g>
+    </g>
+    <g font-size="13">
+      <text x="158" y="78" text-anchor="end">EI</text>
+      <rect x="170" y="60" width="67" height="24" rx="4" fill="var(--muted)" tabindex="0" data-tip="EI: 0.28±0.05 seconds"/>
+      <text x="245" y="78">0.28 s</text>
+      <text x="158" y="126" text-anchor="end">TuRBO</text>
+      <rect x="170" y="108" width="65" height="24" rx="4" fill="var(--muted)" tabindex="0" data-tip="TuRBO: 0.27±0.20 seconds"/>
+      <text x="243" y="126">0.27 s</text>
+      <text x="158" y="174" text-anchor="end">SAASBO</text>
+      <rect x="170" y="156" width="481" height="24" rx="4" fill="var(--muted)" tabindex="0" data-tip="SAASBO: 168.6±27.6 seconds"/>
+      <text x="659" y="174">168.6 s</text>
+      <text x="158" y="222" text-anchor="end">EARL-BO H=3</text>
+      <rect x="170" y="204" width="585" height="24" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="EARL-BO H=3: 840±147 seconds; approximately 14 minutes"/>
+      <text x="763" y="222">840 s</text>
+      <text x="158" y="270" text-anchor="end">EARL-BO H=5</text>
+      <rect x="170" y="252" width="602" height="24" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="EARL-BO H=5: 1075±134 seconds; approximately 17.9 minutes"/>
+      <text x="780" y="270">1,075 s</text>
+      <text x="158" y="318" text-anchor="end">Rollout_EI H=3</text>
+      <rect x="170" y="300" width="680" height="24" rx="4" fill="var(--chart-comparison)" tabindex="0" data-tip="Rollout_EI H=3: timeout after more than 3600 seconds; 1,000 MC samples"/>
+      <text x="842" y="318" text-anchor="end" fill="white">&gt;3,600 s</text>
+    </g>
+  </svg>
+  <figcaption>Source: EARL-BO Appendix Table 2, 8D Ackley, AMD EPYC 7742, 16 CPUs. Graphic lengths represent log10 seconds for comparison only; exact values appear in the main table.</figcaption>
+</figure>
+
+<section class="card" aria-labelledby="section-3" data-section="0.1 Candidate pool (24 papers)"><h2 id="section-3">0.1 Candidate pool (24 papers)</h2>
+<p>The candidate pool prioritizes ICML 2025, ICLR 2026, and high-quality preprints from 2025 onward, all within 24 months. Yesterday covered EPG (generative models), avoiding overlap with this issue.</p>
+<ol type="1">
+<li>Sleeping Reinforcement Learning (ICML 2025)</li>
+<li>Flow Q-Learning (ICML 2025)</li>
+<li>Enhancing Cooperative MARL with State Modelling and Adversarial Exploration (ICML 2025)</li>
+<li>Meta-RL with Adaptation from Human Feedback (ICML 2025)</li>
+<li>Test-time Adapted RL with Action Entropy Regularization (ICML 2025)</li>
+<li>Policy Regularization on Globally Accessible States in Cross-Dynamics RL (ICML 2025)</li>
+<li>Multi-objective Linear RL with Lexicographic Rewards (ICML 2025)</li>
+<li>Logarithmic Regret for Online KL-Regularized RL (ICML 2025)</li>
+<li>Unveiling Markov Heads in Pretrained Language Models for Offline RL (ICML 2025)</li>
+<li><strong>EARL-BO (ICML 2025, selected)</strong></li>
+<li>Adaptive Sample Sharing for Multi-Agent Linear Bandits (ICML 2025)</li>
+<li>BiAssemble (ICML 2025)</li>
+<li>Embodied Lifelong Learning Agents with Non-Parametric Memory (ICLR 2026)</li>
+<li>ERA: Transforming VLMs into Embodied Agents via RL (ICLR 2026)</li>
+<li>MEAL: Continual MARL Benchmark (2025)</li>
+<li>Balancing Specialization and Centralization (2025)</li>
+<li>Active Reward Modeling (ICML 2025)</li>
+<li>Reducing Tool Hallucination via Reliability Alignment (ICML 2025)</li>
+<li>SAC-GLAM (ICML 2025)</li>
+<li>RL Finetunes Small Subnetworks in LLMs (ICML 2025)</li>
+<li>Efficient Online RL Fine-Tuning Need Not Retain Offline Data (ICML 2025)</li>
+<li>The Power of Context in Image-based RL (ICML 2025)</li>
+<li>Decoupling Exploration and Exploitation in RL (ICML 2025)</li>
+<li>Robust Reward Modeling via Causal Rubrics (ICML 2025)</li>
+</ol></section>
+<section class="card" aria-labelledby="section-4" data-section="1. In-depth analysis of the core paper"><h2 id="section-4">1. In-depth analysis of the core paper</h2>
+<h3 id="motivation真正的问题不是bo-是否能看未来而是看未来的计算是否还能承受">1.1 Motivation: the question is whether looking ahead remains computationally affordable</h3>
+<p>Classical Bayesian optimization (BO) fits a Gaussian process (GP) to an expensive black-box function, then chooses the next query through an acquisition function such as Expected Improvement (EI). Its strength is sample efficiency; its weakness is optimizing only the next-step reward. The paper sharpens this point: when today's choice changes tomorrow's GP posterior, next-step optimality does not imply optimality under a finite budget. BO is inherently a finite-horizon stochastic dynamic program.</p>
+<p>Multistep rollout accounts for future queries in expected cumulative reward, but incurs two nested costs: every candidate action samples possible observations, and each observation changes the posterior and triggers another acquisition optimization. Cited predecessors demonstrated only around 1–4 dimensions; Rollout_VR can reach 6 steps but cannot run in this paper's high-dimensional experiments. Appendix Table 2 supplies the clearest numerical evidence: on 8D Ackley, three-step Rollout_EI exceeds <strong>3,600 seconds per BO iteration</strong> even with only 1,000 Monte Carlo samples; three-step EARL-BO takes <strong>840±147 seconds</strong> and five-step takes <strong>1,075±134 seconds</strong>. Thus three-step planning saves at least <strong>76.7%</strong> of the time (the rollout timeout is only a lower bound, so the actual saving is greater), but remains about <strong>3,111 times slower</strong> than TuRBO's 0.27 seconds.</p>
+<p> The paper therefore addresses a specific three-way tension:</p>
+<ul>
+<li>nonmyopic decisions require multistep planning;</li>
+<li>high dimensionality rapidly expands states, actions, and rollout branches;</li>
+<li>black-box evaluations are expensive, so RL cannot rely on extensive real-world trial and error.</li>
+</ul>
+<p>EARL-BO retrains a policy within every real BO iteration, letting it interact only with the virtual world defined by the current GP posterior. The real function is queried once; the many RL trajectories come from the surrogate.</p>
+<h3 id="论文故事线四次关键转折">1.2 The paper's storyline: four turning points</h3>
+<p><strong>Turning point 1: recast acquisition-function selection as an MDP.</strong> The state is the current dataset (D_t), the action the next query (x_{t+1}), the transition adds an observation, and the reward is improvement. Designing an acquisition function becomes learning a policy.</p>
+<p><strong>Turning point 2: raw states cannot be fed directly into RL.</strong> (D_t) grows with each iteration, while the order of set elements should not affect decisions. Attention–DeepSets encodes arbitrarily sized and ordered observation sets into fixed 16-dimensional vectors. It trades recoverable pointwise information for a fixed state dimension and permutation invariance.</p>
+<p><strong>Turning point 3: the real function cannot serve as the RL environment.</strong> The current GP posterior serves as a world model, sampling virtual observations from (N(<sup>k(x),K</sup> k(x,x))) to produce 4,000 training episodes. Policy optimality is tied to GP calibration rather than the real function—the source of the planning delusion discussed later.</p>
+<p><strong>Turning point 4: purely on-policy learning starts too slowly.</strong> TuRBO supplies actions for the first 400 episodes to pretrain the actor/critic. Two layers are then frozen, and PPO and the encoder are updated end to end. This first imitates a strong one-step baseline and then seeks to surpass its myopia, rather than learning acquisition from scratch.</p>
+<h3 id="形式化定义与机制解剖">1.3 Formal definitions and mechanism analysis</h3>
+<p>Given observations (D_k={(x_i,y_i)}_{i=1}^k), the GP posterior is:</p>
+<p>[ <sup>k(x)=(x)+k(x)</sup>(K+<sup>2I)</sup>{-1}(y-(x)), ]</p>
+<p>[ K<sup>k(x,x)=K(x,x)-k(x)</sup>(K+<sup>2I)</sup>{-1}k(x). ]</p>
+<p>The finite-horizon policy objective (Equations 3–4) is:</p>
+<p>[ V_h^(s_0)=E, ^*=_{}V_h^(s_0). ]</p>
+<p>A common immediate reward is positive improvement:</p>
+<p>[ R(D_t,x_{t+1},D_{t+1})=(0,y_{t+1}-y_t^*). ]</p>
+<p>Including remaining steps in the value function gives the dynamic-programming recursion:</p>
+<p>[ Q_h(D,x)= E_{yp(x,D)} , ]</p>
+<p>[ V_h(D)=_{xX}Q_h(D,x),V_0=0. ]</p>
+<p>Traditional rollout/one-shot trees explicitly approximate this expectation and nested maximization before each real query. EARL-BO instead trains (_(x(D))) to <strong>amortize</strong> this argmax. It does not eliminate the Bellman problem; it replaces expanding futures for every candidate with generating 4,000 finite-horizon episodes in the GP and optimizing a policy. This distinction matters: the former incurs scenario-tree/MC and inner-optimization errors, whereas the latter additionally incurs representation error, policy-optimization error, and model exploitation.</p>
+<p>A notational detail must also be resolved during reproduction: the method describes maximization using ((0,y_{t+1}-y_t^<em>)), but the synthetic-experiment text says the objective is to minimize these functions, and defines simple regret as (y_{opt}-y_k^</em>). An implementation must specify whether to negate the objective first or change improvement to ((0,y_t^*-y_{t+1})). Neither the main text nor appendix provides code for this conversion.</p>
+<p>Attention–DeepSets (Equations 6–8) encodes individual points, then aggregates them invariantly with normalized attention:</p>
+<p>[ <em>i=(f</em>{att}((x_i,y_i))), _{att}(D_t)=(_i_i(x_i,y_i)). ]</p>
+<p>PPO uses a clipped surrogate (Equation 5), while the critic uses MSE (Equation 10). The pretraining loss (Equation 11) combines PPO, value, and entropy terms:</p>
+<p>[ L_{pre}=E_{D_{baseline}}[L<sup>{PPO}+c_1L</sup>{VF}-c_2H(_)]. ]</p>
+<p>The algorithm can be summarized as:</p>
+<pre class="text"><code>Real data D_k ──fit──&gt; GP posterior (temporary world model)
+     │                         │
+     └─&gt; Attention–DeepSets ─&gt; PPO actor/critic
+                                 │
+           First 400 episodes: TuRBO actions (off-policy warm start)
+           Later episodes: PPO actions + virtual GP observations (on-policy)
+                                 │
+                         Output one real query x_{k+1}</code></pre>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0"><table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+<col style="width: 25%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Mechanism / dimension</th>
+<th scope="col">Design choice</th>
+<th scope="col">Motivation</th>
+<th scope="col">Key hyperparameters (Appendix Table 1)</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>State encoding</td>
+<td>Attention–DeepSets</td>
+<td>Fixed dimension, permutation/size invariance, and emphasis on key observations</td>
+<td>hidden 64; output 16; LR 0.01</td>
+</tr>
+<tr class="even">
+<td>Policy learning</td>
+<td>PPO actor–critic</td>
+<td>Continuous actions with constrained update size</td>
+<td>LR 0.001; clip 0.2; ()</td>
+</tr>
+<tr class="odd">
+<td>Initial policy</td>
+<td>TuRBO off-policy</td>
+<td>Avoids starting from a random policy</td>
+<td>400 episodes; freeze 2 layers</td>
+</tr>
+<tr class="even">
+<td>World models</td>
+<td>RBF + WhiteKernel GP</td>
+<td>Generates trajectories without real black-box evaluations</td>
+<td>length-scale [1e-2,1e2]; noise [1e-10,1e1]</td>
+</tr>
+<tr class="odd">
+<td>Planning</td>
+<td>Finite horizon</td>
+<td>Captures nonmyopic benefits</td>
+<td>Main results use H=3; additional 8D results use H=5, yet Table 1 lists Horizon=5—a documentation inconsistency</td>
+</tr>
+<tr class="even">
+<td>Training budget</td>
+<td>Relearn within each BO iteration</td>
+<td>Update the policy with new data</td>
+<td>Up to 4,000 episodes; update every 50</td>
+</tr>
+<tr class="odd">
+<td>Failure fallback</td>
+<td>Return TuRBO if training fails to improve or reward is too small</td>
+<td>Prevents complete failure</td>
+<td>No improvement for 15 updates; reward &lt;1e-5</td>
+</tr>
+</tbody>
+</table></div>
+<h4 id="更精确的训练时序">A more precise training schedule</h4>
+<pre class="text"><code>Outer loop: real BO iteration k
+  1. Refit an RBF+WhiteKernel GP on real observations D_k
+  2. Initialize encoder, actor, critic, and buffer
+  3. Run up to 4,000 virtual episodes, each reset to the same D_k
+       First 400 episodes: TuRBO supplies actions
+       Remaining 3,600 episodes: PPO actor supplies actions
+       Repeat H times within each episode:
+           a_t ← policy / TuRBO
+           y~ ← GP posterior conditioned on current virtual data
+           D_virtual ← D_virtual ∪ {(a_t, y~)}
+           r_t ← improvement
+       Update networks every 50 episodes; freeze the first 2 actor/critic layers after off-policy training
+  4. If mean reward=0 for 15 consecutive updates, or final mean reward&lt;1e-5: return TuRBO's suggestion
+     Otherwise: the final actor outputs x_{k+1} from the encoding of real D_k
+  5. Only now query the real black box once, obtaining y_{k+1}, then begin the next iteration</code></pre>
+<p>Initializing every iteration is the literal procedure in Algorithm 1. The paper does not state whether weights are reused across BO iterations. Complete retraining makes 840 seconds a recurring cost per real sample; weight reuse would mean the pseudocode omits crucial state transfer. The unavailable core code prevents independent resolution.</p>
+<h3 id="实验设计">1.4 Experimental design</h3>
+<p><strong>Synthetic tasks.</strong> Ackley, Levy, Rosenbrock, and Sum Squares; dimensions 2, 5, 8, and 30; common domain ([-15,15]^d); 30 random initial points; 10 repeats per setting; simple regret as the metric. Random, EI, TuRBO, and SAASBO participate in low-/mid-dimensional comparisons; Rollout_VR is feasible only in 2D. Random is omitted from the 30D plot for readability.</p>
+<p><strong>Real HPO.</strong> HPO-B search spaces 5889 (6D), 5968 (8D), and 7200 (19D). The 6D/8D tasks use 5 initial points; the main 19D experiment uses 50. There are 10 repeats, and PI is added as a baseline. The appendix reduces the 19D initialization to 5 points to probe planning delusion with a sparse surrogate.</p>
+<p>Two reporting issues were insufficiently highlighted in the earlier version. First, Figure 4's legend lists <strong>UCB, EI, PI, EARL-BO, TuRBO, SAASBO</strong>, whereas the main text lists random search, EI, PI, TuRBO, and SAASBO. Code is needed to determine whether the first curve is UCB or Random. Second, Appendix A.2 lists EI, Random, TuRBO, and Rollout-VR as synthetic baselines but omits SAASBO, which appears in the main plots. Neither changes the plotted EARL-BO curve, but both matter for exact reproduction.</p>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 12%" />
+<col style="width: 16%" />
+<col style="width: 12%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Evaluation block</th>
+<th scope="col" style="text-align: right;">Number of tasks</th>
+<th scope="col">Dimension</th>
+<th scope="col" style="text-align: right;">Initial points</th>
+<th scope="col" style="text-align: right;">Repeat</th>
+<th scope="col">Metric</th>
+<th scope="col">Main baselines</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Low-/mid-dimensional synthetic</td>
+<td style="text-align: right;">12</td>
+<td>2/5/8D × 4 functions</td>
+<td style="text-align: right;">30</td>
+<td style="text-align: right;">10</td>
+<td>simple regret</td>
+<td>Random, EI, TuRBO, SAASBO; add Rollout_VR in 2D</td>
+</tr>
+<tr class="even">
+<td>High-dimensional synthetic</td>
+<td style="text-align: right;">4</td>
+<td>30D × 4 functions</td>
+<td style="text-align: right;">30</td>
+<td style="text-align: right;">10</td>
+<td>simple regret</td>
+<td>EI, TuRBO, SAASBO</td>
+</tr>
+<tr class="odd">
+<td>HPO-B</td>
+<td style="text-align: right;">3</td>
+<td>6/8/19D</td>
+<td style="text-align: right;">5/5/50</td>
+<td style="text-align: right;">10</td>
+<td>simple regret</td>
+<td>Random, EI, PI, TuRBO, SAASBO</td>
+</tr>
+<tr class="even">
+<td>Sparse-data stress test</td>
+<td style="text-align: right;">1</td>
+<td>19D</td>
+<td style="text-align: right;">5</td>
+<td style="text-align: right;">10</td>
+<td>simple regret</td>
+<td>Same as above</td>
+</tr>
+</tbody>
+</table></div>
+<p>The total is <strong>16 synthetic settings (4 functions × 4 dimensions) + 3 HPO-B search spaces + 1 sparse-data stress setting</strong>. Evaluation breadth should not be confused with the number of independent real tasks: the 16 synthetic settings share four analytic functions. Only three HPO-B search-space IDs are selected, without specific learner/task names, task IDs, or discrete candidate-set sizes. The official HPO-B repository allows multiple datasets/tasks under one search space, so search-space IDs alone do not uniquely identify the experiments.</p>
+<h3 id="主结果论文实际报告矩阵">1.5 Main results: what the paper actually reports</h3>
+<p>The paper provides no table of curve endpoints, AUCs, or average ranks, and no machine-readable CSVs/code. The following matrix therefore retains only ordinal conclusions clearly supported by Figures 2–4, without presenting visual estimates as exact numbers.</p>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0"><table>
+<colgroup>
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Scenario</th>
+<th scope="col">Random</th>
+<th scope="col">EI / PI</th>
+<th scope="col">TuRBO</th>
+<th scope="col">SAASBO</th>
+<th scope="col">Rollout_VR</th>
+<th scope="col">EARL-BO conclusion</th>
+<th scope="col">Source</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>2D Ackley/Levy/Rosenbrock</td>
+<td>Weaker</td>
+<td>Small gap</td>
+<td>Competitive</td>
+<td>Competitive</td>
+<td>Close</td>
+<td>Close to or slightly better than Rollout_VR</td>
+<td>Figure 2; §4.1</td>
+</tr>
+<tr class="even">
+<td>2D/5D/8D Sum Squares</td>
+<td>Weaker</td>
+<td>Not optimal</td>
+<td>Not optimal</td>
+<td><strong>Best</strong></td>
+<td>2D only</td>
+<td>Not the best</td>
+<td>Figure 2; §4.1</td>
+</tr>
+<tr class="odd">
+<td>Three complex functions in 5D/8D</td>
+<td>Weaker</td>
+<td>Weaker</td>
+<td>Weaker</td>
+<td>Varies by function</td>
+<td>Cannot run</td>
+<td><strong>Consistently outperforms Random/EI/TuRBO</strong></td>
+<td>Figure 2; §4.1</td>
+</tr>
+<tr class="even">
+<td>Four functions in 30D</td>
+<td>Not plotted</td>
+<td>Weaker</td>
+<td>Weaker</td>
+<td>Weaker</td>
+<td>Cannot run</td>
+<td><strong>Clearly ahead on all four tasks</strong></td>
+<td>Figure 3; §4.1</td>
+</tr>
+<tr class="odd">
+<td>HPO-B 5889/5968/7200</td>
+<td>Weaker</td>
+<td>Competitive early on</td>
+<td>Competitive early on</td>
+<td>Competitive early on</td>
+<td>Cannot run</td>
+<td><strong>Comparable or worse initially, then overtakes on all three tasks</strong></td>
+<td>Figure 4; §4.2</td>
+</tr>
+<tr class="even">
+<td>HPO-B 7200 with only 5 initial points</td>
+<td>Competitive</td>
+<td>Competitive</td>
+<td>Competitive</td>
+<td>Competitive</td>
+<td>Cannot run</td>
+<td><strong>Only comparable to some baselines; advantage disappears</strong></td>
+<td>Figure A2; Appendix B</td>
+</tr>
+</tbody>
+</table></div>
+<h4 id="结论证据审计矩阵">Claim–evidence audit matrix</h4>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0"><table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Author claim / common paraphrase</th>
+<th scope="col">Direct observation in the paper</th>
+<th scope="col">This report's assessment</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>“EARL-BO learns a three-step lookahead policy”</td>
+<td>Close to or slightly better than Rollout-VR in 2D; no action/value gap against an exact DP policy</td>
+<td><strong>Behavioral results are compatible with the claim, but do not establish correct policy identification</strong></td>
+</tr>
+<tr class="even">
+<td>“Multistep planning matters more as dimensionality rises”</td>
+<td>Ahead of three myopic baselines on four 30D functions</td>
+<td><strong>Supports association; model/encoder capacity is uncontrolled and a high-dimensional nonmyopic baseline is absent, so causal attribution is insufficient</strong></td>
+</tr>
+<tr class="odd">
+<td>“Attention–DeepSets uses high-dimensional information more effectively”</td>
+<td>Better than attention-only on 8D Ackley alone</td>
+<td><strong>Supports the benefit of a permutation-invariant encoder, not the stronger explanation about relationships in high-dimensional information</strong></td>
+</tr>
+<tr class="even">
+<td>“The long-run HPO advantage comes from nonmyopia”</td>
+<td>Comparable/worse initially, then overtakes</td>
+<td><strong>Consistent with nonmyopia, but may also reflect 4,000-episode policy search or the TuRBO warm start; no compute-matched or teacher ablation</strong></td>
+</tr>
+<tr class="odd">
+<td>“Computational scaling is better than myopic methods”</td>
+<td>Smaller relative increase from 8D to 30D</td>
+<td><strong>Describes dimensional scaling ratios only; absolute runtime remains three orders of magnitude above TuRBO</strong></td>
+</tr>
+<tr class="even">
+<td>“Solves dynamic programming near-optimally”</td>
+<td>No optimality bound, oracle DP, policy regret, or approximation ratio</td>
+<td><strong>Insufficient evidence; should be described as a learned approximation</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>The most persuasive exact evidence concerns runtime rather than performance endpoints:</p>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 22%" />
+<col style="width: 22%" />
+<col style="width: 22%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Method (8D Ackley)</th>
+<th scope="col" style="text-align: right;">Mean seconds/iteration</th>
+<th scope="col" style="text-align: right;">Standard deviation</th>
+<th scope="col" style="text-align: right;">Relative to TuRBO</th>
+<th scope="col">Source</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>EI</td>
+<td style="text-align: right;">0.28</td>
+<td style="text-align: right;">0.05</td>
+<td style="text-align: right;">1.04×</td>
+<td>Appendix Table 2</td>
+</tr>
+<tr class="even">
+<td>TuRBO</td>
+<td style="text-align: right;"><strong>0.27</strong></td>
+<td style="text-align: right;">0.20</td>
+<td style="text-align: right;">1.00×</td>
+<td>Appendix Table 2</td>
+</tr>
+<tr class="odd">
+<td>SAASBO</td>
+<td style="text-align: right;">168.6</td>
+<td style="text-align: right;">27.6</td>
+<td style="text-align: right;">624×</td>
+<td>Appendix Table 2</td>
+</tr>
+<tr class="even">
+<td>Rollout_EI, H=3</td>
+<td style="text-align: right;">&gt;3600</td>
+<td style="text-align: right;">Not reported</td>
+<td style="text-align: right;">&gt;13,333×</td>
+<td>Appendix Table 2; timeout with 1,000 MC samples</td>
+</tr>
+<tr class="odd">
+<td>EARL-BO, H=3</td>
+<td style="text-align: right;">840</td>
+<td style="text-align: right;">147</td>
+<td style="text-align: right;">3,111×</td>
+<td>Appendix Table 2</td>
+</tr>
+<tr class="even">
+<td>EARL-BO, H=5</td>
+<td style="text-align: right;">1075</td>
+<td style="text-align: right;">134</td>
+<td style="text-align: right;">3,981×</td>
+<td>Appendix Table 2</td>
+</tr>
+</tbody>
+</table></div>
+<p>Moving from H=3 to H=5 adds <strong>235 seconds / 28.0%</strong>; against the rollout timeout lower bound, H=3 is at least <strong>4.29×</strong> faster. This establishes a solution to intractable traditional multistep rollout, not production-ready high-throughput BO. The paper's slides also acknowledge roughly 850 seconds per step.</p>
+<p>Treating the 10 repeats in Table 2 as independent samples permits approximate 95% t intervals for interpreting variability (t_{0.975,9}=2.262): EI 0.28±0.036s, TuRBO 0.27±0.143s, SAASBO 168.6±19.7s, EARL-BO H=3 840±105s, and H=5 1075±96s. The paper performs no runtime significance test; these intervals are recalculated here, not originally reported.</p>
+<h4 id="成本盈亏平衡什么时候-14-分钟规划才值得">Cost break-even: when is 14 minutes of planning worthwhile?</h4>
+<p>Compared with TuRBO, EARL-BO H=3 adds approximately (840−0.27=839.73) seconds per iteration, or <strong>13.996 minutes</strong>; H=5 adds <strong>17.912 minutes</strong>. If EARL-BO reliably saves at least one real evaluation relative to TuRBO, wall-clock savings are possible only when that evaluation costs more than this threshold. The paper reports neither evaluations needed to reach the same regret nor numerical hitting times, so an actual break-even cannot be calculated; this is only a necessary condition.</p>
+<p>For 30D, the paper reports only approximately 1600 seconds for EARL-BO and increases of 533%/215% over 8D for EI/TuRBO. Recalculating from Table 2 gives about 1.77s and 0.85s. Even with a gentler dimensional scaling ratio, EARL-BO's absolute overhead remains approximately <strong>903 times</strong> EI's and <strong>1881 times</strong> TuRBO's. “Scales better” must therefore be distinguished from “is faster.”</p>
+<p>A more realistic total cost is:</p>
+<p>[ T_{total}(B)=_{k=1}^{B}. ]</p>
+<p>EARL-BO is practically attractive only when (T_{realeval}T_{policy}). HPO-B's table-lookup benchmark does not meet this premise, so Figure 4 establishes <strong>the quality of the sample sequence</strong>, not an end-to-end HPO wall-clock advantage.</p>
+<h3 id="消融敏感性与相变">1.6 Ablations, sensitivity, and regime changes</h3>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0"><table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Ablations</th>
+<th scope="col">Actual observation</th>
+<th scope="col">Supported inference</th>
+<th scope="col">Unsupported inference</th>
+<th scope="col">Source</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Learning rates: RL/encoder = 0.001/0.01 versus reversed</td>
+<td>Reversing them lowers performance and increases standard deviation over time</td>
+<td>The encoder can learn quickly; the policy needs slower updates</td>
+<td>No exact endpoint is given, so contribution cannot be quantified in percentage points</td>
+<td>Figure A1</td>
+</tr>
+<tr class="even">
+<td>Initial data: 19D, 50 → 5 points</td>
+<td>EARL-BO's advantage disappears and it may fall behind</td>
+<td>World-model uncertainty is a key failure mode</td>
+<td>GP-kernel and data-volume effects are not separated</td>
+<td>Figure A2</td>
+</tr>
+<tr class="odd">
+<td>Encoder: Attention–DeepSets vs attention-only</td>
+<td>The former consistently leads at both H=3 and H=5</td>
+<td>Explicit permutation invariance is valuable</td>
+<td>No comparison with mean pooling or Set Transformer</td>
+<td>Figure A5</td>
+</tr>
+<tr class="even">
+<td>Horizon: 1/3/5/7</td>
+<td>H=1 is strong early but worst at the end; H=3/5 are best; H=7 is worse through most stages</td>
+<td>An intermediate horizon offers the best regime</td>
+<td>The same turning point is not fully validated across functions</td>
+<td>Figure A6</td>
+</tr>
+<tr class="odd">
+<td>RL training across BO iterations</td>
+<td>Smooth losses at steps 1/11/21; lower initial/converged losses later</td>
+<td>Accumulated data may improve the GP and representation</td>
+<td>Lower loss does not imply lower real regret</td>
+<td>Figure A4</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Regime changes.</strong> The key finding is nonmonotonicity, not that longer horizons always help: H=1 leads early but finishes worst; H=3/5 form a sweet spot; H=7 deteriorates as model errors accumulate. A sharper transition follows information density: reducing initialization from 50 to 5 points in 19D eliminates the multistep policy's advantage. Effective planning depth should therefore depend on posterior calibration/uncertainty rather than remain fixed.</p>
+<p><strong>Statistical significance.</strong> All main curves show means ±1 standard deviation over 10 repeats; appendix runtimes also include standard deviations. However, the paper reports no confidence intervals, paired tests, p-values, effect sizes, or cross-task average ranks. “Significantly” therefore primarily describes visual separation rather than statistical testing.</p>
+<h3 id="真正贡献与可复用设计">1.7 Actual contributions and reusable designs</h3>
+<p>The contribution goes beyond applying PPO to BO, which earlier RL-BO work already did. It connects three interfaces: set-state encoding, a virtual GP environment, and a strong BO-policy warm start. Together, these extend an RL planner previously limited to regular grids/low dimensions to 30D, learning specifically for the current posterior inside each BO iteration without offline cross-task meta-training data.</p>
+<p>Three designs can be reused independently:</p>
+<ol type="1">
+<li><strong>A set-valued belief state.</strong> Any agent whose state is a growing unordered observation set can use attention plus invariant pooling, avoiding padding to a fixed history length.</li>
+<li><strong>A strong heuristic warm start plus a learnable residual policy.</strong> TuRBO behavior avoids a random start; subsequent on-policy learning targets long-term reward. This suits planning agents in expensive environments.</li>
+<li><strong>World-model confidence controls planning depth.</strong> Although unimplemented, the planning-delusion evidence directly motivates an uncertainty-adaptive horizon: fall back to H=1/TuRBO when the posterior is unreliable, and increase to H=3/5 when trustworthy.</li>
+</ol>
+<h3 id="局限性">1.8 Limitations</h3>
+<h4 id="论文自述或直接承认">Stated or directly acknowledged by the paper</h4>
+<ol type="1">
+<li><strong>High computational cost.</strong> Appendix C and the slides specify about 840–1,075 seconds per step and roughly 25 hours per complete experiment (AMD EPYC 7742, 16 CPUs, up to 100GB).</li>
+<li><strong>planning delusion. </strong> Section 4.1 notes that long horizons accumulate GP errors; Figure A2 further shows the loss of advantage in 19D with 5 initial points.</li>
+<li><strong>Longer horizons do not deliver monotonic gains.</strong> H=3 and H=5 are similar, while H=7 degrades. The paper acknowledges that a policy may be more sensitive to an incorrect world model than heuristic rollout.</li>
+</ol>
+<h4 id="补充批判独立观察10-点">Additional critique (10 independent observations)</h4>
+<ol type="1">
+<li><strong>Experimental-design issue: the performance matrix is not auditable.</strong> Figures 2–4 provide no endpoint values, AUCs, hitting times, or CSVs, preventing recalculation of mean gains, paired tests, or cross-task ranks. Clear superiority can currently mean only visual curve separation, not statistical significance.</li>
+<li><strong>Argument gap: competitor sets differ between low and high dimensions.</strong> Rollout_VR appears only in 2D, while high-dimensional comparisons use only myopic methods. Thus superiority to multistep methods and scalability lack a high-dimensional head-to-head test. Table 2's timeout establishes that one rollout implementation is slow, not that all approximate nonmyopic methods are excluded.</li>
+<li><strong>Missing key competitor: One-Shot Multi-Step Trees is not evaluated.</strong> Jiang et al. 2020 use joint scenario-tree optimization and GP fantasization for 2–4-step nonmyopic BO. Since EARL-BO claims to replace tree computation, it should compare directly under matched H and MC/CPU budgets, rather than mention this only in related work.</li>
+<li><strong>Asymmetric compute budgets.</strong> EARL-BO uses up to 4,000 episodes before each real query, taking 840s at H=3 versus TuRBO's 0.27s. Controlling only evaluation count systematically favors the planner. When a black-box evaluation costs less than about 14 minutes, even saving one evaluation may not reduce total time.</li>
+<li><strong>Underperforming subtask: a structural disadvantage on Sum Squares.</strong> SAASBO beats EARL-BO on 2/5/8D Sum Squares. The claim that nonmyopia becomes more valuable with dimensionality therefore depends on function structure. In additive, axis-aligned landscapes, an appropriate structural prior matters more than deeper planning.</li>
+<li><strong>Confounded attribution: TuRBO fallback on failure.</strong> After 15 consecutive updates without reward, or when final mean reward is&lt;1e-5, EARL-BO directly returns a TuRBO query. The paper does not report fallback counts by task/seed, so the EARL curve is an unknown mixture of learned and teacher policies. Its gains and stability cannot all be attributed to PPO.</li>
+<li><strong>Reproducibility risk: core code and algorithmic state transfer are unavailable.</strong> The actor distribution, action bounds/squashing, layer counts, advantage/return computation, reward normalization, GP refitting, seeds, and whether each iteration restarts from scratch can all materially affect results. Algorithm 1 and Table 1 alone cannot reproduce a 25-hour experiment.</li>
+<li><strong>Internal documentation inconsistencies.</strong> The main experiments explicitly use H=3 and additionally test H=5 in 8D, while Appendix Table 1 lists only Horizon=5. Figure 4's legend says UCB but the text says Random, and the appendix baseline list omits SAASBO. The paper alone therefore cannot establish one consistent reproduction configuration.</li>
+<li><strong>Metric-validity issue: simple regret alone.</strong> Real applications also care about cumulative regret, wall-clock regret, failure rates, parallel-batch efficiency, and constraint violations. The paper plots only simple regret; its 3,111× TuRBO latency is absent from aggregate utility, and table-lookup HPO-B tasks include no real training cost.</li>
+<li><strong>Theoretical and model risk: “near-optimal” lacks a testable definition.</strong> There is no oracle DP, policy-value gap, approximation ratio, or regret bound. Meanwhile, the world model uses only an RBF+White GP, and the sparse 19D stress test already shows model error can reverse the advantage. “Near-optimal” is therefore motivational wording rather than an established property.</li>
+</ol></section>
+<section class="card" aria-labelledby="section-5" data-section="2. Related work: how the problem reaches EARL-BO"><h2 id="section-5">2. Related work: how the problem reaches EARL-BO</h2>
+<h3 id="efficient-rollout-strategies-for-bayesian-optimization-uai-2020">2.1 Efficient Rollout Strategies for Bayesian Optimization — UAI 2020</h3>
+<p><strong>Problem solved.</strong> Lee et al. reduce the variance of expensive high-dimensional rollout integrals through quasi-Monte Carlo, common random numbers, and control variates, using policy search to avoid direct rollout-acquisition optimization. This advances nonmyopic BO from concept toward a runnable implementation.</p>
+<p><strong>Remaining gap.</strong> Even with variance reduction, computation rises sharply with dimension and horizon. In EARL-BO Table 2, its three-step implementation exceeds 3,600 seconds with 1,000 MC samples and cannot enter the main 5/8/30D comparisons.</p>
+<p><strong>The focal paper's response.</strong> Rather than expanding a future tree for every candidate action, EARL-BO trains an amortized policy, approximating the dynamic-programming solution through trajectory updates in the GP environment.</p>
+<p><strong>Inherited design.</strong> The framework of multistep cumulative improvement and GP-posterior future simulation remains; actor–critic replaces numerical integration and the heuristic base policy.</p>
+<h3 id="efficient-nonmyopic-bo-via-one-shot-multi-step-trees-neurips-2020">2.2 Efficient Nonmyopic BO via One-Shot Multi-Step Trees — NeurIPS 2020</h3>
+<p><strong>Problem solved.</strong> Jiang et al. reparameterize nested future action/observation optimization as joint optimization over a full scenario tree. GP fantasization and automatic differentiation enable general multistep EI without repeatedly solving inner argmax problems at each level. This alternative still optimizes acquisition but flattens the nested structure into one problem.</p>
+<p><strong>Remaining gap.</strong> Branch count still depends on the product of fantasy-sample counts across levels, while optimization variables and GP updates grow with horizon. NeurIPS review records indicate experiments reached about four steps, with results sensitive to branching factor, warm starts, and optimizer choice. The method eases tree computation but neither compresses arbitrary histories to fixed states nor learns a directly reusable continuous policy.</p>
+<p><strong>The focal paper's response.</strong> EARL-BO replaces joint candidate-tree optimization with an actor: the tree is no longer stored explicitly, and future samples enter the buffer only as PPO training trajectories. Empirical dimension/horizon scaling becomes gentler, but numerical-integration error is replaced by policy, representation, and model errors.</p>
+<p><strong>Inherited design.</strong> Both use GP-posterior fantasies to represent future uncertainty. One-shot optimization treats all future actions as optimization variables, while EARL-BO parameterizes the action rule as (_). This is the head-to-head comparison the paper most needs but does not perform.</p>
+<h3 id="turbo-neurips-2019">2.3 TuRBO — NeurIPS 2019</h3>
+<p><strong>Problem solved.</strong> TuRBO uses local trust regions and bandit-style global allocation to avoid overexploration by a single global GP in high dimensions. The predecessor reports scaling to 200D and outperforming conventional global BO on tasks including robotic control.</p>
+<p><strong>Remaining gap.</strong> It remains primarily a one-step acquisition method. Locality improves high-dimensional efficiency without explicitly optimizing the long-term effect of current decisions on future posteriors.</p>
+<p><strong>The focal paper's response.</strong> EARL-BO treats TuRBO as a teacher for the first 400 episodes, rather than a competitor to discard, then uses PPO to learn multistep cumulative reward.</p>
+<p><strong>Inherited design.</strong> The trust-region query policy shifts from the final algorithm to a behavioral prior and fallback—a transfer resembling distillation from a strong baseline.</p>
+<h3 id="saasbo-uai-2021">2.4 SAASBO — UAI 2021</h3>
+<p><strong>Problem solved.</strong> SAASBO places a strong sparsity prior on inverse length scales and uses HMC to identify a few relevant axis-aligned dimensions, maintaining sample efficiency in searches with hundreds of dimensions without problem-specific hyperparameters.</p>
+<p><strong>Remaining gap.</strong> The sparse axis-aligned assumption does not suit every complex coupled landscape, and acquisition remains myopic.</p>
+<p><strong>The focal paper's response.</strong> Instead of directly selecting a relevant subspace, EARL-BO learns observation-level weights with an attention encoder and plans actions with PPO. It wins on four 30D functions but loses to SAASBO on additive Sum Squares.</p>
+<p><strong>Inherited design.</strong> Both reduce high-dimensional difficulty by focusing on relevant information, but SAASBO applies Bayesian sparsity to coordinates while EARL-BO compresses a set of observations through attention.</p>
+<h3 id="non-myopic-bo-using-model-free-rl-2024">2.5 Non-myopic BO using model-free RL — 2024</h3>
+<p><strong>Problem solved.</strong> Cheon et al. directly learn a multistep BO policy with model-free RL, demonstrating feasibility in 2D and electrochemical optimization while bypassing rollout base-policy approximation bias.</p>
+<p><strong>Remaining gap.</strong> They discretize/rasterize the GP on a regular grid for the state. Grid size grows exponentially with dimension, limiting extension beyond low-dimensional settings.</p>
+<p><strong>The focal paper's response.</strong> EARL-BO represents (D_t) with fixed-dimensional Attention–DeepSets and outputs query points through a continuous-action actor, extending nonmyopic RL to high dimensions.</p>
+<p><strong>Inherited design.</strong> The RL policy and improvement reward remain; explicit GP grids become learned set representations, and model-free trial and error becomes GP-based simulation.</p></section>
+<section class="card" aria-labelledby="section-6" data-section="3. Technical evolution"><h2 id="section-6">3. Technical evolution</h2>
+<pre class="text"><code>2016 approximate dynamic-programming BO [finite budget; Gauss–Hermite; low dimensions]
+   ├── 2019/2020 rollout / one-shot trees [multistep; variance reduction or differentiable trees]
+   │          └── Gap: trees and integrals grow with dimension and horizon
+   ├── 2019 TuRBO [local trust regions; hundreds of dimensions; still myopic]
+   ├── 2021 SAASBO [sparse axis-aligned subspaces; still myopic]
+   └── 2024 RL-BO [policy learning replaces the base policy; GP grids limit dimensionality]
+                  ↓
+2025 EARL-BO [set-state encoding + TuRBO warm start + GP world model + PPO multistep policy]
+                  ↓
+Next: posterior-calibrated adaptive horizons + wall-clock-aware rewards</code></pre>
+<p>The underlying shift is from maximizing an acquisition function at every step to learning a decision rule reusable across future states. The first stage defines nonmyopia; the second addresses high-dimensional locality and sparsity; the third uses RL to remove explicit rollout trees. The turning point is the GP becoming an RL world model rather than merely a surrogate. As optimization power grows, model bias also escalates from prediction error to policy error.</p>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Publication date</th>
+<th scope="col">Conference/publication</th>
+<th scope="col">Core contribution</th>
+<th scope="col">Main verifiable metrics / boundaries</th>
+<th scope="col">Relationship to the core paper</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>TuRBO</td>
+<td>2019.12</td>
+<td>NeurIPS</td>
+<td>Local GP + trust region</td>
+<td>Predecessor reports up to 200D</td>
+<td>EARL-BO's teacher, baseline, and fallback</td>
+</tr>
+<tr class="even">
+<td>Efficient Rollout</td>
+<td>2020.08</td>
+<td>UAI</td>
+<td>QMC/CRN/control variates reduce rollout variance</td>
+<td>Three-step reproduction in this paper &gt;3600s</td>
+<td>Source of the multistep objective, replaced by a learned policy</td>
+</tr>
+<tr class="odd">
+<td>One-Shot Multi-Step Trees</td>
+<td>2020.12</td>
+<td>NeurIPS</td>
+<td>Jointly optimizes all scenario-tree decision variables</td>
+<td>Paper demonstrates about 4 steps at most</td>
+<td>Most direct missing competitor: explicit trees versus learned policy</td>
+</tr>
+<tr class="even">
+<td>SAASBO</td>
+<td>2021.07</td>
+<td>UAI</td>
+<td>Sparse axis-aligned GP</td>
+<td>Handles hundreds of dimensions; 168.6±27.6s in this paper</td>
+<td>Strong high-dimensional baseline; beats EARL-BO on Sum Squares</td>
+</tr>
+<tr class="odd">
+<td>RL-BO</td>
+<td>2024.04</td>
+<td>C&amp;CE</td>
+<td>Model-free RL learns nonmyopic BO</td>
+<td>Primarily 2D</td>
+<td>Direct RL predecessor; state encoding is redesigned</td>
+</tr>
+<tr class="even">
+<td><strong>EARL-BO</strong></td>
+<td><strong>2025.07</strong></td>
+<td><strong>ICML</strong></td>
+<td><strong>Set encoder + GP world model + PPO</strong></td>
+<td><strong>30D; HPO-B 19D; 840±147s/step</strong></td>
+<td><strong>Point of convergence</strong></td>
+</tr>
+</tbody>
+</table></div></section>
+<section class="card" aria-labelledby="section-7" data-section="3.1 Reproducibility blueprint: actually rebuilding this paper"><h2 id="section-7">3.1 Reproducibility blueprint: actually rebuilding this paper</h2>
+<p>The core code is unavailable, so the following is not the authors' implementation. It is a <strong>minimal reproduction protocol</strong> compiled from Algorithm 1, Appendix A, and Table 1, with every unresolved field explicitly identified.</p>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0"><table>
+<colgroup>
+<col style="width: 33%" />
+<col style="width: 33%" />
+<col style="width: 33%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Module</th>
+<th scope="col">Specified in the paper</th>
+<th scope="col">Still missing; must be recorded</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Input scaling</td>
+<td>Synthetic domain ([-15,15]^d)</td>
+<td>Whether (x/y) are standardized; whether minimization negates the objective</td>
+</tr>
+<tr class="even">
+<td>GP</td>
+<td>RBF+WhiteKernel; length-scale bounds ([10<sup>{-2},10</sup> 2]); noise ([10<sup>{-10},10</sup> 1])</td>
+<td>ARD or shared length scale; optimizer/restarts; refitting at each virtual step</td>
+</tr>
+<tr class="odd">
+<td>Encoder</td>
+<td>hidden 64, output 16, LR 0.01</td>
+<td>Layer counts, activations, normalization, and padding/batching for (,,f_{att})</td>
+</tr>
+<tr class="even">
+<td>Actor</td>
+<td>PPO LR 0.001, clip 0.2, (=.95)</td>
+<td>Distribution family, variance parameters, boundary squashing, action initialization</td>
+</tr>
+<tr class="odd">
+<td>Critic</td>
+<td>value coefficient .5</td>
+<td>GAE (), return normalization, bootstrap rules</td>
+</tr>
+<tr class="even">
+<td>Training</td>
+<td>100 epochs; 4,000 episodes; update every 50 episodes; first 400 off-policy; freeze 2 layers</td>
+<td>Batch/minibatch size, shuffling, gradient clipping, weight reuse across real BO iterations</td>
+</tr>
+<tr class="odd">
+<td>Reward</td>
+<td>positive improvement</td>
+<td>Minimization conversion, scaling/clipping, terminal versus intermediate reward definitions</td>
+</tr>
+<tr class="even">
+<td>Fallback</td>
+<td>No improvement for 15 updates or final reward&lt;1e-5 triggers TuRBO</td>
+<td>Window defining mean reward=0; fallback frequency per experiment</td>
+</tr>
+<tr class="odd">
+<td>Evaluation</td>
+<td>10 replications; simple regret; mean±1 std</td>
+<td>10 seeds, per-iteration CSVs, paired tests with identical initial points, timeout seeds</td>
+</tr>
+</tbody>
+</table></div>
+<p>A reproduction should provide four machine-readable tables, not just redraw the original figures:</p>
+<ol type="1">
+<li><code>regret_by_seed.csv</code>: task, dimension, method, seed, iteration, simple_regret; </li>
+<li><code>runtime_breakdown.csv</code>: GP fit, TuRBO warm-start, PPO rollout, PPO update, final action; </li>
+<li><code>fallback_log.csv</code>: trigger reason, teacher query, actor query, and selected source at every iteration;</li>
+<li><code>calibration.csv</code>: GP posterior coverage, NLL, horizon, and final regret.</li>
+</ol>
+<p>The third table is particularly important: without fallback logs, it is impossible to determine whether EARL-BO is an independent planner or a hybrid of a TuRBO safety net with occasional PPO use.</p></section>
+<section class="card" aria-labelledby="section-8" data-section="4. Open challenges and actionable research opportunities"><h2 id="section-8">4. Open challenges and actionable research opportunities</h2>
+<h3 id="理论层面">4.1 Theory</h3>
+<ol type="1">
+<li><strong>Bounds from calibration error to policy regret.</strong> Fix the real evaluation budget and compare H=1/3/5/7 under known GP miscalibration (). Derive an upper bound on model-bias accumulation with horizon; empirically report both posterior coverage and final regret.</li>
+<li><strong>Adaptive horizons.</strong> Choose H using posterior entropy, calibration error, or ensemble disagreement. Compare against fixed H=1/3/5/7 with equal CPU and evaluation budgets, testing whether the policy automatically becomes myopic in 19D with 5 initial points.</li>
+<li><strong>Teacher dependence.</strong> With identical networks and seeds, replace the first 400 episodes with EI, PI, TuRBO, SAASBO, or Random to test whether the final policy is merely a local extension of its teacher.</li>
+</ol>
+<h3 id="工程与应用层">4.2 Engineering and applications</h3>
+<ol type="1">
+<li><strong>wall-clock-aware objective. </strong> Change reward to improvement / (black-box cost + planner cost), sweeping evaluation cost from 1 second to 1 day to find EARL-BO's break-even point, explicitly accounting for TuRBO's 0.27 seconds and EARL-BO's 840 seconds.</li>
+<li><strong>Reuse instead of retraining at every step.</strong> Compare 4,000-episode retraining per BO step, incremental training from the previous checkpoint, and a cross-task meta-policy with limited adaptation. Control total gradient steps and report both latency and regret.</li>
+<li><strong>Stronger world models.</strong> Compare RBF GP, Matérn GP, deep kernels, heteroscedastic GP, and ensembles under equal data budgets. Test whether planning delusion worsens on nonstationary/discontinuous tasks.</li>
+<li><strong>Code and data protocols.</strong> Release per-iteration CSVs for every curve, 10 seeds, timeout rules, and hardware configurations. Report means, 95% CIs, paired tests, AUC-regret, and wall-clock regret.</li>
+</ol>
+<h3 id="新兴方向">4.3 Emerging directions</h3>
+<ol type="1">
+<li><strong>Agent tool selection.</strong> Replace black-box queries with expensive tool calls/experiments, retaining an unordered experience-set state. Compare Attention–DeepSets with trajectory Transformers to test whether set invariance discards causal order.</li>
+<li><strong>Batch and asynchronous BO.</strong> Compare q-EI, asynchronous TuRBO, and multi-agent EARL-BO on identical hardware, explicitly modeling parallel experiment return times. Single-action PPO does not yet address real laboratory parallel scheduling.</li>
+<li><strong>Safe planning.</strong> Add constraint-violation probabilities and compare penalty rewards, Lagrangian PPO, and safe acquisition. Report cumulative violations rather than only the final optimum.</li>
+</ol></section>
+<section class="card" aria-labelledby="section-9" data-section="5. Other recent work worth watching"><h2 id="section-9">5. Other recent work worth watching</h2>
+<p><strong>Flow Q-Learning</strong> (2025.07, ICML)<br />
+Uses a flow-matching policy to represent multimodal action distributions in offline data, combining generative policies with value optimization. Unlike EARL-BO, it optimizes a fixed offline MDP rather than a GP world model that changes each iteration.<br />
+<a href="https://proceedings.mlr.press/v267/park25f.html">PMLR</a></p>
+<p><strong>Sleeping Reinforcement Learning</strong> (2025.07, ICML)<br />
+Incorporates actions becoming available or unavailable over time into RL, offering useful ideas for tool agents, resource-constrained scheduling, and dynamic action spaces.<br />
+<a href="https://proceedings.mlr.press/v267/drago25a.html">PMLR</a></p>
+<p><strong>Enhancing Cooperative MARL with State Modelling and Adversarial Exploration</strong> (2025.07, ICML)<br />
+Uses state modeling and adversarial exploration to address partial observability and insufficient exploration in cooperative MARL, extending pure value decomposition toward learned state models.<br />
+<a href="https://proceedings.mlr.press/v267/kontogiannis25a.html">PMLR</a></p>
+<p><strong>ERA: Transforming VLMs into Embodied Agents via Reinforcement Learning</strong> (2026, ICLR)<br />
+Trains a compact VLM into an embodied reasoning agent in two stages. It is worth examining how RL converts visual reasoning into closed-loop action.<br />
+<a href="https://openreview.net/forum?id=hqFNqVQEUd">OpenReview</a></p>
+<p><strong>MEAL: A Benchmark for Continual Multi-Agent Reinforcement Learning</strong>(June 2025, preprint)<br />
+Introduces continual learning to MARL, emphasizing long-term adaptation to changing environments/teammates rather than cooperation within a single training distribution.<br />
+<a href="https://arxiv.org/abs/2506.14990">arXiv</a></p>
+<p><strong>Balancing Specialization and Centralization</strong>(October 2025, preprint)<br />
+Compares multi-agent division of labor with centralized control for sequential industrial control, grounding MARL architecture choices in real control constraints through a recent benchmark.<br />
+<a href="https://arxiv.org/abs/2510.20408">arXiv</a></p></section>
+<section class="card" aria-labelledby="section-10" data-section="6. Final assessment"><h2 id="section-10">6. Final assessment</h2>
+<p>EARL-BO has clear research value: it connects the historically separate high-dimensional and nonmyopic BO directions, offering a structural template for agents planning expensive tool calls or experiments. Engineering maturity remains limited: it is at least 4.29× faster than traditional rollout but about 3,111× slower than TuRBO. Unreleased code and main-curve values also prevent independent calculation of whether performance gains justify the compute cost.</p>
+<p>The central scientific finding is not that RL necessarily beats acquisition functions, but that <strong>planning depth must match world-model reliability</strong>: H=3/5 outperform H=1, while H=7 deteriorates; reducing 19D initial points from 50 to 5 eliminates the advantage. The next meaningful advance should adapt horizon, teacher, and compute budget to posterior calibration instead of treating 4,000 fixed episodes as the default answer.</p>
+<hr />
+<p><strong>Index status</strong>: read and updated <code>ml-report-index.md</code>. <br />
+<strong>A candid note</strong>: The focal paper provides neither code nor pointwise performance data, and this report does not estimate curve values from pixels. The inability to supply an exact percentage-performance matrix follows from the source's reporting granularity; speculative numbers are not substituted. HTML structure was validated, but the current environment had no executable Chromium in <code>/usr/bin/chromium</code> or <code>/opt/pw-browsers</code> , so browser-screenshot QA cannot be claimed. HTML validation and static overflow-rule checks were used instead.</p></section>
+  </main>
+
+  <footer></footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ Light' : '☾ Dark';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

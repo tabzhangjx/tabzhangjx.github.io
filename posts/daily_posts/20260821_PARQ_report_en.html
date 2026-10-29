@@ -1,0 +1,750 @@
+---
+layout: null
+title: "PARQ"
+date: 2026-08-21
+topic: llm-systems
+tags: ["llm-systems"]
+excerpt: "Piecewise-affine regularization and proximal updates move quantization training from continuous to discrete weights."
+permalink: "/blog/2026/08/21/parq-proximal-quantization-aware-training/en/"
+blog_post: false
+lang: en
+sitemap: true
+alternate_zh: "/blog/2026/08/21/parq-proximal-quantization-aware-training/"
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>PARQ: Making “Continuous First, Discrete Later” Quantization Training a Provable Optimization Process · 2026-08-21</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" aria-pressed="false">☾ Dark</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ML/AI DAILY DEEP REPORT · ICML 2025</p>
+    <h1>PARQ: Making “Continuous First, Discrete Later” Quantization Training a Provable Optimization Process</h1>
+    <p class="subtitle">Efficiency and Systems · Quantization-Aware Training, Proximal Optimization, and Low-Bit Models</p>
+    <div class="meta" aria-label="Report metadata">
+      <span class="chip source">PARQ · ICML 2025</span>
+      <span class="chip">2026-08-21</span>
+      <span class="chip">Quantization-Aware Training</span>
+    </div>
+    <p class="lede">PARQ replaces the interpretation of the straight-through estimator (STE) as forcibly changing a zero derivative to one with convex, nonsmooth piecewise-affine regularization and aggregated proximal updates, continuously contracting models from near-full precision to genuinely discrete weights.</p>
+  </header>
+
+  <main><section class="card" aria-labelledby="section-1-title"><h2 id="section-1-title">0. Link verification table</h2>
+<p>All URLs below were accessed during preparation. “Not found/not public” means no separate resource was verified in the paper, official pages, or author repositories, not definitive nonexistence.</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">The paper</th>
+<th scope="col">Conference website / publication page</th>
+<th scope="col">arXiv (specific version)</th>
+<th scope="col">Code repository</th>
+<th scope="col">Datasets / weights</th>
+<th scope="col">Project page / videos</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>PARQ</strong></td>
+<td><a href="https://proceedings.mlr.press/v267/jin25e.html">ICML 2025 / PMLR</a>; <a href="https://openreview.net/forum?id=8PCxOlwbIn">OpenReview</a></td>
+<td><a href="https://arxiv.org/abs/2503.15748v1">2503.15748v1, 2025-03-19</a></td>
+<td><a href="https://github.com/facebookresearch/parq">facebookresearch/parq</a>; incorporated into <a href="https://github.com/pytorch/ao">torchao prototype</a></td>
+<td>CIFAR-10 and ImageNet use standard public data; no new dataset or trained weights were released</td>
+<td>Separate project page/video not found</td>
+</tr>
+<tr>
+<td>BinaryConnect</td>
+<td><a href="https://dl.acm.org/doi/10.5555/2969442.2969588">NeurIPS 2015 paper record</a></td>
+<td><a href="https://arxiv.org/abs/1511.00363v3">1511.00363v3, 2016-04-18</a></td>
+<td>No separate official author repository verified</td>
+<td>No new data/weights released</td>
+<td>Not found</td>
+</tr>
+<tr>
+<td>BinaryRelax</td>
+<td><a href="https://researchconnect.suny.edu/en/publications/binaryrelax-a-relaxation-approach-for-training-deep-neural-networ/">SIAM J. Imaging Sciences publication record</a></td>
+<td><a href="https://arxiv.org/abs/1801.06313v3">1801.06313v3, 2018-09-05</a></td>
+<td><a href="https://github.com/penhunt">The author's GitHub profile lists a binaryrelax repository</a></td>
+<td>No new data/weights released</td>
+<td>Not found</td>
+</tr>
+<tr>
+<td>ProxQuant</td>
+<td><a href="https://openreview.net/forum?id=HyzMyhCcK7">ICLR 2019 OpenReview</a></td>
+<td><a href="https://arxiv.org/abs/1810.00861v3">1810.00861v3, 2019-03-05</a></td>
+<td><a href="https://github.com/allenbai01/ProxQuant">allenbai01/ProxQuant</a></td>
+<td>No new data/weights released</td>
+<td>Not found</td>
+</tr>
+<tr>
+<td>ProxConnect / Demystifying BinaryConnect</td>
+<td><a href="https://proceedings.neurips.cc/paper/2021">NeurIPS 2021 proceedings</a></td>
+<td><a href="https://arxiv.org/abs/2110.13220v1">2110.13220v1, 2021-10-25</a></td>
+<td>No separate official repository verified</td>
+<td>No new data/weights released</td>
+<td><a href="https://timudk.github.io/">Author page (including arXiv/video)</a></td>
+</tr>
+</tbody></table></div>
+</section><section class="card" aria-labelledby="section-2-title"><h2 id="section-2-title">1. Selection process and candidate pool</h2>
+<p>The deduplication index shows DuoAttention (sparse KV-cache retention) and SimbaV2 (deep-RL optimization geometry) covered in the past 14 days, but not proximal optimization and convex regularization for QAT. A 20-paper pool spans efficiency, systems, quantization, long context, and low rank from ICML 2025 and NeurIPS 2025: Star Attention, RAPID, Reward-Guided Speculative Decoding, GPTAQ, Q-VDiT, LRA-QViT, SeedLoRA, BDIA-Transformer, BlockDialect, RWKVQuant, xLSTM 7B, SketchTune, KVTuner, OrthoRank, PARQ, Learned Prefix Caching, MARS, ClusterFusion, HiFC, and LLM numerical nondeterminism analysis. The candidate list and verified homepages are saved in the same directory at <code>candidates_2026-08-21.txt</code>. </p>
+<p>Executed as requested <code>shuf -i 1-20 -n 1</code> returned <strong>15</strong>, corresponding to PARQ. The full text, three complete result tables, three-seed statistics, algorithm, open implementation, and theoretical proofs were accessible, so <strong>zero redraws</strong>. </p>
+</section><section class="card" aria-labelledby="section-3-title"><h2 id="section-3-title">2. In-depth analysis of the core paper</h2>
+<h3>2.1 Motivation: the real difficulty is that discrete objectives have no usable gradient</h3>
+<p>Quantized inference restricts weights to a finite set (\mathcal Q), such as 1-bit ({-q,+q}), ternary ({-q,0,+q}), or four symmetric 2-bit values, reducing storage and multiply-add costs. But (f(Q(u))) has zero true derivative with respect to latent variables (u) almost everywhere because staircase quantizer (Q) does. STE treats (dQ/du) as 1 during backpropagation, using (\nabla f(Q(u))) to update full-precision latent variables. It works but leaves two issues: replacing zero with one is not an ordinary approximation, and stability/usefulness of final iterates under biased gradients lacks guarantees directly matching large-network training (page 2, Equations 2–3).</p>
+<p>This is not merely theoretical fastidiousness. Tables 1–3 show differences amplified in the most constrained 1-bit setting: PARQ's average gain over STE across six models is <strong>0.615 pp</strong>, with mean relative gain <strong>0.91%</strong>; at 4 bits, the average shrinks to <strong>0.043 pp</strong>. The strongest case is CIFAR-10/ResNet-20 at 1 bit: STE's 89.56% rises to 90.48%, absolute +0.92pp and relative +1.03%. Optimization matters not because more quantization is faster, but because a stable continuous-to-discrete path matters when tight feasible sets make hard projections abrupt.</p>
+<p>The novel challenge combines three demands: genuine discrete structure requires nonsmooth regularization; avoiding wrong valleys of W-shaped nonconvex penalties requires convexity; and convergence must concern the final iterate rather than an average, because averaging discrete points generally produces continuous values. PARQ's convex + nonsmooth + last-iterate combination addresses all three.</p>
+<h3>2.2 Narrative: from challenging STE's gradient interpretation to an executable alternative</h3>
+<p>The paper first rewrites BinaryConnect as a two-variable update: full-precision (u_t) accumulates gradients computed at quantized weights (w_t=Q(u_t)). Attention shifts from fabricated derivatives to mapping historical gradients into structured parameters. If nonsmooth (\ell_1) kinks induce sparsity, can kinks be placed at every target quantization value? Piecewise-affine regularization (PAR) answers this.</p>
+<p>Next, ordinary Prox-SGD scales regularization by the shrinking step size (\eta_t), making soft-threshold dead zones disappear and weakening quantization late in training. AProx instead uses cumulative step size (\gamma_t=\sum_{s=1}^t\eta_s). The proximal map progressively changes from near-identity with slope near 1 to staircase hard quantization.</p>
+<p>The third turn bridges theory and engineering: real models cannot hand-tune centers (q_k), slopes (a_k), and (\lambda) per layer. PARQ estimates the target set (Q_t) online from latent weights using LSBQ, while independently scheduling inverse slope (\rho_t^{-1}:1\rightarrow0). This sacrifices exact equivalence to theoretical AProx for an optimizer-only interface requiring no changes to model forward/backward code.</p>
+<p>The tradeoffs are clear: full-precision latent variables and online center estimation remain, so the method primarily lowers deployment weight/arithmetic costs rather than QAT training memory. Continuous annealing reduces hard-quantization jumps but introduces start/end/steepness hyperparameters. Theory covers convex losses while experiments use nonconvex networks, connected by evidence rather than a theorem.</p>
+<h3>2.3 Formal definitions and mechanism analysis</h3>
+<p>Let the target set be (\mathcal Q={0,\pm q_1,\ldots,\pm q_m}), with (0=q_0&lt;q_1&lt;\cdots&lt;q_m). PAR regularization is defined by Equation 6, page 4:</p>
+<div class="formula" role="math">
+\Psi(w)=\max_{k\in{0,\ldots,m}}{a_k(|w|-q_k)+b_k},
+</div>
+<p>where (0\le a_0&lt;a_1&lt;\cdots&lt;a_m=+\infty), (b_0=0), and</p>
+<div class="formula" role="math">
+b_k=b_{k-1}+a_{k-1}(q_k-q_{k-1}).
+</div>
+<p>A maximum of affine functions ensures convexity; slope jumps at (\pm q_k) create nonsmooth breakpoints, allowing optimality conditions to place many coordinates exactly at quantization values. The objective is</p>
+<div class="formula" role="math">
+\min_w F_\lambda(w)=\mathbb E_z[f(w,z)]+\lambda\Psi(w).
+</div>
+<p>Ordinary Prox-SGD uses (\mathrm{prox}_{\eta_t\lambda\Psi}), approaching identity as (\eta_t\to0). AProx replaces it with (Equation 11, page 7):</p>
+<div class="formula" role="math">
+u_{t+1}=u_t-\eta_t g_t,\qquad
+w_{t+1}=\mathrm{prox}<em>{\gamma_t\lambda\Psi}(u</em>{t+1}),\qquad
+\gamma_t=\sum_{s=1}^{t}\eta_s.
+</div>
+<p>Under convexity and Lipschitz conditions, Theorem 3.2 gives a last-iterate bound (page 9):</p>
+<div class="formula" role="math">
+\mathbb E[F_\lambda(w_t)]-F_\lambda(w^*)
+\le \frac{G R,[2+1.5\ln t]}{\sqrt t}.
+</div>
+<p>The key is not a dramatically new rate but that it concerns (w_t), not (\bar w_t). Even if each (w_t) is discrete, the average (\bar w_t) often returns to continuous space; last-iterate guarantees therefore match deployable quantized models.</p>
+<p>Practical PARQ pseudocode (Algorithm 1, page 10):</p>
+<pre><code class="language-text">Inputs: initial w1, bit count n, learning rate ηt, inverse-slope schedule ρt^{-1}
+u1 ← w1
+for t = 1 ... T-1:
+    ut+1 ← ut - ηt ∇f(wt, zt)
+    Qt+1 ← LSBQ(ut+1, n)             # Estimate 2^n quantization values online
+    wt+1 ← prox_PARQ(ut+1, Qt+1, ρt) # Gradually change soft maps into hard stairs
+return wT
+</code></pre>
+<pre><code class="language-text">Full-precision latent u ── gradients at quantized weights w ──► Gradient accumulation
+       │                                                       │
+       └──── LSBQ estimates Q_t online ◄────────────────────────┘
+                         │
+              PARQ proximal map, ρ^{-1}: 1 → 0
+                         │
+      Near-full precision (early) → soft clustering (middle) → hard quantization (late)
+</code></pre>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">Mechanism / dimension</th>
+<th scope="col">Design choice</th>
+<th scope="col">Motivation</th>
+<th scope="col">Key hyperparameters / implementation facts</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Structural regularizer</td>
+<td>Convex, nonsmooth, piecewise-affine (\Psi)</td>
+<td>Create discrete kinks while avoiding incorrect W-shaped valleys</td>
+<td>Symmetric (Q); extensible to asymmetry</td>
+</tr>
+<tr>
+<td>Optimizer</td>
+<td>Aggregate Prox / AProx</td>
+<td>Prevent vanishing regularization as (\eta_t\to0)</td>
+<td>(\gamma_t=\sum_s\eta_s)</td>
+</tr>
+<tr>
+<td>Quantization centers</td>
+<td>Online LSBQ estimation at every step</td>
+<td>No manual layer-wise (q_k) tuning</td>
+<td>Closed form for 1 bit;&gt;2-bit uses a greedy foldable approximation</td>
+</tr>
+<tr>
+<td>Soft-to-hard schedule</td>
+<td>(\rho_t^{-1}) monotonically decreases from 1 to 0</td>
+<td>Track full precision early and ensure hard quantization late</td>
+<td>Cosine/sigmoid schedules in the paper; code exposes anneal_start/end/steepness</td>
+</tr>
+<tr>
+<td>Integration</td>
+<td>optimizer-only</td>
+<td>No changes to model forward/backward</td>
+<td>Base optimizer can be SGD/Adam/AdamW</td>
+</tr>
+<tr>
+<td>Grouped quantization</td>
+<td>Per-channel for ResNet-50/DeiT; some layers stay FP</td>
+<td>Reduce accuracy loss in larger models</td>
+<td>DeiT embeddings, LayerNorm, and final projection remain FP</td>
+</tr>
+</tbody></table></div>
+<h3>2.4 Engineering details</h3>
+<p>CIFAR-10 experiments quantize all ResNet-20/56 weights, including final projection, for 200 epochs: SGD momentum 0.9, weight decay (2\times10^{-4}), initial LR 0.1, reduced 10× at epochs 80/120/150 (page 11). ImageNet/ResNet-50 quantizes residual-block weights per channel, using SGD LR 0.1, momentum 0.9, weight decay (10^{-4}), and 10× LR decay every 30 epochs.</p>
+<p>DeiT-Ti/S/B have approximately 5M/22M/86M parameters and train for 300 epochs with AdamW LR (5\times10^{-4}) and weight decay 0.05. The last 20 epochs fix LR at (10^{-8}), explicitly reported as better than default minimum (10^{-5}); PARQ and BinaryRelax are already hard-quantized then. Code examples use 8 GPUs, per-channel LSBQ, and steepness 50 for 2-bit DeiT; ResNet-50 uses steepness 75. No equal-compute training times, per-step LSBQ overhead, or kernel-level inference speeds are reported, so efficiency is demonstrated mainly as feasible low-bit representation rather than end-to-end throughput.</p>
+<h3>2.5 Experimental design, benchmarks, and statistics</h3>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">Dataset / model</th>
+<th scope="col">Scale and task</th>
+<th scope="col">Quantization scope</th>
+<th scope="col">Metric</th>
+<th scope="col">Run count</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>CIFAR-10 / ResNet-20</td>
+<td>10-class image classification</td>
+<td>All weights, 1/T/2/3/4-bit</td>
+<td>Top-1 test accuracy (%)</td>
+<td>3 seeds</td>
+</tr>
+<tr>
+<td>CIFAR-10 / ResNet-56</td>
+<td>10-class image classification</td>
+<td>All weights, 1/T/2/3/4-bit</td>
+<td>Top-1 test accuracy (%)</td>
+<td>3 seeds</td>
+</tr>
+<tr>
+<td>ImageNet / ResNet-50</td>
+<td>1000-class image classification</td>
+<td>Per-channel residual-block weights</td>
+<td>Top-1 test accuracy (%)</td>
+<td>3 seeds</td>
+</tr>
+<tr>
+<td>ImageNet / DeiT-Ti</td>
+<td>5M-parameter Transformer</td>
+<td>Per-channel attention-block weights; some FP layers</td>
+<td>Top-1 test accuracy (%)</td>
+<td>3 seeds</td>
+</tr>
+<tr>
+<td>ImageNet / DeiT-S</td>
+<td>22M-parameter Transformer</td>
+<td>Same as above</td>
+<td>Top-1 test accuracy (%)</td>
+<td>3 seeds</td>
+</tr>
+<tr>
+<td>ImageNet / DeiT-B</td>
+<td>86M-parameter Transformer</td>
+<td>Same as above</td>
+<td>Top-1 test accuracy (%)</td>
+<td>3 seeds</td>
+</tr>
+</tbody></table></div>
+<p>The paper has only three head-to-head QAT methods, so a six-method matrix cannot honestly be created. The complete three-method × six-model results from Tables 1–3 are retained. To limit width, the most informative 1-bit and 2-bit results appear first, followed by aggregates over five bit widths.</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">Method / bit width</th>
+<th scope="col" align="right">R20/C10</th>
+<th scope="col" align="right">R56/C10</th>
+<th scope="col" align="right">R50/IN</th>
+<th scope="col" align="right">DeiT-Ti/IN</th>
+<th scope="col" align="right">DeiT-S/IN</th>
+<th scope="col" align="right">DeiT-B/IN</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>STE 1-bit</td>
+<td align="right">89.56±0.18</td>
+<td align="right">91.55±0.33</td>
+<td align="right">66.17±0.04</td>
+<td align="right">51.62±0.18</td>
+<td align="right">70.07±0.03</td>
+<td align="right">78.79±0.03</td>
+</tr>
+<tr>
+<td>BinaryRelax 1-bit</td>
+<td align="right">89.98±0.13</td>
+<td align="right"><strong>91.75±0.37</strong></td>
+<td align="right">66.14±0.28</td>
+<td align="right"><strong>52.62±0.03</strong></td>
+<td align="right">70.69±0.07</td>
+<td align="right">79.02±0.03</td>
+</tr>
+<tr>
+<td><strong>PARQ 1-bit</strong></td>
+<td align="right"><strong>90.48±0.26</strong></td>
+<td align="right">91.34±0.37</td>
+<td align="right"><strong>66.71±0.13</strong></td>
+<td align="right">52.51±0.19</td>
+<td align="right"><strong>71.06±0.02</strong></td>
+<td align="right"><strong>79.35±0.04</strong></td>
+</tr>
+<tr>
+<td>STE 2-bit</td>
+<td align="right">91.22±0.15</td>
+<td align="right">92.72±0.27</td>
+<td align="right">72.38±0.10</td>
+<td align="right">64.81±0.15</td>
+<td align="right">77.40±0.01</td>
+<td align="right">80.73±0.17</td>
+</tr>
+<tr>
+<td>BinaryRelax 2-bit</td>
+<td align="right">91.57±0.06</td>
+<td align="right">92.30±0.40</td>
+<td align="right"><strong>72.64±0.17</strong></td>
+<td align="right">65.20±0.04</td>
+<td align="right">77.43±0.04</td>
+<td align="right">80.81±0.14</td>
+</tr>
+<tr>
+<td><strong>PARQ 2-bit</strong></td>
+<td align="right"><strong>91.71±0.03</strong></td>
+<td align="right"><strong>92.77±0.10</strong></td>
+<td align="right">72.43±0.03</td>
+<td align="right"><strong>65.32±0.06</strong></td>
+<td align="right"><strong>77.63±0.04</strong></td>
+<td align="right"><strong>80.84±0.06</strong></td>
+</tr>
+</tbody></table></div>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">Bit width</th>
+<th scope="col" align="right">Mean absolute PARQ gain over STE</th>
+<th scope="col" align="right">Mean relative gain</th>
+<th scope="col" align="right">PARQ wins over the strongest baseline per model</th>
+<th scope="col" align="right">Mean gap to the strongest baseline per model</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1-bit</td>
+<td align="right"><strong>+0.615 pp</strong></td>
+<td align="right"><strong>+0.910%</strong></td>
+<td align="right">4/6</td>
+<td align="right">+0.203 pp</td>
+</tr>
+<tr>
+<td>Ternary</td>
+<td align="right">+0.270 pp</td>
+<td align="right">+0.298%</td>
+<td align="right">4/6</td>
+<td align="right">-0.065 pp</td>
+</tr>
+<tr>
+<td>2-bit</td>
+<td align="right">+0.240 pp</td>
+<td align="right">+0.313%</td>
+<td align="right"><strong>5/6</strong></td>
+<td align="right"><strong>+0.055 pp</strong></td>
+</tr>
+<tr>
+<td>3-bit</td>
+<td align="right">+0.117 pp</td>
+<td align="right">+0.171%</td>
+<td align="right">2/6</td>
+<td align="right">-0.100 pp</td>
+</tr>
+<tr>
+<td>4-bit</td>
+<td align="right">+0.043 pp</td>
+<td align="right">+0.059%</td>
+<td align="right">2/6</td>
+<td align="right">-0.078 pp</td>
+</tr>
+</tbody></table></div>
+<p><strong>The strongest quantitative evidence in the paper</strong> is not peak accuracy but the bit-width gradient: PARQ's mean advantage over STE monotonically shrinks from +0.615pp at 1 bit to +0.043pp at 4 bits (recomputed from Tables 1–3). This fits the idea that soft-to-hard paths primarily relieve extreme discrete constraints. PARQ is not universally best: ternary DeiT-Ti scores 60.99%, below BinaryRelax's 62.18% by <strong>1.19 pp</strong>; 4-bit DeiT-B scores 80.35%, below BinaryRelax's 80.76% by <strong>0.41 pp</strong>. </p>
+<h3>2.6 Ablations, hyperparameter sensitivity, and phase transitions</h3>
+<p>The paper <strong>does not provide</strong> a progressive ablation table for LSBQ → PAR regularization → aggregated step sizes → independent slope schedules, so final gains cannot be assigned quantitatively to individual components. STE/BinaryRelax/PARQ comparisons change regularization geometry and annealing direction, making them method-level rather than single-variable ablations. Figures 10–13 show dynamics: early 2-bit DeiT-Ti PARQ loss tracks FP, rises during rapid slope changes, and approaches STE late. Figure 11 shows proximal maps changing from lines to stairs at epochs 6/150/300; Figure 12 shows PARQ avoiding abrupt accuracy drops seen in STE/BinaryRelax on 1-bit DeiT-S; Figure 13 shows (q_1,q_2) expanding quickly then contracting slowly.</p>
+<p>There is a qualitative transition window: near (\rho^{-1}=1), the model approximates full precision; slope changes raise training loss; as (\rho^{-1}\to0), hard quantization begins. Figure 10 lacks machine-readable per-epoch values, and no anneal_start/end/steepness grid is published, preventing precise transition thresholds or CIs. Repository steepness values of 50 for DeiT and 75 for ResNet-50 show architecture-specific tuning, not established robustness ranges.</p>
+<p>Tables 1–3 report mean±standard deviation over 3 seeds, without CIs, significance tests, or raw seed values. ResNet-20 1-bit's PARQ–STE gap is 0.92pp, versus standard deviations 0.26/0.18, clearly larger than either individual deviation. DeiT-B ternary's 0.01pp advantage, however, is comparable to 0.01/0.08 deviations and does not establish stable superiority.</p>
+<h3>2.7 Genuine contributions, reusable designs, and transfer potential</h3>
+<p>The contribution is not another quantizer, but connecting engineering STEs, optimization's dual averaging/proximal maps, and structural learning's nonsmooth regularization. STE becomes a limit of soft maps rather than an isolated trick, while quantization values, regularization geometry, and annealing paths become inspectable design choices.</p>
+<p>The optimizer-only abstraction is most reusable: retain model definitions, forward passes, losses, and backward passes; specify bit counts for parameter groups and replace an optimizer wrapper. Second, estimate discrete centers online while independently scheduling discretization strength: (Q_t) adapts to within-layer distributions, while (\rho_t) controls hardening, no longer entangled in one (\lambda). Third, track last iterates: averaging can destroy intended discrete structure, so theory/logging should follow final points rather than average losses alone.</p>
+<p>Transfer opportunities include sparsification, clustered weights, mixed precision, and vector quantization. Structures expressible through nonsmooth breakpoints or grouped proximal maps may reuse AProx. Asymmetric/nonuniform quantization, activations, and LLMs still require fresh validation of compute overhead and nonconvexity.</p>
+<h3>2.8 Limitations: author-stated boundaries and additional critique</h3>
+<p>There is no separate Limitations section. The following author-stated boundaries come from explicit textual qualifications, not an author-enumerated risk list.</p>
+<ol>
+<li><strong>Theoretical scope</strong>: Sections 2–3 assume sample losses convex in weights and a Lipschitz objective, whereas §5 trains nonconvex ResNet/DeiT models. The authors state last-iterate guarantees for convex optimization, not deep networks.</li>
+<li><strong>Approximate higher-bit LSBQ</strong>: Page 10 explicitly states that (n&gt;2) lacks closed forms and uses greedy foldable representations. Thus 3/4-bit centers have no global least-squares guarantee.</li>
+<li><strong>Finite training differs from theoretical cumulative strength</strong>: Page 10 acknowledges that theory requires (\gamma_t\to\infty), while finite steps and decaying learning rates yield only a “not very large constant.” A separate practical (\rho) schedule absorbs this discrepancy.</li>
+</ol>
+<p>Additional critique:</p>
+<ol>
+<li><strong>[Argument gap] Theory–experiment disconnect.</strong> Theorem 3.2 assumes convex losses, while all main experiments use nonconvex ResNet/DeiT. Last-iterate convergence is therefore a mechanistic inspiration, not a proof of practical superiority. Compare convex logistic regression and small nonconvex networks under the same schedule, recording objective gaps, discretization rates, and final iterates.</li>
+<li><strong>[Missing key competitors] Only two baselines.</strong> Tables 1–3 compare only STE and BinaryRelax, although related work discusses ProxQuant/ProxConnect. It is unclear whether gains over the closest proximal methods come from convex PAR or tuning differences. Add ProxQuant and ProxConnect under identical code, LSBQ, and augmentation.</li>
+<li><strong>[Experimental design] No component-level ablations.</strong> Online LSBQ, aggregate scaling, soft-to-hard slopes, and a final 20 epochs at LR (10^{-8}) coexist, so the +0.615pp 1-bit mean cannot be attributed to convex regularization alone. A 2×2×2 factorial experiment should separate center updates, cumulative step sizes, and annealing.</li>
+<li><strong>[Failing subtasks] Advantages are not monotonic.</strong> Ternary DeiT-Ti's 60.99% trails BinaryRelax's 62.18% by 1.19pp, and 4-bit DeiT-B trails by 0.41pp. Greater stability/better local minima mainly applies to low bits or selected models, not dominance across bit widths.</li>
+<li><strong>[Metric validity] No measured efficiency.</strong> Only Top-1 accuracy is reported, without model bytes, training throughput, inference latency, energy, or dedicated low-bit kernels. n-bit weights do not directly imply end-to-end speed. DeiT embeddings, LayerNorm, and final projections remain FP, so compression is not simply 32/n either.</li>
+<li><strong>[Statistical evidence] Three seeds cannot establish tiny gaps.</strong> DeiT-B ternary gains only +0.01pp and DeiT-S 4-bit +0.04pp, while some standard deviations reach 0.08/0.12. These rankings may reflect noise; paired seeds, 95% CIs, and multiple-comparison corrections are needed.</li>
+<li><strong>[Reproducibility] Hyperparameter reporting is incomplete.</strong> The text allows cosine/sigmoid schedules, but repository examples use steepness 50 for DeiT and 75 for ResNet-50 without sensitivity curves, so architecture transfer still requires search. Public code substantially reduces risk but does not eliminate tuning-budget bias.</li>
+<li><strong>[External validity] No language models, activation quantization, or deployment.</strong> All 30 configurations concern image-classification weight quantization, so results do not extend to LLM activation outliers, KV caches, MoE experts, or accumulated generation errors. A direct next test compares weight-only versus W+A QAT on the same 1B–7B language model.</li>
+</ol>
+</section><section class="card" aria-labelledby="section-4-title"><h2 id="section-4-title">3. Related-work retrospective: problem and technical lineage</h2>
+<h3>3.1 BinaryConnect — 2015, NeurIPS</h3>
+<p><strong>What it solved.</strong> BinaryConnect uses binary weights in forward/backward passes while retaining full-precision latent weights to accumulate gradients, showing deployable models need not maintain binary training states throughout. It popularized hardware motivation for replacing multiplication with addition/subtraction and the latent–quantized two-variable structure.</p>
+<p><strong>Remaining gap.</strong> Backpropagation bypasses sign/round's zero derivatives, effectively using STE. Empirical success does not explain why replacing 0 with 1 avoids uncontrolled bias; hard maps from the first step can also cause abrupt optimization changes.</p>
+<p><strong>PARQ's response.</strong> PARQ retains the two-variable framework but replaces hard (Q(u)) with a progressively steeper proximal map: near FP early, returning to BinaryConnect late. BinaryConnect becomes PARQ's asymptotic endpoint rather than a separately justified heuristic.</p>
+<p><strong>Inherited design.</strong> Full-precision latents accumulating gradients evaluated at quantized weights carry over unchanged; only the geometry of the latent-to-quantized mapping changes.</p>
+<h3>3.2 BinaryRelax — 2018, SIAM Journal on Imaging Sciences</h3>
+<p><strong>What it solved.</strong> BinaryRelax avoids imposing discrete constraints immediately, using squared distance to the quantized set (a Moreau envelope) as a continuous relaxation, increasing regularization gradually, and finally switching to exact quantization at small learning rates. This establishes soft-to-hard continuation.</p>
+<p><strong>Remaining gap.</strong> Squared distance yields smooth, nonconvex W-shaped geometry. Smoothness does not readily pull weights exactly onto discrete points, while nonconvex hills can prevent movement from poor valleys to better ones. The two-stage switch can also be abrupt.</p>
+<p><strong>PARQ's response.</strong> PARQ inherits continuation but replaces its geometry with convex, nonsmooth PAR: kinks attract weights, while convexity removes incorrect W-shaped valleys. BinaryRelax is a main baseline in Tables 1–3, yet PARQ exceeds it in only 17/30 configurations (recomputed here), so geometric advantages do not automatically improve every model's accuracy.</p>
+<p><strong>Inherited design.</strong> Gradually increasing regularization toward hard constraints becomes a proximal slope increasing from 1 to infinity; both treat training time as a quantization degree of freedom.</p>
+<h3>3.3 ProxQuant — 2019, ICLR</h3>
+<p><strong>What it solved.</strong> ProxQuant formulates quantized training as regularized learning, inserting proximal operators between stochastic gradients and relating STE/BinaryConnect to dual averaging. It systematically moves QAT from pseudogradients into proximal-optimization language.</p>
+<p><strong>Remaining gap.</strong> ProxQuant commonly uses nonconvex distance-to-discrete-set penalties, and ordinary Prox-SGD weakens regularization as LR shrinks. It does not jointly address discrete final iterates and convex regularizers inducing multiple discrete clusters.</p>
+<p><strong>PARQ's response.</strong> PARQ constructs convex PAR with multiple kinks and scales it by cumulative rather than current step sizes, preventing late-stage quantization from disappearing. Theory advances from average/function-value convergence to last iterates.</p>
+<p><strong>Inherited design.</strong> The prox-between-gradients structure stays; the regularizer, scaling, and target guarantee change.</p>
+<h3>3.4 ProxConnect — 2021, NeurIPS</h3>
+<p><strong>What it solved.</strong> ProxConnect further identifies BinaryConnect as a special case of dual averaging, proposes easy-to-design/analyze proximal quantizers, and supplies convergence results, unifying BinaryConnect, PTQ, and other quantization algorithms.</p>
+<p><strong>Remaining gap.</strong> PARQ page 3 explicitly notes that ProxConnect's convex-regularization results lack a concrete convex construction inducing multivalue quantization and mainly guarantee average iterates, which need not stay quantized.</p>
+<p><strong>PARQ's response.</strong> AProx is algorithmically equivalent to ProxConnect, but PARQ adds a concrete convex nonsmooth PAR and last-iterate bounds of the same order as average-iterate bounds.</p>
+<p><strong>Inherited design.</strong> Dual-averaging/aggregate-gradient interpretations feed directly into AProx; PARQ turns an abstract proximal family into an online-center-estimating implementation for ResNet/DeiT.</p>
+</section>
+<figure class="figure" aria-labelledby="figure-parq-title">
+  <p class="fig-title" id="figure-parq-title">PARQ's mean accuracy advantage over STE shrinks with bit width</p>
+  <p class="fig-sub">Mean absolute gain over six models, in percentage points (pp). Benefits are largest at low bit widths.</p>
+  <div class="legend" aria-label="Legend"><span><span class="swatch" style="background:var(--chart-primary)"></span> PARQ − STE</span></div>
+  <svg class="chart" viewBox="0 0 900 330" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>Six-model mean accuracy gains of PARQ over STE</title>
+    <desc>1-bit 0.615, ternary 0.270, 2-bit 0.240, 3-bit 0.117, 4-bit 0.043 percentage points.</desc>
+    <line x1="90" y1="275" x2="850" y2="275" stroke="var(--grid)" stroke-width="2"/>
+    <text x="40" y="280" fill="var(--muted)" font-size="14">0</text>
+    <rect x="120" y="81.7" width="82" height="193.3" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="1-bit: +0.615 pp"><title>1-bit: +0.615 pp</title></rect><text x="161" y="71.7142857142857" text-anchor="middle" fill="var(--text-primary)" font-size="14">+0.615</text><text x="161" y="302" text-anchor="middle" fill="var(--text-secondary)" font-size="14">1-bit</text><rect x="265" y="190.1" width="82" height="84.9" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="T: +0.270 pp"><title>T: +0.270 pp</title></rect><text x="306" y="180.1428571428571" text-anchor="middle" fill="var(--text-primary)" font-size="14">+0.270</text><text x="306" y="302" text-anchor="middle" fill="var(--text-secondary)" font-size="14">T</text><rect x="410" y="199.6" width="82" height="75.4" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="2-bit: +0.240 pp"><title>2-bit: +0.240 pp</title></rect><text x="451" y="189.57142857142856" text-anchor="middle" fill="var(--text-primary)" font-size="14">+0.240</text><text x="451" y="302" text-anchor="middle" fill="var(--text-secondary)" font-size="14">2-bit</text><rect x="555" y="238.2" width="82" height="36.8" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="3-bit: +0.117 pp"><title>3-bit: +0.117 pp</title></rect><text x="596" y="228.22857142857143" text-anchor="middle" fill="var(--text-primary)" font-size="14">+0.117</text><text x="596" y="302" text-anchor="middle" fill="var(--text-secondary)" font-size="14">3-bit</text><rect x="700" y="261.5" width="82" height="13.5" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="4-bit: +0.043 pp"><title>4-bit: +0.043 pp</title></rect><text x="741" y="251.48571428571427" text-anchor="middle" fill="var(--text-primary)" font-size="14">+0.043</text><text x="741" y="302" text-anchor="middle" fill="var(--text-secondary)" font-size="14">4-bit</text>
+  </svg>
+  <figcaption>Source: PARQ Tables 1–3, recomputed here. Full values and standard deviations appear in adjacent tables.</figcaption>
+</figure><section class="card" aria-labelledby="section-5-title"><h2 id="section-5-title">4. Technical evolution</h2>
+<pre><code class="language-text">2015 BinaryConnect [hard-quantized forward passes; FP latents; STE]
+        │
+        ├── 2018 BinaryRelax [continuous relaxation; nonconvex smooth distance; two stages]
+        │          │
+        │          └── Soft-to-hard training, but W-shaped valleys and abrupt switching
+        │
+        └── 2019 ProxQuant [regularization + proximal gradients]
+                   │
+                   └── 2021 ProxConnect [dual-averaging unification; proximal family; average-iterate guarantees]
+                                  │
+                                  ├── No concrete convex multivalue quantization regularizer
+                                  └── Averages of quantized points need not be quantized
+                                           │
+2025 PARQ [convex+nonsmooth PAR; AProx; last iterates; online LSBQ; soft→hard schedules]
+</code></pre>
+<p>The driver shifts from bypassing nondifferentiability to designing optimization geometry. Early work asked whether binary weights could train; later work relaxed hard constraints, then unified STE with proximal/dual averaging. PARQ focuses on local kinks, global convexity, and final-iterate structure. Attention expands beyond accuracy to stability, guarantees, and integration, but real low-bit kernels and end-to-end latency remain unfinished.</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">Work</th>
+<th scope="col">Publication date</th>
+<th scope="col">Conference/publication</th>
+<th scope="col">Core contribution</th>
+<th scope="col">Main evidence</th>
+<th scope="col">Relation to PARQ</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>BinaryConnect</td>
+<td class="num">2015.12</td>
+<td>NeurIPS 2015</td>
+<td>FP latent + binary forward/backward</td>
+<td>Near contemporary SOTA on MNIST/CIFAR/SVHN</td>
+<td>Algorithmic endpoint and source of two-variable structure</td>
+</tr>
+<tr>
+<td>BinaryRelax</td>
+<td class="num">2018.11</td>
+<td>SIAM JIS</td>
+<td>Moreau smooth relaxation + continuation</td>
+<td>CIFAR/ImageNet</td>
+<td>Inherits soft-to-hard training; replaces nonconvex smooth geometry</td>
+</tr>
+<tr>
+<td>ProxQuant</td>
+<td class="num">2019.05</td>
+<td>ICLR 2019</td>
+<td>Regularized QAT + proximal gradients</td>
+<td>ResNet/LSTM</td>
+<td>Inherits prox; addresses vanishing regularization and structural guarantees</td>
+</tr>
+<tr>
+<td>ProxConnect</td>
+<td class="num">2021.12</td>
+<td>NeurIPS 2021</td>
+<td>Dual-averaging unification and proximal families</td>
+<td>CIFAR-10/ImageNet</td>
+<td>Source of AProx form; adds concrete convex penalties and last-iterate guarantees</td>
+</tr>
+<tr>
+<td><strong>PARQ</strong></td>
+<td><strong>2025.07</strong></td>
+<td><strong>ICML 2025</strong></td>
+<td><strong>Convex nonsmooth PAR + AProx + online LSBQ</strong></td>
+<td><strong>Tables 1–3: 30 configurations, 3 seeds</strong></td>
+<td><strong>Point of convergence</strong></td>
+</tr>
+</tbody></table></div>
+</section><section class="card" aria-labelledby="section-6-title"><h2 id="section-6-title">5. Open challenges and actionable research opportunities</h2>
+<h3>5.1 Theory</h3>
+<ol>
+<li><strong>Nonconvex last-iterate bounds.</strong> Under matched networks/noise assumptions, derive final-iterate gradient-mapping or local-stability bounds for AProx, ProxConnect, and STE. Measure objective gaps, discretization rates, and basin switches to test whether theory predicts accuracy.</li>
+<li><strong>Coupled analysis of online (Q_t).</strong> Theory fixes (\Psi), while practice updates (Q_t) with LSBQ every step. Compare frozen Q, epoch-wise Q updates, and step-wise updates on fixed models, studying bounds linking drift speed and convergence error.</li>
+<li><strong>Necessity of multivalue convex nonsmooth regularization.</strong> Under identical proximal kernels/schedules, compare convex PAR, nonconvex L1 distance, and smooth L2 distance. Measure incorrect-valley visits, Hessian spectra, and final discretization rates to isolate convexity and nonsmoothness causally.</li>
+</ol>
+<h3>5.2 Engineering and Applications</h3>
+<ol>
+<li><strong>Equal-GPU-hour QAT.</strong> On fixed 8×H100 hardware, batches, and wall-clock time, compare STE, BinaryRelax, ProxQuant, and PARQ on images/s, extra memory, LSBQ time share, and final accuracy, addressing the current accuracy-only evidence gap.</li>
+<li><strong>Real-inference Pareto curves.</strong> Export INT1/T/INT2 models to one backend and report model size, peak memory, p50/p99 latency, throughput, and energy. Account separately for FP DeiT layers rather than equating theoretical bit width with actual compression.</li>
+<li><strong>Fair annealing-schedule comparisons.</strong> With fixed training steps and tuning budgets, compare cosine, sigmoid, linear, and validation-triggered schedules head-to-head, reporting 10 seeds and loss spikes during annealing.</li>
+<li><strong>LLM scaling.</strong> On identical 1B/7B models and token budgets, compare PARQ, STE, and GPTQ-style QAT for W1/W2-only and W2A8. Report perplexity, zero-shot accuracy, generation stability, and tokens/s.</li>
+</ol>
+<h3>5.3 Emerging Directions</h3>
+<ol>
+<li><strong>Adaptive quantization for MoE experts.</strong> Compare shared (Q), expert-specific (Q_e), and routing-frequency-grouped (Q_g) with fixed total bit budgets, testing whether sparse samples cause center drift in long-tail experts.</li>
+<li><strong>Time-varying activation/KV-cache quantization.</strong> Extend PAR breakpoints to token/channel-conditioned forms and compare with static per-channel quantization at equal context length, batch, and memory budgets, focusing on outlier-token error propagation.</li>
+<li><strong>Combining structures.</strong> At equal compression, compare PARQ only, structured sparsity only, and PARQ+sparsity, testing competition between nonsmooth structural regularizers. Report actual kernel speedups, not just theoretical FLOPs.</li>
+</ol>
+</section><section class="card" aria-labelledby="section-7-title"><h2 id="section-7-title">6. Other recent work worth watching</h2>
+<ol>
+<li><strong><a href="https://proceedings.mlr.press/v267/li25dn.html">GPTAQ</a></strong>(2025.07, ICML 2025): Uses asymmetric calibration against full-precision layer outputs to reduce accumulated interlayer quantization errors, complementing PARQ's training-time geometry.</li>
+<li><strong><a href="https://proceedings.mlr.press/v267/li25dd.html">KVTuner</a></strong>(2025.07, ICML 2025): Assigns mixed-precision KV caches by layer sensitivity, representing bit budgets as learnable system resources.</li>
+<li><strong><a href="https://proceedings.mlr.press/v267/jang25c.html">BlockDialect</a></strong>(2025.07, ICML 2025): Fine-grained mixed formats for all LLM matrix-multiplication paths; the project reports accuracy advantages over MXFP4, motivating hardware-format/QAT coupling.</li>
+<li><strong><a href="https://proceedings.mlr.press/v267/xu25at.html">RWKVQuant</a></strong>(2025.07, ICML 2025): Proxy-guided PTQ handles RWKV nonlinear operators that obstruct smoothing/rotation fusion, showing quantization must respect architectural operators.</li>
+<li><strong><a href="https://proceedings.mlr.press/v267/feng25q.html">Q-VDiT</a></strong>(2025.07, ICML 2025): Token-aware error compensation and distillation for video DiTs, focusing on temporal quantization errors.</li>
+<li><strong><a href="https://proceedings.mlr.press/v267/beck25b.html">xLSTM 7B</a></strong>(2025.07, ICML 2025): Uses recurrent architecture rather than compression for efficient long generation, suitable for equal-quality throughput comparisons with low-bit Transformers.</li>
+<li><strong><a href="https://proceedings.neurips.cc/paper_files/paper/2025/hash/414f642a1ea9350006669774cba9bcd4-Abstract-Conference.html">Learned Prefix Caching</a></strong>(2025.12, NeurIPS 2025): Learns session continuation to guide prefix-cache eviction, reporting 18–47% cache reduction at equal hit rates and +11% simulated prefill throughput.</li>
+</ol>
+</section><section class="card" aria-labelledby="section-8-title"><h2 id="section-8-title">7. Conclusion</h2>
+<p>PARQ turns QAT heuristics into three inspectable objects: target centers, structure-inducing regularizers, and time-dependent annealing paths. Recomputed Tables 1–3 are strongest at 1–2 bits: 1-bit gains average +0.615pp over STE across six models, while 2-bit wins against the strongest per-model baseline in 5/6 models. It does not win every bit width or report real latency, energy, or LLM results. The precise conclusion is: <strong>PARQ offers a more principled and more robust training path at extremely low bit widths, but has not established faster end-to-end systems or universal cross-architecture quantization.</strong></p>
+<hr>
+<p>Data provenance: core formulas, algorithms, setups, and results come from <a href="https://arxiv.org/pdf/2503.15748">PARQ arXiv PDF</a> pages 2–13, Tables 1–3, Algorithm 1, and Figures 10–13. All derived means, absolute pp, and relative percentages are recomputed from original tables. Unreported component ablations, hyperparameter grids, CIs, inference latency, and energy are not invented. HTML passed Warm Editorial structural, dependency, semantic, and placeholder checks (0 errors / 0 warnings). The runtime supplied neither <code>/usr/bin/chromium</code>, <code>/opt/pw-browsers</code> nor another executable Chromium, and browser installation was not run under the constraints, preventing Playwright light/dark/mobile screenshot verification. Responsive, print, and theme-switch rules remain, with this validation gap explicitly recorded.</p>
+</section></main>
+
+  <footer>Core source: PARQ ICML 2025 / arXiv:2503.15748v1. Generated: 2026-08-21.</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ Light' : '☾ Dark';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,917 @@
+---
+layout: null
+title: "LIMEFLDL"
+date: 2026-08-22
+topic: trustworthy-theory
+tags: ["trustworthy-theory"]
+excerpt: "A simplex-constrained attribution matrix explains the complete label distribution of structured-output models."
+permalink: "/blog/2026/08/22/limefldl-label-distribution-explanations/en/"
+blog_post: false
+lang: en
+sitemap: true
+alternate_zh: "/blog/2026/08/22/limefldl-label-distribution-explanations/"
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>LIMEFLDL: From Explaining One Label to Explaining an Entire Label Distribution · 2026-08-22</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" aria-pressed="false">☾ Dark</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ML/AI DAILY DEEP REPORT · ICML 2025</p>
+    <h1>LIMEFLDL: From Explaining One Label to Explaining an Entire Label Distribution</h1>
+    <p class="subtitle">Theory and Trustworthiness · Structured Outputs, Local Explanations, and Stability</p>
+    <div class="meta" aria-label="Report metadata">
+      <span class="chip source">LIMEFLDL · ICML 2025</span>
+      <span class="chip">2026-08-22</span>
+      <span class="chip">Interpretability for Label Distributions</span>
+    </div>
+    <p class="lede">Instead of fitting independent LIME explanations for each label, LIMEFLDL jointly approximates a black box's entire label distribution with a feature-attribution matrix constrained to the probability simplex.</p>
+  </header>
+
+  <main><section class="card" aria-labelledby="section-1-title"><h2 id="section-1-title">0. Link verification table</h2>
+<p>All links were accessed on 2026-08-22. Version dates follow arXiv submission history; “not found” means unverified through PMLR/OpenReview, arXiv, and public author pages, not definitive nonexistence.</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">The paper</th>
+<th scope="col">Conference website / publication page</th>
+<th scope="col">arXiv (specific version)</th>
+<th scope="col">Code repository</th>
+<th scope="col">Datasets / weights</th>
+<th scope="col">Project page / video</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>LIMEFLDL (core)</strong></td>
+<td><a href="https://proceedings.mlr.press/v267/jia25d.html">ICML 2025 / PMLR</a>; <a href="https://openreview.net/forum?id=kkSvncjUOq">OpenReview</a></td>
+<td><strong>Not found</strong></td>
+<td><strong>Not public / not found</strong></td>
+<td>Reuses LDL datasets; <a href="https://palm.seu.edu.cn/xgeng/LDL/index.htm">LDL dataset homepage</a></td>
+<td><strong>Not found</strong></td>
+</tr>
+<tr>
+<td>Label Distribution Learning</td>
+<td><a href="https://palm.seu.edu.cn/xgeng/LDL/index.htm">Author page corresponding to IEEE TKDE 2016</a></td>
+<td><a href="https://arxiv.org/abs/1408.6027v2">1408.6027v2, 2016-04-05</a></td>
+<td><a href="https://palm.seu.edu.cn/xgeng/LDL/index.htm">Author's MATLAB implementation</a></td>
+<td><a href="https://palm.seu.edu.cn/xgeng/LDL/index.htm">14 public LDL datasets</a></td>
+<td>Same author page as at left</td>
+</tr>
+<tr>
+<td>LIME</td>
+<td><a href="https://arxiv.org/abs/1602.04938">KDD 2016 / arXiv paper page</a></td>
+<td><a href="https://arxiv.org/abs/1602.04938v3">1602.04938v3, 2016-08-09</a></td>
+<td><a href="https://github.com/marcotcr/lime">marcotcr/lime</a></td>
+<td><strong>Not applicable / not separately released</strong></td>
+<td><strong>Not found</strong></td>
+</tr>
+<tr>
+<td>SHAP</td>
+<td><a href="https://proceedings.neurips.cc/paper/7062-a-unified-approach-to-interpreting-model-predictions.pdf">NeurIPS 2017 paper PDF</a></td>
+<td><a href="https://arxiv.org/abs/1705.07874v2">1705.07874v2, 2017-11-25</a></td>
+<td><a href="https://github.com/shap/shap">shap/shap</a></td>
+<td><strong>Not applicable</strong></td>
+<td><a href="https://scottlundberg.com/publication/shap_nips/">Author paper page (video/code links)</a></td>
+</tr>
+<tr>
+<td>GLIME</td>
+<td><a href="https://proceedings.neurips.cc/paper_files/paper/2023/hash/71ed042903ed67c7f6355e5dd0539eec-Abstract-Conference.html">NeurIPS 2023</a></td>
+<td><a href="https://arxiv.org/abs/2311.15722v1">2311.15722v1, 2023-11-27</a></td>
+<td><a href="https://github.com/thutzr/GLIME-General-Stable-and-Local-LIME-Explanation">thutzr/GLIME</a></td>
+<td><strong>Not applicable</strong></td>
+<td><a href="https://openreview.net/forum?id=3FJaFElIVN">OpenReview</a></td>
+</tr>
+</tbody></table></div>
+</section><section class="card" aria-labelledby="section-2-title"><h2 id="section-2-title">1. Search, deduplication, and random selection</h2>
+<h3>1.1 Deduplication</h3>
+<p>Checked local <code>ml-report-index.md</code>. The Theory and Trustworthiness core work in the past 14 days was <em>Sparse Autoencoders Do Not Find Canonical Units of Analysis</em> on 2026-08-15, concerning atomicity of SAE representations. This issue excludes SAE canonicality, dictionary width, and meta-SAE. LIMEFLDL concerns post-hoc local explanations, label-distribution constraints, and stability theory, without topic duplication.</p>
+<h3>1.2 Candidate pool (20 papers)</h3>
+<p>Candidates were cross-searched through ICML 2025 PMLR, NeurIPS 2025 proceedings, OpenReview, and arXiv; core candidates are at most 24 months old.</p>
+<ol>
+<li>Mechanistic Unlearning (ICML 2025)</li>
+<li>GaussMark (ICML 2025)</li>
+<li>Evaluating Neuron Explanations (ICML 2025)</li>
+<li>InfoCons (ICML 2025)</li>
+<li>Counterfactual Effect Decomposition (ICML 2025)</li>
+<li>RISE (ICML 2025)</li>
+<li><strong>LIMEFLDL (ICML 2025)</strong></li>
+<li>TIMING (ICML 2025)</li>
+<li>From Mechanistic Interpretability to Mechanistic Biology (ICML 2025)</li>
+<li>Layer-wise Alignment (ICML 2025)</li>
+<li>SafetyAnalyst (ICML 2025)</li>
+<li>Safety Neurons (NeurIPS 2025)</li>
+<li>Finding and Reactivating Post-Trained LLMs’ Hidden Safety Mechanisms (NeurIPS 2025)</li>
+<li>Refusal Direction is Universal Across Safety-Aligned Languages (NeurIPS 2025)</li>
+<li>Lifelong Safety Alignment for Language Models (NeurIPS 2025)</li>
+<li>JailBound (NeurIPS 2025)</li>
+<li>The VLLM Safety Paradox (NeurIPS 2025)</li>
+<li>COUPLE (NeurIPS 2025)</li>
+<li>CARES (NeurIPS 2025)</li>
+<li>CoP: Agentic Red-Teaming for LLMs (NeurIPS 2025)</li>
+</ol>
+<p>Running <code>shuf -i 1-20 -n 1</code> returned <strong>7</strong>, selecting LIMEFLDL. The homepage, 24-page text, theoretical appendices, experiments on four black-box models, and human-evaluation materials were readable and sufficient, <strong>zero redraws</strong>. </p>
+</section><section class="card" aria-labelledby="section-3-title"><h2 id="section-3-title">2. In-depth analysis of the core paper</h2>
+<h3>2.1 Motivation: independent explanations break distributions, not simply “LIME lacks multilabel support”</h3>
+<p>LDL outputs are not unrelated classification probabilities but a description-degree vector (D_i=[d_{x_i}^{y_1},\ldots,d_{x_i}^{y_r}]), with each entry in ([0,1]) and a sum of 1. It expresses how strongly each label describes an instance. Emotion images can express relative intensities of multiple emotions; disease states can involve co-occurrence and propagation dependencies. Original LDL work validated dedicated modeling on 1 synthetic and 15 real datasets; the author's public page lists 14 real datasets, including Human Gene with 30,542 instances and 68 labels, showing this is not merely a toy output form (Geng 2016 abstract/dataset page).</p>
+<p>Running LIME (r) times in parallel seems natural but creates three structural failures: independent label fits miss dependencies, repeated sampling/training scales linearly with (r), and predictions lack joint simplex constraints, allowing negative description degrees or sums other than 1. This last concern is empirical: PULIME in Tables 2, 3, 6, and 7 repeatedly produces <strong>negative KL divergence</strong>, such as dataset 6 in Table 7 at (-0.6579\pm0.0160). Standard KL cannot be negative, so this signals invalid probability outputs rather than better fitting.</p>
+<p>Traditional single-label explanations ask which features support a class; LDL explanations must ask how a feature redistributes description degrees across all labels. The explanation becomes a matrix (A\in\mathbb{R}^{r\times f}) rather than a vector (a\in\mathbb{R}^f), with each column showing one feature's effect on the entire distribution. Valid explanations must jointly satisfy local fidelity, probability validity, seed consistency, and cross-label coupling.</p>
+<h3>2.2 Narrative: from parallel-LIME counterexamples to constrained matrix regression</h3>
+<p>The argument has four turns.</p>
+<p>First, retain LIME's assumption that a complex function can be locally approximated by a simple linear model; change the surrogate's output geometry, not the local-surrogate idea. Second, combine feature–label attributions into matrix (A), sharing one local sample set across labels. Third, constrain prediction rows to sum to 1 with nonnegative entries, keeping explanations on the simplex. Fourth, to explain stability, derive analytical solutions ignoring some regularizers, convergence sample complexity, and stability bounds between nearby black boxes.</p>
+<p>The tradeoff is clear: joint matrix optimization buys valid distributions and label dependence, but replaces independent ridge regressions with linear/nonnegativity constraints. ADMM-style augmented terms plus L-BFGS yield a scalable implementation, yet leave a theory–solver gap: the strongest convergence theorem explicitly omits regularization.</p>
+<h3>2.3 Formal definitions and mechanism analysis</h3>
+<p>For instance (x), generate (m) local interpretable representations forming (Z\in{0,1}^{m\times f}). After adding a bias column, denote it (Z&#39;=[Z;1]). Black-box LDL outputs on inverse-transformed samples (h(Z)) are (F(h(Z))\in[0,1]^{m\times r}). The local linear surrogate is:</p>
+<p>[
+G(Z)=ZA^\top+b=Z&#39;A&#39;^\top. \tag{1–2, main text p.3}
+]</p>
+<p>Each sample is weighted by distance:</p>
+<p>[
+\pi(z_i)=\exp{-\sigma^{-2}\lVert 1-z_i\rVert_2^2},\quad
+\Pi=\operatorname{diag}(\pi(z_i)). \tag{3, main text p.3}
+]</p>
+<p>The core objective is constrained weighted multioutput ridge regression:</p>
+<p>[
+\min_{A&#39;}\frac{1}{2m}\left\lVert\Pi(Z&#39;A&#39;^\top-F(h(Z)))\right\rVert_F^2
++\frac{\lambda}{2m}\lVert A&#39;\rVert_F^2,
+]</p>
+<p>[
+\text{s.t.}\quad Z&#39;A&#39;^\top\mathbf 1_r=\mathbf 1_m,\qquad Z&#39;A&#39;^\top\ge 0. \tag{4, main text p.4}
+]</p>
+<p>These constraints are central: the first makes every local prediction sum to 1; the second forbids negative description degrees. The solver places the sum constraint in an augmented Lagrangian with multiplier (u) and penalty coefficient (
+ho), while nonnegativity uses penalty (v\sum\max(-Z&#39;A&#39;^\top,0)). Equation (7) provides gradients, L-BFGS updates (A&#39;), and Equation (6) updates (u).</p>
+<p>Feature selection evaluates the whole distribution after selecting features rather than truncating each label independently:</p>
+<p>[
+S=1-\frac{KL(G(Z_c),F(h(Z)))}{KL(Y_{mean},F(h(Z)))}. \tag{8, main text p.4}
+]</p>
+<p>The denominator uses a uniform distribution as an uninformative reference; (S) measures how much distributional information selected features recover beyond it. A hidden risk is numerical sensitivity when black-box outputs are nearly uniform and the denominator is tiny; the paper does not separately evaluate this boundary.</p>
+<pre><code class="language-text">Instance x to explain
+   ├─ Images: Quickshift → f superpixels → Bernoulli retain/mask
+   └─ Tables: entropy bins → Bernoulli same/different bin → inverse discretization
+                     ↓
+             m local samples Z and weights Π
+                     ↓
+        Black-box LDL outputs F(h(Z)): m × r label distributions
+                     ↓
+      Constrained matrix surrogate G(Z)=Z&#39;A&#39;^T
+      ├─ Each row sums to 1
+      ├─ All entries nonnegative
+      └─ Frobenius regularization + L-BFGS/augmented terms
+                     ↓
+       A: attribution distribution across f features × r labels
+                     ↓
+        Distribution-level fidelity + Top-K Jaccard consistency
+</code></pre>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">Mechanism / dimension</th>
+<th scope="col">Design choice</th>
+<th scope="col">Motivation</th>
+<th scope="col">Key hyperparameters / implementation</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Local representation</td>
+<td>Image superpixels; entropy bins for tables</td>
+<td>Compatible with LIME's human-readable feature switches</td>
+<td>Quickshift <code>kernel_size=4, max_dist=200, ratio=0.2</code>; seed=2024 (Appendix A.1, p.11)</td>
+</tr>
+<tr>
+<td>Joint attribution</td>
+<td>(A\in\mathbb{R}^{r\times f})</td>
+<td>Explain the entire label distribution and dependencies at once</td>
+<td>Uniform initialization; bias extends it to (A&#39;)</td>
+</tr>
+<tr>
+<td>Neighborhood weights</td>
+<td>Cosine for images; L2 for tables</td>
+<td>Avoid image L2 assigning zero weight to every sample except the target</td>
+<td>Default bandwidth stated as (0.75\sqrt f) (Appendix A.3, p.12)</td>
+</tr>
+<tr>
+<td>Validity</td>
+<td>Rows sum to 1 + nonnegativity</td>
+<td>Ensure surrogate outputs remain label distributions</td>
+<td>(lambda=v=\rho=0.01), (u^{(0)}=0) (Appendix A.1)</td>
+</tr>
+<tr>
+<td>Optimization</td>
+<td>L-BFGS + augmented constraints</td>
+<td>Avoid explicit high-order matrix inversion while handling constraints</td>
+<td>At most 50 L-BFGS iterations (Appendix A.1)</td>
+</tr>
+<tr>
+<td>fidelity</td>
+<td>4 distances + 2 similarities; R² added in appendix</td>
+<td>Single-label R² cannot capture distribution geometry</td>
+<td>Fidelity experiments: (m=100), Top-10 features</td>
+</tr>
+<tr>
+<td>consistency</td>
+<td>Top-K Jaccard over 10 seeds</td>
+<td>Check explanation stability against randomness</td>
+<td>Consistency experiments: (m=1000), unrestricted feature rankings</td>
+</tr>
+</tbody></table></div>
+<h3>2.4 Theory: meaningful bounds, not a complete guarantee for the implemented algorithm</h3>
+<p>Ignoring regularization constraints in a simplified problem yields an approximate analytical expression:</p>
+<p>[
+A&#39;^\top=(Z&#39;^\top\Pi Z&#39;)^{-1}\big[Z&#39;^\top\Pi F(h(Z))-Z&#39;^\top u\mathbf 1_{1\times r}\big]. \tag{11, main text p.4}
+]</p>
+<p>Theorem 3.2 bounds (
+ho) so the iterative map is contractive; Theorem 3.3 uses matrix Hoeffding inequalities for sample complexity. Its leading term includes (f^3e^{5/\sigma^2}\epsilon^{-2}\log(4f/\delta)), so dimension (f) and small bandwidth (sigma) rapidly increase required samples. Theorem 3.4 states that if two black boxes differ by less than (epsilon) in each output on local samples, the Frobenius distance between their attribution matrices is bounded by a quantity depending on (m,f,r,e^{1/\sigma^2}epsilon).</p>
+<p>The value is not proving the actual implementation invariably stable, but quantifying three intuitions: more samples approach a fixed point; narrower neighborhoods require more samples; and closer local black-box outputs yield closer explanations. Appendix A.4 visualizes convergence for AA-KNN, MEM, and other models at (m=100,500,1000,5000), without tabulated values for recalculation. <strong>A phase-transition clue</strong> comes from Appendix B.3: when (sigma&lt;1) and dimension exceeds 10, the polynomial degree in the sample bound becomes impractical; as (sigma\to0), attributions approach 0 and coefficient signs may change with bandwidth. This is a clear theoretical transition region, not a precise empirical threshold.</p>
+<h3>2.5 Datasets, metrics, and protocols</h3>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col" align="right">ID</th>
+<th scope="col">Dataset</th>
+<th scope="col" align="right">Sample count</th>
+<th scope="col" align="right">Feature count</th>
+<th scope="col" align="right">Label count</th>
+<th scope="col">Modality / source</th>
+</tr>
+</thead>
+<tbody><tr>
+<td align="right">1</td>
+<td>Yeast alpha</td>
+<td align="right">2,465</td>
+<td align="right">24</td>
+<td align="right">18</td>
+<td>Tabular / biological</td>
+</tr>
+<tr>
+<td align="right">2</td>
+<td>Yeast cold</td>
+<td align="right">2,465</td>
+<td align="right">24</td>
+<td align="right">4</td>
+<td>Tabular / biological</td>
+</tr>
+<tr>
+<td align="right">3</td>
+<td>JAFFE</td>
+<td align="right">213</td>
+<td align="right">243</td>
+<td align="right">6</td>
+<td>Tabularized emotions</td>
+</tr>
+<tr>
+<td align="right">4</td>
+<td>SBU 3DFE</td>
+<td align="right">2,500</td>
+<td align="right">243</td>
+<td align="right">6</td>
+<td>Tabularized emotions</td>
+</tr>
+<tr>
+<td align="right">5</td>
+<td>Emotion6</td>
+<td align="right">1,980</td>
+<td align="right">168</td>
+<td align="right">7</td>
+<td>Tabularized emotions</td>
+</tr>
+<tr>
+<td align="right">6</td>
+<td>Natural Scene</td>
+<td align="right">2,000</td>
+<td align="right">294</td>
+<td align="right">9</td>
+<td>Tabularized scenes</td>
+</tr>
+<tr>
+<td align="right">7</td>
+<td>Image-JAFFE</td>
+<td align="right">213</td>
+<td align="right">243</td>
+<td align="right">6</td>
+<td>Image</td>
+</tr>
+<tr>
+<td align="right">8</td>
+<td>Image-Emotion6</td>
+<td align="right">1,980</td>
+<td align="right">168</td>
+<td align="right">7</td>
+<td>Image</td>
+</tr>
+</tbody></table></div>
+<p>Data comes from Table 1 (p.6). Black boxes include RBF-LDL-LRR, LDL-SCL, AA-KNN, and MEM. Main fidelity metrics are Chebyshev, Clark, Canberra, and KL (lower is better), plus Cosine and Intersection (higher is better); consistency uses Top-K Jaccard across 10 seeds (higher is more stable). Each dataset uses 10-fold cross-validation; Tables 2, 3, 6, and 7 report means/standard deviations (p.8). The aggregation level of standard deviations—folds, samples, or seeds—is unspecified, so these cannot be treated as CIs from independent retraining.</p>
+<h3>2.6 Main-results matrix: 8 datasets × 4 explainers</h3>
+<p>Appendix Table 5 compares LIMEFLDL, LIME, DLIME, and GLIME using LIME-compatible R², the closest fair multibenchmark/multimethod comparison. The table is transcribed fully, adding absolute and relative gains over each row's strongest competitor. “—” means unreported.</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">Black box</th>
+<th scope="col" align="right">Dataset ID</th>
+<th scope="col" align="right">LIME</th>
+<th scope="col" align="right">DLIME</th>
+<th scope="col" align="right">GLIME</th>
+<th scope="col" align="right"><strong>LIMEFLDL</strong></th>
+<th scope="col" align="right">Gap to strongest competitor</th>
+<th scope="col" align="right">Relative change</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>LDL-SCL</td>
+<td align="right">1</td>
+<td align="right">0.16</td>
+<td align="right">0.15</td>
+<td align="right">0.16</td>
+<td align="right"><strong>0.67</strong></td>
+<td align="right">+0.51</td>
+<td align="right">+318.8%</td>
+</tr>
+<tr>
+<td>LDL-SCL</td>
+<td align="right">2</td>
+<td align="right">0.15</td>
+<td align="right">0.15</td>
+<td align="right">0.16</td>
+<td align="right"><strong>0.67</strong></td>
+<td align="right">+0.51</td>
+<td align="right">+318.8%</td>
+</tr>
+<tr>
+<td>LDL-SCL</td>
+<td align="right">3</td>
+<td align="right">0.48</td>
+<td align="right">0.35</td>
+<td align="right">0.34</td>
+<td align="right"><strong>0.58</strong></td>
+<td align="right">+0.10</td>
+<td align="right">+20.8%</td>
+</tr>
+<tr>
+<td>LDL-SCL</td>
+<td align="right">4</td>
+<td align="right">0.39</td>
+<td align="right">0.33</td>
+<td align="right">0.34</td>
+<td align="right"><strong>0.40</strong></td>
+<td align="right">+0.01</td>
+<td align="right">+2.6%</td>
+</tr>
+<tr>
+<td>LDL-SCL</td>
+<td align="right">5</td>
+<td align="right"><strong>0.34</strong></td>
+<td align="right">0.25</td>
+<td align="right">0.25</td>
+<td align="right">0.30</td>
+<td align="right"><strong>−0.04</strong></td>
+<td align="right"><strong>−11.8%</strong></td>
+</tr>
+<tr>
+<td>LDL-SCL</td>
+<td align="right">6</td>
+<td align="right">0.37</td>
+<td align="right">0.34</td>
+<td align="right">0.32</td>
+<td align="right"><strong>0.38</strong></td>
+<td align="right">+0.01</td>
+<td align="right">+2.7%</td>
+</tr>
+<tr>
+<td>LDL-SCL</td>
+<td align="right">7</td>
+<td align="right">0.94</td>
+<td align="right">—</td>
+<td align="right">0.95</td>
+<td align="right"><strong>0.99</strong></td>
+<td align="right">+0.04</td>
+<td align="right">+4.2%</td>
+</tr>
+<tr>
+<td>LDL-SCL</td>
+<td align="right">8</td>
+<td align="right">0.89</td>
+<td align="right">—</td>
+<td align="right">0.89</td>
+<td align="right"><strong>0.98</strong></td>
+<td align="right">+0.09</td>
+<td align="right">+10.1%</td>
+</tr>
+<tr>
+<td>RBF-LDL-LRR</td>
+<td align="right">1</td>
+<td align="right">0.17</td>
+<td align="right">0.17</td>
+<td align="right">0.16</td>
+<td align="right"><strong>0.99</strong></td>
+<td align="right">+0.82</td>
+<td align="right">+482.4%</td>
+</tr>
+<tr>
+<td>RBF-LDL-LRR</td>
+<td align="right">2</td>
+<td align="right">0.16</td>
+<td align="right">0.15</td>
+<td align="right">0.17</td>
+<td align="right"><strong>0.99</strong></td>
+<td align="right">+0.82</td>
+<td align="right">+482.4%</td>
+</tr>
+<tr>
+<td>RBF-LDL-LRR</td>
+<td align="right">3</td>
+<td align="right">0.34</td>
+<td align="right">0.33</td>
+<td align="right">0.33</td>
+<td align="right"><strong>0.36</strong></td>
+<td align="right">+0.02</td>
+<td align="right">+5.9%</td>
+</tr>
+<tr>
+<td>RBF-LDL-LRR</td>
+<td align="right">4</td>
+<td align="right">0.25</td>
+<td align="right">0.31</td>
+<td align="right">0.29</td>
+<td align="right"><strong>0.36</strong></td>
+<td align="right">+0.05</td>
+<td align="right">+16.1%</td>
+</tr>
+<tr>
+<td>RBF-LDL-LRR</td>
+<td align="right">5</td>
+<td align="right">0.26</td>
+<td align="right">0.47</td>
+<td align="right">0.36</td>
+<td align="right"><strong>1.00</strong></td>
+<td align="right">+0.53</td>
+<td align="right">+112.8%</td>
+</tr>
+<tr>
+<td>RBF-LDL-LRR</td>
+<td align="right">6</td>
+<td align="right">0.52</td>
+<td align="right">0.49</td>
+<td align="right">0.47</td>
+<td align="right"><strong>0.99</strong></td>
+<td align="right">+0.47</td>
+<td align="right">+90.4%</td>
+</tr>
+<tr>
+<td>RBF-LDL-LRR</td>
+<td align="right">7</td>
+<td align="right">0.93</td>
+<td align="right">—</td>
+<td align="right">0.96</td>
+<td align="right"><strong>0.99</strong></td>
+<td align="right">+0.03</td>
+<td align="right">+3.1%</td>
+</tr>
+<tr>
+<td>RBF-LDL-LRR</td>
+<td align="right">8</td>
+<td align="right">0.67</td>
+<td align="right">—</td>
+<td align="right">0.94</td>
+<td align="right"><strong>0.99</strong></td>
+<td align="right">+0.05</td>
+<td align="right">+5.3%</td>
+</tr>
+</tbody></table></div>
+<p><strong>Source: Appendix Table 5, p.14; relative changes recomputed here.</strong> On LDL-SCL, method macro-averages are LIME 0.465, DLIME 0.262 (6 reported entries only), GLIME 0.426, and LIMEFLDL <strong>0.621</strong>; on RBF-LDL-LRR, respectively 0.413, 0.320 (6 entries), 0.460, and <strong>0.834</strong>. The strongest evidence is RBF-LDL-LRR datasets 1/2: 0.17→0.99, absolute +0.82, relative +482.4%. Yet the same table has a counterexample: LDL-SCL/tabular Emotion6 drops 0.34→0.30, a relative 11.8% deficit.</p>
+<p>Table 2's Jaccard suggests joint explanations are usually more stable: on RBF-LDL-LRR, dataset 2 rises 0.3608→0.6200 (+0.2592, +71.84%), and dataset 8 rises 0.1591→0.7903 (+0.6312, +396.73%). Dataset 1 instead drops 0.6428→0.5044 (-21.53%). Universal stability superiority is false; gains are clearer for non-nearly-uniform label distributions, especially images, and inconsistent on nearly uniform biological data.</p>
+<h3>2.7 Ablations, sensitivity, and statistical significance</h3>
+<p><strong>Progressive component ablations: unreported.</strong> There is no staircase comparison of joint matrix regression alone, +sum-to-one, +nonnegativity, +new feature scoring, and +L-BFGS. R²/Jaccard gains cannot be assigned to components. Table 5 adds baselines but is not mechanistic ablation.</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">Available sensitivity evidence</th>
+<th scope="col">Value</th>
+<th scope="col">Paper observation</th>
+<th scope="col">Can a transition be located?</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Sample count (m)</td>
+<td>100, 500, 1000, 5000</td>
+<td>Top-20 Jaccard rises and stabilizes with (m) (Figure 4, Appendix A.4)</td>
+<td>Trend only; exact point values absent</td>
+</tr>
+<tr>
+<td>Bandwidth (sigma)</td>
+<td>Theory analyzes (sigma&lt;1), (sigma\to0)</td>
+<td>(f&gt;10), where convergence sample bounds worsen; at the limit, attributions approach zero and signs can change (Appendix B.3, p.21)</td>
+<td>Theoretical transition region, no empirical threshold table</td>
+</tr>
+<tr>
+<td>Optimization iterations</td>
+<td>Maximum 50</td>
+<td>Authors state this balances accuracy/efficiency (Appendix A.1)</td>
+<td>No 10/20/50/100 sweep to establish optimality</td>
+</tr>
+<tr>
+<td>Penalty coefficients</td>
+<td>(lambda=v=\rho=0.01)</td>
+<td>Fixed throughout experiments</td>
+<td>No sensitivity study, so robustness unestablished</td>
+</tr>
+</tbody></table></div>
+<p>Reporting 10-fold means±standard deviations is a strength. For example, Table 3/dataset 6 Chebyshev falls from (0.3584\pm0.0036) to (0.1692\pm0.0030), an absolute decrease of 0.1892 (52.79%). However, no p-values, bootstrap CIs, multiple-comparison correction, or independent training seeds appear. Human evaluation reports means only: 2.1 versus 3.1 for correct predictions and 2.3 versus 3.0 for incorrect ones (Figure 3, p.9), without variance/significance tests.</p>
+<h3>2.8 Genuine contributions, reusable designs, and transfer potential</h3>
+<p>The contribution is not applying LIME to LDL, but recognizing that <strong>an explainer's output space must respect the structure of the task being explained</strong>. Scalar surrogates for single-label classification cannot safely be copied column-wise to distributions. Ranking, sets, graphs, sequences, and multitask outputs likewise should encode feasible-domain constraints in the surrogate, not clip explanations afterward.</p>
+<p>Three designs are reusable. First, attribution-distribution matrices extend importance into how features move mass across output dimensions, relevant to MoE routing, multiattribute risk scores, or multiobjective decisions. Second, distribution-level fidelity reports multiple distances/similarities rather than allowing one R² to conceal invalid probabilities. Third, bounds linking black-box-output perturbations to attribution-matrix perturbations offer a template for auditing explanation drift after model updates.</p>
+<p>Transfer the principle rather than the implementation: replace simplices with ranking cones, flow conservation, multilabel marginal polytopes, or physical conservation constraints for compositional outputs; reduce (A)'s (fr) parameters via low-rank/sparse structure for high-dimensional outputs; replace one-off sampling with reusable neighborhood caches and drift-triggered updates for online data.</p>
+<h3>2.9 Limitations</h3>
+<h4>Limitations stated by the paper</h4>
+<ol>
+<li><strong>Discontinuous binning</strong>: Appendix A.3 (p.12) acknowledges nearby instances in one bin receive identical explanations, while crossing a bin boundary can change explanations sharply. More bins or no discretization mitigate but do not solve boundary discontinuities.</li>
+<li><strong>Difficult convergence with small bandwidth and high dimensions</strong>: Appendix B.3 (p.21) notes that when (sigma&lt;1) and (f&gt;10), Theorem 3.3's sample requirements are difficult to satisfy, leaving behavior dominated by regularization omitted from theory.</li>
+<li><strong>Extreme bandwidth degenerates explanations</strong>: The same passage states (sigma\to0) implies (A\to0), with coefficient signs varying by bandwidth, directly limiting stable interpretations of signs as promoting/inhibiting.</li>
+</ol>
+<h4>Additional critique</h4>
+<ol>
+<li><strong>[Missing key competitors]</strong> Main Tables 2/3 compare directly only with the authors' PULIME; GLIME/DLIME appear only in Appendix Table 5 with default parameters, R², and no standard deviations. This does not establish superiority over strong stable-LIME variants on core distribution metrics. Compare a distributional GLIME extension under identical sampling, (m), and solver budgets.</li>
+<li><strong>[Metric validity]</strong> PULIME repeatedly yields negative KL across four main tables, such as -0.6579 in Table 7/ID6, while valid KL must be nonnegative. This mixes fidelity with invalid outputs; circling anomalies while counting most-metric wins can exaggerate constrained methods' advantages. First project all baselines onto the simplex, then compare KL.</li>
+<li><strong>[Failing subtask]</strong> Appendix Table 5's LDL-SCL/ID5 gives LIMEFLDL=0.30 versus LIME=0.34, an 11.8% relative deficit. Joint constraints do not unconditionally improve local R², potentially trading local freedom for validity on tabular Emotion6.</li>
+<li><strong>[Experimental design]</strong> Fidelity uses (m=100), consistency (m=1000), so they are not evaluated at the same sampling budget. “More stable and faithful” is not a same-configuration Pareto advantage. Fix (m\in{100,500,1000,5000}) and report fidelity, Jaccard, and latency together.</li>
+<li><strong>[Conflicting metrics]</strong> Table 2/ID8 Jaccard rises 0.1591→0.7903, but Chebyshev worsens 0.0003→0.0033, Clark 0.0032→0.0116, and Canberra 0.0069→0.0236. Approximately 396.7% better consistency accompanies substantially worse distances. Stable repetition is not faithful approximation; multiobjective Pareto analysis is missing.</li>
+<li><strong>[Human-evaluation validity]</strong> Appendix A.2 has only 10 graduate students, 20 cases each, with 7 specializing in ML—a small, expert-biased sample. The text also says 10 people in each of two parts, leaving participant overlap unclear. Mean gains of 1.0/0.7 lack variance, blinding, randomized order, and significance, preventing extrapolation to end users.</li>
+<li><strong>[Argument gap]</strong> Theorem 3.3 explicitly omits regularization, while the actual algorithm fixes (lambda=v=\rho=0.01) and runs 50 L-BFGS steps. The theoretical fixed point differs from the deployed algorithm's. Measure convergence gaps between the unregularized analytical and actual optimized versions.</li>
+<li><strong>[Reproducibility]</strong> No core-paper code repository was found by verification, and Table 5 calls DLIME/GLIME settings default. Appropriate LDL tuning and exact Figures 4/5 curves cannot be checked. Fixing seed=2024 reduces one run's randomness but cannot replace public code or multiseed validation.</li>
+</ol>
+</section><section class="card" aria-labelledby="section-4-title"><h2 id="section-4-title">3. Related-work retrospective: transfer of problems and techniques</h2>
+<h3>3.1 Label Distribution Learning — 2016, IEEE TKDE</h3>
+<p><strong>What it solved.</strong> Geng extends label ambiguity from binary relevance to sum-to-one description degrees, proposing 6 algorithms across problem transformation, adaptation, and specialized design, evaluated with 6 metric classes on 1 synthetic and 15 real datasets. This defines LIMEFLDL's object: a normalized vector rather than a class decision.</p>
+<p><strong>Remaining gap.</strong> Original LDL focuses on prediction and algorithms, with public BFGS/IIS/CPNN/LDSVR implementations and data but no dedicated local explainer for why an instance receives a distribution. Richer outputs increase the chance that independent label explanations violate sum/nonnegativity constraints.</p>
+<p><strong>How the core paper responds.</strong> LIMEFLDL directly encodes LDL's simplex definition as surrogate constraints: (G(Z)\mathbf1=\mathbf1), (G(Z)\ge0), within optimization rather than postprocessing.</p>
+<p><strong>Inherited design.</strong> LDL's distribution-distance evaluation transfers into explanation fidelity: Chebyshev, Clark, Canberra, KL, Cosine, and Intersection translate prediction evaluation into explanation evaluation.</p>
+<h3>3.2 LIME — 2016, KDD</h3>
+<p><strong>What it solved.</strong> LIME fits sparse interpretable surrogates to weighted local data, explaining arbitrary classifiers near individual instances; human experiments address trust in predictions/models. Its core combines locality kernel (pi_x), interpretable representation (z), and simple model (g).</p>
+<p><strong>Remaining gap.</strong> The original target is single-output explanation; random perturbations cause instability, and reference points/bandwidth alter explanations. Independent application to LDL labels multiplies compute by (r) and produces outputs that may not be distributions.</p>
+<p><strong>How the core paper responds.</strong> LIMEFLDL preserves sampling–weighting–local-linear-surrogate structure, replacing scalar with matrix regression and obtaining all (r) outputs in one black-box batch inference.</p>
+<p><strong>Inherited design.</strong> Quickshift superpixels, entropy discretizers, cosine/L2 distances, and locality kernels carry over directly. Changes concern output space and constraints, not input perturbations.</p>
+<h3>3.3 SHAP — 2017, NeurIPS</h3>
+<p><strong>What it solved.</strong> SHAP unifies 6 explanation classes as additive feature attribution and establishes a unique solution structure satisfying local accuracy, missingness, and consistency, moving reliability from visual intuition to axioms.</p>
+<p><strong>Remaining gap.</strong> Generic additive SHAP does not automatically keep multioutput vectors in task-specific feasible sets; per-output SHAP values can struggle to express coupling and conservation among label description degrees.</p>
+<p><strong>How the core paper responds.</strong> LIMEFLDL Property 3.5 expresses the matrix surrogate as a sum of feature-attribution vectors, proving compatibility with additive feature attribution; Properties 3.6/3.7 discuss dummy and symmetry.</p>
+<p><strong>Inherited design.</strong> Axiomatic checks for local accuracy, dummy, and symmetry carry over from scalars to (r)-dimensional attribution vectors. The paper does not prove Shapley uniqueness, instead choosing an optimizable local linear matrix.</p>
+<h3>3.4 GLIME — 2023, NeurIPS Spotlight</h3>
+<p><strong>What it solved.</strong> GLIME shows that tiny LIME sample weights let regularization dominate and slow convergence. It absorbs weights into local unbiased sampling distributions to improve stability/fidelity and reduce reference dependence; code offers binomial and other distributions.</p>
+<p><strong>Remaining gap.</strong> GLIME improves where to sample and convergence stability, not LDL probability constraints or dependencies. Stable individual columns still need not form a distribution together.</p>
+<p><strong>How the core paper responds.</strong> LIMEFLDL advances an orthogonal axis: output structure rather than sampling distribution, with convergence/stability bounds depending on (m,f,r,\sigma).</p>
+<p><strong>Inherited design.</strong> GLIME's warnings about bandwidth, weights, and regularizer dominance recur as exploding small-(sigma) sample complexity in LIMEFLDL Appendix B.3. Yet only default GLIME R² comparisons appear in Table 5; unbiased local sampling and simplex constraints have not actually been combined.</p>
+</section>
+<figure class="figure" aria-labelledby="figure-r2-title">
+  <p class="fig-title" id="figure-r2-title">Macro-average R²: gains from joint distribution constraints depend on the black box</p>
+  <p class="fig-sub">Macro-average over 8 datasets; DLIME averages only 6 available entries because image results are absent. One Y-axis; higher is better.</p>
+  <div class="legend" aria-label="Legend"><span><span class="swatch" style="background:var(--chart-primary)"></span> Related baselines</span><span><span class="swatch" style="background:var(--chart-comparison)"></span> LIMEFLDL</span></div>
+  <svg class="chart" viewBox="0 0 900 370" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>Macro-average R² for LIMEFLDL, LIME, DLIME, and GLIME</title>
+    <desc>LIMEFLDL scores 0.621 on LDL-SCL and 0.834 on RBF-LDL-LRR, exceeding other methods' macro-averages.</desc>
+    <line x1="70" y1="290" x2="850" y2="290" stroke="var(--grid)" stroke-width="2"/>
+    <line x1="70" y1="50" x2="70" y2="290" stroke="var(--grid)" stroke-width="2"/>
+    <text x="35" y="295" fill="var(--muted)" font-size="13">0.0</text>
+    <text x="35" y="175" fill="var(--muted)" font-size="13">0.5</text>
+    <text x="35" y="56" fill="var(--muted)" font-size="13">1.0</text>
+    <rect x="110" y="178.4" width="58" height="111.6" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="LDL-SCL · LIME: 0.465"><title>LDL-SCL · LIME: 0.465</title></rect><text x="139" y="170.39999999999998" text-anchor="middle" fill="var(--text-primary)" font-size="13">0.465</text><text x="139" y="312" text-anchor="middle" fill="var(--text-secondary)" font-size="11">LIME</text><rect x="192" y="227.1" width="58" height="62.9" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="LDL-SCL · DLIME: 0.262"><title>LDL-SCL · DLIME: 0.262</title></rect><text x="221" y="219.12" text-anchor="middle" fill="var(--text-primary)" font-size="13">0.262</text><text x="221" y="312" text-anchor="middle" fill="var(--text-secondary)" font-size="11">DLIME</text><rect x="274" y="187.8" width="58" height="102.2" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="LDL-SCL · GLIME: 0.426"><title>LDL-SCL · GLIME: 0.426</title></rect><text x="303" y="179.76" text-anchor="middle" fill="var(--text-primary)" font-size="13">0.426</text><text x="303" y="312" text-anchor="middle" fill="var(--text-secondary)" font-size="11">GLIME</text><rect x="356" y="141.0" width="58" height="149.0" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="LDL-SCL · LIMEFLDL: 0.621"><title>LDL-SCL · LIMEFLDL: 0.621</title></rect><text x="385" y="132.96" text-anchor="middle" fill="var(--text-primary)" font-size="13">0.621</text><text x="385" y="312" text-anchor="middle" fill="var(--text-secondary)" font-size="11">LIMEFLDL</text><text x="250" y="342" text-anchor="middle" fill="var(--text-primary)" font-size="15" font-weight="700">LDL-SCL</text><rect x="500" y="190.9" width="58" height="99.1" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="RBF-LDL-LRR · LIME: 0.413"><title>RBF-LDL-LRR · LIME: 0.413</title></rect><text x="529" y="182.88" text-anchor="middle" fill="var(--text-primary)" font-size="13">0.413</text><text x="529" y="312" text-anchor="middle" fill="var(--text-secondary)" font-size="11">LIME</text><rect x="582" y="213.2" width="58" height="76.8" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="RBF-LDL-LRR · DLIME: 0.320"><title>RBF-LDL-LRR · DLIME: 0.320</title></rect><text x="611" y="205.2" text-anchor="middle" fill="var(--text-primary)" font-size="13">0.320</text><text x="611" y="312" text-anchor="middle" fill="var(--text-secondary)" font-size="11">DLIME</text><rect x="664" y="179.6" width="58" height="110.4" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="RBF-LDL-LRR · GLIME: 0.460"><title>RBF-LDL-LRR · GLIME: 0.460</title></rect><text x="693" y="171.6" text-anchor="middle" fill="var(--text-primary)" font-size="13">0.460</text><text x="693" y="312" text-anchor="middle" fill="var(--text-secondary)" font-size="11">GLIME</text><rect x="746" y="89.8" width="58" height="200.2" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="RBF-LDL-LRR · LIMEFLDL: 0.834"><title>RBF-LDL-LRR · LIMEFLDL: 0.834</title></rect><text x="775" y="81.84" text-anchor="middle" fill="var(--text-primary)" font-size="13">0.834</text><text x="775" y="312" text-anchor="middle" fill="var(--text-secondary)" font-size="11">LIMEFLDL</text><text x="640" y="342" text-anchor="middle" fill="var(--text-primary)" font-size="15" font-weight="700">RBF-LDL-LRR</text>
+  </svg>
+  <figcaption>Source: LIMEFLDL Appendix Table 5 (p.14), recomputed over available entries. Full dataset-level matrix appears in the body.</figcaption>
+</figure><section class="card" aria-labelledby="section-5-title"><h2 id="section-5-title">4. Technical evolution</h2>
+<pre><code class="language-text">2016 LDL: one-hot/multi-hot outputs → label description-degree distributions
+      │
+      └── Task structure demands simplex preservation
+
+2016 LIME: arbitrary black boxes → locally weighted linear surrogates
+      ├── Local sampling, interpretable switches, sparse attribution
+      └── Gaps: single outputs, random instability, independent labels break distributions
+
+2017 SHAP: explanation families → unified additive-attribution axioms
+      └── local accuracy / dummy / consistency
+
+2023 GLIME: redesign sampling → faster convergence, stability, locality
+      └── Addresses input neighborhoods, not structured outputs
+
+2025 LIMEFLDL: LIME input structure + SHAP-style properties + LDL simplex
+      ├── One f×r attribution matrix explains every label jointly
+      ├── Sum-to-one/nonnegativity ensure valid outputs
+      └── Still needs GLIME unbiased sampling and full regularized theory
+</code></pre>
+<p>The driver is moving from scalar predictions to structured output objects. First readability, then axioms/stability, then task geometry enter explainers. The turning point is not richer visualization but recognizing post-hoc explanations as predictive models that must obey the original task's feasible domain.</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr>
+<th scope="col">Work</th>
+<th scope="col">Publication date</th>
+<th scope="col">Conference/publication</th>
+<th scope="col">Core contribution</th>
+<th scope="col">Main quantitative evidence</th>
+<th scope="col">Relationship to the core paper</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Label Distribution Learning</td>
+<td class="num">2016.07</td>
+<td>IEEE TKDE 28(7)</td>
+<td>Defines description-degree distributions and 6 algorithm classes</td>
+<td>1 synthetic + 15 real datasets (abstract)</td>
+<td>Supplies the problem, data, and distribution metrics</td>
+</tr>
+<tr>
+<td>LIME</td>
+<td class="num">2016.08</td>
+<td>KDD 2016</td>
+<td>Locally weighted interpretable surrogates</td>
+<td>Text, image, and human-evaluation settings (abstract)</td>
+<td>Supplies sampling–weighting–linear-surrogate structure</td>
+</tr>
+<tr>
+<td>SHAP</td>
+<td class="num">2017.11</td>
+<td>NeurIPS 2017</td>
+<td>Unifies additive attribution with axioms</td>
+<td>Unifies 6 method classes (abstract)</td>
+<td>Source of local accuracy/dummy properties</td>
+</tr>
+<tr>
+<td>GLIME</td>
+<td class="num">2023.11</td>
+<td>NeurIPS 2023 Spotlight</td>
+<td>Local unbiased sampling improves stability/fidelity</td>
+<td>Reports faster convergence; public implementation example (n=1024)</td>
+<td>Strong sampling-stability baseline, only partly compared by the core paper</td>
+</tr>
+<tr>
+<td><strong>LIMEFLDL</strong></td>
+<td><strong>2025.07</strong></td>
+<td><strong>ICML 2025</strong></td>
+<td><strong>Simplex-constrained distribution-level attribution matrix</strong></td>
+<td><strong>Table 5: two RBF benchmarks 0.17→0.99; human evaluation 2.1→3.1</strong></td>
+<td><strong>Combines output structure, local surrogates, and axiomatic analysis</strong></td>
+</tr>
+</tbody></table></div>
+</section><section class="card" aria-labelledby="section-6-title"><h2 id="section-6-title">5. Open challenges and actionable research opportunities</h2>
+<h3>5.1 Theory</h3>
+<ol>
+<li><strong>Complete regularized convergence theory.</strong> For identical (Z,Pi), compare unregularized closed forms, exact convex solutions with (lambda\lVert A\rVert_F^2), and the paper's 50-step L-BFGS solution. Plot (lVert A_{closed}-A_{actual}\rVert_F) against (m,f,r,\sigma) to determine when theoretical bounds predict practice.</li>
+<li><strong>Locate bandwidth–dimension transitions.</strong> At fixed target fidelity, sweep (f\in{8,16,32,64,128,256}) and (sigma\in{0.25,0.5,0.75,1,1.5,2}), measuring minimum (m) for Jaccard 0.9 and comparing pointwise with theoretical (e^{5/\sigma^2}f^3) scaling.</li>
+<li><strong>Uniqueness axioms for structured outputs.</strong> Compare per-label Shapley followed by projection, conservation-preserving Shapley, and LIMEFLDL matrices. Test joint satisfiability of local accuracy, dummy, symmetry, and simplex conservation, and whether solutions are unique.</li>
+</ol>
+<h3>5.2 Engineering and Applications</h3>
+<ol>
+<li><strong>Equal-budget head-to-head evaluation.</strong> At equal black-box calls, CPU/GPU time, and memory, compare PULIME, GLIME-LDL, KernelSHAP-LDL, and LIMEFLDL. Report all 6 fidelity metrics, Jaccard, and latency for each (m), eliminating the current 100/1000-sample mismatch.</li>
+<li><strong>Ablate sources of validity.</strong> Compare unconstrained matrix regression, sum-to-one only, nonnegativity only, both, and added feature scoring. Measure invalid-output rates, negative-KL counts, R², and Jaccard to quantify each constraint's benefits/costs.</li>
+<li><strong>Continuous neighborhoods instead of bins.</strong> On tabular data, compare entropy bins, soft bins, normalizing-flow conditional samplers, and no discretization. Construct sample pairs (10^{-6}) apart across boundaries and measure Lipschitz ratios of explanation jumps.</li>
+<li><strong>Deployment-scale caching.</strong> For a 30,542×36×68 Human Gene stream, compare per-request sampling with neighborhood caching. Update the black box every 1,000 steps and report explanation latency, cache hits, and drift errors.</li>
+</ol>
+<h3>5.3 Emerging Directions</h3>
+<ol>
+<li><strong>Calibration consistency in medical probability explanations.</strong> With matched cases and blinded physicians, compare LIMEFLDL, temperature-calibrated projected LIME, and inherently interpretable models. Report fidelity, calibration error, physician diagnosis-change rates, and erroneous confidence.</li>
+<li><strong>Multiattribute VLM outputs.</strong> Jointly perturb image patches and text tokens for safety/factuality/relevance scores. Compare independent block explanations with cross-modal conserving matrices, testing attribution stability under prompt paraphrases.</li>
+<li><strong>Privacy and explanation leakage.</strong> Under membership inference, compare publishing full (A), Top-K (A), and differentially private attribution. Plot attack AUC and fidelity against (epsilon_{DP}) to obtain privacy Pareto frontiers for trustworthy explanations.</li>
+</ol>
+</section><section class="card" aria-labelledby="section-7-title"><h2 id="section-7-title">6. Other recent work worth watching</h2>
+<p><strong>Mechanistic Unlearning</strong> (2025.07, ICML)<br>Locates knowledge editing/unlearning in predictable intermediate mechanisms rather than merely output-preserving components, arguing mechanistic localization resists relearning attacks better than locating correlated parameters. <a href="https://proceedings.mlr.press/v267/guo25k.html">The paper</a></p>
+<p><strong>GaussMark</strong> (2025.07, ICML)<br>Embeds watermarks in weight structure and uses Gaussian-independence tests for validity/power bounds; its zero-generation-latency claim and corruption robustness merit attention. <a href="https://proceedings.mlr.press/v267/block25a.html">The paper</a></p>
+<p><strong>Evaluating Neuron Explanations</strong> (2025.07, ICML)<br>Unifies neuron-explanation evaluation with sanity checks, showing some common metrics barely change despite major concept-label changes and challenging the equation of high scores with faithfulness. <a href="https://proceedings.mlr.press/v267/oikarinen25a.html">The paper</a></p>
+<p><strong>InfoCons</strong> (2025.07, ICML)<br>Uses information theory to divide point clouds into faithful, semantically coherent concepts, validated on synthetic/real 3D data and relevant to structured explanation. <a href="https://proceedings.mlr.press/v267/li25dw.html">The paper</a></p>
+<p><strong>Counterfactual Effect Decomposition</strong> (2025.07, ICML)<br>Decomposes counterfactual total action effects in multiagent MDPs into paths through agent behavior and environment states, then attributes effects to agents/variables with Shapley values. <a href="https://proceedings.mlr.press/v267/triantafyllou25a.html">The paper</a></p>
+<p><strong>RISE</strong> (2025.07, ICML)<br>Extracts explanatory subgraphs for 3D molecular GNNs around influence radii, linking geometric neighborhoods and outputs as a structured-input counterpart to LIMEFLDL. <a href="https://proceedings.mlr.press/v267/qu25a.html">The paper</a></p>
+</section><section class="card" aria-labelledby="section-8-title"><h2 id="section-8-title">7. Conclusion</h2>
+<p>LIMEFLDL is best understood not as a vertical LIME variant but as a reusable trustworthy-AI principle: <strong>post-hoc explainers must inherit the prediction task's output geometry</strong>. Appendix Table 5 raises strongest-row-competitor R² from 0.17 to 0.99 (+0.82, +482.4%) on RBF-LDL-LRR datasets 1/2, and correct-prediction human ratings from 2.1 to 3.1. Yet LDL-SCL/tabular Emotion6 falls 0.34→0.30, and main results show consistency–fidelity conflicts.</p>
+<p>The paper opens research on structure-preserving explanations rather than completing LDL interpretability. The key next step is not another heatmap, but equal budgets, valid projected baselines, full component ablations, and regularized convergence theory to determine whether gains arise from validity, label dependence, or greater joint-fitting freedom.</p>
+<hr>
+<h3>Verification and transparency</h3>
+<ul>
+<li>Core figures come from directly read ICML 2025/PMLR PDF Tables 1–3, Appendix Tables 4–7, Figures 1–5 descriptions, and Appendices A/B. Derived percentages were recalculated.</li>
+<li>Component ablations, penalty sweeps, exact hyperparameter-curve coordinates, p-values, and CIs are unavailable; relevant sections retain these omissions as “unreported,” without invention.</li>
+<li>As of 2026-08-22, no core-paper arXiv entry or author repository was verified. OpenReview exists but triggered browser verification; PMLR text/PDF were accessible.</li>
+<li>HTML passed the Warm Editorial static validator (0 warnings); the runtime provided no Chromium executable under <code>/usr/bin/chromium</code> or <code>/opt/pw-browsers</code> , and the instruction not to run playwright install prevented light/dark/mobile screenshot checks. Responsive table scrolling, theme variables, and SVG <code>viewBox</code> were checked deterministically.</li>
+<li><code>ml-report-index.md</code> was appended during this generation workflow; if remote persistence fails, the local index takes precedence.</li>
+</ul>
+</section></main>
+
+  <footer>Core source: LIMEFLDL, ICML 2025 / PMLR 267. Generated: 2026-08-22.</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ Light' : '☾ Dark';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

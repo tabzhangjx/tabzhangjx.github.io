@@ -1,0 +1,954 @@
+---
+layout: null
+title: "TARL"
+date: 2026-08-27
+topic: rl-peft
+tags: ["rl-peft"]
+excerpt: "Reward-free test-time policy adaptation through action-entropy minimization and KL constraints under environment shifts."
+permalink: "/blog/2026/08/27/tarl-test-time-reinforcement-learning-adaptation/en/"
+blog_post: false
+lang: en
+sitemap: true
+alternate_zh: "/blog/2026/08/27/tarl-test-time-reinforcement-learning-adaptation/"
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>TARL: Reward-Free Test-Time Policy Adaptation, or a “Confidence Amplifier”? · 2026-08-27</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" aria-pressed="false">☾ Dark</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ML / AI DAILY DEEP PAPER · ICML 2025</p>
+    <h1>TARL: Reward-Free Test-Time Policy Adaptation, or a “Confidence Amplifier”?</h1>
+    <p class="subtitle">Action-entropy minimization + original-policy KL: A simple concept, but code–paper consistency is the decisive risk</p>
+    <div class="meta" aria-label="Report metadata">
+      <span class="chip source">ICML 2025 · PMLR 267</span>
+      <span class="chip">2026-08-27</span>
+      <span class="chip">Reinforcement learning / agents / embodied intelligence</span>
+    </div>
+    <p class="lede">TARL reports positive results for every Atari and D4RL pairing, but without explicit environment shifts; its public implementation also conflicts with the claimed algorithm of “updating only LayerNorm and selecting low-entropy samples.”</p>
+  </header>
+
+  <main>
+<section class="card" aria-labelledby="0-链接验证表"><h2 id="0-链接验证表">0. Link verification table</h2>
+<p>All links below were actually accessed on 2026-08-27. No independent arXiv entry was found for the core paper, so no nonexistent arXiv version number is supplied.</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Conference / full text</th>
+<th scope="col">arXiv version and date</th>
+<th scope="col">Code</th>
+<th scope="col">Data / weights</th>
+<th scope="col">Project page / videos</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>TARL (core)</td>
+<td><a href="https://proceedings.mlr.press/v267/xu25ar.html">PMLR / ICML
+2025</a>, pp. 70020–70031; <a
+href="https://openreview.net/forum?id=Xv1jY6U0pT">OpenReview</a></td>
+<td>Not found</td>
+<td><a href="https://github.com/xushoukai/TARL">xushoukai/TARL</a></td>
+<td>Atari fixed replay and D4RL are public benchmarks; author-trained weights not found</td>
+<td>Separate project page/video not found</td>
+</tr>
+<tr class="even">
+<td>CQL</td>
+<td><a href="https://arxiv.org/abs/2006.04779">NeurIPS 2020 /
+arXiv</a></td>
+<td>v3, 2020-08-19</td>
+<td>Code linked from the paper page</td>
+<td>Public D4RL data</td>
+<td><a
+href="https://sites.google.com/view/cql-offline-rl">Paper project page</a></td>
+</tr>
+<tr class="odd">
+<td>Tent</td>
+<td><a href="https://arxiv.org/abs/2006.10726">ICLR 2021 Spotlight /
+arXiv</a></td>
+<td>v3, 2021-03-18</td>
+<td>Linked from the arXiv page</td>
+<td>Public benchmarks such as ImageNet-C</td>
+<td>Video not independently verified</td>
+</tr>
+<tr class="even">
+<td>PAD</td>
+<td><a href="https://arxiv.org/abs/2007.04309">ICLR 2021 /
+arXiv</a></td>
+<td>v3, 2021-04-09</td>
+<td>Code linked from the arXiv page</td>
+<td>DMControl, ViZDoom, real robots</td>
+<td><a href="https://nicklashansen.github.io/PAD/">Project page</a></td>
+</tr>
+<tr class="odd">
+<td>EATA</td>
+<td><a href="https://proceedings.mlr.press/v162/niu22a.html">ICML 2022 /
+PMLR</a></td>
+<td><a href="https://arxiv.org/abs/2204.02610">v2, 2022-05-31</a></td>
+<td>Linked from the paper page</td>
+<td>CIFAR-C, ImageNet-C/R</td>
+<td>Separate video not found</td>
+</tr>
+<tr class="even">
+<td>IQL</td>
+<td><a href="https://openreview.net/forum?id=68n2s9ZJWF8">ICLR 2022 /
+OpenReview</a></td>
+<td><a href="https://arxiv.org/abs/2110.06169">v1, 2021-10-12</a></td>
+<td>OpenReview / author repository</td>
+<td>Public D4RL data</td>
+<td>Separate video not found</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="1-为什么值得读问题是真的证据却没有完全对准问题"><h2 id="1-为什么值得读问题是真的证据却没有完全对准问题">1. Why read it: A real problem, but evidence not fully aligned with it</h2>
+<p>Offline RL learns policies from fixed datasets; deployment no longer offers complete coverage of the training distribution. The classic risk is more than unfamiliar-looking test states: the policy proposes out-of-dataset actions at new states, and the Q function may overestimate them. CQL reduces this through conservative Q regularization; IQL goes further, avoiding Q queries for out-of-dataset actions during training. Yet both remain static solutions <strong>before deployment</strong>: policy parameters do not adapt when environment dynamics, observation noise, or goals change.</p>
+<p>TARL proposes an appealing deployment interface: without waiting for rewards or retraining a critic, make small updates using only the policy's own action distributions on online states. It minimizes categorical entropy for discrete actions and Gaussian-policy differential entropy for continuous actions, constraining drift with KL divergence from the original to adapted policy. Its engineering promise is updating only normalization layers, with low overhead and limited disruption.</p>
+<p>The paper's most striking D4RL number comes from <code>hopper-expert-v2</code>: CQL rises from
+<strong>99.72</strong> to <strong>113.34</strong>, an absolute change of
+<strong>+13.62</strong>, recalculated using the absolute original score as denominator as
+<strong>+13.66%</strong>(the abstract says 13.6%; Table 2, page 8). The largest Atari gain is QR-DQN/Asterix: <strong>503.38 → 819.24</strong>, an absolute change of
+<strong>+315.86</strong> and relative <strong>+62.75%</strong>(Table 1, page 7).</p>
+<p>The crucial disconnect is that experiments do not explicitly change test environments. D4RL trains on offline data for the same MuJoCo task and evaluates in the standard environment; Atari reports no color, dynamics, action-delay, sticky-action, or level changes. The paper tests whether entropy tuning on an online state stream can raise returns, not rigorously whether TARL recovers more as environmental distribution shifts grow. These questions are related but not equivalent.</p>
+</section><section class="card" aria-labelledby="2-方法故事线与假设"><h2 id="2-方法故事线与假设">2. Method narrative and assumptions</h2>
+<h3 id="21-问题形式化">2.1 Problem formulation</h3>
+<p>Let the MDP be (\langle\mathcal S,\mathcal
+A,P,R,\gamma\rangle). The offline dataset</p>
+<p>[ \mathcal D={(s_i,a_i,r_i,s'<em>i)}</em>{i=1}^{N}\sim
+d_{\mathrm{off}}(s,a) ]</p>
+<p>is generated by a behavior policy. Deployment trajectories follow (d_{\mathrm{on}}(s,a)). TARL copies a trained policy (\pi_{\theta_0}) into an adaptable policy (\pi_{\theta}), using only current/cached states, without rewards or supervision from new transitions.</p>
+<p>There are at least four implicit assumptions: policy entropy correlates positively with action error/OOD risk; self-training gradients on low-entropy samples are usually correct; reducing continuous-policy variance does not systematically harm states requiring exploration or multimodal actions; and KL anchoring suppresses error accumulation across sequential updates. The paper directly tests only parts of the first two, with neither calibration curves showing entropy detects errors/OOD nor validation of multimodal optimal actions.</p>
+<h3 id="22-离散动作目标">2.2 Discrete-action objective</h3>
+<p>Paper Equations (1)–(3), page 5:</p>
+<p>[ H_{\mathrm{dis}}(s;\theta)=-\sum_{a\in\mathcal A}\pi_\theta(a\mid
+s)\log\pi_\theta(a\mid s), ]</p>
+<p>[ f_{\mathrm{dis}}(s)=\mathbf
+1[H_{\mathrm{dis}}(s;\theta)&lt;E_0],\qquad \mathcal
+L^{\mathrm{dis}}<em>{\mathrm{ent}}=f</em>{\mathrm{dis}}(s)H_{\mathrm{dis}}(s;\theta).
+]</p>
+<p>Low-entropy state selection follows pseudo-label learning: allow only states on which the current model is already confident to supply gradients, avoiding noisy updates from high-entropy states. The danger is equally clear: confidence is not correctness; systematic high-confidence errors under shift will be amplified by entropy minimization.</p>
+<h3 id="23-连续动作目标">2.3 Continuous-action objective</h3>
+<p>The paper approximates policy outputs as normal distributions, using Equations (4)–(6), page 5:</p>
+<p>[ H_{\mathrm{con}}(s;\theta)=\tfrac12\log(2\pi\sigma^2)+\tfrac12,
+]</p>
+<p>After caching (B={s_i}), it selects the top-k lowest-entropy states and minimizes (H_{\mathrm{con}}). The implementation uses a tanh-squashed diagonal Gaussian, but the paper gives untruncated one-dimensional Gaussian entropy without discussing the tanh Jacobian or multidimensional summation. This does not automatically invalidate experiments, but the formula does not exactly match the true action-distribution entropy.</p>
+<h3 id="24-kl-去偏与更新">2.4 KL debiasing and updates</h3>
+<p>Paper Equations (7)–(9), page 6:</p>
+<p>[ \mathcal
+L_{\mathrm{KL}}=D_{\mathrm{KL}}(\pi_{\theta_0}|\pi_\theta),\qquad
+\mathcal L_t=\mathcal L_{\mathrm{ent}}+\lambda\mathcal L_{\mathrm{KL}}.
+]</p>
+<p>The direction (D_{\mathrm{KL}}(\pi_0|\pi)) tends toward mode covering: the adapted policy cannot assign very low probability to actions carrying original-policy mass. It is cheaper than a symmetric distance, but guarantees neither monotonic return nor constrained state visitation. No performance-difference bound or safe-improvement theorem is provided.</p>
+<h3 id="25-伪代码">2.5 Pseudocode</h3>
+<pre class="text"><code>Input: frozen original policy π0, adaptable policy πθ, online environment, buffer B
+for episode = 1..M:
+  s ← reset()
+  while not terminated:
+    Select and execute an action with πθ; obtain the next state (no reward-based update)
+    Add the state to B
+    Compute discrete-action entropy or continuous Gaussian variance/entropy
+    Paper: retain low-entropy states; for continuous tasks take B's top-k lowest-entropy samples
+    Compute KL(π0 || πθ)
+    Update only the claimed LayerNorm parameters</code></pre>
+</section><section class="card" aria-labelledby="3-关键机制与工程细节"><h2 id="3-关键机制与工程细节">3. Key mechanisms and engineering details</h2>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Component</th>
+<th scope="col">Paper setting</th>
+<th scope="col">Role</th>
+<th scope="col">Risk / unresolved issue</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Discrete confidence</td>
+<td>Action-probability entropy</td>
+<td>Select low-entropy states and sharpen further</td>
+<td>Reinforces confident errors; no entropy–error AUROC</td>
+</tr>
+<tr class="even">
+<td>Continuous confidence</td>
+<td>Gaussian variance / differential entropy</td>
+<td>Reduce action uncertainty</td>
+<td>Single Gaussian flattens multimodal actions; post-tanh entropy not formalized</td>
+</tr>
+<tr class="odd">
+<td>Selector</td>
+<td>Atari threshold (E_0=0.1); D4RL selects the 10 lowest-entropy samples per buffer</td>
+<td>Reduce noisy gradients</td>
+<td>Shared cross-task threshold lacks calibration support</td>
+</tr>
+<tr class="even">
+<td>Buffer</td>
+<td>D4RL capacity 1000</td>
+<td>Aggregate recent states</td>
+<td>Old states can become stale under nonstationarity; no forgetting-policy ablation</td>
+</tr>
+<tr class="odd">
+<td>KL anchor</td>
+<td>D4RL (\lambda=1.0); Atari (\lambda=1.5)</td>
+<td>Prevent policy drift</td>
+<td>No adaptive λ or return/constraint guarantee</td>
+</tr>
+<tr class="even">
+<td>Updated parameters</td>
+<td>Paper claims LayerNorm-only updates</td>
+<td>Low-cost adaptation</td>
+<td>Public continuous-control script actually constructs full-parameter Adam; see code audit</td>
+</tr>
+<tr class="odd">
+<td>Learning rate</td>
+<td>D4RL (10^{-6}); Atari (10^{-9})</td>
+<td>Control online-update magnitude</td>
+<td>Tiny Atari LR makes mechanistic effects hard to separate from numerical perturbations</td>
+</tr>
+<tr class="even">
+<td>Evaluation</td>
+<td>Atari 125k steps; D4RL 10 episodes per run, repeated 10 times</td>
+<td>Report mean return</td>
+<td>Text says “mean and variance,” tables use ± without defining SD/SE/variance</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="4-数据集基准与指标"><h2 id="4-数据集基准与指标">4. Datasets, benchmarks, and metrics</h2>
+<p>Atari covers five discrete-control games: Qbert, Seaquest, Asterix, Pong, and Breakout. Each online evaluation runs 125,000 steps, with at most 27,000 steps per episode (§4.3, page 7). D4RL covers HalfCheetah, Hopper, and Walker2d across several data-quality tiers: medium, medium-replay, medium-expert, expert, and fully-replay. Normalized scores map random-policy performance to 0 and expert-policy performance to 100 (supplementary Table 6, page 12).</p>
+<p>D4RL scores exceeding 100 are not errors: returns exceed the expert reference used for normalization. The main table lists only 5 pairings and the supplement another 9 CQL pairings; there is no complete 3-environment × 5-quality grid. Atari also lacks human-normalized scores, so scores cannot be averaged directly across games.</p>
+</section><section class="card" aria-labelledby="5-完整主结果矩阵"><h2 id="5-完整主结果矩阵">5. Complete main-results matrix</h2>
+<h3 id="51-atari表-1p-7">5.1 Atari: Table 1 (page 7)</h3>
+<p>Absolute gain is TARL−original method; relative gain is recalculated as ((TARL-base)/|base|\times100%). With negative Pong baselines, relative percentages indicate numerical change magnitude and should not be interpreted as proportional return improvement.</p>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Baseline</th>
+<th scope="col" style="text-align: right;">Game</th>
+<th scope="col" style="text-align: right;">Original method (±)</th>
+<th scope="col" style="text-align: right;">+TARL (±)</th>
+<th scope="col" style="text-align: right;">Absolute gain</th>
+<th scope="col" style="text-align: right;">Relative gain</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>REM</td>
+<td style="text-align: right;">Qbert</td>
+<td style="text-align: right;">914.38±6.81</td>
+<td style="text-align: right;">920.18±15.82</td>
+<td style="text-align: right;">+5.80</td>
+<td style="text-align: right;">+0.63%</td>
+</tr>
+<tr class="even">
+<td>REM</td>
+<td style="text-align: right;">Seaquest</td>
+<td style="text-align: right;">335.42±9.72</td>
+<td style="text-align: right;">339.26±9.38</td>
+<td style="text-align: right;">+3.84</td>
+<td style="text-align: right;">+1.14%</td>
+</tr>
+<tr class="odd">
+<td>REM</td>
+<td style="text-align: right;">Asterix</td>
+<td style="text-align: right;">387.00±4.68</td>
+<td style="text-align: right;">394.73±8.53</td>
+<td style="text-align: right;">+7.73</td>
+<td style="text-align: right;">+2.00%</td>
+</tr>
+<tr class="even">
+<td>REM</td>
+<td style="text-align: right;">Pong</td>
+<td style="text-align: right;">−20.23±0.10</td>
+<td style="text-align: right;">−20.20±0.06</td>
+<td style="text-align: right;">+0.03</td>
+<td style="text-align: right;">+0.15%*</td>
+</tr>
+<tr class="odd">
+<td>REM</td>
+<td style="text-align: right;">Breakout</td>
+<td style="text-align: right;">3.27±0.44</td>
+<td style="text-align: right;">3.58±0.55</td>
+<td style="text-align: right;">+0.31</td>
+<td style="text-align: right;">+9.48%</td>
+</tr>
+<tr class="even">
+<td>QR-DQN</td>
+<td style="text-align: right;">Qbert</td>
+<td style="text-align: right;">646.35±17.08</td>
+<td style="text-align: right;">672.73±14.44</td>
+<td style="text-align: right;">+26.38</td>
+<td style="text-align: right;">+4.08%</td>
+</tr>
+<tr class="odd">
+<td>QR-DQN</td>
+<td style="text-align: right;">Seaquest</td>
+<td style="text-align: right;">413.09±13.16</td>
+<td style="text-align: right;">424.57±11.91</td>
+<td style="text-align: right;">+11.48</td>
+<td style="text-align: right;">+2.78%</td>
+</tr>
+<tr class="even">
+<td>QR-DQN</td>
+<td style="text-align: right;">Asterix</td>
+<td style="text-align: right;">503.38±14.60</td>
+<td style="text-align: right;"><strong>819.24±30.74</strong></td>
+<td style="text-align: right;"><strong>+315.86</strong></td>
+<td style="text-align: right;"><strong>+62.75%</strong></td>
+</tr>
+<tr class="odd">
+<td>QR-DQN</td>
+<td style="text-align: right;">Pong</td>
+<td style="text-align: right;">−18.48±0.12</td>
+<td style="text-align: right;">−18.40±0.18</td>
+<td style="text-align: right;">+0.08</td>
+<td style="text-align: right;">+0.43%*</td>
+</tr>
+<tr class="even">
+<td>QR-DQN</td>
+<td style="text-align: right;">Breakout</td>
+<td style="text-align: right;">3.89±0.42</td>
+<td style="text-align: right;">4.18±0.60</td>
+<td style="text-align: right;">+0.29</td>
+<td style="text-align: right;">+7.46%</td>
+</tr>
+<tr class="odd">
+<td>CQL</td>
+<td style="text-align: right;">Qbert</td>
+<td style="text-align: right;">4334.64±259.67</td>
+<td style="text-align: right;">4602.67±264.11</td>
+<td style="text-align: right;">+268.03</td>
+<td style="text-align: right;">+6.18%</td>
+</tr>
+<tr class="even">
+<td>CQL</td>
+<td style="text-align: right;">Seaquest</td>
+<td style="text-align: right;">257.80±9.25</td>
+<td style="text-align: right;">270.40±8.42</td>
+<td style="text-align: right;">+12.60</td>
+<td style="text-align: right;">+4.89%</td>
+</tr>
+<tr class="odd">
+<td>CQL</td>
+<td style="text-align: right;">Asterix</td>
+<td style="text-align: right;">504.59±13.98</td>
+<td style="text-align: right;">524.76±13.98</td>
+<td style="text-align: right;">+20.17</td>
+<td style="text-align: right;">+4.00%</td>
+</tr>
+<tr class="even">
+<td>CQL</td>
+<td style="text-align: right;">Pong</td>
+<td style="text-align: right;">1.02±1.22</td>
+<td style="text-align: right;">2.08±0.92</td>
+<td style="text-align: right;">+1.06</td>
+<td style="text-align: right;">+103.92%</td>
+</tr>
+<tr class="odd">
+<td>CQL</td>
+<td style="text-align: right;">Breakout</td>
+<td style="text-align: right;">8.26±1.17</td>
+<td style="text-align: right;">8.53±1.15</td>
+<td style="text-align: right;">+0.27</td>
+<td style="text-align: right;">+3.27%</td>
+</tr>
+</tbody>
+</table></div>
+<p>All 15/15 mean differences are positive, but 8 have absolute gains below 4 points; QR-DQN/Asterix contributes disproportionately. Without paired cross-seed tests, confidence intervals, or corrected multiple testing, “all means positive” cannot establish significance. CQL/Pong's +103.92% largely reflects the small denominator 1.02, not a strong absolute effect.</p>
+<h3 id="52-d4rl-主表表-2p-8">5.2 Main D4RL table: Table 2 (page 8)</h3>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Baseline</th>
+<th scope="col">Task</th>
+<th scope="col" style="text-align: right;">Original method</th>
+<th scope="col" style="text-align: right;">+TARL</th>
+<th scope="col" style="text-align: right;">Absolute gain</th>
+<th scope="col" style="text-align: right;">Relative gain</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>CQL</td>
+<td>hopper-expert-v2</td>
+<td style="text-align: right;">99.72</td>
+<td style="text-align: right;"><strong>113.34</strong></td>
+<td style="text-align: right;"><strong>+13.62</strong></td>
+<td style="text-align: right;"><strong>+13.66%</strong></td>
+</tr>
+<tr class="even">
+<td>CQL</td>
+<td>walker2d-fully-replay-v2</td>
+<td style="text-align: right;">95.31</td>
+<td style="text-align: right;">97.99</td>
+<td style="text-align: right;">+2.68</td>
+<td style="text-align: right;">+2.81%</td>
+</tr>
+<tr class="odd">
+<td>CQL</td>
+<td>walker2d-expert-v2</td>
+<td style="text-align: right;">113.25</td>
+<td style="text-align: right;">113.57</td>
+<td style="text-align: right;">+0.32</td>
+<td style="text-align: right;">+0.28%</td>
+</tr>
+<tr class="even">
+<td>IQL</td>
+<td>walker2d-medium-v2</td>
+<td style="text-align: right;">79.92</td>
+<td style="text-align: right;">82.43</td>
+<td style="text-align: right;">+2.51</td>
+<td style="text-align: right;">+3.14%</td>
+</tr>
+<tr class="odd">
+<td>IQL</td>
+<td>walker2d-expert-v2</td>
+<td style="text-align: right;">110.31</td>
+<td style="text-align: right;">110.49</td>
+<td style="text-align: right;">+0.18</td>
+<td style="text-align: right;">+0.16%</td>
+</tr>
+</tbody>
+</table></div>
+<p>The key signal is strong heterogeneity, not universally large gains: expert Walker2d improves by only 0.16%–0.28%, versus 13.66% for hopper-expert. The paper attributes this to differing distribution shifts, but does not measure train/test state-action divergence, so that explanation remains an inference.</p>
+<h3 id="53-d4rl-补充矩阵表-6p-12">5.3 Supplementary D4RL matrix: Table 6 (page 12)</h3>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Task</th>
+<th scope="col" style="text-align: right;">CQL (±)</th>
+<th scope="col" style="text-align: right;">CQL+TARL (±)</th>
+<th scope="col" style="text-align: right;">Absolute gain</th>
+<th scope="col" style="text-align: right;">Relative gain</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>halfcheetah-medium</td>
+<td style="text-align: right;">50.67±0.30</td>
+<td style="text-align: right;">50.75±0.11</td>
+<td style="text-align: right;">+0.08</td>
+<td style="text-align: right;">+0.16%</td>
+</tr>
+<tr class="even">
+<td>hopper-medium</td>
+<td style="text-align: right;">85.74±4.42</td>
+<td style="text-align: right;">87.79±3.96</td>
+<td style="text-align: right;">+2.05</td>
+<td style="text-align: right;">+2.39%</td>
+</tr>
+<tr class="odd">
+<td>walker2d-medium</td>
+<td style="text-align: right;">77.44±5.50</td>
+<td style="text-align: right;">82.95±3.00</td>
+<td style="text-align: right;">+5.51</td>
+<td style="text-align: right;">+7.12%</td>
+</tr>
+<tr class="even">
+<td>halfcheetah-medium-replay</td>
+<td style="text-align: right;">46.82±0.26</td>
+<td style="text-align: right;">46.92±0.23</td>
+<td style="text-align: right;">+0.10</td>
+<td style="text-align: right;">+0.21%</td>
+</tr>
+<tr class="odd">
+<td>hopper-medium-replay</td>
+<td style="text-align: right;">101.47±0.11</td>
+<td style="text-align: right;">101.55±0.16</td>
+<td style="text-align: right;">+0.08</td>
+<td style="text-align: right;">+0.08%</td>
+</tr>
+<tr class="even">
+<td>walker2d-medium-replay</td>
+<td style="text-align: right;">85.13±6.54</td>
+<td style="text-align: right;">85.61±4.33</td>
+<td style="text-align: right;">+0.48</td>
+<td style="text-align: right;">+0.56%</td>
+</tr>
+<tr class="odd">
+<td>halfcheetah-medium-expert</td>
+<td style="text-align: right;">94.36±2.57</td>
+<td style="text-align: right;">95.12±0.39</td>
+<td style="text-align: right;">+0.76</td>
+<td style="text-align: right;">+0.81%</td>
+</tr>
+<tr class="even">
+<td>hopper-medium-expert</td>
+<td style="text-align: right;">106.18±4.27</td>
+<td style="text-align: right;">107.63±3.29</td>
+<td style="text-align: right;">+1.45</td>
+<td style="text-align: right;">+1.37%</td>
+</tr>
+<tr class="odd">
+<td>walker2d-medium-expert</td>
+<td style="text-align: right;">112.73±1.98</td>
+<td style="text-align: right;">113.64±0.20</td>
+<td style="text-align: right;">+0.91</td>
+<td style="text-align: right;">+0.81%</td>
+</tr>
+<tr class="even">
+<td><strong>Average</strong></td>
+<td style="text-align: right;"><strong>84.52</strong></td>
+<td style="text-align: right;"><strong>85.79</strong></td>
+<td style="text-align: right;"><strong>+1.27</strong></td>
+<td style="text-align: right;"><strong>+1.50%</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>All 9/9 differences are positive, but 4 absolute gains are no greater than 0.10. If ± denotes standard deviation (not explicitly defined), several differences are far below one-sided variation. The safest conclusion is a small, consistently positive average trend, with a larger Walker2d-medium effect, rather than significant superiority on every task.</p>
+</section><figure class="figure" aria-labelledby="fig-d4rl-title">
+<p class="fig-title" id="fig-d4rl-title">Nine supplementary D4RL tasks: Highly uneven absolute gains</p>
+<p class="fig-sub">Walker2d-medium's +5.51 substantially exceeds the others; four gains are at most +0.10. Unit: D4RL normalized score.</p>
+<svg class="chart" viewBox="0 0 900 320" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>Absolute gains from adding TARL to CQL on nine D4RL tasks</title><desc>The nine bars are 0.08, 2.05, 5.51, 0.10, 0.08, 0.48, 0.76, 1.45, and 0.91; Walker2d-medium is highest.</desc>
+<line x1="58" y1="268" x2="860" y2="268" stroke="var(--grid)"/><line x1="58" y1="58" x2="58" y2="268" stroke="var(--grid)"/>
+<text x="48" y="272" font-size="11" text-anchor="end">0</text><text x="48" y="165" font-size="11" text-anchor="end">2.75</text><text x="48" y="62" font-size="11" text-anchor="end">5.51</text>
+<rect x="72" y="264.95" width="48" height="3.05" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="HC-m: +0.08"/><text x="96" y="290" font-size="11" text-anchor="middle">HC-m</text><rect x="158" y="189.87" width="48" height="78.13" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="Hop-m: +2.05"/><text x="182" y="290" font-size="11" text-anchor="middle">Hop-m</text><rect x="244" y="58.00" width="48" height="210.00" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="W2D-m: +5.51"/><text x="268" y="290" font-size="11" text-anchor="middle">W2D-m</text><rect x="330" y="264.19" width="48" height="3.81" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="HC-mr: +0.10"/><text x="354" y="290" font-size="11" text-anchor="middle">HC-mr</text><rect x="416" y="264.95" width="48" height="3.05" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="Hop-mr: +0.08"/><text x="440" y="290" font-size="11" text-anchor="middle">Hop-mr</text><rect x="502" y="249.71" width="48" height="18.29" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="W2D-mr: +0.48"/><text x="526" y="290" font-size="11" text-anchor="middle">W2D-mr</text><rect x="588" y="239.03" width="48" height="28.97" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="HC-me: +0.76"/><text x="612" y="290" font-size="11" text-anchor="middle">HC-me</text><rect x="674" y="212.74" width="48" height="55.26" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="Hop-me: +1.45"/><text x="698" y="290" font-size="11" text-anchor="middle">Hop-me</text><rect x="760" y="233.32" width="48" height="34.68" rx="4" fill="var(--chart-primary)" tabindex="0" data-tip="W2D-me: +0.91"/><text x="784" y="290" font-size="11" text-anchor="middle">W2D-me</text></svg>
+<figcaption>Source: TARL supplementary Table 6 (page 12); bars subtract the displayed means.</figcaption></figure><section class="card" aria-labelledby="6-消融超参敏感性与相变"><h2 id="6-消融超参敏感性与相变">6. Ablations, hyperparameter sensitivity, and phase transitions</h2>
+<h3 id="61-熵阈值存在尖锐失败区">6.1 Entropy threshold: A sharp failure region</h3>
+<p>On Pong at fixed learning rate (10^{-9}), Table 3 (page 8): (E_0=0.1) obtains
+<strong>1.70±0.82</strong>; 0.3 drops to
+<strong>−13.54±1.22</strong>; 0.5, 0.7, and 0.9 yield
+<strong>−18.79, −19.61, −19.98</strong>, respectively. Moving from 0.1 to 0.3 is not smooth degradation but a transition across task viability. Reliable-state filtering is necessary, yet a fixed cross-environment threshold is consequently not robust.</p>
+<h3 id="62-低熵样本选择">6.2 Low-entropy sample selection</h3>
+<p>Walker2d-medium-v2, Table 4 (page 8): global entropy minimization
+<strong>77.74</strong>, low-entropy selection <strong>82.95</strong>, high-entropy selection
+<strong>72.91</strong>. Low-entropy selection beats global selection by +5.21 and high-entropy selection by +10.04. This supports “reliable samples first,” but only for one task, without ± or seed count, limiting generalization.</p>
+<h3 id="63-kl-权重">6.3 KL weight</h3>
+<p>Pong, Table 5 (page 9): (\lambda=0.5,1.0,1.5,2.0) yields
+<strong>0.92±1.08, 1.32±1.39, 2.08±0.92, 0.62±1.73</strong>, respectively. The optimum is 1.5, with a pronounced decline at 2.0, forming an inverted U: weak constraints permit drift, strong constraints block adaptation. Without a (\lambda=0) comparison, KL's contribution over pure entropy minimization cannot be isolated.</p>
+<h3 id="64-未报告的必要消融">6.4 Necessary but unreported ablations</h3>
+<p>Missing ablations include LayerNorm-only versus full-parameter updates; BN/LN statistics versus affine-parameter updates; updates per step; sensitivity to buffer capacity 1000 and top-k=10; KL direction/symmetric KL; policy resets per episode versus continual accumulation; critic adaptation; equal wall-clock/latency budgets; and genuine shift-strength sweeps. These omissions leave the explanation of effectiveness incomplete.</p>
+</section><section class="card" aria-labelledby="7-公开代码复现审计"><h2 id="7-公开代码复现审计">7. Public-code reproducibility audit</h2>
+<p>This is the report's most important additional check. The repository is public and accessible, but its continuous-control entry point conflicts with the paper in at least three ways:</p>
+<ol type="1">
+<li><strong>Parameter-scope conflict.</strong> The paper repeatedly claims LayerNorm-only updates (abstract, §3.2, Figure 2), whereas
+<code>run_eval_cql_ln_before_activation.py</code> Use
+<code>torch.optim.Adam(tta_actor.parameters(), ...)</code>, with no visible
+<code>requires_grad=False</code>
+freezing of non-normalization parameters. The default optimizer thus covers the entire actor rather than only LayerNorm.</li>
+<li><strong>Filtering disabled by default.</strong> In the same entry point,
+<code>--is_entropy_filter</code> defaults to <code>False</code>; the README example does not enable it. <code>sac_tta.py</code> updates on every state when this is False, conflicting with the paper's continuous-task procedure of buffering and selecting the top-10 lowest-entropy samples.</li>
+<li><strong>Reversed filtering direction.</strong> When filtering is enabled, the code condition is
+<code>if entropy &gt; entropy_threshold: update</code>, whereas Equations (2)/(5) and Table 4 support low-entropy updates. Log messages also contradict one another. This changes the algorithm, not merely terminology.</li>
+</ol>
+<p>Furthermore, the continuous-distribution code uses
+<code>abs(entropy)</code>. Differential entropy can be negative; minimizing its absolute value changes the objective to “push entropy toward 0,” rather than strictly minimizing Equation (4)'s entropy. The paper does not describe this absolute-value operation.</p>
+<p>We can therefore confirm that the authors provide related code and entry points, but not that public defaults exactly reproduce Tables 2/6. Minimal repairs should explicitly select LayerNorm weight/bias within <code>named_parameters()</code> , consistently use low entropy as the reliability criterion, provide actual reproduction commands/checkpoints/seeds/commit in the README, and add a unit test checking that only LayerNorm changes after an update.</p>
+</section><section class="card" aria-labelledby="8-统计显著性与证据等级"><h2 id="8-统计显著性与证据等级">8. Statistical significance and evidence strength</h2>
+<p>The paper says each process is repeated 10 times, but does not define ± as standard deviation, standard error, or variance. §4.3 says “mean and variance,” whereas tables conventionally show dispersion with ±. There are no paired seeds, confidence intervals, p-values, effect sizes, or hierarchical multitask statistical models.</p>
+<p>Evidence falls into three levels:</p>
+<ul>
+<li><strong>Strong:</strong> Every reported pairing is positive; excessive thresholds fail catastrophically on Pong; low-entropy selection beats global/high-entropy selection, albeit on one task.</li>
+<li><strong>Moderate:</strong> TARL may act as a plugin for CQL, IQL, QR-DQN, and REM, since each baseline has positive results, although task coverage is unbalanced.</li>
+<li><strong>Weak:</strong> Claims that TARL specifically addresses environmental distribution shifts, updates only LayerNorm, has low overhead, and is safe/stable, because shifts were not manipulated, code conflicts exist, and latency/safety metrics are absent.</li>
+</ul>
+</section><section class="card" aria-labelledby="9-真正贡献可复用设计与迁移潜力"><h2 id="9-真正贡献可复用设计与迁移潜力">9. Contributions, reusable designs, and transfer potential</h2>
+<p>The actual contribution is a deployment-time TTA interface for offline RL, rather than a new Bellman objective: the original policy anchors updates, online states supply unlabeled adaptation data, and action distributions supply self-supervision. This interface could transfer to VLA, navigation, recommendation, and industrial control.</p>
+<p>Three designs are most reusable. First, <strong>reliability gating + few-parameter updates + an anchor</strong> form a more robust trio than direct online fine-tuning. Second, buffered top-k selection for continuous control supports batched updates and asynchronous deployment. Third, adapting action distributions rather than the critic avoids fabricating value supervision without rewards.</p>
+<p>For VLA transfer, token/action entropy should not simply be minimized. Visual consistency, action-feasibility verifiers, dynamics-prediction errors, or binary success feedback should jointly gate updates; otherwise confident language-model hallucinations are reinforced. MoE/large-model policies could update only routers, LayerNorm, or small adapters, with KL replaced by a composite trust region over action chunks and safety constraints.</p>
+</section><section class="card" aria-labelledby="10-论文自述限制与独立批判"><h2 id="10-论文自述限制与独立批判">10. Author-Acknowledged Limitations and Independent Critique</h2>
+<h3 id="101-论文自述限制">10.1 Author-acknowledged limitations</h3>
+<p>There is no separate Limitations section. Identifiable author-stated boundaries include noisy high-entropy samples causing error accumulation (§3.3, pages 5–6); excessive thresholds causing failure (§4.7, page 8); and different feedback dependence between online RL and TARL, which uses no environment rewards (supplement B, page 12). The authors do not discuss code consistency, genuine distribution shifts, or statistical significance.</p>
+<h3 id="102-独立批判证据--推论">10.2 Independent critique (evidence → inference)</h3>
+<ol type="1">
+<li><strong>[Construct validity]</strong> Training and evaluation use standard Atari/D4RL environments without manipulated visual or dynamics shifts. The experiments therefore cannot distinguish repairing offline-online visitation mismatch from online self-distillation on same-environment trajectories; evidence for distribution-shift claims is insufficient.</li>
+<li><strong>[Mechanism risk]</strong>
+Entropy measures confidence, not correctness, so entropy minimization reinforces high-confidence errors. Without entropy–error/OOD calibration curves, low entropy cannot be equated with in-distribution inputs.</li>
+<li><strong>[Implementation consistency]</strong> Public code defaults to full-actor Adam with filtering disabled, and uses a high-entropy condition when enabled. The paper's algorithm and default implementation are therefore not equivalent; what is being reproduced is unclear.</li>
+<li><strong>[Statistics]</strong> Eight of 15 Atari pairings gain fewer than 4 points, without paired tests/CI. “Significant improvement” can therefore be read colloquially, but not as statistical significance.</li>
+<li><strong>[Means conceal heterogeneity]</strong> QR-DQN/Asterix alone gains +315.86 while most gains are much smaller. One grand mean cannot summarize stable effects; cross-task medians and ranks should be reported.</li>
+<li><strong>[Safety]</strong> The deployed algorithm continually changes its action policy but reports no cost violations, catastrophic actions, or recovery metrics. “Preserving safety” is an objective, not a validated conclusion.</li>
+<li><strong>[Continuous-entropy formulation]</strong> The formula uses ordinary Gaussian entropy, while implementation uses an absolute-valued tanh-squashed diagonal Gaussian entropy. This objective mismatch may especially change gradient meaning near action boundaries.</li>
+<li><strong>[Efficiency]</strong>
+The paper claims few-parameter updates but reports no throughput, latency, backward-pass counts, or energy use. Real-time deadlines cannot be assessed; total time for Atari's 125k steps is also absent.</li>
+</ol>
+</section><section class="card" aria-labelledby="11-相关工作问题来源与技术传递链"><h2 id="11-相关工作问题来源与技术传递链">11. Related work: Origins and technical inheritance</h2>
+<h3 id="cql2020离线保守性来源">CQL (2020): The source of offline conservatism</h3>
+<p><strong>Problem addressed:</strong> CQL learns a conservative value lower bound through Q regularization, reducing overestimation of out-of-dataset actions. <strong>Remaining gap:</strong>
+The policy remains fixed after deployment and cannot adapt to new environments. <strong>How TARL responds:</strong>
+Adds test-time entropy updates around the CQL actor. <strong>Transferred design:</strong>
+The conservative principle of staying near offline support moves from Q space into an original-policy KL anchor.</p>
+<h3
+id="tent2021无标签熵最小化来源">Tent (2021): The source of unlabeled entropy minimization</h3>
+<p><strong>Problem addressed:</strong> Tent estimates normalization statistics and updates channel-affine parameters on image-classification test streams, adapting to covariate shift through predictive-entropy minimization. <strong>Remaining gap:</strong>
+Classification examples are approximately independent; actions alter subsequent states, allowing erroneous gradients to accumulate through state-visitation distributions. <strong>How TARL responds:</strong> Introduces original-policy KL and distinguishes discrete/continuous action entropy. <strong>Transferred design:</strong>
+Parameter-efficient normalization updates and the entropy objective transfer almost directly.</p>
+<h3
+id="pad2021无奖励策略部署适配来源">PAD (2021): The source of reward-free deployment-time policy adaptation</h3>
+<p><strong>Problem addressed:</strong> PAD uses a self-supervised task prepared during training to keep updating visual RL policies during reward-free deployment; its original paper improves 31 of 36 environments (arXiv abstract). <strong>Remaining gap:</strong>
+Requires a self-supervised head and joint objective during training. <strong>How TARL responds:</strong>
+Preserves the original offline RL training pipeline, using action distributions directly as self-supervision. <strong>Transferred design:</strong>
+The “observations available, rewards unavailable at deployment” setting transfers directly, but TARL trades more semantically meaningful visual self-supervision for plug-and-play compatibility.</p>
+<h3
+id="eata2022可靠样本与防遗忘来源">EATA (2022): The source of reliable-sample selection and anti-forgetting</h3>
+<p><strong>Problem addressed:</strong> EATA observes that high-entropy samples produce noisy gradients and reduces forgetting using reliable/nonredundant selection and Fisher regularization. <strong>Remaining gap:</strong>
+Still a classifier, without policy-induced data distributions. <strong>How TARL responds:</strong>
+Uses low-entropy selection, replacing Fisher parameter regularization with policy KL. <strong>Transferred design:</strong>
+The two-part structure of selective test-sample backpropagation and source-model anchoring transfers to RL.</p>
+<h3
+id="iql2022避免数据外动作的另一条路线">IQL (2022): Another route to avoiding out-of-dataset actions</h3>
+<p><strong>Problem addressed:</strong> IQL avoids evaluating out-of-dataset actions during training, learning strong offline policies through expectile values and advantage-weighted behavior cloning. <strong>Remaining gap:</strong> Still static at deployment. <strong>How TARL responds:</strong> Attaches the same adapter to IQL actors; the two Walker2d tasks in Table 2 gain +2.51 and +0.18. <strong>Transferred design:</strong> IQL provides a base less dependent on OOD action evaluation; TARL additionally handles the test-state stream.</p>
+</section><section class="card" aria-labelledby="12-非线性技术演进树"><h2 id="12-非线性技术演进树">12. Nonlinear technical-evolution tree</h2>
+<pre class="text"><code>Offline RL extrapolation error
+├─ Behavior constraints / conservative values
+│  ├─ CQL: Q lower bounds and conservative regularization ─┐
+│  └─ IQL: no out-of-dataset action queries ────────────────┤
+│                                                         ├─ TARL: action entropy + policy KL
+Test-time adaptation                                      │
+├─ Tent: entropy minimization + normalization affine ─────┤
+├─ EATA: reliable selection + anti-forgetting anchor ──────┘
+└─ PAD: reward-free deployment-time policy adaptation ────┐
+                                                          └─ Later: FeedTTA / TT-VLA / T²VLA
+                                                               (feedback, verifiers, physical-execution signals)</code></pre>
+<p>Two shifts drive this evolution: from covering all shifts during training to exploiting target streams at deployment; and from cheap endogenous signals such as classification entropy toward task-relevant binary environmental feedback, verifiers, or world models. TARL lies between them: more plug-and-play than PAD, but more weakly supervised than later embodied TTA.</p>
+</section><section class="card" aria-labelledby="13-跨论文对标"><h2 id="13-跨论文对标">13. Cross-paper comparison</h2>
+<div class="table-scroll" role="region" aria-label="Data table" tabindex="0"><table>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col">Deployment-time updates</th>
+<th scope="col">Rewards/labels required</th>
+<th scope="col">Training modifications required</th>
+<th scope="col">Self-supervised signal</th>
+<th scope="col">Drift prevention</th>
+<th scope="col">Sequential-decision validation</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>CQL</td>
+<td>No</td>
+<td>No</td>
+<td>Yes</td>
+<td>Conservative Q</td>
+<td>Training-time conservatism</td>
+<td>Yes</td>
+</tr>
+<tr class="even">
+<td>IQL</td>
+<td>Can fine-tune online, but not in its original form</td>
+<td>Online fine-tuning requires interaction</td>
+<td>Yes</td>
+<td>expectile / AWR</td>
+<td>In-dataset actions</td>
+<td>Yes</td>
+</tr>
+<tr class="odd">
+<td>Tent</td>
+<td>Yes</td>
+<td>No</td>
+<td>No</td>
+<td>Classification entropy</td>
+<td>No strong anchor</td>
+<td>No</td>
+</tr>
+<tr class="even">
+<td>EATA</td>
+<td>Yes</td>
+<td>No</td>
+<td>No</td>
+<td>Reliable-sample entropy</td>
+<td>Fisher regularization</td>
+<td>No</td>
+</tr>
+<tr class="odd">
+<td>PAD</td>
+<td>Yes</td>
+<td>No</td>
+<td><strong>Yes</strong></td>
+<td>Auxiliary self-supervised task</td>
+<td>Task-dependent</td>
+<td>Yes</td>
+</tr>
+<tr class="even">
+<td>TARL</td>
+<td>Yes</td>
+<td>No</td>
+<td>Claimed unnecessary; requires LN architecture</td>
+<td>Action entropy / variance</td>
+<td>policy KL</td>
+<td>Yes, but without explicit shifts</td>
+</tr>
+</tbody>
+</table></div>
+</section><section class="card" aria-labelledby="14-开放挑战可操作的-head-to-head-实验"><h2 id="14-开放挑战可操作的-head-to-head-实验">14. Open challenges: Actionable head-to-head experiments</h2>
+<h3 id="理论">Theory</h3>
+<ol type="1">
+<li><strong>Entropy gating versus density/OOD gating:</strong> Under controlled dynamics shifts, compare entropy, ensemble disagreement, behavior density, and conformal scores. Plot shift strength against return, OOD-detection AUROC, and catastrophic-action rate.</li>
+<li><strong>KL direction:</strong> Compare (KL(\pi_0|\pi)), (KL(\pi|\pi_0)), JS, and action-Wasserstein at identical trust-region radii and gradient-step counts, measuring worst-case return.</li>
+<li><strong>Safe-improvement bounds:</strong> Compare TARL, no adaptation, and reward-aware online fine-tuning. Test rollback triggers based on offline-critic lower bounds, measuring upper confidence bounds on constraint violations.</li>
+</ol>
+<h3 id="工程应用">Engineering applications</h3>
+<ol start="4" type="1">
+<li><strong>Paper implementation versus public defaults:</strong> Run a four-arm experiment: LN-only/full actor × low-entropy/high-entropy or no filtering. Fix checkpoints, seeds, and total backward passes to identify which arm produces Table 2's gains.</li>
+<li><strong>Genuine shift matrix:</strong> Use Atari-C-style visual corruptions, sticky actions, frame delays, and MuJoCo friction/mass/sensor noise. Compare five methods head-to-head: TARL, PAD, Tent-on-policy, EATA-style Fisher, and no adaptation.</li>
+<li><strong>Real-time budget:</strong> At 20/50/100 Hz control frequencies, measure p50/p99 latency, GPU energy, and missed-deadline rates; compare per-step, buffered-batch, and asynchronous updates at equal budgets.</li>
+<li><strong>Rollback and nonstationarity:</strong> Use an A→B→A environment sequence to compare continual updates, episode resets, EMA anchors, and change-point resets; measure adaptation speed in B and forgetting on return to A.</li>
+</ol>
+<h3 id="新兴方向">Emerging directions</h3>
+<ol start="8" type="1">
+<li><strong>Endogenous VLA confidence versus verifiers:</strong> Compare TARL-style action entropy, vision-language verifiers, world-model prediction error, and binary success feedback on LIBERO/real robots with equal trial counts, measuring success and unsafe actions.</li>
+<li><strong>Action-chunk adaptation:</strong> For diffusion/VLA policies, compare shrinking full-chunk variance, reranking candidate chunks only, and updating routers/adapters; measure mode collapse on multimodal tasks.</li>
+<li><strong>Gradient-free agent adaptation:</strong> Compare parameter-updating TARL with retrieval memory/JitRL and test-time planning under equal token/GPU/interaction budgets, measuring long-term accumulation and catastrophic forgetting.</li>
+</ol>
+</section><section class="card" aria-labelledby="15-近期工作20252026"><h2 id="15-近期工作20252026">15. Recent work (2025–2026)</h2>
+<ol type="1">
+<li><strong>FeedTTA (ICML 2025)</strong>: Uses binary end-of-episode success feedback for VLN test-time RL; more task-relevant than TARL's purely endogenous entropy, but requires delayed feedback. <a
+href="https://proceedings.mlr.press/v267/kim25ad.html">PMLR</a></li>
+<li><strong>World Model Implanting (ICML 2025)</strong>: Uses a plug-in world model for cross-domain embodied-policy adaptation, adapting internal dynamics models rather than directly sharpening action distributions. <a
+href="https://openreview.net/forum?id=tpbtodnI1p">OpenReview</a></li>
+<li><strong>TMoW (2026)</strong>: Adjusts world-model mixture routing at test time and supports few-shot expansion, suited to environments composed of reusable domains. <a
+href="https://arxiv.org/abs/2601.22647">arXiv</a></li>
+<li><strong>TT-VLA (ACL 2026)</strong>: Extends test-time RL to online VLA policy adaptation, moving from generic offline actors toward embodied foundation models. <a
+href="https://aclanthology.org/2026.acl-long.1863/">ACL
+Anthology</a></li>
+<li><strong>T²VLA (2026)</strong>: Uses the correlation between VLA generation confidence and physical success for bootstrapped test-time RL; closest to TARL and especially in need of strict confidence-calibration checks. <a
+href="https://arxiv.org/abs/2606.29892">arXiv</a></li>
+<li><strong>Reflective Test-Time
+Planning (2026)</strong>: Instead of entropy-based policy updates, action models reflect with internal/external evaluators at deployment, suited to long-horizon tasks with language/visual evaluators. <a
+href="https://arxiv.org/abs/2602.21198">arXiv</a></li>
+<li><strong>E-TTS (2026)</strong>: Jointly scales embodied reasoning and action sampling with history-aware verifier selection in a closed loop, representing extra inference computation rather than gradient adaptation. <a
+href="https://arxiv.org/abs/2606.27268">arXiv</a></li>
+<li><strong>JitRL (2026)</strong>: Supports continual LLM-agent adaptation through gradient-free memory/policy optimization, serving as a cost comparison for parameter-updating approaches. <a
+href="https://arxiv.org/abs/2601.18510">arXiv</a></li>
+</ol>
+</section><section class="card" aria-labelledby="16-候选池与随机过程"><h2 id="16-候选池与随机过程">16. Candidate pool and randomization</h2>
+<p>This run first checked <code>ml-report-index.md</code>, excluding EARL-BO (nonmyopic BO) and SimbaV2 (deep-RL scaling stability), covered in depth in the preceding 14 days. After collecting from ICML 2025 PMLR, OpenReview, and 2026 arXiv, the final random pool contained 26 main-conference papers: ARS, In-Context RL from Suboptimal Historical Data, Constrained RL Underestimation, Goal-Oriented Skill Abstraction, Robust Off-Dynamics RL, Multi-objective RL Portfolios, FeedTTA, Task-Aware Virtual Training, Infeasible Action Penalty, Combinatorial RLHF, Robust MARL, HYGMA, C2IQL, f-divergence Robust Offline RL, Reducing Churn, TARL, Cross-Dynamics Policy Regularization, Q-Supervised Safe Offline RL, Markov Heads, Flow Q-Learning, Reflective World Models, LARM, FOUNDER, World Model Implanting, UP-VLA, and Agent-Centric Actor-Critic.</p>
+<p>Running <code>shuf -i 1-26 -n 1</code> and selected <strong>16</strong>, selecting TARL. Paper, appendix, and code were accessible, so there were 0 redraws.</p>
+</section><section class="card" aria-labelledby="17-最终判断"><h2 id="17-最终判断">17. Final assessment</h2>
+<p>TARL's research value is a clear, weakly supervised offline-to-deployment interface, not an already-proven universally safe adaptation algorithm. All reported pairings are positive, with strongest gains of +13.62 on hopper-expert-v2 and +315.86 on QR-DQN/Asterix. Yet the supplementary nine-task mean is only +1.27, and many gains are smaller than variability. Threshold transitions and low-entropy-selection ablations support reliable-sample gating; genuine shifts, statistical significance, and real-time costs remain untested. Public defaults conflict with the paper in ways that alter the algorithm.</p>
+<p>The most accurate conclusion is therefore: <strong>TARL offers a reusable system skeleton—reliable samples, parameter-efficient updates, and original-policy anchoring—but action entropy is not a sufficient proxy for OOD status or correctness. The decisive next experiment is an equal-budget head-to-head comparison of entropy gating, density, verifiers, and world-model error under controlled shifts, after first repairing paper–code consistency, rather than merely running more standard D4RL seeds.</strong></p>
+<hr />
+<h3 id="来源与口径说明">Sources and measurement conventions</h3>
+<p>Core numbers come from the TARL PMLR paper: method Equations (1)–(9), pages 5–6; Atari Table 1 and experimental setup, page 7; D4RL Table 2 and threshold/selection ablations Tables 3–4, page 8; KL Table 5, page 9; extended D4RL Table 6, supplementary page 12. Absolute and relative gains were recalculated from displayed means. The code audit uses the public GitHub default branch accessible on 2026-08-27; later commits may change conclusions. Formal statistical significance was not reported.</p>
+<p>The HTML passed the Warm Editorial structure/dependency validator (0 errors, 0 warnings). Although Playwright was available, the runtime lacked
+<code>/usr/bin/chromium</code>, <code>/opt/pw-browsers</code> or a Chromium executable in Playwright's cache. An actual launch returned “executable missing,” so browser-screenshot acceptance cannot honestly be claimed. The page still follows the template's light/dark themes, 640 px responsiveness, horizontally scrolling tables, and print CSS.</p>
+</section>
+  </main>
+
+  <footer>Core sources: PMLR paper, supplement, and public code; generated 2026-08-27. All relative gains were recalculated from displayed table means.</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ Light' : '☾ Dark';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

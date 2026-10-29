@@ -1,0 +1,1084 @@
+---
+layout: null
+title: "Q-VDiT"
+date: 2026-08-26
+topic: vlm-vision
+tags: ["vlm-vision"]
+excerpt: "Token-aware low-rank compensation and video-relation distillation mitigate low-bit video Transformer degradation."
+permalink: "/blog/2026/08/26/q-vdit-low-bit-video-diffusion-transformer/en/"
+blog_post: false
+lang: en
+sitemap: true
+alternate_zh: "/blog/2026/08/26/q-vdit-low-bit-video-diffusion-transformer/"
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Q-VDiT In-Depth Report · 2026-08-26</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #246fca;
+    --chart-comparison: #c95224;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+
+  blockquote { margin: 18px 0; padding: 14px 18px; border-left: 3px solid var(--chart-comparison); border-radius: 0 8px 8px 0; background: var(--page); color: var(--text-secondary); }
+  blockquote > :last-child { margin-bottom: 0; }
+  strong { color: var(--text-primary); }
+  .card h3 { padding-top: 7px; border-top: 1px solid var(--grid); }
+  .card h4 { color: var(--text-secondary); margin-top: 1.35rem; }
+  table th:first-child, table td:first-child { min-width: 8rem; }
+  table td { vertical-align: top; }
+  pre code { white-space: pre; }
+  .figure { overflow: hidden; }
+  @media (max-width: 640px) {
+    .chart { min-width: 680px; }
+    .figure { overflow-x: auto; }
+    .figure .fig-title, .figure .fig-sub, .figure .legend, .figure figcaption { position: sticky; left: 0; min-width: 0; }
+  }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" aria-pressed="false">☾ Dark</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">Generative Models · ICML 2025</p>
+    <h1>Q-VDiT In-Depth Report</h1>
+    <p class="subtitle">Low-bit video generation requires more than fitting single-frame error</p>
+    <div class="meta" aria-label="Report metadata">
+      <span class="chip source">ICML 2025 / PMLR 267</span>
+      <span class="chip">2026-08-26</span>
+      <span class="chip">Video DiT · Quantization · Relational distillation</span>
+    </div>
+    <p class="lede">Q-VDiT uses rank-1 token-aware compensation and whole-video relational distillation to prevent W3A6 quality collapse, but small-sample automatic metrics and conflicting ablation labels still limit the strength of the conclusions.</p>
+  </header>
+
+  <main>
+<section class="card" aria-label="Report metadata and central assessment"><p><strong>Date</strong>: 2026-08-26<br />
+<strong>Today's field</strong>: Generative models—quantization and distillation for video diffusion Transformers<br />
+<strong>Core paper</strong>: <em>Q-VDiT: Towards Accurate Quantization and Distillation of Video-Generation Diffusion Transformers</em><br />
+<strong>Publication</strong>: ICML 2025, PMLR 267<br />
+<strong>Random-selection record</strong>: 24 candidates; executed <code>shuf -i 1-24 -n 1</code> Selected paper 23; the official full text, code, and evaluation details were accessible, so no redraw was needed.</p>
+<blockquote>
+<p><strong>Core positioning</strong>: Q-VDiT reframes low-bit degradation in video DiTs from “layerwise numerical error” to “token/feature information loss + cross-frame relational misalignment,” compensating for the two through a rank-1 error branch and whole-video relational distillation, respectively.</p>
+</blockquote></section>
+<section class="card" aria-labelledby="section-1" data-section="0. Link verification table"><h2 id="section-1">0. Link verification table</h2>
+<p>All links below were actually accessed on 2026-08-26. Version dates follow arXiv submission histories. “Data/weights” lists only resources released by the authors or benchmark maintainers; base-model downloads are not mislabeled as Q-VDiT quantized weights.</p>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">The paper</th>
+<th scope="col">Conference page / formal publication</th>
+<th scope="col">arXiv (specific version dates)</th>
+<th scope="col">Code repository</th>
+<th scope="col">Datasets / weights</th>
+<th scope="col">Project page / video</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Q-VDiT (core)</strong></td>
+<td><a href="https://proceedings.mlr.press/v267/feng25q.html">ICML 2025 / PMLR</a>; <a href="https://openreview.net/forum?id=Oeo53q93iP">OpenReview</a></td>
+<td><a href="https://arxiv.org/abs/2505.22167v1">2505.22167v1</a>, 2025-05-28</td>
+<td><a href="https://github.com/wlfeng0509/Q-VDiT">Official repository</a></td>
+<td><a href="https://github.com/Vchitect/VBench">VBench prompts / evaluator</a>; Q-VDiT quantized weights <strong>not public</strong></td>
+<td>Standalone project page / videos <strong>Not found</strong>; repository includes qualitative examples</td>
+</tr>
+<tr class="even">
+<td>Scalable Diffusion Models with Transformers (DiT)</td>
+<td><a href="https://openaccess.thecvf.com/content/ICCV2023/html/Peebles_Scalable_Diffusion_Models_with_Transformers_ICCV_2023_paper.html">ICCV 2023</a></td>
+<td><a href="https://arxiv.org/abs/2212.09748v2">2212.09748v2</a>, 2023-03-02</td>
+<td><a href="https://github.com/facebookresearch/DiT">Official repository</a></td>
+<td><a href="https://huggingface.co/facebook/DiT-XL-2-256">DiT-XL/2-256 weights</a></td>
+<td><a href="https://www.wpeebles.com/DiT.html">Project page</a></td>
+</tr>
+<tr class="odd">
+<td>EfficientDM</td>
+<td><a href="https://openreview.net/forum?id=UmMa3UNDAz">ICLR 2024 / OpenReview</a></td>
+<td><a href="https://arxiv.org/abs/2310.03270v4">2310.03270v4</a>, 2024-04-13</td>
+<td><a href="https://github.com/ThisisBillhe/EfficientDM">Official repository</a></td>
+<td>Uses public datasets including CIFAR-10 / ImageNet; dedicated weights <strong>Not found</strong></td>
+<td>Standalone project page / videos <strong>Not found</strong></td>
+</tr>
+<tr class="even">
+<td>PTQ4DiT</td>
+<td><a href="https://proceedings.neurips.cc/paper_files/paper/2024/hash/72d32f4fe0b7af03732bd227bf1c4a5f-Abstract-Conference.html">NeurIPS 2024</a>; <a href="https://openreview.net/forum?id=NLmAGkN6nn">OpenReview</a></td>
+<td><a href="https://arxiv.org/abs/2405.16005v3">2405.16005v3</a>, 2024-10-17</td>
+<td><a href="https://github.com/adreamwu/PTQ4DiT">Official repository</a></td>
+<td>Uses ImageNet; quantized weights <strong>Not found</strong></td>
+<td>Standalone project page / videos <strong>Not found</strong></td>
+</tr>
+<tr class="odd">
+<td>ViDiT-Q</td>
+<td><a href="https://openreview.net/forum?id=E1N1oxd63b">ICLR 2025 / OpenReview</a></td>
+<td><a href="https://arxiv.org/abs/2406.02540v3">2406.02540v3</a>, 2025-02-22</td>
+<td><a href="https://github.com/thu-nics/ViDiT-Q">Official repository</a></td>
+<td>Based on Open-Sora, Latte, and PixArt; see the repository for quantized weights</td>
+<td><a href="https://a-suozhang.xyz/viditq.github.io/">Project page and video examples</a></td>
+</tr>
+</tbody>
+</table></div></section>
+<section class="card" aria-labelledby="section-2" data-section="0.1 Candidate pool and deduplication"><h2 id="section-2">0.1 Candidate pool and deduplication</h2>
+<p>All candidates are ICML 2025 main-conference papers within the preferred preceding 12 months. EPG (pixel-space generation), DM/Flow Matching alignment (reward alignment), and KLDM (crystal generation), covered in depth in the last 14 days, were excluded; their same-topic variants were also kept out of the core draw.</p>
+<ol type="1">
+<li>SITCOM: Step-wise Triple-Consistent Diffusion Sampling For Inverse Problems</li>
+<li>FlexTok: Resampling Images into 1D Token Sequences of Flexible Length</li>
+<li>Impossible Videos</li>
+<li>Highly Compressed Tokenizer Can Generate Without Training</li>
+<li>Simple and Critical Iterative Denoising: A Recasting of Discrete Diffusion in Graph Generation</li>
+<li>Mechanisms of Projective Composition of Diffusion Models</li>
+<li>Ergodic Generative Flows</li>
+<li>Accurate and Efficient World Modeling with Masked Latent Transformers</li>
+<li>Efficient Molecular Conformer Generation with SO(3)-Averaged Flow Matching and Reflow</li>
+<li>Vector Grimoire: Codebook-based Shape Generation under Raster Image Supervision</li>
+<li>Accelerated Diffusion Models via Speculative Sampling</li>
+<li>Distributional Diffusion Models with Scoring Rules</li>
+<li>FireFlow: Fast Inversion of Rectified Flow for Image Semantic Editing</li>
+<li>Scalable Non-Equivariant 3D Molecule Generation via Rotational Alignment</li>
+<li>Harmonizing Geometry and Uncertainty: Diffusion with Hyperspheres</li>
+<li>Controlled Generation with Equivariant Variational Flow Matching</li>
+<li>WyckoffDiff: A Generative Diffusion Model for Crystal Symmetry</li>
+<li>Visual Generation Without Guidance</li>
+<li>Fundamental Limits of Visual Autoregressive Transformers</li>
+<li>Subobject-level Image Tokenization</li>
+<li>VideoJAM: Joint Appearance-Motion Representations for Enhanced Motion Generation in Video Models</li>
+<li>FlexControl: Computation-Aware Conditional Control with Differentiable Router for Text-to-Image Generation</li>
+<li><strong>Q-VDiT: Towards Accurate Quantization and Distillation of Video-Generation Diffusion Transformers</strong></li>
+<li>CHATS: Combining Human-Aligned Optimization and Test-Time Sampling for Text-to-Image Generation</li>
+</ol></section>
+<section class="card" aria-labelledby="section-3" data-section="1. In-depth analysis of the core paper"><h2 id="section-3">1. In-depth analysis of the core paper</h2>
+<h3 id="motivation视频量化不是图像量化乘以帧数">1.1 Motivation: Video quantization is not image quantization multiplied by the number of frames</h3>
+<p>Video diffusion Transformers face three amplifiers simultaneously. First, DiTs already have large parameter counts and matrix-multiplication workloads; the deployment example on page 2 of ViDiT-Q states that generating just <strong>16 frames at 512×512</strong> with Open-Sora consumes more than <strong>10 GB GPU memory</strong>. Second, video latent token count is not the spatial token count (s), but (n=st): the frame count (t) directly extends the sequence, allowing quantization error to propagate across space, time, and iterative denoising. Third, video quality is not a simple average of frame quality: subjects, backgrounds, motion, and semantics must maintain traceable relationships across frames.</p>
+<p>Traditional PTQ often minimizes MSE between full-precision and quantized layer outputs. This answers “Are vectors at the same position close?” but not “Does frame 3 still relate to frames 1, 2, and 4 as the teacher does?” Q-VDiT quantifies this gap experimentally: under W3A6, PTQ4DiT achieves only <strong>7.85</strong> on VBench scene consistency, EfficientDM achieves <strong>12.04</strong>, and Q-VDiT reaches <strong>23.40</strong>; the improvement over the strongest existing method in that column is <strong>11.36 points, or 94.35%</strong>(core paper, Table 1, W3A6 rows). In the Open-Sora 10-prompt evaluation, W3A6 VQA-Technical rises from the previous best, EfficientDM's <strong>29.58</strong> to <strong>59.10</strong>, an absolute gain of <strong>29.52 points</strong> and a relative gain of <strong>99.80%</strong>(Table 2). These are the paper's strongest results: at extremely low bit widths, ignoring token and temporal relationships can cause a nearly catastrophic quality cliff.</p>
+<p>The novelty is not “quantizing diffusion models,” but changing what quantization optimizes. EfficientDM optimizes denoising knowledge, PTQ4DiT models timestep-wise salient channels, and ViDiT-Q further handles DiT token/channel/timestep distributions and sensitive layers. Q-VDiT argues that even after handling these local statistics, <strong>the relational structure of video</strong> can still be lost. It therefore recovers errors along the orthogonal token and feature dimensions and distills inter-frame relational distributions.</p>
+<h3 id="论文故事线两个失败模式对应两个模块">1.2 The paper's narrative: Two failure modes, two modules</h3>
+<p>The argument can be compressed into four turns.</p>
+<p><strong>Turn 1: Quantization is equivalent to perturbing each layer's weights.</strong> Let layer (i) have weights (W_i) and dequantized weights Q(W_i)); then Q(W_i)=W_i+_i. The authors first recast deployment as “how to estimate _i with few parameters.”</p>
+<p><strong>Turn 2: Low entropy does not mean zero error, but suggests a compressible representation.</strong> Theorem 3.2 claims (H(_i)H(W_i)), motivating a rank-1 branch that estimates matrix-multiplication error. The key tradeoff is retaining a high-precision, extremely low-rank bypass: sacrificing strict all-integer purity to recover information at low bit widths.</p>
+<p><strong>Turn 3: A feature-only bypass is insufficient.</strong> Among video tokens (n=st), activation-quantization losses differ across frames. The authors prescale the token dimension using one scale (M_i) per frame, then use vectors (,) for low-rank correction on input/output features. This forms TQE.</p>
+<p><strong>Turn 4: MSE cannot see whole-video relationships.</strong> Framewise MSE gradients connect student frame (i) only to teacher frame (i). TMD instead matches each frame's similarity distribution over all frames. Frame (i)'s gradient is thus influenced by every frame (j), upgrading distillation from pointwise regression to relationship preservation.</p>
+<p>The implicit tradeoff is clear: Q-VDiT avoids end-to-end video retraining, using few calibration prompts and layerwise distillation at relatively low training cost. In return, it depends on a full-precision teacher, intermediate base-model activations, particular prompt/step sampling, and calibration GPU memory. It is therefore not pure “quantize and deploy” PTQ.</p>
+<h3 id="形式化定义与机制解剖">1.3 Formal definitions and mechanism analysis</h3>
+<h4 id="均匀量化">Uniform quantization</h4>
+<p>For a floating-point vector (x_f), (N)-bit affine quantization and dequantization are (core paper, Equations 3–4, page 3):</p>
+<p>[ x_q=((x_f/s)+z,0,2^N-1), s=,z=-(l/s), ]</p>
+<p>[ x_f=(x_q-z)s. ]</p>
+<p>Q-VDiT quantizes only linear weights, using channel-wise weight quantization and dynamic token-wise activation quantization (Appendix B, page 14). Thus W3A6 in the title does not mean that every operator in the model becomes 3/6-bit; the repository instructions retain several layers accounting for less than 1% of computation in FP.</p>
+<h4 id="tqetoken-aware-的秩-1-误差旁路">TQE: A token-aware rank-1 error bypass</h4>
+<p>For (XR<sup>{nd_{in}}), (WR</sup>{d_{out}d_{in}}), the basic low-rank approximation is (Equation 7, page 4):</p>
+<p>[ =X, XW<sup>XQ(W)</sup>+, ]</p>
+<p>where (R<sup>{d_{in}}), (R</sup>{d_{out}}). Directly representing the original error requires (d_{out}d_{in}) parameters, whereas the rank-1 branch needs only (d_{in}+d_{out}). If (d_{in}=d_{out}=d), the parameter ratio is approximately (2/d): at (d=1152), only about <strong>0.174%</strong>, although the paper does not aggregate the actual total parameter ratio across Open-Sora layer widths.</p>
+<p>Video tokens are divided into (t) frames with (s) spatial tokens each, (f_i=is). TQE introduces (M_i) for frame block (i):</p>
+<p>[ <em>{[f_i+1:f_i+s,:]}= M_iQ(X)</em>{[f_i+1:f_i+s,:]}, ]</p>
+<p>[ XW<sup>Q(X)Q(W)</sup>+. ]</p>
+<p>(M_i=_i/_i). Here (_i) comes from a softmax over sequence-similarity losses between original and quantized activations; (_i) normalizes by that frame's token salience (Equation 9, page 4). Intuitively, frames with larger errors but less dominant magnitudes should receive stronger compensation. (M) is initialized from error/salience, () with Kaiming initialization, and () to 0.</p>
+<h4 id="tmd匹配帧间关系分布">TMD: Matching inter-frame relational distributions</h4>
+<p>Let teacher and quantized student layer outputs be (S<sup>{FP},S</sup> QR^{nd}), respectively. The basic task loss is (Equations 10–11, page 5):</p>
+<p>[ L_{task}=S<sup>{FP}-S</sup> Q <em>2^2 =</em>{i=0}<sup>{t-1}S</sup>{FP}_{i}-S^Q_i_2^2. ]</p>
+<p>TMD first computes similarity (T_{i,j}=(S_i,S_j)) between frames (i,j), then forms each frame's relational distribution over the entire video (Equations 13–15):</p>
+<p>[ D_i=([T_{i,1},,T_{i,t}]),  L_{temporal}=_{i=1}<sup>{t}(D_i</sup>{FP}D_i^Q). ]</p>
+<p>The final objective is (Equation 19, page 6):</p>
+<p>[ L_{total}=L_{task}+L_{temporal}, . ]</p>
+<p>Equations 16–18 show the key property: the gradient for student frame (i) is no longer determined solely by teacher frame (i), but receives relational signals from every frame through (T_{i,j}). It optimizes whether “the relational topology resembles the teacher,” rather than merely reducing each token's Euclidean distance.</p>
+<h4 id="流程示意">Workflow</h4>
+<pre class="text"><code>10 calibration prompts × 50 uniformly sampled denoising steps
+                         │
+        ┌────────────────┴────────────────┐
+        │                                 │
+  Full-precision V-DiT teacher       Low-bit student WbAq
+        │                                 │
+  Save layer output S^FP     Q(X)Q(W)^T + [M·Q(X)α]β
+        │                                 │
+        └──Framewise MSE───┬──Frame-relation KL─┘
+                           │
+                 L_task + γ L_temporal
+                           │
+        5k/10k/15k calibration iterations
+                           │
+                 Quantized checkpoint + TQE</code></pre>
+<h3 id="关键机制与工程细节">1.4 Key mechanisms and engineering details</h3>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0"><table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Mechanism / dimension</th>
+<th scope="col">Design choice</th>
+<th scope="col">Motivation</th>
+<th scope="col">Key hyperparameter or implementation</th>
+<th scope="col">Paper source</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Weight quantization</td>
+<td>linear weight channel-wise</td>
+<td>Different ranges for each output channel</td>
+<td>3/4/6/8 bits; a few layers remain FP</td>
+<td>Appendix B, page 14; code README</td>
+</tr>
+<tr class="even">
+<td>Activation quantization</td>
+<td>dynamic token-wise</td>
+<td>Token, condition, and timestep distributions vary</td>
+<td>6/8 bit</td>
+<td>Appendix B, page 14</td>
+</tr>
+<tr class="odd">
+<td>TQE feature branch</td>
+<td>(R<sup>{d_{in}},R</sup>{d_{out}}) rank-1 bypass</td>
+<td>Recover weight-quantization error with few parameters</td>
+<td>() Kaiming, ()</td>
+<td>Equations 7–9, page 4</td>
+</tr>
+<tr class="even">
+<td>TQE token branch</td>
+<td>Per-frame scale (M_i=_i/_i)</td>
+<td>Compensate for differences in activation loss across frames</td>
+<td>(MR^t)</td>
+<td>Equations 8–9, page 4</td>
+</tr>
+<tr class="odd">
+<td>TMD</td>
+<td>KL between teacher/student inter-frame similarity distributions</td>
+<td>MSE does not encode whole-video relationships</td>
+<td>()</td>
+<td>Equations 13–19, pages 5–6; Figure 6</td>
+</tr>
+<tr class="even">
+<td>Calibration data</td>
+<td>10 Open-Sora prompts, 50 uniformly sampled steps</td>
+<td>Cover the denoising process with a tiny data budget</td>
+<td>batch=4</td>
+<td>Appendix B, page 14</td>
+</tr>
+<tr class="odd">
+<td>Calibration steps</td>
+<td>More iterations at lower bit widths</td>
+<td>Extremely low bit widths are harder to fit</td>
+<td>6–8 bit 5k; 4-bit 10k; 3-bit 15k</td>
+<td>Appendix B, page 14</td>
+</tr>
+<tr class="even">
+<td>Learning rate</td>
+<td>Separate weight-quantization parameters from TQE</td>
+<td>The new bypass needs faster adaptation</td>
+<td>(10^{-6}) / (10^{-5})</td>
+<td>Appendix B, page 14</td>
+</tr>
+<tr class="odd">
+<td>Open-Sora sampling</td>
+<td>100-step DDIM, CFG 4.0</td>
+<td>Aligned with ViDiT-Q</td>
+<td>16×512×512 configuration</td>
+<td>Page 7 and repository</td>
+</tr>
+<tr class="even">
+<td>Latte sampling</td>
+<td>20-step DDIM, CFG 7.0</td>
+<td>Transfer to UCF-101 class-conditional generation</td>
+<td>1 prompt for each of 101 classes</td>
+<td>Page 7, Appendix C</td>
+</tr>
+<tr class="odd">
+<td>Inference kernel</td>
+<td>Reuse SVDQuant LoRunner to fuse the bypass</td>
+<td>Avoid extra activation memory accesses</td>
+<td>TQE is equivalent to rank=1</td>
+<td>Appendix F, page 16</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="实验设计基准数据与指标">1.5 Experimental design: Benchmarks, data, and metrics</h3>
+<p>The core experiments use two base models: Open-Sora v1.0 for text-to-video and Latte for class-conditioned video generation on UCF-101. The three primary bit widths are W4A6, W3A8, and W3A6, supplemented by W8A8, W6A6, and W4A8. W/A denote weight/activation bits.</p>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0"><table>
+<colgroup>
+<col style="width: 18%" />
+<col style="width: 25%" />
+<col style="width: 18%" />
+<col style="width: 18%" />
+<col style="width: 18%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Evaluation set</th>
+<th scope="col" style="text-align: right;">Sample size</th>
+<th scope="col">Capability dimension</th>
+<th scope="col">Metric</th>
+<th scope="col">Main risk</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>VBench overall prompts</td>
+<td style="text-align: right;">93</td>
+<td>Imaging quality, aesthetics, overall consistency</td>
+<td>MUSIQ, LAION aesthetic, ViCLIP, etc.</td>
+<td>Only 1 video per prompt; no random seeds reported</td>
+</tr>
+<tr class="even">
+<td>VBench subject prompts</td>
+<td style="text-align: right;">72</td>
+<td>Subject consistency, dynamic degree, motion smoothness</td>
+<td>Metrics derived from CLIP/DINO/optical flow</td>
+<td>Higher dynamic degree is not better for every prompt</td>
+</tr>
+<tr class="odd">
+<td>VBench scene prompts</td>
+<td style="text-align: right;">86</td>
+<td>Scene and background consistency</td>
+<td>scene consistency, background consistency</td>
+<td>Automatic metrics may favor static videos or the teacher's style</td>
+</tr>
+<tr class="even">
+<td>Open-Sora prompt set</td>
+<td style="text-align: right;">10</td>
+<td>Text alignment, adjacent-frame consistency, technical/aesthetic quality, optical flow</td>
+<td>CLIPSIM, CLIP-Temp, DOVER VQA, ()FLOW, Warping Error</td>
+<td><strong>Only 10 videos</strong>, with weak statistical power</td>
+</tr>
+<tr class="odd">
+<td>UCF-101</td>
+<td style="text-align: right;">101 prompts; 1 real reference video per class</td>
+<td>Class-conditioned video quality and teacher fidelity</td>
+<td>FVD, FVD-FP16, CLIP, VQA, Flicker</td>
+<td>FVD uses only 101 reference samples; the paper acknowledges instability</td>
+</tr>
+</tbody>
+</table></div>
+<p>Metric directions are not identical. Higher CLIPSIM, CLIP-Temp, VQA, and VBench consistency are generally better; lower Warping Error, ()FLOW, FVD, and FVD-FP16 are better. Dynamic Degree measures “how much motion,” not a universally monotonic quality indicator; this report uses it only as the authors' comparison dimension within the same prompt set.</p>
+<h3 id="主结果矩阵w3a6-是最有辨识度的压力测试">1.6 Main results matrix: W3A6 is the most discriminating stress test</h3>
+<p>The following reproduces the complete W3A6 block of Table 2 in the core paper. Bold marks the best quantized method per column; parentheses give Q-VDiT's absolute and relative changes over the strongest prior method in each column. All percentages were recalculated from the original table.</p>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0"><table>
+<colgroup>
+<col style="width: 11%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">CLIPSIM ↑</th>
+<th scope="col" style="text-align: right;">CLIP-Temp ↑</th>
+<th scope="col" style="text-align: right;">VQA-Aesthetic ↑</th>
+<th scope="col" style="text-align: right;">VQA-Technical ↑</th>
+<th scope="col" style="text-align: right;">ΔFLOW ↓</th>
+<th scope="col" style="text-align: right;">Warping Error ↓</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>FP16 (reference)</td>
+<td style="text-align: right;">0.1797</td>
+<td style="text-align: right;">0.9986</td>
+<td style="text-align: right;">66.91</td>
+<td style="text-align: right;">53.49</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">0.016</td>
+</tr>
+<tr class="even">
+<td>Q-DiT</td>
+<td style="text-align: right;">0.1681</td>
+<td style="text-align: right;">0.9961</td>
+<td style="text-align: right;">11.90</td>
+<td style="text-align: right;">0.69</td>
+<td style="text-align: right;">1.412</td>
+<td style="text-align: right;">0.028</td>
+</tr>
+<tr class="odd">
+<td>PTQ4DiT</td>
+<td style="text-align: right;">0.1765</td>
+<td style="text-align: right;">0.9947</td>
+<td style="text-align: right;">26.35</td>
+<td style="text-align: right;">5.42</td>
+<td style="text-align: right;">1.185</td>
+<td style="text-align: right;">0.042</td>
+</tr>
+<tr class="even">
+<td>SmoothQuant</td>
+<td style="text-align: right;">0.1768</td>
+<td style="text-align: right;">0.9959</td>
+<td style="text-align: right;">18.07</td>
+<td style="text-align: right;">1.33</td>
+<td style="text-align: right;">1.286</td>
+<td style="text-align: right;">0.068</td>
+</tr>
+<tr class="odd">
+<td>Quarot</td>
+<td style="text-align: right;">0.1762</td>
+<td style="text-align: right;">0.9950</td>
+<td style="text-align: right;">25.89</td>
+<td style="text-align: right;">3.95</td>
+<td style="text-align: right;">1.084</td>
+<td style="text-align: right;">0.042</td>
+</tr>
+<tr class="even">
+<td>EfficientDM</td>
+<td style="text-align: right;">0.1747</td>
+<td style="text-align: right;">0.9982</td>
+<td style="text-align: right;">43.54</td>
+<td style="text-align: right;">29.58</td>
+<td style="text-align: right;">1.217</td>
+<td style="text-align: right;">0.020</td>
+</tr>
+<tr class="odd">
+<td>SVDQuant</td>
+<td style="text-align: right;">0.1712</td>
+<td style="text-align: right;">0.9975</td>
+<td style="text-align: right;">40.75</td>
+<td style="text-align: right;">16.51</td>
+<td style="text-align: right;">1.656</td>
+<td style="text-align: right;">0.026</td>
+</tr>
+<tr class="even">
+<td>ViDiT-Q</td>
+<td style="text-align: right;">0.1716</td>
+<td style="text-align: right;">0.9984</td>
+<td style="text-align: right;">39.82</td>
+<td style="text-align: right;">10.26</td>
+<td style="text-align: right;">1.695</td>
+<td style="text-align: right;">0.020</td>
+</tr>
+<tr class="odd">
+<td><strong>Q-VDiT</strong></td>
+<td style="text-align: right;"><strong>0.1785</strong> (+0.0017; +0.96%)</td>
+<td style="text-align: right;"><strong>0.9986</strong> (+0.0002; +0.02%)</td>
+<td style="text-align: right;"><strong>53.53</strong> (+9.99; +22.94%)</td>
+<td style="text-align: right;"><strong>59.10</strong> (+29.52; +99.80%)</td>
+<td style="text-align: right;"><strong>0.914</strong> (−0.170; −15.68%)</td>
+<td style="text-align: right;"><strong>0.012</strong> (−0.008; −40.00%)</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>The strongest quantitative evidence in the paper</strong> is not the 0.0002 gain in CLIP-Temp, but the near doubling of VQA-Technical: with the same Open-Sora model, W3A6 setting, and prompts, 59.10 versus 29.58 indicates that Q-VDiT avoids the visual collapse of extremely low-bit baselines. Yet it even exceeds FP16's 53.49 by 5.61 points, reminding us that DOVER VQA may reflect quantization regularization, sample variation, or metric preferences; it cannot alone establish “more realistic than the teacher.”</p>
+<p>The six-method × eight-dimension VBench W3A6 matrix follows (core paper, Table 1).</p>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0"><table>
+<colgroup>
+<col style="width: 8%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">Imaging ↑</th>
+<th scope="col" style="text-align: right;">Aesthetic ↑</th>
+<th scope="col" style="text-align: right;">Motion Smooth ↑</th>
+<th scope="col" style="text-align: right;">Dynamic Degree ↑</th>
+<th scope="col" style="text-align: right;">BG Consist. ↑</th>
+<th scope="col" style="text-align: right;">Subject Consist. ↑</th>
+<th scope="col" style="text-align: right;">Scene Consist. ↑</th>
+<th scope="col" style="text-align: right;">Overall Consist. ↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>FP16</td>
+<td style="text-align: right;">63.68</td>
+<td style="text-align: right;">57.12</td>
+<td style="text-align: right;">96.28</td>
+<td style="text-align: right;">56.94</td>
+<td style="text-align: right;">96.13</td>
+<td style="text-align: right;">90.28</td>
+<td style="text-align: right;">39.61</td>
+<td style="text-align: right;">26.21</td>
+</tr>
+<tr class="even">
+<td>PTQ4DiT</td>
+<td style="text-align: right;">45.31</td>
+<td style="text-align: right;">40.20</td>
+<td style="text-align: right;">93.43</td>
+<td style="text-align: right;">19.45</td>
+<td style="text-align: right;">91.59</td>
+<td style="text-align: right;">83.15</td>
+<td style="text-align: right;">7.85</td>
+<td style="text-align: right;">16.55</td>
+</tr>
+<tr class="odd">
+<td>EfficientDM</td>
+<td style="text-align: right;">48.82</td>
+<td style="text-align: right;">42.11</td>
+<td style="text-align: right;">95.04</td>
+<td style="text-align: right;">34.72</td>
+<td style="text-align: right;">95.17</td>
+<td style="text-align: right;">88.17</td>
+<td style="text-align: right;">12.04</td>
+<td style="text-align: right;">15.85</td>
+</tr>
+<tr class="even">
+<td>SVDQuant</td>
+<td style="text-align: right;">43.67</td>
+<td style="text-align: right;">32.32</td>
+<td style="text-align: right;">90.28</td>
+<td style="text-align: right;">23.61</td>
+<td style="text-align: right;">94.18</td>
+<td style="text-align: right;">83.09</td>
+<td style="text-align: right;">3.56</td>
+<td style="text-align: right;">10.30</td>
+</tr>
+<tr class="odd">
+<td>ViDiT-Q</td>
+<td style="text-align: right;">48.76</td>
+<td style="text-align: right;">42.70</td>
+<td style="text-align: right;">95.51</td>
+<td style="text-align: right;">37.50</td>
+<td style="text-align: right;">95.34</td>
+<td style="text-align: right;">86.86</td>
+<td style="text-align: right;">11.99</td>
+<td style="text-align: right;">18.38</td>
+</tr>
+<tr class="even">
+<td><strong>Q-VDiT</strong></td>
+<td style="text-align: right;"><strong>53.60</strong></td>
+<td style="text-align: right;"><strong>49.66</strong></td>
+<td style="text-align: right;"><strong>96.98</strong></td>
+<td style="text-align: right;"><strong>55.56</strong></td>
+<td style="text-align: right;"><strong>95.41</strong></td>
+<td style="text-align: right;"><strong>89.06</strong></td>
+<td style="text-align: right;"><strong>23.40</strong></td>
+<td style="text-align: right;"><strong>22.58</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>Q-VDiT beats these strong baselines on all eight dimensions, but remaining FP16 gaps are uneven: Imaging −10.08 points, Aesthetic −7.46, BG −0.72, Subject −1.22, Scene −16.21, and Overall −3.63; Motion Smooth instead improves by +0.70. Scene semantics are hardest to recover, not local smoothness. “Almost lossless” applies better to certain dimensions than to video quality overall.</p>
+<p>Cross-model UCF-101/Latte results further support transfer (core paper, Table 6, W3A6): from ViDiT-Q to Q-VDiT, FVD drops from <strong>100.05 to 98.15</strong>(−1.90, −1.90%), FVD-FP16 from <strong>84.79 to 82.09</strong>(−2.70, −3.18%), VQA-Aesthetic rises from <strong>16.83 to 19.79</strong>(+2.96, +17.59%), and VQA-Technical from <strong>19.61 to 25.81</strong>(+6.20, +31.62%). Gains remain consistent but are much smaller than the +99.80% in Open-Sora Table 2, indicating that effect size depends on the base model and evaluation protocol.</p>
+<h3 id="消融tqe-是主增益tmd-负责补齐关系维度">1.7 Ablations: TQE drives the main gains; TMD fills relational gaps</h3>
+<p>The caption of core-paper Table 4 says “W3A8,” but every Bit-width entry reads <strong>3/6</strong>; the values below are preserved faithfully and this contradiction is listed as a reproducibility risk.</p>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0"><table>
+<colgroup>
+<col style="width: 8%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Configuration</th>
+<th scope="col" style="text-align: right;">Imaging</th>
+<th scope="col" style="text-align: right;">Aesthetic</th>
+<th scope="col" style="text-align: right;">Motion Smooth</th>
+<th scope="col" style="text-align: right;">Dynamic</th>
+<th scope="col" style="text-align: right;">BG</th>
+<th scope="col" style="text-align: right;">Subject</th>
+<th scope="col" style="text-align: right;">Scene</th>
+<th scope="col" style="text-align: right;">Overall</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>PTQ4DiT</td>
+<td style="text-align: right;">45.31</td>
+<td style="text-align: right;">40.20</td>
+<td style="text-align: right;">93.43</td>
+<td style="text-align: right;">19.45</td>
+<td style="text-align: right;">91.59</td>
+<td style="text-align: right;">83.15</td>
+<td style="text-align: right;">7.85</td>
+<td style="text-align: right;">16.55</td>
+</tr>
+<tr class="even">
+<td>+TQE (without token M)</td>
+<td style="text-align: right;">51.36</td>
+<td style="text-align: right;">47.69</td>
+<td style="text-align: right;">96.14</td>
+<td style="text-align: right;">47.22</td>
+<td style="text-align: right;">94.86</td>
+<td style="text-align: right;">88.21</td>
+<td style="text-align: right;">21.94</td>
+<td style="text-align: right;">21.65</td>
+</tr>
+<tr class="odd">
+<td>+TQE (with token M)</td>
+<td style="text-align: right;">52.35</td>
+<td style="text-align: right;">48.97</td>
+<td style="text-align: right;">96.77</td>
+<td style="text-align: right;">51.39</td>
+<td style="text-align: right;">95.12</td>
+<td style="text-align: right;">88.86</td>
+<td style="text-align: right;">22.38</td>
+<td style="text-align: right;">22.00</td>
+</tr>
+<tr class="even">
+<td>+TMD</td>
+<td style="text-align: right;">53.46</td>
+<td style="text-align: right;">48.70</td>
+<td style="text-align: right;">96.00</td>
+<td style="text-align: right;">52.78</td>
+<td style="text-align: right;">95.24</td>
+<td style="text-align: right;">89.01</td>
+<td style="text-align: right;">22.87</td>
+<td style="text-align: right;">22.31</td>
+</tr>
+<tr class="odd">
+<td><strong>Q-VDiT (TQE+TMD)</strong></td>
+<td style="text-align: right;"><strong>53.60</strong></td>
+<td style="text-align: right;"><strong>49.66</strong></td>
+<td style="text-align: right;"><strong>96.98</strong></td>
+<td style="text-align: right;"><strong>55.56</strong></td>
+<td style="text-align: right;"><strong>95.41</strong></td>
+<td style="text-align: right;"><strong>89.06</strong></td>
+<td style="text-align: right;"><strong>23.40</strong></td>
+<td style="text-align: right;"><strong>22.58</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>From PTQ4DiT to feature-only TQE, absolute gains across the eight dimensions are <strong>+6.05, +7.49, +2.71, +27.77, +3.27, +5.06, +14.09, +5.10</strong>, indicating that the rank-1 error bypass is the primary driver. Adding token scaling (M) further contributes <strong>+0.99, +1.28, +0.63, +4.17, +0.26, +0.65, +0.44, +0.35</strong>, with Dynamic Degree most sensitive. +TMD alone improves scene consistency over PTQ4DiT by +15.02, slightly more than feature-only TQE's +14.09; the full combination exceeds +TMD alone by only +0.53 scene and +0.27 overall. The modules therefore partly overlap; without two-factor interaction statistics, the table cannot establish strict synergy.</p>
+<h3 id="超参敏感性相变与统计显著性">1.8 Hyperparameter sensitivity, phase transitions, and statistical significance</h3>
+<p>Figure 6 compares ({50,100,200}) with PTQ4DiT; the authors say all three outperform the baseline and select () as a balanced value. <strong>The paper provides no exact numerical table for Figure 6</strong>, so this report does not infer values from bar heights or calculate sensitivity intervals or transition points. Verifiably, no collapse is reported within 50–200; stability outside that interval and statistical optimality of 100 cannot be inferred.</p>
+<p>Bit width itself shows marked nonlinearity. In Open-Sora Table 2, moving Q-VDiT from W4A6 to W3A6 reduces VQA-Aesthetic from 67.05 to 53.53 (−13.52), but increases VQA-Technical from 53.75 to 59.10 (+5.35). This is not a uniform “fewer bits, worse quality” curve; automatic metrics respond differently to quantization noise, smoothing, and samples. The credible transition is that most baselines' technical quality approaches collapse at 3-bit weights, whereas Q-VDiT does not. However, this threshold is observed only between the discrete 3/4-bit settings, without a continuous bit-width or layerwise phase diagram.</p>
+<p><strong>Statistical significance: Not reported.</strong> The main tables provide no standard deviations, confidence intervals, repeated seeds, or bootstrap estimates; the Open-Sora multi-aspect table uses only 10 prompts. Gains of +0.0002 in CLIP-Temp and +0.0017 in CLIPSIM may be seed-sensitive, and current evidence cannot establish significance. Gains of +11.36 in scene consistency and +29.52 in VQA-Technical are larger, but paired prompt bootstrapping is still needed to elevate “an advantage on this sample” to a robust conclusion.</p>
+<h3 id="效率量化确实省推理资源但校准并不免费">1.9 Efficiency: Quantization saves inference resources, but calibration is not free</h3>
+<p>Core-paper Table 7 reports for W4A8 Open-Sora that Q-VDiT's memory saving relative to FP16 is <strong>2.40×</strong>, inference acceleration <strong>1.35×</strong>, with VQA-Aesthetic 71.32 and Technical 55.56; ViDiT-Q reports 2.42×, 1.38×, 60.62, and 49.38, respectively. Q-VDiT trades approximately <strong>0.83% less memory saving</strong> and <strong>a 2.17% lower speedup</strong> for +10.70 / +6.18 in the two VQA scores, showing that TQE's inference cost is small but nonzero.</p>
+<p>Calibration is different. In Table 5's W8A8 experiment, Q-VDiT uses <strong>18,770 MB, 12.9 GPU-hours</strong>, versus ViDiT-Q's <strong>16,600 MB, 12.5 hours</strong>; the former requires an additional <strong>2,170 MB (13.07%)</strong>, <strong>0.4 hours (3.20%)</strong>. Relative to PTQ4DiT, Q-VDiT uses 1,120 MB more memory (6.35%) and 0.1 h more time (0.78%). A more precise engineering conclusion is therefore: <strong>Inference gains approximately 2.4× memory and 1.35× latency improvements, while relational distillation adds approximately 13% peak memory during calibration</strong>. </p>
+<h3 id="真正贡献可复用设计与迁移潜力">1.10 Actual contributions, reusable designs, and transfer potential</h3>
+<p>The first real contribution is reframing “video quantization” from static weight error into a <strong>structure-preservation problem</strong>. TMD can be used beyond quantization: pruning, low-rank decomposition, distillation, cache compression, and even few-step video diffusion can match inter-frame relational distributions whenever a student may be close framewise yet drift globally.</p>
+<p>The second is token-aware rank-1 compensation. TQE compresses SVDQuant's high-precision low-rank bypass further to rank 1, modifying its input with video-frame-level (M). This combination of “low-rank feature repair + structured token gating” could transfer to long-context VLMs, temporal Transformers, and audio diffusion, provided token groups have clear semantics and runtime kernels can fuse the bypass.</p>
+<p>The third is using extremely low bit widths diagnostically. Many methods retain some metrics at W4A6; W3A6 exposes their actual mechanistic differences. Future evaluations should not report only one forgiving bit width, but plot bit-budget–quality–latency Pareto frontiers and identify which dimensions collapse first.</p>
+<p>Directly reusable designs include initializing token compensation by structural groups; replacing or supplementing pointwise MSE with teacher relation matrices; adaptively increasing calibration iterations at lower bit widths; and fusing low-rank branches into low-bit kernels to avoid separate activation reads.</p>
+<h3 id="局限性">1.11 Limitations</h3>
+<h4 id="a.-论文自述或正文明确承认的限制">A. Limitations stated by the paper or explicitly acknowledged in its text</h4>
+<ol type="1">
+<li><strong>FVD is unstable with small samples.</strong> Appendix D.2, page 15 explicitly notes that 101 real videos cannot adequately cover data diversity, potentially making FVD inaccurate and unstable. The authors therefore introduce FVD-FP16 using FP16-generated videos as references. This patch measures “student resemblance to the teacher,” not “generated-distribution resemblance to real data.”</li>
+<li><strong>TQE adds inference computation.</strong> Appendix F, page 16 acknowledges rank-1 branch overhead and cites SVDQuant's LoRunner kernel to argue it can be fused; Table 7 still shows Q-VDiT's 1.35× speedup slightly below ViDiT-Q's 1.38×.</li>
+<li><strong>There is no formal Limitations section.</strong> The Impact Statement on page 9 merely states that no particular societal consequences need highlighting; the paper does not discuss deepfakes, deployment devices, energy use, data bias, or automatic-metric failures. Confirmable self-reported limitations therefore fall short of 2–3 complete research boundaries; this report does not invent author positions.</li>
+</ol>
+<h4 id="b.-补充批判独立观察">B. Additional critique (independent observations)</h4>
+<ol type="1">
+<li><p><strong>[Theoretical gap] Low entropy does not imply low rank.</strong> Theorem 3.2 only provides (H()H(W)); even if valid for discrete Shannon entropy, it does not imply a rank-1 approximation to the error matrix. “Less information” and “low linear-algebraic rank” are distinct claims. TQE's rank=1 choice is thus supported primarily by Table 4 ablations, not proved by the theorem.</p></li>
+<li><p><strong>[Theoretical-definition risk] The entropy type for continuous weights is unclear.</strong> Neural-network weights are usually treated as continuous variables; discrete-entropy monotonicity under deterministic mappings cannot be transferred unconditionally to differential entropy, and quantization scale depends on the weight range. Appendix A's proof uses mapping and discrete-summation intuition without clearly specifying random variables, bins, or empirical distributions, limiting the “theoretical proof” when extrapolated to real floating-point matrices.</p></li>
+<li><p><strong>[Experimental-design issue] The 10-prompt main matrix has no repeated sampling.</strong> Table 2 generates one video for each of only 10 Open-Sora prompts and reports no seeds/CI. CLIP-Temp +0.0002 and CLIPSIM +0.0017 cannot be distinguished from sampling variance; even the large VQA-Technical +29.52 cannot establish a significance probability.</p></li>
+<li><p><strong>[Reproducibility risk] Ablation bit-width labels contradict each other.</strong> Table 4's caption says W3A8, but every Bit-width row says 3/6, leaving readers unable to determine whether ablations used 8-bit or 6-bit activations. Table 1 gives Q-VDiT scene scores of 25.07 and 23.40 for W3A8 and W3A6, a difference of <strong>1.67 points</strong>, enough to affect the ablation interpretation.</p></li>
+<li><p><strong>[Metric-validity issue] “Exceeding FP16” may reflect metric gaming or sample variation.</strong> W4A8 Q-VDiT's VQA-Aesthetic 71.32 exceeds FP16's 66.91 (+4.41, +6.59%), while W3A6 VQA-Technical 59.10 exceeds FP16's 53.49 (+5.61, +10.49%). Without human preference tests, automatic scores exceeding the teacher cannot directly establish superior generation quality.</p></li>
+<li><p><strong>[Engineering-evidence gap] TQE kernel cost is not measured independently.</strong> Appendix F infers near-zero cost at rank=1 from SVDQuant's “approximately 5% latency” at rank=16, while Table 7 gives only aggregate Q-VDiT versus ViDiT-Q differences. Actual kernel latency for token scaling, the rank-1 branch, and other quantization settings cannot be separated.</p></li>
+<li><p><strong>[Missing key comparisons] The protocol inherits ViDiT-Q but omits newer, larger V-DiTs.</strong> The main models remain Open-Sora v1.0 and Latte, and the code supports only Open-Sora v1.0; subsequent S²Q-VDiT reports W4A6, 3.9× compression, and 1.3× acceleration on HunyuanVideo. Q-VDiT's “edge deployment” claim has not been validated on larger text-to-video backbones or real edge devices.</p></li>
+<li><p><strong>[Weak subtask] Scene semantics remain far below the teacher.</strong> Although W3A6 scene consistency rises from 12.04 to 23.40, it remains below FP16's 39.61 by <strong>16.21 points (40.92%)</strong>; Imaging Quality is also 10.08 points lower. “Almost lossless” therefore applies only to some technical/motion metrics, not complete scene semantics.</p></li>
+<li><p><strong>[Fairness boundary] Calibration budgets and method paradigms are not fully comparable.</strong> ViDiT-Q is a no-calibration baseline, whereas Q-VDiT uses 5k–15k iterations, intermediate teacher outputs, and 18,770 MB calibration memory. Although calibration-based baselines reportedly share settings, “more accurate” cannot be fully disentangled from “more calibration optimization.” Fair Pareto comparisons should also fix calibration GPU-hours.</p></li>
+</ol></section>
+
+<figure class="figure" aria-labelledby="vqa-chart-title">
+  <p class="fig-title" id="vqa-chart-title">W3A6 stress test: Q-VDiT's gains concentrate in perceptual quality</p>
+  <p class="fig-sub">Q-VDiT versus the strongest prior quantized method per column; DOVER VQA scores on a single 0–65 vertical axis.</p>
+  <div class="legend" aria-label="Legend">
+    <span><span class="swatch" style="background:#2a78d6"></span> Strongest prior quantized method</span>
+    <span><span class="swatch" style="background:#eb6834"></span> Q-VDiT</span>
+  </div>
+  <svg class="chart" viewBox="0 0 760 430" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>VQA-Aesthetic and VQA-Technical under W3A6</title>
+    <desc>The previous best quantized method scores 43.54 and 29.58 for aesthetic and technical quality; Q-VDiT scores 53.53 and 59.10.</desc>
+    <g font-size="12">
+      <line x1="80" y1="350" x2="710" y2="350" stroke="var(--grid)"/>
+      <line x1="80" y1="40" x2="80" y2="350" stroke="var(--grid)"/>
+      <g stroke="var(--grid)" stroke-dasharray="3 5">
+        <line x1="80" y1="278.5" x2="710" y2="278.5"/><line x1="80" y1="207" x2="710" y2="207"/>
+        <line x1="80" y1="135.5" x2="710" y2="135.5"/><line x1="80" y1="64" x2="710" y2="64"/>
+      </g>
+      <g text-anchor="end"><text x="70" y="354">0</text><text x="70" y="282.5">15</text><text x="70" y="211">30</text><text x="70" y="139.5">45</text><text x="70" y="68">60</text></g>
+      <text x="80" y="28">DOVER VQA score</text>
+    </g>
+    <g>
+      <rect x="185" y="142.5" width="86" height="207.5" rx="5" fill="#2a78d6" tabindex="0" data-tip="Previous best · VQA-Aesthetic: 43.54 (EfficientDM)"/>
+      <rect x="281" y="94.7" width="86" height="255.3" rx="5" fill="#eb6834" tabindex="0" data-tip="Q-VDiT · VQA-Aesthetic：53.53"/>
+      <rect x="455" y="209.0" width="86" height="141.0" rx="5" fill="#2a78d6" tabindex="0" data-tip="Previous best · VQA-Technical: 29.58 (EfficientDM)"/>
+      <rect x="551" y="68.2" width="86" height="281.8" rx="5" fill="#eb6834" tabindex="0" data-tip="Q-VDiT · VQA-Technical：59.10"/>
+      <g font-size="13" text-anchor="middle">
+        <text x="276" y="378">VQA-Aesthetic</text><text x="546" y="378">VQA-Technical</text>
+      </g>
+    </g>
+  </svg>
+  <figcaption>Source: Core paper, Table 2, W3A6 rows. See the text for exact matrices, per-column baselines, and relative gains; the chart does not encode statistical significance.</figcaption>
+</figure>
+
+<section class="card" aria-labelledby="section-4" data-section="2. Related work: How the problem evolved"><h2 id="section-4">2. Related work: How the problem evolved</h2>
+<h3 id="scalable-diffusion-models-with-transformers-2023.10iccv-2023-oral">2.1 Scalable Diffusion Models with Transformers — 2023.10, ICCV 2023 Oral</h3>
+<p><strong>What it solved.</strong> DiT replaces latent diffusion's U-Net backbone with a Transformer operating on latent patches, systematically comparing depth, width, and patch size. Its central finding is a strong correlation between forward-pass Gflops and FID; DiT-XL/2 achieves ImageNet-256 FID of <strong>2.27</strong>(paper, Table 2), establishing Transformers as scalable generative backbones.</p>
+<p><strong>Remaining gap.</strong> Scalability costs more parameters, tokens, and matrix multiplications. DiT's success shifts the question from “Can Transformers generate?” to “How can memory/latency per denoising step be reduced without damaging the generation trajectory?” The original paper does not address low-bit deployment and focuses on single-image, class-conditioned ImageNet generation.</p>
+<p><strong>How Q-VDiT responds.</strong> Q-VDiT operates directly on DiT linear layers; video's (n=st) further multiplies token count, making quantization necessary to turn DiT scaling into deployable systems.</p>
+<p><strong>Inherited design.</strong> DiT's tokenized latents and Transformer linear blocks provide uniform quantization units; Q-VDiT keeps the backbone, adds rank-1 corrections to these matrix multiplications, and groups tokens by frame.</p>
+<h3 id="efficientdm-2024.05iclr-2024-spotlight">2.2 EfficientDM — 2024.05, ICLR 2024 Spotlight</h3>
+<p><strong>What it solved.</strong> EfficientDM seeks QAT quality with PTQ's data/time efficiency through quantization-aware LoRA, teacher denoising distillation, scale-aware optimization, and temporal learned step-size quantization, without original training data. Table 4 reports an approximately <strong>16.8×</strong> faster quantization process than QAT, while reducing the sFID increase for ImageNet LDM-4 W4A4 to <strong>0.05</strong>(its abstract and Table 2).</p>
+<p><strong>Remaining gap.</strong> Its tasks remain primarily U-Net/image diffusion, with distillation focused on denoising outputs; its Limitations acknowledge more trainable parameters and GPU memory than PTQ. More importantly, a single image has no structural objective specifying relationships among frames.</p>
+<p><strong>How Q-VDiT responds.</strong> Q-VDiT inherits the intermediate route of “few trainable parameters + teacher distillation,” but compresses QALoRA into per-layer rank-1 TQE and extends distillation from pointwise denoising error to inter-frame relational KL.</p>
+<p><strong>Inherited design.</strong> Trainable low-rank bypasses, teacher-student calibration, and longer calibration at lower bit widths all come from this lineage; Q-VDiT explicitly couples low-rank parameters with token/frame structure.</p>
+<h3 id="ptq4dit-2024.12neurips-2024">2.3 PTQ4DiT — 2024.12, NeurIPS 2024</h3>
+<p><strong>What it solved.</strong> PTQ4DiT first systematizes two DiT PTQ anomalies: extreme salient channels and changes in those activations over denoising timesteps. Channel-wise Salience Balancing redistributes extremes between weights and activations; Spearman-ρ-guided Salience Calibration upweights more compensable timesteps. Offline reparameterization removes additional inference overhead. Its Table 1 shows W8A8 approaching FP and first makes DiT effective at W4A8.</p>
+<p><strong>Remaining gap.</strong> It aggregates over denoising timesteps, not video frames, and evaluates ImageNet image DiTs. Even after calibrating timestep outliers, video subject/background/scene relations remain outside the objective.</p>
+<p><strong>How Q-VDiT responds.</strong> Q-VDiT retains PTQ4DiT calibration as its basic optimization paradigm and places frame-level (M) on activation tokens; TMD fills PTQ4DiT's relational blind spot through whole-frame similarity distributions.</p>
+<p><strong>Inherited design.</strong> “Different structural positions need different quantization treatment” evolves from channel/timestep salience to frame/token-aware compensation; Spearman-correlation calibration also informs TQE's similarity and salience initialization.</p>
+<h3 id="vidit-q-2025.04iclr-2025">2.4 ViDiT-Q — 2025.04, ICLR 2025</h3>
+<p><strong>What it solved.</strong> ViDiT-Q is the most direct predecessor: it jointly handles token/channel/timestep/condition distributions using dynamic quantization, static-dynamic channel balancing, and metric-decoupled mixed precision, and supplies CUDA kernels. It reports nearly lossless W4A8 across multiple image/video DiTs, achieving <strong>2–2.5× memory saving, 1.4–1.7× latency speedup</strong>. </p>
+<p><strong>Remaining gap.</strong> ViDiT-Q still centers on ranges, outliers, sensitive layers, and bit allocation; it does not constrain inter-frame structure with teacher relation graphs. At W3A6, the core paper's rerun yields just 10.26 Open-Sora VQA-Technical and 11.99 scene consistency, showing that “allocating the right bits” cannot alone recover low-bit video semantics.</p>
+<p><strong>How Q-VDiT responds.</strong> Q-VDiT inherits the same Open-Sora/Latte models, dynamic token-wise activations, and evaluation protocol, adding TQE+TMD in a direct comparison. It builds on ViDiT-Q's quantization engineering with error bypasses and temporal relational distillation.</p>
+<p><strong>Inherited design.</strong> ViDiT-Q's dynamic token-wise quantizer, mixed-precision configuration, and hardware-kernel path enter Q-VDiT's code directly; Q-VDiT adds a new stage: “quantization-statistics adaptation → structural-error recovery.”</p></section>
+<section class="card" aria-labelledby="section-5" data-section="3. Technical evolution"><h2 id="section-5">3. Technical evolution</h2>
+<pre class="text"><code>2023 DiT [latent-patch Transformer; more Gflops → lower FID]
+   │
+   ├─ 2024 EfficientDM [trainable low-rank bypass + teacher denoising distillation]
+   │        └─ Remaining: primarily image/U-Net; relational structure unmodeled
+   │
+   └─ 2024 PTQ4DiT [channel salience + timestep-aware calibration]
+            │
+            └─ 2025 ViDiT-Q [token/channel/timestep/condition + mixed precision + CUDA]
+                         │
+                         ├─ Solves: distribution and hardware quantization for video DiTs
+                         └─ Remaining: cross-frame semantics still collapse at W3A6
+                                      │
+                                      ▼
+2025 Q-VDiT [rank-1 feature correction + frame-token scaling + relational TMD]
+   │
+   └─ 2025 S²Q-VDiT [larger V-DMs; salient calibration data + sparse token distillation]</code></pre>
+<p>The underlying progression runs from <strong>parameter compression</strong> toward <strong>generation-trajectory preservation</strong> and then toward <strong>relational-structure preservation</strong>. Early quantization addressed per-layer error; diffusion forced attention to timesteps; DiTs added tokens/channels; video finally brought frame relations into the objective. The key shift is not another quantizer, but a changing definition of “error.”</p>
+<p>Community attention also shifts from offline FID to end-to-end Pareto tradeoffs. DiT used FID and Gflops to demonstrate scaling; PTQ4DiT established W4A8 feasibility; ViDiT-Q emphasized actual kernel memory/latency; Q-VDiT uses multidimensional VBench metrics to show that similar numerical errors can cause different temporal damage. The next stage must unify quality, calibration cost, inference latency, and device power, or isolated SOTA results will poorly guide deployment.</p></section>
+<section class="card" aria-labelledby="section-6" data-section="4. Cross-paper comparison"><h2 id="section-6">4. Cross-paper comparison</h2>
+<div class="table-scroll" role="region" aria-label="Horizontally scrollable data table" tabindex="0"><table style="width:100%;">
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+<col style="width: 16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Publication date</th>
+<th scope="col">Conference</th>
+<th scope="col">Core contribution</th>
+<th scope="col">Representative quantitative result</th>
+<th scope="col">Relationship to Q-VDiT</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DiT</td>
+<td>2023.10</td>
+<td>ICCV 2023 Oral</td>
+<td>Latent-patch Transformer replaces U-Net</td>
+<td>ImageNet-256 FID 2.27 (Table 2)</td>
+<td>Provides the backbone and token structure to quantize</td>
+</tr>
+<tr class="even">
+<td>EfficientDM</td>
+<td>2024.05</td>
+<td>ICLR 2024 Spotlight</td>
+<td>Efficient QAT with QALoRA + teacher distillation</td>
+<td>Quantization approximately 16.8× faster than QAT control (Table 4)</td>
+<td>Passes on low-rank bypass and teacher-calibration ideas</td>
+</tr>
+<tr class="odd">
+<td>PTQ4DiT</td>
+<td>2024.12</td>
+<td>NeurIPS 2024</td>
+<td>Channel salience and timestep calibration</td>
+<td>First effective DiT W4A8 (Table 1)</td>
+<td>Passes on structured salience and PTQ calibration</td>
+</tr>
+<tr class="even">
+<td>ViDiT-Q</td>
+<td>2025.04</td>
+<td>ICLR 2025</td>
+<td>Dynamic quantization + mixed precision + kernels for video/image DiTs</td>
+<td>2–2.5× memory, 1.4–1.7× latency</td>
+<td>Direct code/protocol foundation and strongest video predecessor</td>
+</tr>
+<tr class="odd">
+<td><strong>Q-VDiT</strong></td>
+<td><strong>2025.07</strong></td>
+<td><strong>ICML 2025</strong></td>
+<td><strong>TQE + TMD restore token/features and frame relations</strong></td>
+<td><strong>W3A6 scene 23.40; VQA-Tech 59.10</strong></td>
+<td><strong>Moves the error objective from local statistics to video relations</strong></td>
+</tr>
+</tbody>
+</table></div></section>
+<section class="card" aria-labelledby="section-7" data-section="5. Open challenges and actionable research opportunities"><h2 id="section-7">5. Open challenges and actionable research opportunities</h2>
+<h3 id="理论层面">5.1 Theory</h3>
+<ol type="1">
+<li><strong>Head-to-head validation of low entropy versus low rank.</strong> Save actual error matrices from the same layer; compare rank-1 TQE, rank-(r) SVD, sparse matrices, and Kronecker decomposition at equal parameter counts, reporting reconstruction error and video metrics. Test whether entropy predicts the best structure.</li>
+<li><strong>Stability bounds for relational distillation.</strong> Derive guaranteed changes in subject/scene consistency when ((D<sup>{FP}D</sup> Q)); compare with bounds constraining only feature MSE.</li>
+<li><strong>The correct entropy definition for quantization error.</strong> Analyze correlations side by side for empirical-histogram Shannon entropy, rate-distortion, differential entropy, and singular-value effective rank to identify what actually explains TQE gains.</li>
+</ol>
+<h3 id="工程与应用层">5.2 Engineering and Applications</h3>
+<ol type="1">
+<li><strong>Equal-calibration-budget comparison.</strong> Fix budgets at 12.5 GPU-hours and 16.6 GB peak memory to compare ViDiT-Q, PTQ4DiT, and Q-VDiT; then compare calibration costs at equal final quality and plot a genuine Pareto frontier.</li>
+<li><strong>Real-device benchmarks.</strong> On A100, RTX 4090, Jetson Orin, and mobile NPUs, report end-to-end latency, energy/video, peak memory, and kernel occupancy at the same 16×512×512/100-step setting; avoid hiding device dependence behind “× savings.”</li>
+<li><strong>Module-level cost breakdown.</strong> Benchmark pure quantization, +feature TQE, +token M, and +TMD-trained checkpoints separately, measuring kernel time and memory traffic to verify whether the rank-1 bypass is genuinely nearly free.</li>
+<li><strong>Multi-seed paired evaluation.</strong> Use paired bootstrapping on the same 100–500 prompts and initial noise; report 95% CIs, especially testing whether the 0.0002 CLIP-Temp gain is stable.</li>
+<li><strong>Larger backbones.</strong> Compare Q-VDiT and S²Q-VDiT on HunyuanVideo, CogVideoX, Wan, and other attention factorizations at fixed W4A6 and 1.3× latency budgets, checking whether frame-token scaling fails as sequence length grows.</li>
+</ol>
+<h3 id="新兴方向">5.3 Emerging Directions</h3>
+<ol type="1">
+<li><strong>Decouple perceptual from physical relations.</strong> TMD currently matches teacher feature similarities; add optical-flow, depth, and object-track relation graphs in parallel to compare “teacher latent relations” with “explicit physical relations” for preserving long-video motion.</li>
+<li><strong>Online bit allocation.</strong> Dynamically allocate 3/4/6 bits using the current denoising step, prompt motion demand, and inter-frame KL; compare head-to-head with static mixed precision at equal latency budgets.</li>
+<li><strong>Safety and watermarking.</strong> Evaluate safety-filter bypass, identity drift, and watermark detectability before/after quantization in paired tests; determine whether TMD preserves dangerous teacher generation patterns or low-bit noise disrupts safety controls.</li>
+<li><strong>Streaming calibration for long videos.</strong> Existing 16-frame experiments use offline short videos. Design a 128–512-frame streaming benchmark retaining relations for only the latest (k) frames, and evaluate approximations to TMD's O((t^2)) relation matrix.</li>
+</ol></section>
+<section class="card" aria-labelledby="section-8" data-section="6. Other recent work worth watching"><h2 id="section-8">6. Other recent work worth watching</h2>
+<p>All works below were verified ICML 2025 main-conference candidates in this issue's pool; they are not expanded to avoid diluting the related-work chain into parallel summaries.</p>
+<p><strong>FlexTok: Resampling Images into 1D Token Sequences of Flexible Length</strong> (2025.07, ICML 2025)<br />
+Compresses images into variable-length 1D token sequences, directly linking tokenizer rate with generation budget; useful for studying whether visual token counts should vary by sample. <a href="https://proceedings.mlr.press/v267/bachmann25a.html">PMLR</a>｜<a href="https://github.com/apple/ml-flextok">Code</a></p>
+<p><strong>VideoJAM: Joint Appearance-Motion Representations for Enhanced Motion Generation in Video Models</strong> (2025.07, ICML 2025)<br />
+Explicitly combines appearance and motion representations, providing a strong downstream stress test for Q-VDiT's future preservation of motion relations after quantization. <a href="https://proceedings.mlr.press/v267/chefer25a.html">PMLR</a></p>
+<p><strong>FireFlow: Fast Inversion of Rectified Flow for Image Semantic Editing</strong> (2025.07, ICML 2025)<br />
+Reduces steps through rectified-flow inversion, showing that generation efficiency comes from numerical integration as well as bit width; merits equal-quality latency comparisons. <a href="https://proceedings.mlr.press/v267/deng25c.html">PMLR</a>｜<a href="https://github.com/HolmesShuan/FireFlow-Fast-Inversion-of-Rectified-Flow-for-Image-Semantic-Editing">Code</a></p>
+<p><strong>Accelerated Diffusion Models via Speculative Sampling</strong> (2025.07, ICML 2025)<br />
+Transfers speculative decoding to diffusion sampling, offering an inference acceleration axis orthogonal to quantization; whether the gains multiply is an immediate engineering question. <a href="https://proceedings.mlr.press/v267/de-bortoli25a.html">PMLR</a></p>
+<p><strong>Visual Generation Without Guidance</strong> (2025.07, ICML 2025)<br />
+Reexamines the necessity of classifier-free guidance, providing different distributional conditions for low-bit robustness in guidance-free models. <a href="https://proceedings.mlr.press/v267/chen25ac.html">PMLR</a></p>
+<p><strong>Subobject-level Image Tokenization</strong> (2025.07, ICML 2025)<br />
+Pushes token semantic granularity to subobjects, suggesting that TQE token grouping need not be fixed by frame and could instead follow learned object hierarchies. <a href="https://proceedings.mlr.press/v267/chen25d.html">PMLR</a></p>
+<p><strong>S²Q-VDiT: Accurate Quantized Video Diffusion Transformer with Salient Data and Sparse Token Distillation</strong>(Updated 2025.10, NeurIPS 2025)<br />
+This direct Q-VDiT successor shifts the bottleneck to calibration data and sparse token learning and expands to HunyuanVideo. It is the primary comparison for testing whether Q-VDiT's conclusions transfer across model scales. <a href="https://arxiv.org/abs/2508.04016">arXiv</a>｜<a href="https://github.com/wlfeng0509/S2Q-VDiT">Code</a></p></section>
+<section class="card" aria-labelledby="section-9" data-section="7. Conclusion"><h2 id="section-9">7. Conclusion</h2>
+<p>Q-VDiT's most important contribution is demonstrating that video DiT quantization objectives must explicitly preserve token differences and inter-frame relations. In the W3A6 stress regime, scene consistency and VQA-Technical nearly double over prior best methods, indicating that rank-1 correction and relational distillation prevent baseline quality collapse.</p>
+<p>The evidence boundaries are equally clear: only 10 Open-Sora multi-aspect prompts, no multiple seeds/CI, contradictory ablation bit-width labels, automatic VQA even exceeding FP16, and no theoretical implication from low entropy to rank 1. The most reasonable research conclusion is: <strong>TQE+TMD is a reusable structured-compression paradigm, but “almost lossless and edge-deployable” still needs equal-budget, multi-device, human-evaluation, and large-model validation.</strong></p>
+<hr />
+<p><strong>Evidence and verification notes</strong>: Core values come from Tables 1–7, Equations 3–19, and Appendices B–F of the official ICML/PMLR PDF; related-work numbers come from their original papers. All derived percentages were recalculated from public tables, never estimated from chart heights. Unavailable standard deviations, confidence intervals, exact Figure 6 values, Q-VDiT quantized weights, and human preferences are explicitly marked unreported/unreleased. The index <code>ml-report-index.md</code> has been updated. This machine lacks <code>/usr/bin/chromium</code>, <code>/opt/pw-browsers</code> and an executable Chromium, so three-view Playwright screenshots cannot honestly be claimed. Static checks instead covered the Warm Editorial validator, semantic structure, theme script, external links, and responsive CSS.</p></section>
+  </main>
+
+  <footer></footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ Light' : '☾ Dark';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

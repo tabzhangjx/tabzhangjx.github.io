@@ -1,0 +1,1084 @@
+---
+layout: null
+title: "DM/FM Alignment"
+date: 2026-08-19
+topic: vlm-vision
+tags: ["vlm-vision"]
+excerpt: "Reward-weighted distributions unify diffusion and flow-matching alignment through changes to sampling dynamics."
+permalink: "/blog/2026/08/19/diffusion-flow-matching-reward-alignment/en/"
+blog_post: false
+lang: en
+sitemap: true
+alternate_zh: "/blog/2026/08/19/diffusion-flow-matching-reward-alignment/"
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Unified Reward-Weighted Alignment of Diffusion and Flow Matching · 2026-08-19</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-primary-alt: #3987e5;
+    --chart-comparison: #eb6834;
+    --chart-comparison-alt: #d95926;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #3987e5;
+    --chart-comparison: #eb6834;
+    --chart-comparison-alt: #d95926;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light/dark theme" aria-pressed="false">☾ Dark</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">Generative Models · Deep Reading of a 2026 arXiv Preprint</p>
+    <h1>Unified Reward-Weighted Alignment of Diffusion and Flow Matching</h1>
+    <p class="subtitle">From reward-weighted distributions to score/velocity guidance: theory, cost, and evidence gaps</p>
+    <div class="meta" aria-label="Report metadata">
+      <span class="chip source">arXiv:2602.00413v1</span>
+      <span class="chip">2026-08-19</span>
+      <span class="chip">Diffusion · Flow Matching · Alignment</span>
+    </div>
+    <p class="lede">Instead of retraining the generator for every reward, directly modify sampling dynamics: learn smoothed conditional expectations for diffusion and estimate reward-reweighted velocities for flow matching.</p>
+  </header>
+
+  <main>
+    <section class="card" aria-labelledby="0-链接验证表"><h2 id="0-链接验证表">0. Link verification table</h2>
+<p>All URLs below were accessed when this report was generated. At verification, the core work was only a preprint; no confirmed official code, separate project page, or public weights were found. This is a key reason for lowering confidence in its publication status.</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="Horizontally scrollable data table"><table>
+<thead>
+<tr class="header">
+<th scope="col">The paper</th>
+<th scope="col" class="num">Conference page / formal publication</th>
+<th scope="col" class="num">arXiv (specific version)</th>
+<th scope="col" class="num">Code repository</th>
+<th scope="col" class="num">Datasets / weights</th>
+<th scope="col" class="num">Project page / video</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Alignment of Diffusion Model and Flow Matching for Text-to-Image Generation (core)</strong></td>
+<td class="num">No formal proceedings found; <a href="https://openreview.net/pdf/88965b66dac9a13dbfcc89883c8c0013f22b329a.pdf">OpenReview PDF mirror</a> acceptance status unconfirmed</td>
+<td class="num"><a href="https://arxiv.org/abs/2602.00413v1">2602.00413v1, 2026-01-31</a></td>
+<td class="num"><strong>Not public / not found</strong></td>
+<td class="num">use <a href="https://huggingface.co/datasets/yuvalkirstain/pickapic_v2">Pick-a-Pic</a>; 72 MB guidance weights are not public</td>
+<td class="num">Not found</td>
+</tr>
+<tr class="even">
+<td>DDPO / Training Diffusion Models with Reinforcement Learning</td>
+<td class="num"><a href="https://openreview.net/forum?id=YCWjhGrJFD">ICLR 2024
+OpenReview</a></td>
+<td class="num"><a href="https://arxiv.org/abs/2305.13301v4">2305.13301v4, 2024-01-04</a></td>
+<td class="num"><a href="https://github.com/jannerm/ddpo">jannerm/ddpo</a></td>
+<td class="num">Repository includes training implementation; no unified dedicated dataset</td>
+<td class="num"><a href="https://rl-diffusion.github.io/">Project page</a></td>
+</tr>
+<tr class="odd">
+<td>Diffusion-DPO</td>
+<td class="num"><a href="https://openaccess.thecvf.com/content/CVPR2024/html/Wallace_Diffusion_Model_Alignment_Using_Direct_Preference_Optimization_CVPR_2024_paper.html">CVPR
+2024 Open Access</a></td>
+<td class="num"><a href="https://arxiv.org/abs/2311.12908v1">2311.12908v1, 2023-11-21</a></td>
+<td class="num"><a href="https://github.com/SalesforceAIResearch/DiffusionDPO">SalesforceAIResearch/DiffusionDPO</a></td>
+<td class="num"><a href="https://github.com/SalesforceAIResearch/DiffusionDPO#model-checkpoints">SD1.5 / SDXL weight links (repository)</a>; Pick-a-Pic V2</td>
+<td class="num">Separate project page/video not found</td>
+</tr>
+<tr class="even">
+<td>SPO / Step-by-step Preference Optimization</td>
+<td class="num"><a href="https://openaccess.thecvf.com/content/CVPR2025/html/Liang_Aesthetic_Post-Training_Diffusion_Models_from_Generic_Preferences_with_Step-by-step_Preference_CVPR_2025_paper.html">CVPR
+2025 Open Access</a></td>
+<td class="num"><a href="https://arxiv.org/abs/2406.04314v3">2406.04314v3, 2025-03-25</a></td>
+<td class="num"><a href="https://github.com/RockeyCoss/SPO">RockeyCoss/SPO</a></td>
+<td class="num"><a href="https://github.com/RockeyCoss/SPO#-available-checkpoints">Model and LoRA weights (repository)</a></td>
+<td class="num"><a href="https://rockeycoss.github.io/spo.github.io/">Project page</a></td>
+</tr>
+<tr class="odd">
+<td>On the Guidance of Flow Matching</td>
+<td class="num"><a href="https://proceedings.mlr.press/v267/feng25s.html">ICML 2025
+/ PMLR</a></td>
+<td class="num"><a href="https://arxiv.org/abs/2502.02150v3">2502.02150v3, 2025-05-26</a></td>
+<td class="num"><a href="https://github.com/AI4Science-WestlakeU/flow_guidance">AI4Science-WestlakeU/flow_guidance</a></td>
+<td class="num">Experimental configurations accompany code; no dedicated weights found</td>
+<td class="num">Separate video not found</td>
+</tr>
+</tbody>
+</table>
+</div></section><section class="card" aria-labelledby="1-检索去重与随机选择记录"><h2 id="1-检索去重与随机选择记录">1. Search, deduplication, and random-selection record</h2>
+<p>Run date
+<code>date +%u=3</code>, rotating into generative models. Before searching, read
+<code>ml-report-index.md</code>: the past 14 days include EPG on 2026-08-12 (VAE-free pixel-space generation); other topics cover RL, efficiency, theory, AI4Science, LLMs, and medical VLMs, without duplicating this issue's generative-model reward alignment.</p>
+<p>The candidate pool prioritizes formal ICML 2025, NeurIPS 2025, and ICLR 2026 papers, followed by arXiv work from the past 12 months with complete text/quantitative materials. Candidates:</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="Horizontally scrollable data table"><table>
+<thead>
+<tr class="header">
+<th style="text-align: right;" scope="col">#</th>
+<th scope="col" class="num">Candidate work</th>
+<th scope="col" class="num">Year / source</th>
+<th scope="col" class="num">Subfield</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">1</td>
+<td class="num">On the Guidance of Flow Matching</td>
+<td class="num">ICML 2025</td>
+<td class="num">Flow-matching guidance</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">2</td>
+<td class="num">Mean Flows for One-step Generative Modeling</td>
+<td class="num">NeurIPS 2025 / arXiv</td>
+<td class="num">One-step generation</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">3</td>
+<td class="num">STORK</td>
+<td class="num">ICLR 2026</td>
+<td class="num">Fast diffusion / flow sampling</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">4</td>
+<td class="num">TimeFlow</td>
+<td class="num">ICLR 2026</td>
+<td class="num">Time-series generation</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">5</td>
+<td class="num">Flow Along the K-Amplitude</td>
+<td class="num">ICLR 2026</td>
+<td class="num">Flow geometry</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">6</td>
+<td class="num">Exploring the Design Space of Transition Matching</td>
+<td class="num">ICLR 2026</td>
+<td class="num">Transition matching</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">7</td>
+<td class="num">GLASS Flows</td>
+<td class="num">ICLR 2026</td>
+<td class="num">Reward alignment</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">8</td>
+<td class="num">Source-Guided Flow Matching</td>
+<td class="num">ICLR 2026</td>
+<td class="num">Conditional guidance</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">9</td>
+<td class="num">OneFlow</td>
+<td class="num">2025 arXiv</td>
+<td class="num">Mixed-modality generation</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">10</td>
+<td class="num">Diffusion Transformers with Representation Autoencoders</td>
+<td class="num">2025 arXiv</td>
+<td class="num">Generative latent spaces</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">11</td>
+<td class="num">Neon</td>
+<td class="num">2025 arXiv</td>
+<td class="num">Generator self-training</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">12</td>
+<td class="num">STARFlow-V</td>
+<td class="num">2025 arXiv</td>
+<td class="num">Video normalizing flows</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">13</td>
+<td class="num">DriveWAM</td>
+<td class="num">2026 arXiv</td>
+<td class="num">World–action generation</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">14</td>
+<td class="num">LangFlow</td>
+<td class="num">2026 arXiv</td>
+<td class="num">Continuous language diffusion</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">15</td>
+<td class="num">Federated Flow Matching</td>
+<td class="num">ICLR 2026</td>
+<td class="num">Federated generation</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">16</td>
+<td class="num">Edit-Based Flow Matching for Temporal Point Processes</td>
+<td class="num">ICLR 2026</td>
+<td class="num">Point-process generation</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">17</td>
+<td class="num">Wasserstein Flow Matching</td>
+<td class="num">ICML 2025</td>
+<td class="num">Generation of distribution families</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">18</td>
+<td class="num">Can Diffusion Models Learn Hidden Inter-Feature Rules?</td>
+<td class="num">ICML 2025</td>
+<td class="num">Compositional rules</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">19</td>
+<td class="num">Continuous Visual Autoregressive Generation via Score
+Maximization</td>
+<td class="num">ICML 2025</td>
+<td class="num">Continuous autoregression</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">20</td>
+<td class="num">Does Generation Require Memorization?</td>
+<td class="num">ICML 2025</td>
+<td class="num">Creativity / memorization</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">21</td>
+<td class="num">SketchDNN</td>
+<td class="num">ICML 2025</td>
+<td class="num">CAD sketch generation</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">22</td>
+<td class="num">Taming Diffusion for Dataset Distillation</td>
+<td class="num">ICML 2025</td>
+<td class="num">Data distillation</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">23</td>
+<td class="num">Long-Term TalkingFace Generation</td>
+<td class="num">ICML 2025</td>
+<td class="num">Long-video face generation</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;"><strong>24</strong></td>
+<td class="num"><strong>Alignment of Diffusion Model and Flow Matching for
+Text-to-Image Generation</strong></td>
+<td class="num"><strong>2026 arXiv</strong></td>
+<td class="num"><strong>Unified reward-weighted alignment</strong></td>
+</tr>
+</tbody>
+</table>
+</div><p>The first execution of <code>shuf -i 1-24 -n 1</code> selected
+<strong>10</strong>. This work shares the topic of generative latent spaces / representation autoencoders replacing traditional VAEs with EPG on August 12, triggering 14-day topic deduplication and a redraw. The second execution of the same command selected
+<strong>24</strong>. Although a preprint, the core work has complete HTML, theoretical derivations, a 6-method × 4-metric main table, training costs, step-count ablations, and a 3×3 hyperparameter table. Materials were sufficient, so redrawing stopped. Total redraws: <strong>1</strong>. </p>
+</section><figure class="figure" aria-labelledby="spo-chart-title">
+  <p class="fig-title" id="spo-chart-title">Changes in automatic metrics relative to SPO</p>
+  <p class="fig-sub">Recomputed from the core paper's Table 2. Positive values favor the core method; negative values favor SPO. A single horizontal axis shows relative percentages.</p>
+  <div class="legend" aria-label="Legend">
+    <span><span class="swatch" style="background:var(--chart-primary)"></span> Core method leads</span>
+    <span><span class="swatch" style="background:var(--chart-comparison)"></span> Core method trails</span>
+  </div>
+  <svg class="chart" viewbox="0 0 900 390" role="img" xmlns="http://www.w3.org/2000/svg">
+    <title>Changes in four metrics relative to SPO</title>
+    <desc>PickScore increases 0.087%, HPSV2 increases 1.006%, ImageReward decreases 1.648%, and Aesthetic increases 1.383%.</desc>
+    <line x1="480" y1="34" x2="480" y2="330" stroke="var(--grid)" stroke-width="2"></line>
+    <g font-size="14">
+      <text x="180" y="365" text-anchor="middle">-2%</text><text x="330" y="365" text-anchor="middle">-1%</text><text x="480" y="365" text-anchor="middle">0</text><text x="630" y="365" text-anchor="middle">+1%</text><text x="780" y="365" text-anchor="middle">+2%</text>
+      <text x="155" y="86" text-anchor="end">PickScore</text><rect x="480" y="61" width="13.1" height="36" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="PickScore：+0.087%"></rect><text x="505" y="85">+0.087%</text>
+      <text x="155" y="151" text-anchor="end">HPSV2</text><rect x="480" y="126" width="150.9" height="36" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="HPSV2：+1.006%"></rect><text x="642" y="150">+1.006%</text>
+      <text x="155" y="216" text-anchor="end">ImageReward</text><rect x="232.8" y="191" width="247.2" height="36" rx="5" fill="var(--chart-comparison)" tabindex="0" data-tip="ImageReward：-1.648%"></rect><text x="220" y="215" text-anchor="end">-1.648%</text>
+      <text x="155" y="281" text-anchor="end">Aesthetic</text><rect x="480" y="256" width="207.5" height="36" rx="5" fill="var(--chart-primary)" tabindex="0" data-tip="Aesthetic：+1.383%"></rect><text x="699" y="280">+1.383%</text>
+    </g>
+  </svg>
+  <figcaption>Source: arXiv:2602.00413v1 Table 2, recomputed here. The chart exposes the inconsistency between the claim of winning all four criteria and ImageReward data; the body provides original values.</figcaption>
+</figure><section class="card" aria-labelledby="2-核心论文深度解析"><h2 id="2-核心论文深度解析">2. In-depth analysis of the core paper</h2>
+<h3 id="21-motivation对齐为何一定要改模型参数">2.1 Motivation: why must alignment change model parameters?</h3>
+<p>Text-to-image alignment broadly follows two paths. RLHF/DDPO treats each denoising step as an action and applies policy gradients from final rewards; Diffusion-DPO and SPO construct differentiable objectives from preference pairs. Both modify large-generator parameters whenever rewards change. Section 1 quantifies compute and generalization burdens: Table 2 reports Diffusion-DPO training at <strong>4,800
+GPU-hour</strong>, SPO <strong>234 GPU-hour</strong>; the core method trains only a
+<strong>72 MB</strong> guidance network using <strong>92 GPU-hour</strong>. Relative to SPO, this decreases cost by <strong>60.68%</strong>, and relative to Diffusion-DPO by
+<strong>98.08%</strong>. </p>
+<p>The more important observation is not simply that fine-tuning is costly, but that the alignment objective already implies a target distribution. For reference model (\pi_{\rm ref}(x\mid y)), reward (r(x,y)), and KL regularization coefficient (\beta), the standard alignment problem has the closed-form optimum:</p>
+<p>[ \pi_r(x\mid y)=\frac{1}{Z(y)}\pi_{\rm ref}(x\mid
+y)\exp\left(\frac{r(x,y)}{\beta}\right). ]</p>
+<p>Thus the reference model need not theoretically be updated: sampling from (\pi_r) completes alignment. Parameter optimization becomes reward-weighted sampling, directly supporting rapid changes in aesthetic, text-consistency, safety, or domain rewards.</p>
+<p>The paper also identifies a dilemma when adding reward gradients directly to diffusion scores. If guidance strength (\alpha) is too small, outputs barely change; if too large, gradients in the high-dimensional reward landscape create artifacts (Figure 2, §3.2). The authors call this guidance's adversarial nature. Flow matching differs: its correct adjustment is a conditional expectation rather than an input gradient, theoretically avoiding the same gradient-attack-style instability.</p>
+<h3 id="22-故事线从同一个目标分布分叉出两套工程方案">2.2 Narrative: two engineering branches from one target distribution</h3>
+<p>First, the authors take the analytical solution to KL-regularized alignment and make the reward-weighted distribution the sole target. This unifies diffusion and flow matching: neither must redefine preferences; each needs the target-distribution score or velocity.</p>
+<p>Second, on the diffusion branch, target score equals reference score plus the log-gradient of the posterior conditional expectation of exponentiated reward. Direct Monte Carlo requires backpropagation through sampling trajectories, while Tweedie approximations are biased. A small network (h_\psi) therefore estimates the conditional expectation, with consistency regularization on its gradient landscape. The tradeoff is: <strong>the large generator stays fixed, but a small reward-specific guide still requires training</strong>. </p>
+<p>Third, for SDXL-Turbo one-step generation, time is fixed at (t=T) instead of sampled uniformly from ([0,T]). This makes (h_\psi) time-independent and easier to train, at the cost of directly covering general multistep diffusion trajectories.</p>
+<p>Fourth, on the flow-matching branch, target velocity equals reference velocity plus an expectation of reward-reweighted conditional velocities. No reward gradient with respect to (x_t) is needed, enabling marginal-distribution importance sampling and a claim of no extra network training. The tradeoff is estimator variance and candidate-sampling cost per step, which the paper does not fully report.</p>
+<pre class="text"><code>                           KL-regularized alignment
+                                     │
+                     target ∝ reference × exp(reward / β)
+                                     │
+                ┌────────────────────┴────────────────────┐
+                │                                         │
+       Diffusion score branch                    Flow velocity branch
+       score_ref + ∇ log E[e^{r/β}]              v_ref + E[(R-1)v_cond]
+                │                                         │
+       Direct gradients create artifacts         Conditional expectation without input gradients
+                │                                         │
+       Learn 72 MB hψ + consistency regularization Importance-sampling estimation
+                │                                         │
+       SDXL-Turbo: 1 step                         SD3.5 Large Turbo: 4 steps</code></pre>
+<h3 id="23-方程级机制解剖">2.3 Equation-level mechanism analysis</h3>
+<h4 id="扩散从目标-score-到引导网络">Diffusion: from target score to guidance network</h4>
+<p>Theorem 3.1 (Equation 10) gives:</p>
+<p>[ s_q(x_t,y,t)=\nabla_{x_t}\log p_t(x_t\mid y)
++\nabla_{x_t}\log\mathbb E_{p(x_0\mid x_t,y)}
+\left[\exp\left(\frac{r(x_0,y)}{\beta}\right)\right]. ]</p>
+<p>The first term directly uses the pretrained diffusion model; the second is exact reward guidance. To avoid sampling the full posterior at every (x_t), the authors train with mean-squared error:</p>
+<p>[ \mathcal L_{\rm guidance}(\psi)= \mathbb
+E\left[\left|h_\psi(x_t,y,t)-
+\exp\left(\frac{r(x_0,y)}{\beta}\right)\right|_2^2\right]. ]</p>
+<p>The population optimum is exactly the conditional expectation, yielding the sampling score:</p>
+<p>[ s_{\rm aligned}=s_{\rm ref}+\nabla_{x_t}\log h_{\psi^*}(x_t,y,t).
+]</p>
+<p>To smooth the guidance landscape, (\mathcal L_{\rm consistence}) makes the sum of the reference conditional score and (\nabla\log h_\psi) approach the reward-weighted distribution's conditional score. The final objective (Equation 15) is:</p>
+<p>[ \psi^*=\arg\min_\psi \left{\mathcal L_{\rm guidance}+\eta\mathcal
+L_{\rm consistence}\right}. ]</p>
+<h4 id="流匹配从奖励比率到速度修正">Flow matching: from reward ratios to velocity corrections</h4>
+<p>Theorem 4.1 (Equation 16) defines the normalized reward ratio:</p>
+<p>[ R(x_1,x_t,y)= \frac{\exp(r(x_1,y)/\beta)} {\mathbb E_{x_1'\sim
+p_{1|t}}[\exp(r(x_1',y)/\beta)]}, ]</p>
+<p>and obtains:</p>
+<p>[ v_q(x_t,y,t)=v_p(x_t,y,t)+ \mathbb E_{x_1\sim p_{1|t}}
+\left[(R(x_1,x_t,y)-1)v_t(x_t\mid x_1,y)\right]. ]</p>
+<p>Importance sampling then rewrites the posterior expectation using marginal samples from (p(x_1\mid y)). Conceptually, conditional velocities associated with high-reward endpoints are amplified and low-reward ones suppressed, rather than pushing images directly along reward gradients.</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="Horizontally scrollable data table"><table>
+<thead>
+<tr class="header">
+<th scope="col">Mechanism / dimension</th>
+<th scope="col" class="num">Diffusion branch</th>
+<th scope="col" class="num">Flow-matching branch</th>
+<th scope="col" class="num">Key settings / risks</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Target</td>
+<td class="num">Reward-weighted score</td>
+<td class="num">Reward-weighted velocity</td>
+<td class="num">Shared target distribution (\pi_r)</td>
+</tr>
+<tr class="even">
+<td>Correction form</td>
+<td class="num">(\nabla\log E[e^{r/\beta}])</td>
+<td class="num">(E[(R-1)v])</td>
+<td class="num">The former uses input gradients; the latter does not</td>
+</tr>
+<tr class="odd">
+<td>Additional training</td>
+<td class="num">Train a 72 MB guidance network</td>
+<td class="num">Claimed training-free</td>
+<td class="num">Flow inference sampling overhead is incompletely reported</td>
+</tr>
+<tr class="even">
+<td>Stabilization mechanism</td>
+<td class="num">consistency regularization</td>
+<td class="num">Normalized reward ratio</td>
+<td class="num">(\eta=1,\beta=15) performs best</td>
+</tr>
+<tr class="odd">
+<td>Backbone</td>
+<td class="num">SDXL-Turbo</td>
+<td class="num">SD3.5 Large Turbo</td>
+<td class="num">1 step vs 4 steps; different backbones</td>
+</tr>
+<tr class="even">
+<td>Data</td>
+<td class="num">Pick-a-Pic V1: 583K preference pairs</td>
+<td class="num">Driven by generation / reward estimation</td>
+<td class="num">Asymmetric data-construction detail</td>
+</tr>
+<tr class="odd">
+<td>Optimization</td>
+<td class="num">Adam, lr=1e-3, batch=32, 10 epochs</td>
+<td class="num">No generator training</td>
+<td class="num">GPU model and inference throughput unreported</td>
+</tr>
+</tbody>
+</table>
+</div><p>Algorithm 1 (Appendix C.1) can be condensed to:</p>
+<pre class="text"><code>repeat:
+    1. Sample batch b from 583K alignment pairs; add forward noise to obtain x_T
+    2. Compute L_guidance = mean ||hψ(x_T,y)-exp(r(x_0,y)/β)||²
+    3. Sample another batch b from winning responses and add forward noise
+    4. Compute L_consistence so s_ref + ∇log hψ approaches the target conditional score
+    5. Update ψ using ∇ψ(L_guidance + η L_consistence)
+until convergence
+return ψ</code></pre>
+<h3 id="24-实验设置数据与指标">2.4 Experimental setup, data, and metrics</h3>
+<div class="table-scroll" role="region" tabindex="0" aria-label="Horizontally scrollable data table"><table>
+<thead>
+<tr class="header">
+<th scope="col">Item</th>
+<th scope="col" class="num">Paper configuration</th>
+<th scope="col" class="num">Explanation</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Training data</td>
+<td class="num">Pick-a-Pic V1, 583K image preference pairs</td>
+<td class="num">Core method trains its guide offline</td>
+</tr>
+<tr class="even">
+<td>Diffusion-DPO data</td>
+<td class="num">Pick-a-Pic V2, over 800K pairs</td>
+<td class="num">Different data version and volume</td>
+</tr>
+<tr class="odd">
+<td>SPO data</td>
+<td class="num">Random 4K prompts from Pick-a-Pic V1, online training</td>
+<td class="num">Different budget accounting</td>
+</tr>
+<tr class="even">
+<td>Test</td>
+<td class="num">Pick-a-Pic validation unique split, 500 prompts</td>
+<td class="num">One prompt source, limited scale</td>
+</tr>
+<tr class="odd">
+<td>PickScore</td>
+<td class="num">Human-preference proxy: aesthetics, coherence, realism</td>
+<td class="num">Related signals also drive rewards/data, creating feedback-loop risks</td>
+</tr>
+<tr class="even">
+<td>HPSV2</td>
+<td class="num">Text–image human-preference score</td>
+<td class="num">Mainly reflects prompt adherence</td>
+</tr>
+<tr class="odd">
+<td>ImageReward</td>
+<td class="num">Learned human-preference model</td>
+<td class="num">Not fully consistent with PickScore</td>
+</tr>
+<tr class="even">
+<td>Aesthetic</td>
+<td class="num">LAION aesthetic predictor</td>
+<td class="num">Does not directly assess diversity, factuality, or safety</td>
+</tr>
+<tr class="odd">
+<td>Sampling</td>
+<td class="num">SDXL-Turbo 1 step; SD3.5 Large Turbo 4 steps</td>
+<td class="num">Different diffusion and flow configurations</td>
+</tr>
+</tbody>
+</table>
+</div><h3 id="25-主结果6-方法4-指标与成本矩阵">2.5 Main results: 6 methods × 4 metrics and costs</h3>
+<p>The table fully transcribes the core paper's <strong>Table 2, SDXL group</strong>; higher quality metrics are better, while lower GPU-hours are better. “—” means unreported, not zero.</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="Horizontally scrollable data table"><table>
+<thead>
+<tr class="header">
+<th scope="col">Type</th>
+<th scope="col" class="num">Method</th>
+<th style="text-align: right;" scope="col" class="num">PickScore</th>
+<th style="text-align: right;" scope="col" class="num">HPSV2</th>
+<th style="text-align: right;" scope="col" class="num">ImageReward</th>
+<th style="text-align: right;" scope="col" class="num">Aesthetic</th>
+<th style="text-align: right;" scope="col" class="num">Training GPU-hour</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Base</td>
+<td class="num">SDXL-Turbo</td>
+<td style="text-align: right;" class="num">21.95</td>
+<td style="text-align: right;" class="num">26.95</td>
+<td style="text-align: right;" class="num">0.5380</td>
+<td style="text-align: right;" class="num">5.950</td>
+<td style="text-align: right;" class="num">—</td>
+</tr>
+<tr class="even">
+<td>Training-free</td>
+<td class="num">Direct backpropagate</td>
+<td style="text-align: right;" class="num">21.84</td>
+<td style="text-align: right;" class="num">27.53</td>
+<td style="text-align: right;" class="num">0.5870</td>
+<td style="text-align: right;" class="num">5.922</td>
+<td style="text-align: right;" class="num">—</td>
+</tr>
+<tr class="odd">
+<td>Training-free</td>
+<td class="num">Tweedie’s formula</td>
+<td style="text-align: right;" class="num">22.34</td>
+<td style="text-align: right;" class="num">28.76</td>
+<td style="text-align: right;" class="num">0.9501</td>
+<td style="text-align: right;" class="num">6.002</td>
+<td style="text-align: right;" class="num">—</td>
+</tr>
+<tr class="even">
+<td>Finetuning</td>
+<td class="num">Diffusion-DPO</td>
+<td style="text-align: right;" class="num">22.64</td>
+<td style="text-align: right;" class="num">29.31</td>
+<td style="text-align: right;" class="num">0.9436</td>
+<td style="text-align: right;" class="num">6.015</td>
+<td style="text-align: right;" class="num">4,800</td>
+</tr>
+<tr class="odd">
+<td>Finetuning</td>
+<td class="num">SPO</td>
+<td style="text-align: right;" class="num">23.06</td>
+<td style="text-align: right;" class="num">31.80</td>
+<td style="text-align: right;" class="num"><strong>1.0803</strong></td>
+<td style="text-align: right;" class="num">6.364</td>
+<td style="text-align: right;" class="num">234</td>
+</tr>
+<tr class="even">
+<td><strong>Guidance (core)</strong></td>
+<td class="num"><strong>Ours</strong></td>
+<td style="text-align: right;" class="num"><strong>23.08</strong></td>
+<td style="text-align: right;" class="num"><strong>32.12</strong></td>
+<td style="text-align: right;" class="num">1.0625</td>
+<td style="text-align: right;" class="num"><strong>6.452</strong></td>
+<td style="text-align: right;" class="num"><strong>92</strong></td>
+</tr>
+</tbody>
+</table>
+</div><p>Column-wise differences against the strongest competitor SPO:</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="Horizontally scrollable data table"><table>
+<thead>
+<tr class="header">
+<th scope="col">Metric</th>
+<th style="text-align: right;" scope="col" class="num">SPO</th>
+<th style="text-align: right;" scope="col" class="num">Ours</th>
+<th style="text-align: right;" scope="col" class="num">Absolute change</th>
+<th style="text-align: right;" scope="col" class="num">Relative change</th>
+<th scope="col" class="num">Assessment</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>PickScore</td>
+<td style="text-align: right;" class="num">23.06</td>
+<td style="text-align: right;" class="num">23.08</td>
+<td style="text-align: right;" class="num">+0.02</td>
+<td style="text-align: right;" class="num">+0.087%</td>
+<td class="num">Very small lead</td>
+</tr>
+<tr class="even">
+<td>HPSV2</td>
+<td style="text-align: right;" class="num">31.80</td>
+<td style="text-align: right;" class="num">32.12</td>
+<td style="text-align: right;" class="num">+0.32</td>
+<td style="text-align: right;" class="num">+1.006%</td>
+<td class="num">Small lead</td>
+</tr>
+<tr class="odd">
+<td>ImageReward</td>
+<td style="text-align: right;" class="num"><strong>1.0803</strong></td>
+<td style="text-align: right;" class="num">1.0625</td>
+<td style="text-align: right;" class="num"><strong>-0.0178</strong></td>
+<td style="text-align: right;" class="num"><strong>-1.648%</strong></td>
+<td class="num"><strong>Core method trails</strong></td>
+</tr>
+<tr class="even">
+<td>Aesthetic</td>
+<td style="text-align: right;" class="num">6.364</td>
+<td style="text-align: right;" class="num">6.452</td>
+<td style="text-align: right;" class="num">+0.088</td>
+<td style="text-align: right;" class="num">+1.383%</td>
+<td class="num">Small lead</td>
+</tr>
+<tr class="odd">
+<td>Training GPU-hour</td>
+<td style="text-align: right;" class="num">234</td>
+<td style="text-align: right;" class="num">92</td>
+<td style="text-align: right;" class="num">-142</td>
+<td style="text-align: right;" class="num"><strong>-60.68%</strong></td>
+<td class="num">Clear cost advantage</td>
+</tr>
+</tbody>
+</table>
+</div><p><strong>The most credible quantitative evidence</strong> is the cost–quality Pareto tradeoff: training GPU-hours fall from 234 to 92 while matching or slightly improving 3/4 automatic metrics. The claim of exceeding competitors “across four criteria” contradicts Table 2 because ImageReward is explicitly below SPO; it cannot be described as winning all four.</p>
+<p>Relative to unaligned SDXL-Turbo, the core method improves PickScore by
+<strong>+1.13 (+5.15%)</strong>, HPSV2
+<strong>+5.17 (+19.18%)</strong>, ImageReward
+<strong>+0.5245 (+97.49%)</strong>, Aesthetic
+<strong>+0.502 (+8.44%)</strong>(Table 2). Guidance is effective, but comparison with the base model rather than the strongest competitor greatly amplifies the impression.</p>
+<p>The flow-matching branch has only two rows (Table 2, SD3.5 Large Turbo group):</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="Horizontally scrollable data table"><table>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th style="text-align: right;" scope="col" class="num">PickScore</th>
+<th style="text-align: right;" scope="col" class="num">HPSV2</th>
+<th style="text-align: right;" scope="col" class="num">ImageReward</th>
+<th style="text-align: right;" scope="col" class="num">Aesthetic</th>
+<th scope="col" class="num">Gain over baseline</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>SD3.5 Large Turbo</td>
+<td style="text-align: right;" class="num">22.30</td>
+<td style="text-align: right;" class="num">30.29</td>
+<td style="text-align: right;" class="num">1.0159</td>
+<td style="text-align: right;" class="num">6.5190</td>
+<td class="num">—</td>
+</tr>
+<tr class="even">
+<td><strong>Ours</strong></td>
+<td style="text-align: right;" class="num"><strong>23.14</strong></td>
+<td style="text-align: right;" class="num"><strong>32.31</strong></td>
+<td style="text-align: right;" class="num"><strong>1.1025</strong></td>
+<td style="text-align: right;" class="num"><strong>6.5280</strong></td>
+<td class="num">+3.77% / +6.67% / +8.52% / <strong>+0.14%</strong></td>
+</tr>
+</tbody>
+</table>
+</div><p>All four metrics improve here, but the absolute Aesthetic increase is only
+<strong>0.009</strong>. Without variance, 0.009 cannot be considered a stable improvement. There is also no head-to-head comparison with related methods such as On the Guidance of Flow Matching or GLASS.</p>
+<h3 id="26-消融与超参数最关键的无正则对照反而缺席">2.6 Ablations and hyperparameters: the crucial unregularized control is missing</h3>
+<p>Step-count/guidance ablations come from the core paper's <strong>Table 3</strong>: </p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="Horizontally scrollable data table"><table>
+<thead>
+<tr class="header">
+<th scope="col">Configuration</th>
+<th style="text-align: right;" scope="col" class="num">PickScore</th>
+<th style="text-align: right;" scope="col" class="num">Relative to unguided 1-step</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Backpropagate, 1 step</td>
+<td style="text-align: right;" class="num">21.84</td>
+<td style="text-align: right;" class="num">-0.30 (-1.36%)</td>
+</tr>
+<tr class="even">
+<td>No guidance, 1 step</td>
+<td style="text-align: right;" class="num">22.14</td>
+<td style="text-align: right;" class="num">—</td>
+</tr>
+<tr class="odd">
+<td>Tweedie, 1 step</td>
+<td style="text-align: right;" class="num">22.34</td>
+<td style="text-align: right;" class="num">+0.20 (+0.90%)</td>
+</tr>
+<tr class="even">
+<td>No guidance, 3 steps</td>
+<td style="text-align: right;" class="num">22.56</td>
+<td style="text-align: right;" class="num">+0.42 (+1.90%)</td>
+</tr>
+<tr class="odd">
+<td>No guidance, 2 steps</td>
+<td style="text-align: right;" class="num">22.64</td>
+<td style="text-align: right;" class="num">+0.50 (+2.26%)</td>
+</tr>
+<tr class="even">
+<td><strong>Ours, 1 step</strong></td>
+<td style="text-align: right;" class="num"><strong>23.08</strong></td>
+<td style="text-align: right;" class="num"><strong>+0.94 (+4.25%)</strong></td>
+</tr>
+</tbody>
+</table>
+</div><p>This supports guided one-step generation over unguided two/three-step generation, but lacks <strong>Ours 2-step /
+3-step</strong>, preventing assessment of combined gains or strict equal-inference-FLOPs comparison. Another inconsistency: Table 2's SDXL baseline PickScore is 21.95, while Table 3's no-guidance 1-step score is 22.14, a 0.19 gap. The paper does not explain whether seeds, prompt subsets, or configurations differ.</p>
+<p>The hyperparameter grid comes from Appendix <strong>Table 4</strong>: </p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="Horizontally scrollable data table"><table>
+<thead>
+<tr class="header">
+<th style="text-align: right;" scope="col">Regularization strength η \ Reward temperature β</th>
+<th style="text-align: right;" scope="col" class="num">β=10</th>
+<th style="text-align: right;" scope="col" class="num">β=15</th>
+<th style="text-align: right;" scope="col" class="num">β=20</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td style="text-align: right;">η=0.1</td>
+<td style="text-align: right;" class="num">22.82</td>
+<td style="text-align: right;" class="num">22.79</td>
+<td style="text-align: right;" class="num">22.72</td>
+</tr>
+<tr class="even">
+<td style="text-align: right;">η=0.5</td>
+<td style="text-align: right;" class="num">22.78</td>
+<td style="text-align: right;" class="num">23.01</td>
+<td style="text-align: right;" class="num">22.79</td>
+</tr>
+<tr class="odd">
+<td style="text-align: right;">η=1.0</td>
+<td style="text-align: right;" class="num">22.76</td>
+<td style="text-align: right;" class="num"><strong>23.08</strong></td>
+<td style="text-align: right;" class="num">22.84</td>
+</tr>
+</tbody>
+</table>
+</div><p>The maximum occurs at ((\eta,\beta)=(1,15)); the full grid spans <strong>0.36
+PickScore</strong>. There is a clear interaction: increasing η helps only at β=15, while β=10 drops from 22.82 to 22.76. A 3×3 grid cannot establish a phase transition. More importantly, (\eta=0) is absent, so consistency regularization's net contribution is not directly isolated.</p>
+<h3 id="27-统计显著性">2.7 Statistical significance</h3>
+<p>No seed count, standard deviation, confidence interval, paired bootstrap, or significance test is reported. Testing uses only 500 prompts; gains over SPO are just +0.02 PickScore and +0.088 Aesthetic, potentially smaller than prompt/seed variance. Table decimals should be treated as single-evaluation readings, not effects known to the final digit.</p>
+<h3 id="28-真正贡献可复用设计与迁移潜力">2.8 Genuine contributions, reusable designs, and transfer potential</h3>
+<p>The first contribution is a distributional perspective: RLHF, DPO, and guidance are not unrelated tricks; all approximate (p_{\rm ref}\exp(r/\beta)). This reframing derives diffusion scores and flow velocities under one target, reducing arbitrary heuristic additions of reward gradients.</p>
+<p>The second is learning conditional expectations with a small guide instead of fine-tuning all of SDXL. A 72 MB module clearly decouples parameters from the large backbone. Although 92 GPU-hours is not zero, a new reward module costs far less than full-model Diffusion-DPO's 4,800 GPU-hours.</p>
+<p>The third is identifying structural differences in generative dynamics: diffusion corrections involve (\nabla_{x_t}), turning nonsmooth reward landscapes into artifacts; flow corrections average conditional velocities, avoiding the same input gradient. This identifies the operator responsible for instability rather than simply claiming flow is better.</p>
+<p>Reusable designs include reward-weighted distributions as a unified interface, conditional-expectation regression, consistency regularization of guide-gradient landscapes, lightweight fixed-(t=T) training for one-step models, and marginal importance sampling for flow. These could transfer to video, molecules, audio, or 3D, but reward proxies, estimator variance, and diversity collapse require domain-specific validation.</p>
+<h3 id="29-局限性论文自述与独立批判">2.9 Limitations: author statements and independent critique</h3>
+<h4 id="论文自述限制">Limitations stated by the paper</h4>
+<p>The paper has no separate Limitations/Discussion section and does not explicitly acknowledge 2–3 limitations of its own. Section 1 and §3.2 discuss <strong>limitations of existing fine-tuning and vanilla guidance</strong>, which must not be misrepresented as self-criticism of this method. Scope boundaries inferred from the setup—two backbones, 500 prompts, and automatic reward metrics—are this report's observations, not author statements.</p>
+<h4 id="独立批判8-点">Independent critique (8 points)</h4>
+<ol type="1">
+<li><p><strong>Argument gap | The “four-criteria win” contradicts the table.</strong> Table 2 gives Ours ImageReward=1.0625 versus SPO=1.0803, a difference of -0.0178 (-1.65%). Thus §5.2's claim of surpassing baselines across four criteria is false; it should state 3/4 wins and one loss.</p></li>
+<li><p><strong>Missing statistical significance.</strong> Only 500 prompts are evaluated, with no seeds/variance, and PickScore exceeds SPO by just +0.02 (+0.087%). This small lead cannot be distinguished from evaluation noise.</p></li>
+<li><p><strong>Metric feedback loop / validity.</strong> Pick-a-Pic preference data and PickScore-like proxies participate in training/rewards, while evaluation again uses PickScore, HPSV2, ImageReward, and Aesthetic, without blinded human assessment. Results may indicate better automatic-judge optimization rather than better alignment with actual users.</p></li>
+<li><p><strong>Fair-comparison issue.</strong> Diffusion-DPO uses &gt;800K V2 pairs, the core method uses 583K V1 pairs, and SPO generates online from 4K prompts. Data units, versions, and online-sampling costs differ, so “comparable datasets” does not establish strictly matched budgets.</p></li>
+<li><p><strong>Missing crucial ablation.</strong> Table 4 starts at η=0.1, omitting η=0. Because consistency regularization is central to the artifact-suppression narrative, its net contribution cannot be isolated quantitatively.</p></li>
+<li><p><strong>Thin evidence for the flow branch.</strong> Flow has only SD3.5 baseline and Ours rows, without competitors such as On the Guidance of Flow Matching or candidate-count/importance-sampling-variance ablations. The general unified framework is supported mainly by theory rather than sufficient experiments.</p></li>
+<li><p><strong>Incomplete cost accounting.</strong> The 92 GPU-hours covers only guidance-network training; per-step flow importance sampling, reward evaluation, and inference latency are unreported, as is GPU type. “No additional computational cost” cannot be interpreted as zero end-to-end overhead.</p></li>
+<li><p><strong>Reproducibility risk / naming boundary.</strong> Core code and 72 MB weights are unavailable, while “finetuning-free” still requires 10 epochs of reward-specific network training. “Backbone-frozen alignment” is more accurate than broadly “training-free.” The 0.19 PickScore baseline discrepancy between Tables 2 and 3 also cannot be audited through code.</p></li>
+</ol>
+</section><section class="card" aria-labelledby="3-相关工作回溯问题如何一步步传递"><h2 id="3-相关工作回溯问题如何一步步传递">3. Related-work retrospective: how the problem evolves</h2>
+<h3 id="31-ddpo--2024iclr">3.1 DDPO — 2024, ICLR</h3>
+<p><strong>What it solved.</strong> DDPO treats diffusion denoising as a multistep MDP and uses policy gradients to maximize nondifferentiable downstream rewards. It shows generators need not rely only on likelihood/denoising training: RL post-training can optimize aesthetics, compressibility, and VLM consistency.</p>
+<p><strong>Remaining gap.</strong> Multistep policy gradients require sampling and large-model updates, retraining for changed rewards, and risk overoptimization/diversity loss. Its initially TPU-focused code also increases engineering barriers.</p>
+<p><strong>How the core paper responds.</strong> The core paper accepts the same KL-regularized reward objective but bypasses policy optimization, directly deriving the optimum reward-weighted distribution's score/velocity and training only a small guide or leaving the flow backbone entirely untrained.</p>
+<p><strong>Design inheritance.</strong>
+It inherits the premise that downstream rewards can control generation trajectories, replacing policy gradients with conditional-expectation guidance and parameter-space updates with sampling-dynamics corrections.</p>
+<h3 id="32-diffusion-dpo--2024cvpr">3.2 Diffusion-DPO — 2024, CVPR</h3>
+<p><strong>What it solved.</strong> Diffusion-DPO uses the ELBO to construct differentiable DPO likelihood ratios for diffusion models, fine-tuning SDXL on Pick-a-Pic <strong>851K</strong>
+human-preference pairs without an explicit reward model or PPO.</p>
+<p><strong>Remaining gap.</strong> It still updates the generator; the core paper's Table 2 records
+<strong>4,800
+GPU-hour</strong>. One parameter set corresponds to one preference set. Preference labels also propagate along the whole trajectory, making it difficult to locate which step causes aesthetic differences.</p>
+<p><strong>How the core paper responds.</strong> The core work begins with DPO's same analytical optimum, but instead of reexpressing (r) through model log-probability ratios, decomposes target score into reference score plus conditional guidance.</p>
+<p><strong>Design inheritance.</strong> The reward-weighted distribution (p\exp(r/\beta)) is the direct mathematical inheritance; the evolution is from changing (p_\theta) to freezing (p) and changing the sampling field.</p>
+<h3 id="33-spo--2025cvpr">3.3 SPO — 2025, CVPR</h3>
+<p><strong>What it solved.</strong> SPO identifies mismatch from indiscriminately propagating final-image preferences to every intermediate step. At each step, it samples candidates from the same noise state and uses a step-aware preference model to choose winners/losers, accumulating fine-grained aesthetic improvements. Its project page reports SDXL PickScore/HPSV2/ImageReward/Aesthetic of
+<strong>23.06/31.80/1.0803/6.364</strong>. </p>
+<p><strong>Remaining gap.</strong>
+It still samples online and fine-tunes the generator for each reward. Its 234 GPU-hours is much cheaper than Diffusion-DPO, but not plug-and-play.</p>
+<p><strong>How the core paper responds.</strong> The core work uses SPO as the strongest quality–cost baseline: a 92 GPU-hour guide slightly improves 3/4 metrics, with slightly lower ImageReward, improving the cost Pareto tradeoff.</p>
+<p><strong>Design inheritance.</strong>
+Both recognize that reward signals cannot be handled coarsely across time steps. SPO explicitly constructs stepwise preferences; the core work learns time-conditioned expectations through (h_\psi(x_t,y,t)), fixing (t=T) for one-step models.</p>
+<h3 id="34-on-the-guidance-of-flow-matching--2025icml-spotlight">3.4 On
+the Guidance of Flow Matching — 2025, ICML Spotlight</h3>
+<p><strong>What it solved.</strong> This work establishes a general flow-matching-guidance framework covering training-free asymptotically exact guidance, training losses, and two approximation classes, validated on synthetic data, image inverse problems, and offline RL. It explicitly shows flow guidance is more general than classical diffusion guidance.</p>
+<p><strong>Remaining gap.</strong>
+The general framework focuses on energy conditioning and inverse problems, without specifically implementing modern text-to-image reward alignment or systematic SD3.5 Turbo comparisons on Pick-a-Pic metrics.</p>
+<p><strong>How the core paper responds.</strong> The core work specializes the target to a reward-weighted T2I distribution, derives conditional-velocity corrections using normalized reward ratio (R), and claims estimation by marginal-sample importance weighting.</p>
+<p><strong>Design inheritance.</strong> It inherits the approach of deriving oracle velocity before constructing a computable estimator. General energy guidance becomes human-preference rewards, but this ICML work is unfortunately absent from the main head-to-head results.</p>
+</section><section class="card" aria-labelledby="4-技术演进脉络与跨论文对标"><h2 id="4-技术演进脉络与跨论文对标">4. Technical evolution and cross-paper comparison</h2>
+<pre class="text"><code>2023–2024  DDPO [denoising=MDP; policy gradients; arbitrary rewards]
+       │
+       ├──────── Diffusion-DPO [ELBO likelihood ratios; 851K preference pairs; no explicit reward]
+       │                    │
+       │                    └── SPO [per-step candidates + step-aware preferences; fine-grained aesthetics]
+       │
+2025   └──────── On Guidance of Flow Matching [general oracle guidance / estimators]
+                            │
+                            ↓
+2026 Core preprint [one shared reward-weighted distribution]
+       ├─ diffusion: small hψ estimates conditional expectations + landscape consistency
+       └─ flow: reward-reweighted conditional velocities + importance sampling</code></pre>
+<p>The driver is not simply replacing RL with DPO, but moving
+<strong>from modifying the entire generator to preserving the base model and injecting switchable objectives into trajectories or vector fields</strong>. Two turning points matter: Diffusion-DPO removes explicit reward models from preference optimization; flow guidance removes generator-parameter updates from alignment. The core preprint attempts to unify them, but its diffusion branch still trains reward-specific guides, remaining one step short of arbitrary plug-and-play rewards.</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="Horizontally scrollable data table"><table>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col" class="num">Publication date</th>
+<th scope="col" class="num">Venue</th>
+<th scope="col" class="num">Core contribution</th>
+<th scope="col" class="num">Representative verifiable figures</th>
+<th scope="col" class="num">Relationship to the core paper</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>DDPO</td>
+<td class="num">2024.01 v4</td>
+<td class="num">ICLR 2024</td>
+<td class="num">Policy gradients over diffusion trajectories</td>
+<td class="num">Direct optimization of aesthetic / VLM rewards</td>
+<td class="num">Source of the reward post-training problem</td>
+</tr>
+<tr class="even">
+<td>Diffusion-DPO</td>
+<td class="num">2023.11</td>
+<td class="num">CVPR 2024</td>
+<td class="num">Diffusion ELBO-DPO</td>
+<td class="num">851K preference pairs; core Table 2 reports 4,800 GPU-h</td>
+<td class="num">Target distribution and most expensive baseline</td>
+</tr>
+<tr class="odd">
+<td>SPO</td>
+<td class="num">2025.03 v3</td>
+<td class="num">CVPR 2025</td>
+<td class="num">Step-aware preferences</td>
+<td class="num">Core Table 2: 23.06 PickScore, 234 GPU-h</td>
+<td class="num">Strongest quality–cost competitor</td>
+</tr>
+<tr class="even">
+<td>On Guidance of FM</td>
+<td class="num">2025.05 v3</td>
+<td class="num">ICML 2025 Spotlight</td>
+<td class="num">General flow guidance</td>
+<td class="num">37 pages, 7 figures; multitask validation</td>
+<td class="num">Flow-theory source / missing competitor</td>
+</tr>
+<tr class="odd">
+<td><strong>Core paper</strong></td>
+<td class="num"><strong>2026.01</strong></td>
+<td class="num"><strong>arXiv v1</strong></td>
+<td class="num"><strong>Unified reward-weighted score / velocity</strong></td>
+<td class="num"><strong>92 GPU-h; beats SPO on 3/4 metrics</strong></td>
+<td class="num"><strong>Point of convergence</strong></td>
+</tr>
+</tbody>
+</table>
+</div></section><section class="card" aria-labelledby="5-开放挑战与可操作研究机会"><h2 id="5-开放挑战与可操作研究机会">5. Open challenges and actionable research opportunities</h2>
+<h3 id="51-理论层面">5.1 Theory</h3>
+<ol type="1">
+<li><strong>Finite-sample error bounds.</strong> With SD3.5 and reward fixed, sweep flow importance samples (K=1,2,4,8,16), measuring velocity-estimator variance, reward, and NFE. Derive bounds in terms of (K), (\beta), and reward tails. Presently there are oracle equalities but no finite-K guarantees.</li>
+<li><strong>Causality between guidance landscapes and artifacts.</strong> Under the same reward, compare raw gradients, spectral normalization, Jacobian penalties, and the proposed consistency loss. Report guidance-Jacobian norms, LPIPS, diversity, and human-rated artifact rates to test whether smoothness causes improvements rather than merely correlates with them.</li>
+<li><strong>Mode-collapse boundaries of reward weighting.</strong> Sweep (\beta) into lower-temperature ranges and plot reward–precision–recall Pareto curves. Find maximum reward while preserving diversity, rather than reporting only the narrow β=10/15/20 window.</li>
+</ol>
+<h3 id="52-工程与应用层">5.2 Engineering and Applications</h3>
+<ol type="1">
+<li><strong>Truly equal-budget head-to-head evaluation.</strong> Compare Ours, SPO, Diffusion-DPO, DRaFT, and Tweedie using the same SDXL-Turbo, 583K pairs, GPU model, and 92 GPU-hours. Report total training, data generation, reward evaluation, and inference costs. Current 4,800/234/92 figures do not share cost boundaries.</li>
+<li><strong>Human evaluation and external prompts.</strong> Beyond Pick-a-Pic, evaluate 500 prompts each from PartiPrompts, DrawBench, and GenEval. At least 3 blinded raters should assess prompt adherence, aesthetics, artifacts, and diversity; compare correlations with the four automatic rewards.</li>
+<li><strong>Complete the critical ablations.</strong> Add η=0, Ours at 2/3/4 steps, hψ capacities of 18/36/72/144 MB, and 10%/25%/50%/100% training data to identify the minimum viable configuration within 92 GPU-hours.</li>
+<li><strong>Cost of switching multiple rewards.</strong>
+Train separate guides for aesthetics, text consistency, and safety; test linear combinations, dynamic routing, and joint guidance. Compare costs and interference between 3 small guides and 1 multihead guide.</li>
+</ol>
+<h3 id="53-新兴方向">5.3 Emerging Directions</h3>
+<ol type="1">
+<li><strong>Video / world models.</strong> On a fixed video-flow backbone, compare final-frame rewards, per-frame rewards, and trajectory reward-weighted velocities. Evaluate temporal consistency and long-horizon reward drift rather than directly extrapolating image formulas.</li>
+<li><strong>Nondifferentiable black-box feedback.</strong> Conditional-expectation regression permits nondifferentiable rewards, but should be compared head-to-head on real human feedback, program verifiers, or physical simulators, measuring query efficiency. These are especially valuable applications for modular alignment.</li>
+<li><strong>Safety and composite constraints.</strong> Extend reward weighting to hard constraints plus soft preferences: for identical prompts, compare Lagrangian guidance, rejection sampling, and exponential weighting, reporting safety violations and quality loss rather than collapsing safety into one scalar.</li>
+</ol>
+</section><section class="card" aria-labelledby="6-其他值得关注的近期工作"><h2 id="6-其他值得关注的近期工作">6. Other recent work worth watching</h2>
+<ol type="1">
+<li><strong>Mean Flows for One-step Generative
+Modeling</strong>(2025.05, NeurIPS 2025 / arXiv) Characterizes one-step generation using average rather than instantaneous velocity, achieving ImageNet-256 1-NFE FID of <strong>3.43</strong> when trained from scratch; a leading backbone for testing transfer of this guidance to different one-step dynamics. <a href="https://arxiv.org/abs/2505.13447">arXiv</a></li>
+<li><strong>STORK</strong>(ICLR 2026) Fast diffusion/flow sampling for images and video; a useful joint test of whether NFE reduction and reward guidance multiply their benefits rather than being optimized independently. <a href="https://openreview.net/forum?id=CeOIVXMl4r">OpenReview</a></li>
+<li><strong>Transition Matching</strong>(ICLR 2026) Unifies flow and continuous autoregressive generation with discrete-time, continuous-state transition kernels, broadening the core paper's score/velocity-only dynamics. <a href="https://openreview.net/forum?id=jR8HV4uTcf">OpenReview</a>｜<a href="https://arxiv.org/abs/2506.23589">arXiv</a></li>
+<li><strong>GLASS Flows</strong>(ICLR 2026) Directly studies efficient inference exploration for reward alignment, making it a crucial same-topic competitor for the core flow branch. <a href="https://openreview.net/forum?id=vH7OAPZ2dR">OpenReview</a></li>
+<li><strong>OneFlow</strong>(2025.10, arXiv) Combines discrete-text Edit Flow and image latent flow matching for concurrent mixed-modality generation, reporting up to 50% training-FLOPs savings. Joint reward-weighted control of both state spaces is a natural next step. <a href="https://arxiv.org/abs/2510.03506">arXiv</a></li>
+<li><strong>Neon</strong>(2025.10, arXiv) Uses negative-extrapolation self-training across diffusion, flow, autoregressive, and IMM architectures, taking xAR-L on ImageNet-256 to FID <strong>1.02</strong> with only
+<strong>0.36%</strong> extra training compute; an alternative inexpensive post-training route. <a href="https://arxiv.org/abs/2510.03597">arXiv</a></li>
+<li><strong>STARFlow-V</strong>(2025.11, arXiv) Uses global–local normalizing flows and flow-score matching for autoregressive video generation. Native likelihood offers reward-weighted-distribution density evaluation that diffusion models cannot easily provide. <a href="https://arxiv.org/abs/2511.20462">arXiv</a></li>
+</ol>
+</section><section class="card" aria-labelledby="7-结论"><h2 id="7-结论">7. Conclusion</h2>
+<p>This preprint's lasting value is not another T2I aligner, but placing diffusion and flow matching under one reward-weighted distribution and clarifying the structural difference between score-gradient and velocity-expectation guidance. Quantitatively, 92 versus 234 GPU-hours is a solid
+<strong>60.68%</strong> cost advantage. However, it does not win all four metrics, lacks significance tests/human evaluation/code, and omits strong flow competitors. Its most defensible positioning is: <strong>an alignment framework with strong theoretical unification whose engineering evidence still needs top-conference-level completion.</strong></p>
+<hr>
+<p><strong>Reproducibility footnote.</strong> Core figures come from directly read arXiv v1 Tables 2–4, §3–5, and Appendix C.1. No standard deviations, significance results, hardware specifications, inference costs, or unavailable code were invented. The index will be appended during delivery; persistence failures will be explicitly stated in the final message.</p>
+</section></main>
+
+  <footer>Sources: arXiv:2602.00413v1 and verified official papers/project pages; generated 2026-08-19. Unreported variance, hardware, inference costs, and code are not invented.</footer></div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ Light' : '☾ Dark';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

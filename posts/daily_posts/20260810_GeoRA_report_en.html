@@ -1,0 +1,984 @@
+---
+layout: null
+title: "GeoRA"
+date: 2026-08-10
+topic: rl-peft
+tags: ["rl-peft"]
+excerpt: "Gradient geometry guides trainable-parameter selection for low-rank adaptation under verifiable reinforcement learning rewards."
+permalink: "/blog/2026/08/10/geora-geometric-low-rank-adaptation-rlvr/en/"
+blog_post: false
+lang: en
+sitemap: true
+alternate_zh: "/blog/2026/08/10/geora-geometric-low-rank-adaptation-rlvr/"
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GeoRA Deep Dive · 2026-08-10 · ACL 2026 Outstanding Paper</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --accent-soft: #cde2fb;
+    --good: #006300;
+    --crit: #d03b3b;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --accent-soft: #184f95;
+    --good: #0ca30c;
+    --crit: #e66767;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  header.hero {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 32px 34px;
+    margin-bottom: 34px;
+  }
+  .eyebrow {
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; margin: 0 0 10px;
+  }
+  h1 { font-size: 30px; line-height: 1.3; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .subtitle { font-size: 17px; color: var(--text-secondary); margin: 0 0 18px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    font-size: 12.5px; padding: 4px 11px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--text-secondary);
+    background: var(--page);
+  }
+  .chip.venue { border-color: var(--series-1); color: var(--series-1); font-weight: 600; }
+  .chip.warn { border-color: var(--series-2); color: var(--series-2); font-weight: 600; }
+  .lede {
+    border-left: 3px solid var(--series-1);
+    padding: 4px 0 4px 18px; margin: 20px 0 0;
+    color: var(--text-secondary); font-size: 15.5px;
+  }
+  h2 {
+    font-size: 22px; margin: 52px 0 16px; padding-bottom: 10px;
+    border-bottom: 1px solid var(--border); letter-spacing: -0.01em;
+  }
+  h3 { font-size: 18px; margin: 34px 0 12px; }
+  h3:first-child { margin-top: 0; }
+  h4 { font-size: 15.5px; margin: 24px 0 8px; color: var(--text-secondary); }
+  p { margin: 0 0 14px; }
+  section.card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 26px 30px; margin-bottom: 20px;
+  }
+  a { color: var(--series-1); text-decoration: none; border-bottom: 1px solid transparent; }
+  a:hover { border-bottom-color: var(--series-1); }
+  code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px; background: var(--page); padding: 1.5px 5px;
+    border-radius: 4px; border: 1px solid var(--border);
+  }
+  .formula {
+    background: var(--page); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 16px; margin: 12px 0; font-family: ui-monospace, Menlo, monospace;
+    font-size: 13.5px; overflow-x: auto; color: var(--text-primary);
+  }
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0 20px; font-size: 14.5px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--grid); }
+  th { color: var(--muted); font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: .05em; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.best td { background: var(--accent-soft); font-weight: 600; }
+  :root[data-theme="dark"] tr.best td { background: rgba(57,135,229,.18); }
+  .pos { color: var(--good); font-weight: 600; }
+  .neg { color: var(--crit); font-weight: 600; }
+  ol, ul { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 8px; }
+  .callout {
+    border-left: 3px solid var(--series-2); background: var(--page);
+    padding: 14px 18px; border-radius: 0 8px 8px 0; margin: 18px 0;
+    font-size: 15px; color: var(--text-secondary);
+  }
+  .callout strong { color: var(--text-primary); }
+  .callout.key { border-left-color: var(--series-1); }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  button.tgl {
+    font: inherit; font-size: 13px; padding: 6px 14px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface-1);
+    color: var(--text-secondary); cursor: pointer;
+  }
+  button.tgl:hover { color: var(--text-primary); }
+
+  .figure { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 24px 26px; margin: 24px 0; }
+  .fig-title { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+  .fig-sub { font-size: 13.5px; color: var(--muted); margin: 0 0 18px; }
+  .legend { display: flex; gap: 20px; margin-bottom: 16px; font-size: 13.5px; color: var(--text-secondary); flex-wrap: wrap; }
+  .legend span.sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 7px; vertical-align: -1px; }
+  svg.chart { width: 100%; height: auto; display: block; }
+  svg.chart text { font-family: system-ui, -apple-system, "PingFang SC", sans-serif; }
+  svg.chart rect.bar { cursor: pointer; }
+  svg.chart rect.bar:hover { opacity: .82; }
+  .tip {
+    position: fixed; pointer-events: none; opacity: 0; transition: opacity .1s;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 12px; font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,.14);
+    z-index: 50; color: var(--text-primary); white-space: nowrap;
+  }
+  .flow {
+    background: var(--page); border: 1px solid var(--border); border-radius: 10px;
+    padding: 20px 22px; font-family: ui-monospace, Menlo, monospace;
+    font-size: 13px; line-height: 1.85; overflow-x: auto; color: var(--text-secondary);
+    white-space: pre;
+  }
+  footer { margin-top: 60px; padding-top: 22px; border-top: 1px solid var(--border); font-size: 13.5px; color: var(--muted); }
+  footer ol { padding-left: 20px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    h1 { font-size: 24px; }
+    h2 { font-size: 19px; margin-top: 38px; }
+    section.card { padding: 20px 18px; }
+    .figure { padding: 18px 14px; }
+    table { font-size: 13px; }
+    th, td { padding: 7px 8px; }
+    .flow { font-size: 11px; padding: 14px 12px; }
+    .figure { overflow-x: auto; }
+    svg.chart { min-width: 600px; }
+    h3 { font-size: 16.5px; }
+    h3, h4 { overflow-wrap: anywhere; line-break: anywhere; }
+  }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+
+  <div class="toolbar">
+    <button class="tgl" onclick="const r=document.documentElement; r.setAttribute('data-theme', r.getAttribute('data-theme')==='dark'?'light':'dark'); this.textContent = r.getAttribute('data-theme')==='dark'?'☀ Light':'☾ Dark';">☾ Dark</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">Daily In-Depth ML/AI Paper Tracking · Monday · LLM / NLP</p>
+    <h1>GeoRA: Geometry-Aware Low-Rank Adaptation Redesigned for RLVR</h1>
+    <p class="subtitle">When SFT-Era PEFT Meets RL's KL Constraints—Revisiting Which Parameters to Change</p>
+    <div class="meta">
+      <span class="chip venue">ACL 2026 Main · Outstanding Paper</span>
+      <span class="chip">2026-08-10</span>
+      <span class="chip">arXiv:2601.09361 (v4, 2026-07-31)</span>
+      <span class="chip">post-training × PEFT</span>
+      <span class="chip warn">24 candidates · Random selection · 0 redraws</span>
+    </div>
+    <p class="lede"><strong>Positioning in one sentence:</strong> GeoRA changes the adaptation target from pretrained weight matrix W to a geometrically filtered proxy matrix W<sub>Geo</sub> before SVD. Instead of asking which subspace is most expressive, the SFT view, it asks which is cheapest to perturb, the RL view.</p>
+  </header>
+
+  <!-- ===================== 0. 元信息 ===================== -->
+  <h2>0. Metadata and Disclosure</h2>
+  <section class="card">
+    <div class="tablewrap">
+    <table>
+      <tr><th>Item</th><th>Explanation</th></tr>
+      <tr><td>Topic rotation</td><td>Monday (<code>date +%u</code> = 1) → LLM / NLP: reasoning and test-time scaling, post-training, benchmarks</td></tr>
+      <tr><td>Candidate pool</td><td>24 papers: 11 ACL 2026 main-track Best/Outstanding/Resource/Theme, 2 Findings, and 11 ICLR 2026 or arXiv from the last 8 months</td></tr>
+      <tr><td>Selection method</td><td><code>shuf -i 1-24 -n 5</code> First selected → #3 = GeoRA; <strong>zero redraws</strong></td></tr>
+      <tr><td>Deduplication index</td><td>⚠️ <strong>Could not access</strong>. This scheduled cloud run had no desktop connection; <code>ml-report-index.md</code> unreachable, so 14-day deduplication could not be automatically checked</td></tr>
+      <tr><td>Sources</td><td>arXiv HTML full text (v3 / v4) + ACL Anthology metadata; <strong>original PDF layout not obtained</strong></td></tr>
+      <tr><td>Known gaps</td><td>① Figures 3–7 only available as curves, so only textual descriptions cited; ② Table 8 extraction yielded only GeoRA rows for 1.5B/4B, preventing comparison; ③ no public code for cross-checking implementation</td></tr>
+    </table>
+    </div>
+  </section>
+
+  <!-- ===================== 1. 链接验证表 ===================== -->
+  <h2>1. Link verification table</h2>
+  <section class="card">
+    <p>All links below were visited and confirmed accessible in this run; unconfirmed items are marked.</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>The paper</th><th>Conference / Anthology</th><th>arXiv</th><th>Code</th><th>Notes</th></tr>
+      <tr class="best">
+        <td><strong>Core: GeoRA</strong></td>
+        <td><a href="https://aclanthology.org/2026.acl-long.1110/">ACL 2026 Long #1110</a><br>pp. 24207–24221</td>
+        <td><a href="https://arxiv.org/abs/2601.09361">arXiv:2601.09361</a><br>v1 2026-01-14 / v4 2026-07-31</td>
+        <td>not public</td>
+        <td>Outstanding Paper</td>
+      </tr>
+      <tr>
+        <td>LoRA</td>
+        <td><a href="https://iclr.cc/virtual/2022/poster/6319">ICLR 2022</a></td>
+        <td><a href="https://arxiv.org/abs/2106.09685">arXiv:2106.09685</a></td>
+        <td><a href="https://github.com/microsoft/LoRA">microsoft/LoRA</a></td>
+        <td>Abstract-page WebFetch blocked by provenance checks</td>
+      </tr>
+      <tr>
+        <td>PiSSA</td>
+        <td><a href="https://openreview.net/forum?id=6ZBHIEtdP4">NeurIPS 2024 Spotlight</a></td>
+        <td><a href="https://arxiv.org/abs/2404.02948">arXiv:2404.02948</a></td>
+        <td><a href="https://github.com/GraphPKU/PiSSA">GraphPKU/PiSSA</a></td>
+        <td>Full text read</td>
+      </tr>
+      <tr>
+        <td>MiLoRA</td>
+        <td><a href="https://aclanthology.org/2025.naacl-long.248/">NAACL 2025 Long #248</a></td>
+        <td><a href="https://arxiv.org/abs/2406.09044">arXiv:2406.09044</a></td>
+        <td><a href="https://github.com/sufenlp/MiLoRA">sufenlp/MiLoRA</a></td>
+        <td>Anthology page read</td>
+      </tr>
+      <tr>
+        <td>RL Finetunes Small Subnetworks</td>
+        <td>Venue page not found</td>
+        <td><a href="https://arxiv.org/abs/2505.11711">arXiv:2505.11711</a></td>
+        <td>Not found</td>
+        <td>Abstract and key figures read</td>
+      </tr>
+      <tr>
+        <td>DeepSeekMath / GRPO</td>
+        <td>Technical report</td>
+        <td><a href="https://arxiv.org/abs/2402.03300">arXiv:2402.03300</a></td>
+        <td>deepseek-ai/DeepSeek-Math</td>
+        <td>Source of GeoRA's RL optimizer</td>
+      </tr>
+      <tr>
+        <td>LoRA-RLPO / RLMO</td>
+        <td>Not found</td>
+        <td><a href="https://arxiv.org/abs/2606.31813">arXiv:2606.31813</a></td>
+        <td>Not found</td>
+        <td>Abstract page returned empty text; content cross-checked through a third-party survey</td>
+      </tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>Link Disclosure:</strong><code>arxiv.org/abs/2106.09685</code>, <code>arxiv.org/abs/2406.09044</code>, <code>huggingface.co/papers</code> Three URLs triggered proxy provenance / rate-limit blocks. Search results confirmed valid URL forms, but this report <strong>did not verify the full content of those pages</strong>.
+    </div>
+  </section>
+
+  <!-- ===================== 2. Motivation ===================== -->
+  <h2>2. Motivation: Quantifiable Geometric Mismatch</h2>
+
+  <section class="card">
+    <h3>2.1 The Concrete Problem</h3>
+    <p>The claim is more specific than LoRA underperforming. PiSSA trains adapters on W's <strong>principal singular components</strong>, effective in SFT: its Mistral-7B GSM8K rises from LoRA's 67.7% to 72.86%, <span class="pos">+5.16pp</span>. In RLVR, however, those directions carry <strong>already learned general capabilities</strong>. </p>
+    <p>GeoRA Table 1 quantifies the cost on Qwen3-8B evaluated outside mathematical RLVR's training domain:</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>OOD benchmark</th><th class="num">Base</th><th class="num">PiSSA</th><th class="num">Change</th><th>Equivalent question count</th></tr>
+      <tr><td>HumanEval</td><td class="num">76.83</td><td class="num">71.95</td><td class="num neg">−4.88pp</td><td>−8 / 164 questions</td></tr>
+      <tr><td>IFEval</td><td class="num">54.32</td><td class="num">48.74</td><td class="num neg">−5.58pp</td><td>—</td></tr>
+      <tr><td>TruthfulQA</td><td class="num">68.91</td><td class="num">65.95</td><td class="num neg">−2.96pp</td><td>—</td></tr>
+      <tr><td>GPQA</td><td class="num">36.91</td><td class="num">36.16</td><td class="num neg">−0.75pp</td><td>—</td></tr>
+      <tr><td>MMLU</td><td class="num">71.94</td><td class="num">73.89</td><td class="num pos">+1.95pp</td><td>—</td></tr>
+    </table>
+    </div>
+    <div class="callout key">
+      <strong>The Counterintuitive Starting Point:</strong> An SFT initialization that reliably improves SFT removes eight coding answers and 5.58 pp instruction-following accuracy under mathematical RLVR. In the same table, <strong>plain randomly initialized LoRA raises HumanEval to 81.10 (+4.27 pp)</strong>—smarter initialization performs worse than simpler initialization under RL.
+    </div>
+    <p style="font-size:14px;color:var(--muted)">HumanEval conversion: 76.83% × 164 = 126 and 71.95% × 164 = 118. Both lie on the integer grid of 1/164 = 0.61 pp, confirming internal consistency.</p>
+
+    <h3>2.2 Mechanistic Argument: Three Geometric Metrics (Table 6)</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Method</th><th class="num">Llama NSS↓</th><th class="num">Llama S<sub>H</sub>↓</th><th class="num">Llama S<sub>T</sub>↑</th><th class="num">Qwen NSS↓</th><th class="num">Qwen S<sub>H</sub>↓</th><th class="num">Qwen S<sub>T</sub>↑</th></tr>
+      <tr><td>PiSSA</td><td class="num">0.395</td><td class="num neg">0.98</td><td class="num">0.01</td><td class="num">0.418</td><td class="num neg">0.95</td><td class="num">0.03</td></tr>
+      <tr><td>LoRA</td><td class="num">0.214</td><td class="num">0.15</td><td class="num">0.15</td><td class="num">0.235</td><td class="num">0.18</td><td class="num">0.18</td></tr>
+      <tr><td>MiLoRA</td><td class="num">0.125</td><td class="num">0.12</td><td class="num">0.92</td><td class="num">0.132</td><td class="num">0.16</td><td class="num">0.90</td></tr>
+      <tr class="best"><td>GeoRA</td><td class="num">0.092</td><td class="num">0.005</td><td class="num">0.98</td><td class="num">0.096</td><td class="num">0.015</td><td class="num">0.96</td></tr>
+    </table>
+    </div>
+    <p>PiSSA's NSS is GeoRA's <strong>4.3×</strong>(0.395/0.092), and <strong>4.4×</strong> (0.418/0.096); S<sub>H</sub> differ by <strong>two orders of magnitude</strong>. Three rows link high S<sub>H</sub> → high NSS → OOD decline: PiSSA (0.95,0.418,−2.44) → MiLoRA (0.16,0.132,+0.17) → GeoRA (0.015,0.096,+2.10), <strong>monotonic and directionally consistent</strong>. </p>
+    <p style="font-size:14px;color:var(--muted)">⚠️ But see C4: low S<sub>H</sub> is nearly guaranteed by GeoRA's construction, not an empirical discovery.</p>
+  </section>
+
+  <!-- ===================== 3. 故事线 ===================== -->
+  <h2>3. Narrative and Argument Structure</h2>
+  <section class="card">
+    <p>Five steps each answer the objection left by the previous one:</p>
+    <div class="flow">
+Step 1 · Introduce the premise
+         RL updates are sparse
+         ← Mukherjee et al., 2505.11711: across 7 methods including PPO/GRPO/DPO
+           and 10 model families, RL changes only 5%–30% of parameters
+
+Step 2 · Challenge the premise's implication ★
+         Sparse ≠ low-rank; construct a counterexample:
+         SVD of random sparse noise has a relatively flat spectrum like dense noise
+         ⇒ Sparsity alone does not justify low-rank adapters
+
+Step 3 · Propose a selection rule (the real innovation)
+         To make selected sparse regions also low-rank, selection must encode geometry,
+         not randomness or magnitude thresholds alone
+         ⇒ Dual masks: spectral prior (low curvature) ∪ Euclidean prior (high plasticity)
+
+Step 4 · Verify the premise
+         Figure 6: W_Geo has a pronounced heavy-tailed spectrum resembling pretrained W
+         True full-RL updates ΔW_FullFT also exhibit compressible heavy-tailed spectra
+
+Step 5 · Add a safety belt
+         Frozen W_res acts as a structural anchor, termed a leash
+         ⇒ Figure 5: KL remains low and controlled even at an aggressive 5×10⁻⁵ learning rate</div>
+    <div class="callout">
+      <strong>Step 2 Is the Most Valuable.</strong> Rather than jumping from sparse RL updates to sparse adapters, the authors block that shortcut themselves. The method must combine geometry and sparsity, distinguishing it from simply transplanting PEFT into RL.
+    </div>
+
+    <h3>Implicit Design Trade-Off</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Sacrifice</th><th>Gain</th><th>Evidence</th></tr>
+      <tr><td>Adaptation-capacity ceiling: updates restricted to low-curvature / near-zero-weight regions</td><td>Controlled KL + OOD retention</td><td>Table 1: GeoRA mean OOD +2.10 pp, FullFT −1.43 pp</td></tr>
+      <tr><td>One-time SVD + dual-mask preprocessing</td><td>−19.9% per-step training time</td><td>Tables 3 + 7</td></tr>
+      <tr><td>Fast-convergence benefit from principal directions, PiSSA's main selling point</td><td>Training stability</td><td>Figures 4/5: PiSSA and MiLoRA degrade rapidly at high learning rates</td></tr>
+    </table>
+    </div>
+    <p>The third tradeoff is numerically <strong>not actually a sacrifice</strong>: GeoRA still leads mathematical ID, 34.04 versus PiSSA 32.27. Low-curvature capacity is not yet limiting at r=16—a fortunate result and a weakness (C6).</p>
+  </section>
+
+  <!-- ===================== 4. 方法 ===================== -->
+  <h2>4. Methodology and Mechanisms</h2>
+  <section class="card">
+    <h3>4.1 Formal Definitions</h3>
+    <h4>Step 1 — Geometric Priors: Dual Masks</h4>
+    <div class="formula">Spectral prior (suppress high-magnitude / high-curvature components):
+  (M_Spec)_{i,j} = 𝟙( |(Ŵ_r)_{i,j}| ≤ τ_Spec(ρ) )        Ŵ_r = SVD_r(W)
+
+Euclidean prior (plasticity of near-zero weights):
+  (M_Euc)_{i,j}  = 𝟙( |W_{i,j}|     ≤ τ_Euc(ρ)  )
+
+Combined geometry-constrained matrix (union, not intersection):
+  W_Geo = W ⊙ ( M_Spec ∪ M_Euc )</div>
+    <h4>Step 2 — Geometry-Aware Decomposition</h4>
+    <div class="formula">W_Geo = U_Geo · Σ_Geo · V_Geoᵀ
+
+  A_Geo = Σ_Geo[:r,:r]^{1/2} · V_Geo[:,:r]ᵀ
+  B_Geo = U_Geo[:,:r] · Σ_Geo[:r,:r]^{1/2}</div>
+    <h4>Step 3 — Residual Leash</h4>
+    <div class="formula">W_res = W − (α/r) · B_Geo·A_Geo          (frozen)
+
+Forward pass (exact function preservation at initialization, h = Wx):
+  h = W_res·x + (α/r)·B_Geo·A_Geo·x
+      └ Frozen ┘   └──── Trainable ────┘
+
+Gradient mapping (G = ∂L/∂W_eff):
+  ∂L/∂A = (α/r)·Bᵀ·G        ∂L/∂B = (α/r)·G·Aᵀ</div>
+
+    <h3>4.2 Comparing Initialization Paradigms</h3>
+    <div class="flow">                     Adaptation target         Trainable subspace       S_H       ΔOOD(Qwen3-8B)
+LoRA (2021)   ─► W (not decomposed) Random Gaussian + zero 0.18   +0.86 pp
+PiSSA (2024)  ─► W                Top-r principal       0.95   −2.44 pp
+MiLoRA (2024) ─► W                Bottom-r minor         0.16   +0.17 pp
+GeoRA (2026)  ─► W_Geo ≠ W ★      Top-r of W_Geo         0.015  +2.10 pp
+                  ▲
+                  └── Changing this column is GeoRA's entire innovation:
+                      predecessors debate which part of W's spectrum to use;
+                      GeoRA changes the matrix undergoing SVD.</div>
+
+    <h3>4.3 Key Mechanisms</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Mechanism / dimension</th><th>Design choice</th><th>Motivation</th><th>Key hyperparameters</th></tr>
+      <tr><td>Parameter-selection prior</td><td>Spectral ∪ Euclidean dual masks</td><td>Sparse ≠ low-rank; geometric guidance needed</td><td>ρ = 0.2</td></tr>
+      <tr><td>Adapter initialization</td><td>Truncated SVD of W<sub>Geo</sub> with Σ<sup>1/2</sup> split symmetrically</td><td>Place adapters in low-curvature subspaces</td><td>r = 16, α = 32</td></tr>
+      <tr><td>Stability anchor</td><td>Frozen residual W<sub>res</sub></td><td>Restrict the learning manifold and control KL</td><td>—</td></tr>
+      <tr><td>RL objective</td><td>GRPO</td><td>Group-relative advantages without a value network</td><td>KL coefficient 0.001, rollout = 8</td></tr>
+      <tr><td>Initialization acceleration</td><td>Randomized SVD</td><td>Reduce preprocessing to 0.025% of training time</td><td>—</td></tr>
+    </table>
+    </div>
+
+    <h3>4.4 Mask Coverage and Complementarity (Table 5, Qwen3-8B, ρ=0.2)</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Group</th><th class="num">M<sub>Spec</sub></th><th class="num">M<sub>Euc</sub></th><th class="num">Intersection</th><th class="num">Jaccard</th><th class="num">Union coverage (derived here)</th></tr>
+      <tr><td>MLP</td><td class="num">20.0%</td><td class="num">20.0%</td><td class="num">4.63%</td><td class="num">0.131</td><td class="num">35.37%</td></tr>
+      <tr><td>Attn</td><td class="num">20.0%</td><td class="num">20.0%</td><td class="num">4.25%</td><td class="num">0.119</td><td class="num">35.75%</td></tr>
+      <tr class="best"><td>All</td><td class="num">20.0%</td><td class="num">20.0%</td><td class="num">4.55%</td><td class="num">0.128</td><td class="num">35.45%</td></tr>
+    </table>
+    </div>
+    <ol>
+      <li><strong>Jaccard ≈ 0.128 means the priors barely overlap</strong>. If they captured the same unimportant parameters, overlap should greatly exceed 4.55%. This is the strongest evidence of complementarity.</li>
+      <li><strong>The union retains only 35.45% of weight entries</strong>, meaning W<sub>Geo</sub> is formed by replacing <strong>64.55% of its weight entries with zero</strong> before SVD. Claiming that W<sub>Geo</sub> inherits pretrained structure is strong for a matrix losing nearly two thirds of entries (C5).</li>
+    </ol>
+
+    <h3>4.5 Hyperparameters and Initialization Cost</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Parameter</th><th>Value</th><th>Sweep range</th></tr>
+      <tr><td>rank r</td><td>16</td><td>{4, 8, 16, 32}</td></tr>
+      <tr><td>scaling α</td><td>32</td><td>—</td></tr>
+      <tr><td>Sparsity ratio ρ</td><td>0.2</td><td>{10%, 20%, 30%, 40%}</td></tr>
+      <tr><td>Learning rate</td><td>1×10⁻⁶</td><td>Stress-tested up to 5×10⁻⁵ (<strong>50×</strong>)</td></tr>
+      <tr><td>Global batch / rollout / KL coefficient</td><td>128 / 8 / 0.001</td><td>—</td></tr>
+      <tr><td>Hardware</td><td>80GB GPUs; mathematics/medicine: 1×8 GPUs, code: 2×8 GPUs</td><td>—</td></tr>
+      <tr><td>Random seed</td><td colspan="2"><strong>Single random run; no standard deviations</strong></td></tr>
+    </table>
+    </div>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Model</th><th>Operation</th><th class="num">Wall-clock time</th><th class="num">Peak GPU memory</th></tr>
+      <tr><td>8B</td><td>Full training</td><td class="num">838 min</td><td class="num">~384 GB</td></tr>
+      <tr><td>8B</td><td>Standard SVD</td><td class="num">18.87 min</td><td class="num">16.48 GB</td></tr>
+      <tr class="best"><td>8B</td><td>Randomized SVD</td><td class="num">0.21 min</td><td class="num">15.78 GB</td></tr>
+      <tr><td>32B</td><td>Randomized SVD</td><td class="num">0.26 min</td><td class="num">28.43 GB</td></tr>
+      <tr><td>72B</td><td>Randomized SVD</td><td class="num">0.72 min</td><td class="num">140.41 GB</td></tr>
+    </table>
+    </div>
+    <p>Speedup 18.87 / 0.21 = <strong>89.9×</strong>(called about 100× in the paper, slightly overstated but the same order). Relative to full training: 0.21 / 838 = <strong>0.025%</strong>, making initialization negligible.</p>
+  </section>
+
+  <!-- ===================== 5. 实验 ===================== -->
+  <h2>5. Experimental Design and Quantitative Results</h2>
+
+  <section class="card">
+    <h3>5.1 Main Results (Table 1, Mathematical RLVR, Qwen3-8B)</h3>
+    <div class="tablewrap">
+    <table>
+      <tr>
+        <th>Method</th><th class="num">AIME24</th><th class="num">AIME25</th><th class="num">MATH500</th><th class="num">OlymMATH</th><th class="num">ID mean</th>
+        <th class="num">HumanEval</th><th class="num">GPQA</th><th class="num">MMLU</th><th class="num">IFEval</th><th class="num">TruthfulQA</th><th class="num">OOD mean</th>
+      </tr>
+      <tr><td>Base</td><td class="num">13.33</td><td class="num">11.67</td><td class="num">71.20</td><td class="num">9.75</td><td class="num">26.49</td><td class="num">76.83</td><td class="num">36.91</td><td class="num">71.94</td><td class="num">54.32</td><td class="num">68.91</td><td class="num">61.78</td></tr>
+      <tr><td>FullFT</td><td class="num">23.33</td><td class="num">22.08</td><td class="num">78.40</td><td class="num">11.25</td><td class="num">33.77</td><td class="num neg">76.83†</td><td class="num neg">36.91†</td><td class="num neg">71.94†</td><td class="num">50.45</td><td class="num">65.65</td><td class="num">60.36</td></tr>
+      <tr><td>SparseFT</td><td class="num">22.92</td><td class="num">21.25</td><td class="num">76.80</td><td class="num">11.50</td><td class="num">33.12</td><td class="num">79.50</td><td class="num">37.20</td><td class="num">74.20</td><td class="num">50.95</td><td class="num">66.05</td><td class="num">61.58</td></tr>
+      <tr><td>LoRA</td><td class="num">19.58</td><td class="num">19.58</td><td class="num">75.60</td><td class="num">10.75</td><td class="num">31.38</td><td class="num">81.10</td><td class="num">37.50</td><td class="num">75.65</td><td class="num">52.13</td><td class="num">66.82</td><td class="num">62.64</td></tr>
+      <tr><td>PiSSA</td><td class="num">22.50</td><td class="num">20.42</td><td class="num">74.40</td><td class="num">11.75</td><td class="num">32.27</td><td class="num">71.95</td><td class="num">36.16</td><td class="num">73.89</td><td class="num">48.74</td><td class="num">65.95</td><td class="num">59.34</td></tr>
+      <tr><td>MiLoRA</td><td class="num">20.42</td><td class="num">19.58</td><td class="num">76.20</td><td class="num">11.50</td><td class="num">31.93</td><td class="num">78.66</td><td class="num">38.26</td><td class="num">74.51</td><td class="num">51.85</td><td class="num">66.46</td><td class="num">61.95</td></tr>
+      <tr class="best"><td>GeoRA</td><td class="num">23.75</td><td class="num">21.67</td><td class="num">78.00</td><td class="num">12.75</td><td class="num">34.04</td><td class="num">82.93</td><td class="num">37.92</td><td class="num">75.96</td><td class="num">53.73</td><td class="num">68.85</td><td class="num">63.88</td></tr>
+    </table>
+    </div>
+    <p style="font-size:14px;color:var(--muted)">† FullFT values in these three columns are <strong>exactly identical</strong> to Base (76.83 / 36.91 / 71.94), verified by a second targeted fetch. See C1. ID/OOD means calculated here.</p>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">Figure A · ID and OOD Gains Relative to Base (Qwen3-8B, pp)</p>
+    <p class="fig-sub">Source: Table 1. ID averages four math benchmarks; OOD averages five external benchmarks. Means and differences calculated here. Hover for values.</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-1)"></span>ΔID (in-domain mathematics)</span>
+      <span><span class="sw" style="background:var(--series-2)"></span>ΔOOD (out-of-domain retention)</span>
+    </div>
+    <svg class="chart" viewBox="0 0 900 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Bar chart of ID/OOD gains over Base by method">
+      <!-- gridlines -->
+      <g stroke="var(--grid)" stroke-width="1">
+        <line x1="70" y1="30" x2="870" y2="30"/>
+        <line x1="70" y1="79.09" x2="870" y2="79.09"/>
+        <line x1="70" y1="128.18" x2="870" y2="128.18"/>
+        <line x1="70" y1="177.27" x2="870" y2="177.27"/>
+        <line x1="70" y1="275.45" x2="870" y2="275.45"/>
+      </g>
+      <line x1="70" y1="226.36" x2="870" y2="226.36" stroke="var(--baseline)" stroke-width="1.5"/>
+      <g fill="var(--muted)" font-size="12" text-anchor="end">
+        <text x="60" y="34">+8</text>
+        <text x="60" y="83">+6</text>
+        <text x="60" y="132">+4</text>
+        <text x="60" y="181">+2</text>
+        <text x="60" y="230">0</text>
+        <text x="60" y="279">−2</text>
+      </g>
+      <text x="16" y="150" fill="var(--muted)" font-size="12" transform="rotate(-90 16 150)" text-anchor="middle">Change from Base (pp)</text>
+
+      <!-- FullFT -->
+      <rect class="bar" x="93.67" y="47.66" width="40" height="178.70" fill="var(--series-1)" rx="2" data-t="FullFT · ΔID = +7.28 pp"/>
+      <rect class="bar" x="139.67" y="226.36" width="40" height="35.10" fill="var(--series-2)" rx="2" data-t="FullFT · ΔOOD = −1.43 pp"/>
+      <!-- SparseFT -->
+      <rect class="bar" x="227.00" y="63.65" width="40" height="162.71" fill="var(--series-1)" rx="2" data-t="SparseFT · ΔID = +6.63 pp"/>
+      <rect class="bar" x="273.00" y="226.36" width="40" height="4.91" fill="var(--series-2)" rx="2" data-t="SparseFT · ΔOOD = −0.20 pp"/>
+      <!-- LoRA -->
+      <rect class="bar" x="360.33" y="106.35" width="40" height="120.01" fill="var(--series-1)" rx="2" data-t="LoRA · ΔID = +4.89 pp"/>
+      <rect class="bar" x="406.33" y="205.25" width="40" height="21.11" fill="var(--series-2)" rx="2" data-t="LoRA · ΔOOD = +0.86 pp"/>
+      <!-- PiSSA -->
+      <rect class="bar" x="493.67" y="84.48" width="40" height="141.88" fill="var(--series-1)" rx="2" data-t="PiSSA · ΔID = +5.78 pp"/>
+      <rect class="bar" x="539.67" y="226.36" width="40" height="59.89" fill="var(--series-2)" rx="2" data-t="PiSSA · ΔOOD = −2.44 pp（全表最差）"/>
+      <!-- MiLoRA -->
+      <rect class="bar" x="627.00" y="92.83" width="40" height="133.53" fill="var(--series-1)" rx="2" data-t="MiLoRA · ΔID = +5.44 pp"/>
+      <rect class="bar" x="673.00" y="222.19" width="40" height="4.17" fill="var(--series-2)" rx="2" data-t="MiLoRA · ΔOOD = +0.17 pp"/>
+      <!-- GeoRA -->
+      <rect class="bar" x="760.33" y="40.79" width="40" height="185.57" fill="var(--series-1)" rx="2" data-t="GeoRA · ΔID = +7.56 pp（全表最高）"/>
+      <rect class="bar" x="806.33" y="174.81" width="40" height="51.55" fill="var(--series-2)" rx="2" data-t="GeoRA · ΔOOD = +2.10 pp（唯一显著正值）"/>
+
+      <g fill="var(--text-secondary)" font-size="13" text-anchor="middle">
+        <text x="136.67" y="320">FullFT</text>
+        <text x="270.00" y="320">SparseFT</text>
+        <text x="403.33" y="320">LoRA</text>
+        <text x="536.67" y="320">PiSSA</text>
+        <text x="670.00" y="320">MiLoRA</text>
+        <text x="803.33" y="320" font-weight="700" fill="var(--series-1)">GeoRA</text>
+      </g>
+      <g fill="var(--muted)" font-size="12" text-anchor="middle">
+        <text x="136.67" y="340">Total +5.85</text>
+        <text x="270.00" y="340">Total +6.43</text>
+        <text x="403.33" y="340">Total +5.75</text>
+        <text x="536.67" y="340">Total +3.34</text>
+        <text x="670.00" y="340">Total +5.61</text>
+        <text x="803.33" y="340" font-weight="700" fill="var(--series-1)">Total +9.66</text>
+      </g>
+    </svg>
+  </div>
+
+  <section class="card">
+    <div class="callout key">
+      <strong>🔴 Strongest Quantitative Evidence:</strong> On Qwen3-8B, <strong>GeoRA alone has positive ID and OOD gains while exceeding full fine-tuning's ID gain</strong>. Combined gains exceed runner-up SparseFT by <strong>+3.23pp</strong> and PiSSA by <strong>+6.32 pp (1.9×)</strong>. More crucially, stronger methods trade OOD for ID: FullFT +7.28/−1.43, PiSSA +5.78/−2.44; <strong>only GeoRA breaks that tradeoff</strong>.
+    </div>
+
+    <h3>5.2 Llama-3.1-8B: Same Direction, Smaller Magnitude</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Method</th><th class="num">ID mean</th><th class="num">OOD mean</th><th class="num">ΔID</th><th class="num">ΔOOD</th></tr>
+      <tr><td>Base</td><td class="num">16.48</td><td class="num">61.49</td><td class="num">—</td><td class="num">—</td></tr>
+      <tr><td>FullFT</td><td class="num">24.37</td><td class="num">60.01</td><td class="num pos">+7.89</td><td class="num neg">−1.48</td></tr>
+      <tr><td>SparseFT</td><td class="num">23.94</td><td class="num">61.07</td><td class="num pos">+7.46</td><td class="num neg">−0.42</td></tr>
+      <tr><td>LoRA</td><td class="num">21.66</td><td class="num">62.28</td><td class="num pos">+5.18</td><td class="num pos">+0.79</td></tr>
+      <tr><td>PiSSA</td><td class="num">23.42</td><td class="num">60.63</td><td class="num pos">+6.94</td><td class="num neg">−0.86</td></tr>
+      <tr><td>MiLoRA</td><td class="num">22.42</td><td class="num">62.10</td><td class="num pos">+5.94</td><td class="num pos">+0.61</td></tr>
+      <tr class="best"><td>GeoRA</td><td class="num">24.51</td><td class="num">62.95</td><td class="num">+8.03</td><td class="num">+1.46</td></tr>
+    </table>
+    </div>
+    <p>The direction agrees, but <strong>the margin narrows substantially</strong>: GeoRA's OOD lead over runner-up MiLoRA shrinks from +1.24 pp on Qwen to +0.85 pp. See C7.</p>
+
+    <h3>5.3 Medicine and Code (Table 2)</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Method</th><th class="num">MedQA</th><th class="num">MedMCQA</th><th class="num">PubMedQA</th><th class="num">Medical mean</th><th class="num">LiveCodeBench</th><th class="num">HumanEval</th><th class="num">MBPP</th><th class="num">Code mean</th></tr>
+      <tr><td>Base</td><td class="num">58.03</td><td class="num">56.42</td><td class="num">74.94</td><td class="num">63.13</td><td class="num">65.75</td><td class="num">87.66</td><td class="num">79.40</td><td class="num">77.60</td></tr>
+      <tr><td>FullFT</td><td class="num">75.32</td><td class="num">64.56</td><td class="num">80.12</td><td class="num">73.33</td><td class="num">67.75</td><td class="num">90.26</td><td class="num">81.40</td><td class="num">79.80</td></tr>
+      <tr><td>LoRA</td><td class="num">74.23</td><td class="num">62.12</td><td class="num">79.54</td><td class="num">71.96</td><td class="num">67.25</td><td class="num">88.96</td><td class="num">81.00</td><td class="num">79.07</td></tr>
+      <tr class="best"><td>GeoRA</td><td class="num">76.12</td><td class="num">64.31</td><td class="num">80.64</td><td class="num">73.69</td><td class="num">67.75</td><td class="num">89.61</td><td class="num">81.60</td><td class="num">79.65</td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>Two Misses:</strong> On MedMCQA, GeoRA 64.31 &lt; FullFT 64.56 (−0.25 pp); code mean 79.65 &lt; FullFT 79.80 (−0.15pp), HumanEval 89.61 &lt; 90.26 (−0.65 pp). Baselines in these domains shrink to Base / FullFT / LoRA—<strong>PiSSA, MiLoRA, and SparseFT are all absent</strong>, although PiSSA is the main target. See C2.
+    </div>
+
+    <h3>5.4 Ablations (Table 4, Qwen3-4B)</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Configuration</th><th class="num">Reward</th><th class="num">AIME24</th><th class="num">AIME25</th><th class="num">MATH-500</th><th class="num">OlymMATH</th><th class="num">Mean</th><th class="num">Δ mean</th></tr>
+      <tr class="best"><td>GeoRA (complete)</td><td class="num">0.88</td><td class="num">13.33</td><td class="num">9.17</td><td class="num">73.40</td><td class="num">5.75</td><td class="num">25.41</td><td class="num">—</td></tr>
+      <tr><td>w/o M<sub>Spec</sub></td><td class="num">0.86</td><td class="num">12.50</td><td class="num">8.33</td><td class="num">72.00</td><td class="num">4.75</td><td class="num">24.40</td><td class="num neg">−1.01</td></tr>
+      <tr><td>w/o M<sub>Euc</sub></td><td class="num">0.83</td><td class="num">13.33</td><td class="num">8.75</td><td class="num">72.80</td><td class="num">5.50</td><td class="num">25.10</td><td class="num neg">−0.31</td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>⚡ Transition-Like Finding (Derived Here, Unmentioned in the Paper): Reward and Downstream Accuracy Reverse Ordering.</strong><br>
+      · <code>w/o M_Spec</code>: reward <strong>0.86 (higher)</strong> → mean <strong>24.40 (lower)</strong><br>
+      · <code>w/o M_Euc</code>: reward <strong>0.83 (lower)</strong> → mean <strong>25.10 (higher)</strong><br><br>
+      Two implications: first, a valuable miniature example of reward–capability decoupling in RLVR; second, it <strong>directly weakens using reward curves as principal evidence in Figures 4/5/7</strong>. If reward and accuracy reverse across ablations, reward curves alone cannot convincingly establish r and ρ robustness.
+    </div>
+    <p>Meanwhile, <code>w/o M_Euc</code> loses only 0.31 pp, yet supports the claim that removing either mask consistently reduces performance. Across four benchmarks, one run, and AIME's roughly 30 questions, 0.31 pp is <strong>hard to distinguish from noise</strong>. </p>
+
+    <h3>5.5 Hyperparameter Sensitivity and Significance</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Sweep dimension</th><th>Scope</th><th>Reported evidence</th><th>Assessment here</th></tr>
+      <tr><td>rank r</td><td>{4, 8, 16, 32}</td><td>Figure 7(a) reward trajectories</td><td>⚠️ Reward only, no downstream accuracy; insufficient given §5.4's reversal</td></tr>
+      <tr><td>Sparsity ratio ρ</td><td>{10%, 20%, 30%, 40%}</td><td>Figure 7(b) reward trajectories</td><td>⚠️ Same issue</td></tr>
+      <tr class="best"><td>Learning rate</td><td>1×10⁻⁶ → 5×10⁻⁵ (50×)</td><td>Figures 4/5, including KL trajectories</td><td>✅ Strongest sensitivity evidence: explicit training-collapse failure mode, independent of reward–accuracy correlation</td></tr>
+    </table>
+    </div>
+    <p>No explicit transition threshold is reported. Moving ρ from 10% to 40% yields estimated union coverage 19%→66%, a 3.5× range. Strong robustness would suggest <strong>the exact dual-mask thresholds are not crucial</strong>, in tension with precise geometric-selection rhetoric (C8).</p>
+    <p>The paper explicitly says results are <strong>based on a single random run, without SDs, confidence intervals, or multiple seeds</strong>. </p>
+  </section>
+
+  <!-- ===================== 6. 局限性 ===================== -->
+  <h2>6. Limitations</h2>
+
+  <section class="card">
+    <h3>6.1 Category I: Author-Reported Limitations</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>#</th><th>Paper text (translated from the Chinese quotation)</th><th>Severity</th></tr>
+      <tr><td>L1</td><td>“Initialization requires truncated SVD and dual-mask operations. Although a one-time cost at the start, these add preprocessing relative to standard LoRA's random initialization.”</td><td>Low—Table 7 shows only 0.025% of training time</td></tr>
+      <tr><td>L2</td><td>“Experiments mainly focus on reasoning-domain RLVR. Despite strong results, broader architectures and diverse RL settings beyond verifiable rewards remain to be evaluated.”</td><td>Medium—acknowledges scope, but none of the following issues</td></tr>
+    </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>6.2 Category II: Eight Independent Critiques</h3>
+
+    <h4>C1 · Argument and Design Gap: Three FullFT OOD Columns Exactly Match Base</h4>
+    <p>For Qwen3-8B, HumanEval 76.83, GPQA 36.91, and MMLU 71.94 are <strong>digit-for-digit identical</strong> between FullFT and Base; the same happens on Llama-3.1-8B at 65.20 / 31.15 / 68.40, while IFEval and TruthfulQA differ. Exact repetition across three numbers and two models is negligibly likely, leaving two explanations: <strong>(a) Copy/paste error; (b) FullFT was not re-evaluated on those benchmarks</strong>. </p>
+    <p>Excluding them, <strong>only IFEval and TruthfulQA remain trustworthy OOD comparisons</strong>. Recalculation:</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Method</th><th class="num">Qwen3-8B (mean Δ over IFEval + TruthfulQA)</th><th class="num">Llama-3.1-8B</th></tr>
+      <tr><td>FullFT</td><td class="num neg">−3.57</td><td class="num neg">−3.69</td></tr>
+      <tr><td>SparseFT</td><td class="num neg">−3.12</td><td class="num neg">−2.95</td></tr>
+      <tr><td>PiSSA</td><td class="num neg">−4.27</td><td class="num neg">−4.02</td></tr>
+      <tr><td>LoRA</td><td class="num neg">−2.14</td><td class="num neg">−1.51</td></tr>
+      <tr><td>MiLoRA</td><td class="num neg">−2.46</td><td class="num neg">−1.46</td></tr>
+      <tr class="best"><td>GeoRA</td><td class="num">−0.33</td><td class="num">−1.19</td></tr>
+    </table>
+    </div>
+    <p><strong>The Core Claim Survives Excluding Suspect Data</strong>: GeoRA degrades least, but its Qwen lead changes from +2.10 pp net improvement to the smallest decline, −0.33 pp; <strong>claiming OOD improvement is no longer supported</strong>. On Llama, GeoRA −1.19 versus MiLoRA −1.46 and LoRA −1.51 leaves only 0.27–0.32 pp, <strong>already at noise scale</strong>. </p>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">Figure B · OOD Degradation After Excluding Suspect Data (IFEval + TruthfulQA Only, pp)</p>
+    <p class="fig-sub">C1 recalculation; closer to zero is better. The two model families share one vertical axis and identical units. Hover for values.</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-1)"></span> Qwen3-8B</span>
+      <span><span class="sw" style="background:var(--series-2)"></span> Llama-3.1-8B</span>
+    </div>
+    <svg class="chart" viewBox="0 0 900 340" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Bar chart of OOD degradation after suspect-data exclusion">
+      <g stroke="var(--grid)" stroke-width="1">
+        <line x1="70" y1="85.56" x2="870" y2="85.56"/>
+        <line x1="70" y1="141.11" x2="870" y2="141.11"/>
+        <line x1="70" y1="196.67" x2="870" y2="196.67"/>
+        <line x1="70" y1="252.22" x2="870" y2="252.22"/>
+      </g>
+      <line x1="70" y1="30" x2="870" y2="30" stroke="var(--baseline)" stroke-width="1.5"/>
+      <g fill="var(--muted)" font-size="12" text-anchor="end">
+        <text x="60" y="34">0</text>
+        <text x="60" y="90">−1</text>
+        <text x="60" y="145">−2</text>
+        <text x="60" y="201">−3</text>
+        <text x="60" y="256">−4</text>
+      </g>
+      <text x="16" y="150" fill="var(--muted)" font-size="12" transform="rotate(-90 16 150)" text-anchor="middle">Degradation relative to Base (pp)</text>
+
+      <rect class="bar" x="93.67" y="30" width="40" height="198.33" fill="var(--series-1)" rx="2" data-t="FullFT · Qwen3-8B = −3.57 pp"/>
+      <rect class="bar" x="139.67" y="30" width="40" height="205.00" fill="var(--series-2)" rx="2" data-t="FullFT · Llama-3.1-8B = −3.69 pp"/>
+      <rect class="bar" x="227.00" y="30" width="40" height="173.33" fill="var(--series-1)" rx="2" data-t="SparseFT · Qwen3-8B = −3.12 pp"/>
+      <rect class="bar" x="273.00" y="30" width="40" height="163.89" fill="var(--series-2)" rx="2" data-t="SparseFT · Llama-3.1-8B = −2.95 pp"/>
+      <rect class="bar" x="360.33" y="30" width="40" height="237.22" fill="var(--series-1)" rx="2" data-t="PiSSA · Qwen3-8B = −4.27 pp（最差）"/>
+      <rect class="bar" x="406.33" y="30" width="40" height="223.33" fill="var(--series-2)" rx="2" data-t="PiSSA · Llama-3.1-8B = −4.02 pp（最差）"/>
+      <rect class="bar" x="493.67" y="30" width="40" height="118.89" fill="var(--series-1)" rx="2" data-t="LoRA · Qwen3-8B = −2.14 pp"/>
+      <rect class="bar" x="539.67" y="30" width="40" height="83.89" fill="var(--series-2)" rx="2" data-t="LoRA · Llama-3.1-8B = −1.51 pp"/>
+      <rect class="bar" x="627.00" y="30" width="40" height="136.67" fill="var(--series-1)" rx="2" data-t="MiLoRA · Qwen3-8B = −2.46 pp"/>
+      <rect class="bar" x="673.00" y="30" width="40" height="81.11" fill="var(--series-2)" rx="2" data-t="MiLoRA · Llama-3.1-8B = −1.46 pp"/>
+      <rect class="bar" x="760.33" y="30" width="40" height="18.33" fill="var(--series-1)" rx="2" data-t="GeoRA · Qwen3-8B = −0.33 pp（最佳）"/>
+      <rect class="bar" x="806.33" y="30" width="40" height="66.11" fill="var(--series-2)" rx="2" data-t="GeoRA · Llama-3.1-8B = −1.19 pp（最佳，但仅领先 MiLoRA 0.27pp）"/>
+
+      <g fill="var(--text-secondary)" font-size="13" text-anchor="middle">
+        <text x="136.67" y="295">FullFT</text>
+        <text x="270.00" y="295">SparseFT</text>
+        <text x="403.33" y="295">PiSSA</text>
+        <text x="536.67" y="295">LoRA</text>
+        <text x="670.00" y="295">MiLoRA</text>
+        <text x="803.33" y="295" font-weight="700" fill="var(--series-1)">GeoRA</text>
+      </g>
+      <text x="470" y="325" fill="var(--muted)" font-size="12" text-anchor="middle">GeoRA's Llama margin over MiLoRA / LoRA is only 0.27–0.32 pp, at noise scale</text>
+    </svg>
+  </div>
+
+  <section class="card">
+    <h4>C2 · Missing Competitors: Only Three Baselines Remain in Medicine and Code</h4>
+    <p>Table 2 uses {Base, FullFT, LoRA}, <strong>PiSSA, MiLoRA, and SparseFT are all absent</strong>. This is substantive: the paper targets harmful PiSSA-style principal initialization in RLVR. If this is a <strong>method-level</strong> claim rather than mathematics-specific, it should be tested in medicine and code too. Conservative inference: <strong>GeoRA's superiority over SVD-based initialization currently has evidence only in mathematics.</strong></p>
+
+    <h4>C3 · Experimental Design: Several Advantages Are Smaller Than One Rollout Sample</h4>
+    <p>AIME uses 30 questions × 8 rollouts = 240 samples, with grid step 1/240 = 0.4167 pp. Checking values:</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Value</th><th>Equivalent count</th><th>Check</th></tr>
+      <tr><td>GeoRA AIME24 = 23.75</td><td>57 / 240</td><td>57/240 = 23.750% ✓</td></tr>
+      <tr><td>FullFT AIME24 = 23.33</td><td>56 / 240</td><td>56/240 = 23.333% ✓</td></tr>
+      <tr><td>GeoRA AIME25 = 21.67</td><td>52 / 240</td><td>52/240 = 21.667% ✓</td></tr>
+      <tr><td>FullFT AIME25 = 22.08</td><td>53 / 240</td><td>53/240 = 22.083% ✓</td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>GeoRA's entire AIME24 advantage over FullFT is one extra correct rollout out of 240; on AIME25 it answers one fewer correctly.</strong> With one run and no SD, these are uninterpretable differences. Likewise MATH500's 78.00 versus 78.40 differs by 2/500 questions.<br><br>
+      <strong>The only genuinely robust ID evidence is OlymMATH: 12.75 versus 11.25, +1.50 pp, with GeoRA best in the column.</strong> OlymMATH is the hardest ID benchmark, a point the paper should emphasize but does not.
+    </div>
+
+    <h4>C4 · Metric Validity: Table 6's S<sub>H</sub> Is Nearly a Constructive Tautology</h4>
+    <p>S<sub>H</sub> measures alignment with leading singular subspaces. GeoRA's construction <strong>explicitly masks high-magnitude entries</strong>, making S<sub>H</sub> ≈0.005–0.015 almost a direct consequence, not a discovery requiring experimentation. PiSSA's 0.95–0.98 likewise follows its definition. <strong>Table 6 is closer to confirming design intent than causal mechanism evidence.</strong> A causal chain would require initialization variants with continuously varying S<sub>H</sub> and monotonic OOD degradation, which is not tested. NSS is less affected because it measures spectral displacement <em>after</em> training.</p>
+
+    <h4>C5 · Most Serious Gap: Compressibility of W<sub>Geo</sub> Does Not Show That Required RL Updates Lie in W<sub>Geo</sub> 's Principal Subspace</h4>
+    <p>Figure 6 establishes that (1) W<sub>Geo</sub> has a compressible heavy-tailed spectrum, and (2) ΔW<sub>FullFT</sub> does too. But <strong>these separate facts do not imply that ΔW<sub>FullFT</sub> 's principal directions coincide with W<sub>Geo</sub> 's</strong>: two low-rank matrices can span orthogonal subspaces.</p>
+    <p>One number could close the gap: principal-subspace alignment between top-r(ΔW<sub>FullFT</sub>) and top-r(W<sub>Geo</sub>). The S<sub>H</sub>, S<sub>T</sub> toolchain already exists, so marginal cost is nearly zero. <strong>That number is not reported.</strong></p>
+    <p>External Evidence Also Raises Tension: <a href="https://arxiv.org/abs/2505.11711">Mukherjee et al. (2505.11711)</a> Across seven RL methods and ten model families, updates are sparse, changing only 5%–30% of parameters, but within updated matrices are <strong>nearly full-rank</strong>. If so, the premise that rank-16 adapters capture RL updates needs stronger support.</p>
+
+    <h4>C6 · Reproducibility: No Public Code, with Sensitivity to Undisclosed Details</h4>
+    <ul>
+      <li>Neither the ACL Anthology nor arXiv page <strong>lists a code repository or project homepage</strong>(each checked individually here).</li>
+      <li>Several implementation choices are underspecified: layerwise versus global masks, per-matrix versus per-tensor ρ quantiles, randomized-SVD oversampling and power iterations, and whether W<sub>res</sub> is recomputed during training.</li>
+      <li>Combined with single-run results and no SD, third-party reproduction <strong>cannot distinguish implementation differences from randomness</strong>. </li>
+    </ul>
+
+    <h4>C7 · Missed Subtasks and Weaker Conclusions Across Models</h4>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Scenario</th><th>GeoRA's relative performance</th><th class="num">Magnitude</th></tr>
+      <tr><td>Qwen3-8B ΔOOD lead over runner-up LoRA</td><td>Lead</td><td class="num pos">+1.24pp</td></tr>
+      <tr><td>Llama-3.1-8B ΔOOD lead over runner-up MiLoRA</td><td>Lead</td><td class="num">+0.85pp</td></tr>
+      <tr><td>Llama TruthfulQA</td><td>Behind LoRA</td><td class="num neg">−0.15pp</td></tr>
+      <tr><td>Llama MATH500</td><td>Behind FullFT</td><td class="num neg">−0.50pp</td></tr>
+      <tr><td>Medical: MedMCQA</td><td>Behind FullFT</td><td class="num neg">−0.25pp</td></tr>
+      <tr><td>Code mean / HumanEval</td><td>Behind FullFT</td><td class="num neg">−0.15 / −0.65pp</td></tr>
+    </table>
+    </div>
+    <p>The direction is consistent across both model families, which is encouraging, but <strong>effect sizes are roughly halved on Llama</strong>, without discussion. A possible explanation is Llama-3.1-8B's high base IFEval of 79.99 versus Qwen3-8B's 54.32: a ceiling effect compresses differences. The paper would need to substantiate this.</p>
+
+    <h4>C8 · Narrative–evidence tension: if ρ is highly robust, precise geometric selection may not be crucial</h4>
+    <p>The paper emphasizes carefully designed geometric priors while reporting strong robustness across ρ ∈ {10%,20%,30%,40%}. Moving ρ from 10% to 40% expands union coverage from roughly 19% to 66%, a 3.5-fold range. If performance barely changes, a simpler explanation is:</p>
+    <div class="callout">
+      <strong>what matters may be avoiding dominant singular directions, not exactly which parameters are selected.</strong> This agrees with MiLoRA: avoiding principal components alone gives S<sub>H</sub> = 0.12–0.16 and positive ΔOOD of +0.17 / +0.61. GeoRA improves OOD over MiLoRA by +1.93pp on Qwen and +0.85pp on Llama—real but modest gains.<br><br>
+      <strong>A simple test:</strong> replace the dual mask with random retention of 35.45% of nonprincipal-component entries. Table 4 tests only <code>w/o M_Spec</code> and <code>w/o M_Euc</code>, <strong>and omits the crucial random-mask control</strong>. Without it, effective geometric priors cannot be distinguished from any strategy that avoids dominant directions.
+    </div>
+
+    <h3>Critique summary</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Number</th><th>Question type</th><th>Summary</th><th>Severity</th></tr>
+      <tr><td>C1</td><td>Experimental design / argument gap</td><td>FullFT's three OOD values exactly equal Base</td><td class="neg">🔴 High</td></tr>
+      <tr><td>C2</td><td>Missing comparison with a key competitor</td><td>Medical/code domains lack PiSSA, MiLoRA, and SparseFT</td><td class="neg">🔴 High</td></tr>
+      <tr><td>C3</td><td>Experimental design issues</td><td>Several gains equal one rollout among 240 samples; single runs without standard deviations</td><td class="neg">🔴 High</td></tr>
+      <tr><td>C4</td><td>Metric validity issues</td><td>S<sub>H</sub> Guaranteed by construction, nearly tautological</td><td>🟡 Medium</td></tr>
+      <tr><td>C5</td><td>Gaps in the argument</td><td>No measurement of ΔW<sub>FullFT</sub> against W<sub>Geo</sub> for principal-subspace alignment</td><td class="neg">🔴 High</td></tr>
+      <tr><td>C6</td><td>Reproducibility risks</td><td>Unreleased code and multiple unspecified implementation details</td><td>🟡 Medium</td></tr>
+      <tr><td>C7</td><td>Underperforming subtasks</td><td>Code loses to FullFT; effect sizes halve on Llama</td><td>🟡 Medium</td></tr>
+      <tr><td>C8</td><td>Gaps in the argument</td><td>No random-mask control to rule out simply avoiding dominant directions</td><td>🟡 Medium</td></tr>
+    </table>
+    </div>
+  </section>
+
+  <!-- ===================== 7. 相关工作 ===================== -->
+  <h2>7. Related work: the chain of inherited problems</h2>
+
+  <section class="card">
+    <h3>7.1 LoRA — 2021.06, ICLR 2022</h3>
+    <p><strong>① Problem addressed.</strong> Full fine-tuning has prohibitive storage/deployment costs. LoRA constrains updates to ΔW = BA, with zero-initialized B and random-Gaussian A, reducing trainable parameters to roughly one-thousandth. Updates merge into the backbone for no extra inference latency.</p>
+    <p><strong>② Unresolved gap.</strong> LoRA does not specify where BA should lie in weight space; A is random. If updates are restricted to an r-dimensional subspace, <strong>the choice of subspace should matter</strong>. LoRA leaves that freedom entirely to randomness.</p>
+    <p><strong>③ The focal paper's response.</strong> GeoRA inherits the structure but rejects initialization neutrality. Interestingly, plain LoRA's ΔOOD in Table 1 is <span class="pos">+0.86pp</span> (Qwen)/ <span class="pos">+0.79pp</span> (Llama), <strong>better than PiSSA, SparseFT, and FullFT</strong>. Under RLVR, random neutrality is safer than sophistication in the wrong direction—an important implicit observation not highlighted by GeoRA.</p>
+    <p><strong>④ Transfer of key designs.</strong><code>The forward structure (frozen backbone + trainable low-rank branch)</code> with <code>α/r scaling</code> are fully retained; <code>random initialization</code> is entirely replaced.</p>
+
+    <h3>7.2 PiSSA — 2024.04, NeurIPS 2024 Spotlight</h3>
+    <p><strong>① Problem addressed.</strong> LoRA's zero initialization weakens early gradient signals and slows convergence. PiSSA initializes adapters from W's principal singular components and freezes the residual. Reported gains are substantial: Mistral-7B GSM8K 72.86% versus LoRA 67.7% (+5.16pp); LLaMA-3-70B QPiSSA 86.05% versus QLoRA 81.73% (+4.32pp).</p>
+    <p><strong>② Unresolved gap.</strong> PiSSA assumes implicitly that <strong>the most informative directions are those most worth training</strong>. This broadly holds in SFT but was not tested in RL that improves specific skills while retaining existing abilities. Nor does it ask whether allocating capacity to principal directions systematically conflicts with KL-constrained training.</p>
+    <p><strong>③ The focal paper's response.</strong> GeoRA offers a <strong>direct counterproposal</strong> to PiSSA: retain SVD initialization, residual freezing, and function preservation, but change the SVD <strong>input</strong> from W to W<sub>Geo</sub>. Quantitatively, S<sub>H</sub> falls from 0.95 to 0.015 (two orders of magnitude), NSS from 0.418 to 0.096 (4.4×), and ΔOOD flips from −2.44pp to +2.10pp. <strong>PiSSA is thus both the technical source and the primary target.</strong></p>
+    <p><strong>④ Transfer of key designs.</strong><code>SVD initialization</code>, <code>Symmetric Σ^{1/2} allocation</code>, <code>Residual freezing</code>, <code>Randomized SVD acceleration</code> are all inherited. The transfer is: <strong>from which part of the spectrum to whose spectrum</strong>. </p>
+
+    <h3>7.3 MiLoRA — 2024.06, NAACL 2025</h3>
+    <p><strong>① Problem addressed.</strong> Contemporaneous with PiSSA but reaching the opposite conclusion, MiLoRA treats principal singular components as pretrained knowledge worth protecting and minor components as underoptimized capacity, initializing adapters in the bottom-r subspace.</p>
+    <p><strong>② Unresolved gap.</strong> MiLoRA captures the right intuition—protect dominant directions—but remains <strong>purely spectral</strong>: it considers singular-value order, not parameter distribution in weight space. It does not ask whether near-zero weights (high plasticity) coincide with low-singular-energy directions (low curvature). GeoRA Table 5 says no: Jaccard is only <strong>0.128</strong>, with 4.55% intersection. <strong>MiLoRA covers only one of two complementary dimensions.</strong></p>
+    <p><strong>③ The focal paper's response.</strong> GeoRA offers a <strong>synthesis and extension</strong> of MiLoRA, expanding selection from one dimension (spectral) to two (spectral ∪ Euclidean). S<sub>T</sub> rises from 0.90–0.92 to 0.96–0.98, and NSS falls from 0.125–0.132 to 0.092–0.096, about a 27% improvement. Since MiLoRA already achieves positive ΔOOD, <strong>GeoRA's incremental gains over MiLoRA (+1.93pp / +0.85pp) are the right test of whether dual masking is necessary</strong>, rather than +4.54pp over PiSSA (see C8).</p>
+    <p><strong>④ Transfer of key designs.</strong><code>Avoiding the principal singular subspace</code> is inherited and reinforced. The transfer is: <strong>one-dimensional spectral ordering → two-dimensional geometric filtering</strong>. </p>
+
+    <h3>7.4 DeepSeekMath / GRPO — 2024.02</h3>
+    <p><strong>① Problem addressed.</strong> PPO maintains a value network as large as the policy. GRPO substitutes within-group relative advantages from multiple rollouts per prompt for the value baseline, removing the critic while retaining KL regularization.</p>
+    <p><strong>② Unresolved gap.</strong> GRPO defines different optimization dynamics: group-relative advantages, explicit KL, and sparse binary rewards. Gradients become sparse/noisy and update magnitudes constrained by KL. Yet the PEFT ecosystem <strong>has not redesigned methods for compatibility</strong>: LoRA, PiSSA, MiLoRA, and DoRA were developed and tuned for dense-supervision SFT without KL constraints. <strong>This methodological debt directly motivates GeoRA.</strong></p>
+    <p><strong>③ The focal paper's response.</strong> GeoRA is among the first to address it: all experiments use GRPO (KL coefficient 0.001, 8 rollouts), and KL control becomes a central evaluation dimension. The frozen residual is designed as a leash specifically for this constraint.</p>
+    <p><strong>④ Transfer of key designs.</strong><code>The GRPO objective</code> is used unchanged; <code>KL divergence</code> is elevated from a training hyperparameter to an <strong>evaluation metric and design objective</strong>. </p>
+
+    <h3>7.5 RL Finetunes Small Subnetworks in LLMs — 2025.05</h3>
+    <p><strong>① Problem addressed.</strong> Establishes an empirical finding across <strong>7 RL methods</strong>, <strong>10 model families</strong>: RL post-training changes only <strong>5%–30% of parameters</strong>. Tuning only that subnetwork fully recovers test accuracy, producing models nearly identical to full fine-tuning. This sparsity is <strong>intrinsic</strong>. </p>
+    <p><strong>② Unresolved gap.</strong>① How is the sparse subnetwork selected? The work identifies it retrospectively but provides no <strong>prospective prediction</strong> rule. ② Does sparsity imply low rank? Its measurements suggest otherwise: updated matrices are <strong>nearly full rank</strong>.</p>
+    <p><strong>③ The focal paper's response.</strong> The response to gap ① is direct: <strong>the dual mask predicts a subnetwork in advance using only pretrained W</strong>. Its response to gap ② is <strong>indirect and incomplete</strong>(see C5).</p>
+    <p><strong>④ Transfer of key designs.</strong><code>RL updates are sparse</code> is adopted as a premise; <code>sparse ≠ low rank</code> is explicitly emphasized as a limitation; <code>retrospective identification</code> is upgraded to a <code>prospective prediction rule</code>. </p>
+  </section>
+
+  <!-- ===================== 8. 演进脉络 ===================== -->
+  <h2>8. Technical evolution</h2>
+  <section class="card">
+    <div class="flow">2021.06 LoRA [low rank, random initialization, zero-initialized equivalence, α/r scaling]
+            │ Gap: subspace selection left to randomness
+            ▼
+      ┌─────────────────────┬──────────────────────┐
+      │                     │                      │
+2024.02 GRPO/DeepSeekMath  2024.04 PiSSA       2024.06 MiLoRA
+ [group-relative advantages, [top-r initialization] [bottom-r initialization]
+  no critic, explicit KL]     S_H≈0.95              S_H≈0.16
+      │                     │                      │
+      │ New optimization     │ Informative = train  │ Right intuition, 1D criterion
+      │ PEFT unchanged       │ RL ΔOOD=−2.44        │ ΔOOD=+0.17 (positive)
+      │                     │                      │
+      └──────────┬──────────┴──────────┬───────────┘
+                 │                     │
+                 │    2025.05 RL Finetunes Small Subnetworks
+                 │      [Only 5%–30% updated, but nearly full rank]
+                 │      Gaps: ① Predict the subnetwork in advance
+                 │            ② Does sparsity imply low rank? Apparently not
+                 │                     │
+                 └──────────┬──────────┘
+                            ▼
+        ┌─────────────────────────────────────────────────────┐
+        │ 2026.01 GeoRA ★ Convergence                         │
+        │ • PiSSA's SVD initialization + frozen residual      │
+        │ • MiLoRA's avoidance of dominant directions         │
+        │ • LoRA's forward structure and α/r scaling          │
+        │ • Prospective prediction of sparse subnetworks     │
+        │ • GRPO's KL constraint as a design criterion        │
+        │ ⇒ Key move: change the matrix being decomposed      │
+        │    W_Geo = W ⊙ (M_Spec ∪ M_Euc)                    │
+        │    S_H≈0.015, NSS≈0.096, ΔOOD=+2.10                 │
+        └────────────────────┬────────────────────────────────┘
+                             │ Open: alignment of ΔW_FullFT and W_Geo principal subspaces?
+                             ▼
+        2026.06 LoRA-RLPO / RLMO [orthogonal initialization, B₀=0]
+                 Alternative diagnosis: singular-value scaling amplifies gradient norms
+                 → KL violations → training collapse
+                 ⇒ Competing explanation; no head-to-head with GeoRA</div>
+
+    <h3>The internal logic: shifting evaluation criteria</h3>
+    <div class="formula">Most expressive subspace ──► Fastest-converging subspace ──► Lowest-disturbance subspace
+ (LoRA: unspecified)          (PiSSA: SFT view)              (MiLoRA→GeoRA: RL view)</div>
+    <p>The driver is not greater technical capability but <strong>a change in objective properties</strong>. SFT learns a new distribution, where larger changes often mean faster learning. RLVR improves specific verifiable skills within a KL ball, where large changes directly mean constraint violations and capability collapse. The same initialization has opposite implications under these objectives: PiSSA gains +5.16pp on GSM8K SFT but loses −2.44pp on math-RLVR OOD.</p>
+
+    <h3>Key Transitions Between Stages</h3>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Transition</th><th>Before</th><th>After</th><th>Representative evidence</th></tr>
+      <tr><td>T1: Initialization shifts from neutral to biased</td><td>LoRA random initialization</td><td>PiSSA / MiLoRA spectral initialization</td><td>PiSSA GSM8K +5.16pp</td></tr>
+      <tr><td>T2: Optimization shifts from SFT to RL</td><td>Dense supervision, no KL</td><td>Sparse binary rewards, explicit KL</td><td>GRPO removes the critic</td></tr>
+      <tr class="best"><td>T3: Evaluation shifts from one objective to two</td><td>Only in-distribution gains</td><td>ID gains alongside OOD retention</td><td>GeoRA Table 1's 4+5 structure</td></tr>
+      <tr><td>T4: Decompose f(W) instead of W</td><td>All previous methods apply SVD to W</td><td>GeoRA applies SVD to W<sub>Geo</sub> </td><td>S<sub>H</sub> 0.95 → 0.015</td></tr>
+    </table>
+    </div>
+    <div class="callout key">
+      <strong>T3 may be the most consequential transition, even though GeoRA does not explicitly claim it.</strong> Elevating OOD retention from an aside to an axis alongside ID gains redefines RLVR success: improving AIME while degrading HumanEval no longer counts as success.
+    </div>
+
+    <h3>Shift in community attention</h3>
+    <ul>
+      <li><strong>2021–2023: Parameter efficiency</strong> —Can fewer parameters match FullFT?</li>
+      <li><strong>2024: Convergence efficiency</strong> —Can the same result be reached faster? PiSSA's central selling point</li>
+      <li><strong>2025: Structural properties of updates</strong> —What exactly does RL change?</li>
+      <li><strong>2026: Stability and capability retention</strong> —Can performance improve without damaging existing abilities?</li>
+    </ul>
+    <p>Notably, ACL 2026 Outstanding Papers include both GeoRA's geometric perspective and <em>Rethinking Entropy Interventions in RLVR</em>'s entropy perspective. <strong>Both address RLVR stability, one through parameter geometry and one through policy-distribution entropy. The absence of cross-validation is a clear gap.</strong></p>
+  </section>
+
+  <!-- ===================== 9. 对标表 ===================== -->
+  <h2>9. Related-work comparison</h2>
+  <section class="card">
+    <div class="tablewrap">
+    <table>
+      <tr><th>Work</th><th>Year/month</th><th>Conference</th><th>Core contribution</th><th>Main metrics</th><th>Relationship to the core paper</th></tr>
+      <tr><td>LoRA</td><td>2021.06</td><td>ICLR 2022</td><td>Low-rank update constraint + zero initialization</td><td>1000× fewer parameters; RLVR ΔOOD = +0.86pp</td><td>Provides the forward structure; random initialization is rejected, yet outperforms PiSSA under RL</td></tr>
+      <tr><td>GRPO / DeepSeekMath</td><td>2024.02</td><td>arXiv</td><td>Group-relative advantages, no critic, explicit KL</td><td>Becomes the de facto RLVR optimizer</td><td>Experimental foundation; KL becomes a design criterion rather than merely a hyperparameter</td></tr>
+      <tr><td>PiSSA</td><td>2024.04</td><td>NeurIPS 2024 Spotlight</td><td>Top-r principal-component initialization + frozen residual</td><td>Mistral-7B GSM8K 72.86 vs 67.7 (<strong>+5.16pp</strong>, SFT)</td><td><strong>Technical foundation and primary target</strong>; under RLVR, S<sub>H</sub>=0.95, ΔOOD=−2.44pp</td></tr>
+      <tr><td>MiLoRA</td><td>2024.06</td><td>NAACL 2025</td><td>Bottom-r minor-component initialization</td><td>Under RLVR, S<sub>H</sub>=0.16, NSS=0.132, ΔOOD=+0.17pp</td><td>Core intuition; selection expands from one dimension to two</td></tr>
+      <tr><td>RL Finetunes Small Subnetworks</td><td>2025.05</td><td>arXiv</td><td>Intrinsic sparsity of RL updates</td><td>7 RL methods × 10 model families; changes only <strong>5%–30%</strong> of parameters; nearly full rank</td><td>Provides the premise (sparsity) and strongest counterevidence (full rank); GeoRA addresses only the former</td></tr>
+      <tr class="best"><td><strong>GeoRA (focal paper)</strong></td><td><strong>2026.01<br>(v4: 2026.07)</strong></td><td><strong>ACL 2026 Main<br>Outstanding</strong></td><td><strong>Changes the SVD input from W to geometrically filtered W<sub>Geo</sub></strong></td><td><strong>ΔID +7.56 / ΔOOD +2.10pp; S<sub>H</sub>=0.015; parameters −99.5%, step time −19.9%, memory −28.5%</strong></td><td><strong>Point of convergence</strong></td></tr>
+      <tr><td>LoRA-RLPO / RLMO</td><td>2026.06</td><td>arXiv</td><td>Orthogonal initialization (B₀=0), without singular-value scaling</td><td>Outperforms LoRA on GSM8K / MATH500 / AIME, consistently from 1.5B–7B</td><td><strong>Competing follow-up</strong>; diagnoses gradient-norm amplification from singular-value scaling, unlike GeoRA; <strong>no head-to-head</strong></td></tr>
+    </table>
+    </div>
+    <h3>Three trends in the table</h3>
+    <ol>
+      <li><strong>S<sub>H</sub> Monotonic decline</strong>: 0.95 (PiSSA) → 0.16 (MiLoRA) → 0.015 (GeoRA), alongside increasing ΔOOD: −2.44 → +0.17 → +2.10. These three aligned observations form the paper's cleanest trend.</li>
+      <li><strong>Marginal parameter-efficiency gains have saturated</strong>: GeoRA's 0.04B parameters offer no advantage over comparable LoRA. The value is stability, not parameter count. Table 3's genuinely new figures are −19.9% step time and −28.5% memory.</li>
+      <li><strong>Diagnoses are diverging</strong>: GeoRA blames subspace location; LoRA-RLPO blames gradient-norm explosion from singular-value scaling. Both explain PiSSA's RL failures but imply different remedies. <strong>This is a key divergence to watch in the second half of 2026.</strong></li>
+    </ol>
+  </section>
+
+  <!-- ===================== 10. 开放挑战 ===================== -->
+  <h2>10. Open challenges and research opportunities</h2>
+
+  <section class="card">
+    <h3>10.1 Theory</h3>
+    <p><strong>O1 · Optimal subspace selection under a KL budget.</strong> Given KL budget ε, rank budget r, and pretrained W, is there a computable criterion J(S) whose maximizing r-dimensional subspace also minimizes the probability of KL violations?</p>
+    <p>GeoRA's dual mask is heuristic, without an optimality argument. This is a <strong>high-value, low-barrier</strong> gap: under a quadratic approximation of RL loss as ½ΔWᵀHΔW, with Fisher information H, the lowest-curvature r-dimensional subspace has a closed-form solution—the bottom-r eigenspace of H. <strong>GeoRA's spectral prior is a rough proxy that avoids computing the Hessian.</strong> Comparing KFAC-approximated Fisher bottom-r subspaces against dual-mask + SVD directly measures the proxy's cost using existing tools.</p>
+    <p><strong>O2 · Compatibility boundaries of sparsity and low rank.</strong> Under what conditions must a matrix on a sparse support have a rapidly decaying singular spectrum? Give sufficient conditions and counterexample families. GeoRA empirically establishes sparse ≠ low rank without characterizing the boundary; 2505.11711 reports nearly full-rank RL updates. Random-matrix theory could address the clean question that <strong>support geometry, rather than sparsity alone, determines low-rank structure.</strong></p>
+
+    <h3>10.2 Engineering and Applications</h3>
+    <p><strong>O3 · Three missing GeoRA experiments with low cost and high return:</strong></p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Experiment</th><th>Specific design</th><th>Question answered</th></tr>
+      <tr><td><strong>E1 · Random-mask control</strong></td><td>Replace M<sub>Spec</sub> ∪ M<sub>Euc</sub> with random retention of 35.45% of non-top-r entries; leave everything else unchanged and rerun Table 1 on Qwen3-8B</td><td>Distinguishes effective geometry from simply avoiding dominant directions (C8)</td></tr>
+      <tr><td><strong>E2 · Principal-subspace alignment</strong></td><td>Run FullFT once to obtain ΔW<sub>FullFT</sub> and calculate the principal angles of top-r(ΔW<sub>FullFT</sub>) and top-r(W<sub>Geo</sub>), comparing against PiSSA and MiLoRA</td><td>Addresses the most serious argument gap (C5), at almost no cost</td></tr>
+      <tr><td><strong>E3 · Three-seed rerun</strong></td><td>Rerun Table 1's Qwen3-8B block with 3 seeds and report standard deviations</td><td>Makes one-rollout differences assessable (C3)</td></tr>
+    </table>
+    </div>
+    <p><strong>O4 · GeoRA versus LoRA-RLPO/RLMO head-to-head.</strong> Fix GRPO implementation, DeepMath-103K training data, KL coefficient 0.001, hardware budget, and rank r=16. Compare six initializations, reporting ID/OOD and KL trajectories together. <strong>This is the direction's most important current experimental gap</strong>: the papers diagnose PiSSA's RL failure differently. Without a head-to-head, the community cannot choose between them—or rule out that they describe two sides of the same problem.</p>
+    <p><strong>O5 · Dynamic masks.</strong>ρ remains 0.2 during training. Could evolving ρ or the mask—loose early, tight later—improve ID gains under the same KL budget? Figure 7(b)'s flat performance across ρ ∈ [10%,40%]<strong>may actually signal room for dynamic schedules</strong>: if each stage prefers a different ρ, the best static value compromises across stages, producing a flat curve.</p>
+    <p><strong>O6 · Layer-/module-specific mask budgets.</strong> Table 5 shows different Jaccard values for MLP and attention (0.131 vs. 0.119), suggesting different geometry, yet GeoRA uses one ρ for all layers. AdaLoRA-style budgeting could <strong>adapt ρ_ℓ and r_ℓ using layerwise spectral-energy distributions or Fisher traces.</strong></p>
+
+    <h3>10.3 Emerging Directions</h3>
+    <p><strong>O7 · Cross-validation of geometric and entropy perspectives.</strong> Do parameter-space geometric constraints (GeoRA's W<sub>res</sub> leash) and policy-space entropy interventions (<em>Rethinking Entropy Interventions in RLVR</em>) address the same failure mode? Log policy entropy during GeoRA training to see whether it naturally avoids collapse; conversely, measure NSS and S<sub>H</sub> for entropy-intervention methods. Orthogonal mechanisms may combine; treating the same problem may produce saturation. <strong>Both outcomes are informative, but neither has been tested.</strong></p>
+    <p><strong>O8 · Beyond verifiable rewards.</strong> Preference rewards in RLHF/DPO are denser but noisier, usually with tighter KL constraints. Does GeoRA's low-curvature-subspace hypothesis still hold? Rerun Table 6's three geometric metrics under DPO and test whether PiSSA's S<sub>H</sub>–NSS–performance relationship remains monotonic.</p>
+    <p><strong>O9 · Mask interpretability and safety implications.</strong> M<sub>Spec</sub> ∪ M<sub>Euc</sub> What functions do the selected 35.45% of parameters serve? Do they overlap known safety-alignment subsets? Systematic avoidance would provide a mechanism for improving capabilities while preserving alignment; overlap could amplify alignment-tax risks. The experiment only requires comparing masks with existing alignment-critical parameter localizations.</p>
+  </section>
+
+  <!-- ===================== 11. 其他工作 ===================== -->
+  <h2>11. Other recent work worth following</h2>
+  <section class="card">
+    <p><strong>Rethinking Entropy Interventions in RLVR: An Entropy Change Perspective</strong> (2026.08, ACL 2026 Main · Outstanding)</p>
+    <ul><li>Uses token-level reweighting based on entropy changes to stabilize RL entropy dynamics. An Outstanding Paper alongside GeoRA, it addresses the same problem through a different route—<strong>reading both is the shortest path to a broad view of 2026 RLVR-stability research</strong>.  <a href="https://2026.aclweb.org/program/best_papers/">ACL 2026 Best Papers</a></li></ul>
+
+    <p><strong>CURE: Critique-Driven Unified Reinforcement Learning for Test-Time Self-Improvement</strong> (2026.08, ACL 2026 Main · Outstanding)</p>
+    <ul><li>Trains models to critique and improve outputs at inference, unifying test-time scaling and RL in one framework. It represents the growing direction of incorporating test-time compute into training objectives. <a href="https://2026.aclweb.org/program/best_papers/">ACL 2026 Best Papers</a></li></ul>
+
+    <p><strong>Evolutionary Guided Decoding: Iterative Value Refinement for LLMs</strong> (2026.08, ACL 2026 Main · Outstanding)</p>
+    <ul><li>Iteratively refines value functions to guide decoding. Its test-time approach changes decoding but not weights, contrasting with GeoRA's modification of only 0.5% of weights. <a href="https://2026.aclweb.org/program/best_papers/">ACL 2026 Best Papers</a></li></ul>
+
+    <p><strong>Geometry-Preserving Orthonormal Initialization for Low-Rank Adaptation in RLVR</strong> (2026.06, arXiv)</p>
+    <ul><li><strong>GeoRA's most direct competitor.</strong> It diagnoses singular-value scaling → gradient-norm amplification → KL violations → collapse, and uses orthogonal initialization (B₀=0, without Σ<sup>1/2</sup> scaling). Neither paper conducts a head-to-head—the most important experimental gap identified here. <a href="https://arxiv.org/abs/2606.31813">arXiv:2606.31813</a></li></ul>
+
+    <p><strong>Understanding and Preventing Entropy Collapse in RLVR</strong> (2026.05, ACL 2026 Findings)</p>
+    <ul><li>Systematically analyzes entropy-collapse causes and prevention in RLVR. It complements GeoRA's KL-stability argument from the policy-distribution rather than parameter-space perspective. <a href="https://arxiv.org/abs/2605.11491">arXiv:2605.11491</a></li></ul>
+
+    <p><strong>LLMs Gaming Verifiers: RLVR can Lead to Reward Hacking</strong> (2026.04, ICLR 2026 LLM Reasoning Workshop)</p>
+    <ul><li>Reveals verifier gaming in RLVR, warning methods such as GeoRA that rely heavily on reward curves—<strong>the reward–accuracy reversal found in §5.4 is a small instance of this phenomenon</strong>.  <a href="https://arxiv.org/abs/2604.15149">arXiv:2604.15149</a></li></ul>
+
+    <p><strong>Spurious Rewards Paradox: Mechanistically Understanding How RLVR Activates Memorization Shortcuts</strong> (2026.01, arXiv)</p>
+    <ul><li>Mechanistically explains why RLVR can improve scores with false rewards by activating memorization shortcuts, challenging the assumption that higher ID scores imply better reasoning. <a href="https://arxiv.org/abs/2601.11061">arXiv:2601.11061</a></li></ul>
+
+    <p><strong>Do Post-Training Algorithms Actually Differ? Scale-Dependent Ranking Inversions</strong> (2026.03, arXiv)</p>
+    <ul><li>Compares 51 post-training configurations across 8 methods × 4 scales (0.5B–7B) in one framework, reporting <strong>algorithm-ranking reversals with scale</strong>. Model-size effects (~50pp) dwarf loss-function changes (~1pp), creating direct external pressure on GeoRA. ⚠️ Single-author preprint, not peer reviewed. <a href="https://arxiv.org/abs/2603.19335">arXiv:2603.19335</a></li></ul>
+
+    <p><strong>Test-Time Scaling in Reasoning LLMs: Inference Regimes, Evaluation, and Reproducibility</strong> (2026.08, arXiv)</p>
+    <ul><li>A new systematic test-time-scaling evaluation and reproducibility study this month. Orthogonal to this issue but within Monday's field, it is a candidate for next week's focal paper. <a href="https://arxiv.org/abs/2608.04001">arXiv:2608.04001</a></li></ul>
+  </section>
+
+  <!-- ===================== 12. 总结 ===================== -->
+  <h2>12. Conclusion</h2>
+  <section class="card">
+    <p>GeoRA's contribution in one sentence: <strong>It is among the first works to take seriously that SFT's PEFT toolbox cannot simply transfer to RLVR, offering a conceptually clean remedy: change the matrix subjected to SVD.</strong></p>
+    <p>Its strongest evidence is Table 6's S<sub>H</sub>–NSS–ΔOOD trend (PiSSA 0.95/0.418/−2.44 → MiLoRA 0.16/0.132/+0.17 → GeoRA 0.015/0.096/+2.10), alongside Table 1's structural finding that it alone improves both ID and OOD.</p>
+    <div class="callout key">
+      Three inexpensive experiments are most needed: <strong>a random-mask control to test C8's alternative hypothesis, principal-subspace alignment measurements of ΔW<sub>FullFT</sub> against W<sub>Geo</sub> to address C5, and multiple-seed reruns to make C3's one-rollout differences assessable</strong>. Until then, the necessity of this particular dual mask remains untested. What is supported is avoiding principal singular directions—a point MiLoRA already made in 2024.
+    </div>
+  </section>
+
+  <footer>
+    <p><strong>Footnotes</strong></p>
+    <ol>
+      <li><strong>Index not updated</strong>: This was a scheduled cloud run without desktop access; <code>ml-report-index.md</code> could not automatically append this issue. Add it when the desktop is next available: <code>2026-08-10 | LLM/NLP | GeoRA: Geometry-Aware Low-Rank Adaptation for RLVR | ACL 2026 Main (Outstanding) | Changes SVD input from W to geometrically filtered W_Geo; among the first redesigns of PEFT initialization specifically for RLVR</code>. </li>
+      <li><strong>Numerical sources</strong>: All performance figures cite source tables. Derived ID/OOD means, differences, question-count equivalents, union coverage, and speedups were calculated and labeled in this report.</li>
+      <li><strong>Extraction risks</strong>: The paper was retrieved through arXiv HTML v3/v4. Table bolding may be distorted in conversion, so claims about boldface were qualified. Figures 3–7 are curves; only textual descriptions could be cited.</li>
+      <li><strong>Unverified links</strong>: <code>arxiv.org/abs/2106.09685</code>, <code>arxiv.org/abs/2406.09044</code>, <code>huggingface.co/papers</code> Three triggered retrieval-proxy restrictions and were not verified at body-text level.</li>
+    </ol>
+    <p style="margin-top:18px">Generated on 2026-08-10 · Focal paper <a href="https://aclanthology.org/2026.acl-long.1110/">GeoRA (ACL 2026 Outstanding Paper)</a> · 24-paper candidate pool, random selection, 0 redraws</p>
+  </footer>
+
+</div>
+<div class="tip" id="tip"></div>
+<script>
+(function () {
+  var tip = document.getElementById('tip');
+  document.querySelectorAll('svg.chart rect.bar').forEach(function (el) {
+    el.addEventListener('mousemove', function (e) {
+      tip.textContent = el.getAttribute('data-t');
+      tip.style.opacity = '1';
+      var x = e.clientX + 14, y = e.clientY - 12;
+      if (x + 260 > window.innerWidth) { x = e.clientX - 260; }
+      tip.style.left = x + 'px';
+      tip.style.top = y + 'px';
+    });
+    el.addEventListener('mouseleave', function () { tip.style.opacity = '0'; });
+  });
+})();
+</script>
+</body>
+</html>

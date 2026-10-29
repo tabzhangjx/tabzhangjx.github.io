@@ -1,0 +1,848 @@
+---
+layout: null
+title: "LongLive"
+date: 2026-09-02
+topic: vlm-vision
+excerpt: "How LongLive combines streaming long tuning, frame sinks, and KV-recache for sustainable long-video generation—and where quality, semantics, and speed still trade off."
+permalink: /blog/2026/09/02/longlive-streaming-long-video-generation/en/
+blog_post: false
+sitemap: true
+lang: en
+alternate_zh: /blog/2026/09/02/longlive-streaming-long-video-generation/
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>LongLive In-Depth Research Report · 2026-09-02</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface-1: #fcfcfb;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #6f6e69;
+    --grid: #e1e0d9;
+    --border: rgba(11, 11, 11, .11);
+    --chart-primary: #2a78d6;
+    --chart-comparison: #eb6834;
+    --highlight-row: #dceafa;
+    --status-positive: #006300;
+    --status-critical: #b32828;
+    --focus: #195fae;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --text-primary: #fff;
+    --text-secondary: #c3c2b7;
+    --muted: #a09f98;
+    --grid: #343431;
+    --border: rgba(255, 255, 255, .12);
+    --chart-primary: #5a9bea;
+    --chart-comparison: #ef8156;
+    --highlight-row: rgba(57, 135, 229, .18);
+    --status-positive: #59c759;
+    --status-critical: #ef7777;
+    --focus: #83b8f4;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--page); }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  .toolbar { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-bottom: 14px; }
+  .language-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1.75;
+    text-decoration: none;
+  }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 14px;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  .hero {
+    margin-bottom: 28px;
+    padding: 32px 34px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-1);
+  }
+  .eyebrow {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0 0 6px; font-size: 30px; line-height: 1.3; letter-spacing: -.01em; }
+  h2 { margin: 0 0 16px; font-size: 22px; line-height: 1.35; letter-spacing: -.01em; }
+  h3 { margin: 28px 0 10px; font-size: 18px; line-height: 1.4; }
+  p { margin: 0 0 14px; }
+  .subtitle { margin-bottom: 18px; color: var(--text-secondary); font-size: 17px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    padding: 4px 11px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 12.5px;
+  }
+  .chip.source { border-color: var(--chart-primary); color: var(--chart-primary); font-weight: 650; }
+  .lede {
+    margin: 20px 0 0;
+    padding: 4px 0 4px 18px;
+    border-left: 3px solid var(--chart-primary);
+    color: var(--text-secondary);
+    font-size: 15.5px;
+  }
+  .card, .figure {
+    margin: 0 0 20px;
+    padding: 26px 30px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-1);
+  }
+  a { color: var(--chart-primary); text-decoration-thickness: 1px; text-underline-offset: 3px; overflow-wrap: anywhere; }
+  ul, ol { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 7px; }
+  .callout {
+    margin: 18px 0;
+    padding: 14px 18px;
+    border-left: 3px solid var(--chart-comparison);
+    border-radius: 0 8px 8px 0;
+    background: var(--page);
+    color: var(--text-secondary);
+    font-size: 15px;
+  }
+  .formula, pre {
+    max-width: 100%;
+    margin: 12px 0;
+    padding: 12px 16px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace; }
+  .table-scroll { max-width: 100%; margin: 16px 0 20px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--grid); text-align: left; }
+  th { color: var(--muted); font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--highlight-row); font-weight: 650; }
+  .fig-title { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+  .fig-sub, figcaption { color: var(--muted); font-size: 13.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 14px 0; color: var(--text-secondary); font-size: 13.5px; }
+  .swatch { display: inline-block; width: 11px; height: 11px; margin-right: 7px; border-radius: 3px; vertical-align: -1px; }
+  .chart { display: block; width: 100%; height: auto; margin: 14px 0; }
+  .chart text { fill: var(--text-secondary); font-family: system-ui, sans-serif; }
+  [data-tip] { cursor: help; }
+  .tip {
+    position: fixed;
+    z-index: 50;
+    max-width: min(300px, calc(100vw - 24px));
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface-1);
+    color: var(--text-primary);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+    font-size: 13px;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  .tip.visible { opacity: 1; transform: translateY(0); }
+  footer { margin-top: 52px; padding-top: 20px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13.5px; }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    .hero { padding: 24px 20px; }
+    h1 { font-size: 25px; }
+    .card, .figure { padding: 21px 18px; }
+    table { min-width: 540px; font-size: 13px; }
+    th, td { padding: 7px 8px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+  @media print {
+    :root { color-scheme: light; --page: #fff; --surface-1: #fff; --text-primary: #000; --text-secondary: #333; --muted: #555; }
+    .toolbar, .tip { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .hero, .card, .figure { break-inside: avoid; box-shadow: none; }
+    a { color: inherit; }
+  }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+  <div class="toolbar">
+    <a class="language-toggle" href="/blog/2026/09/02/longlive-streaming-long-video-generation/" lang="zh-CN" hreflang="zh-CN">中文</a>
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle light or dark theme" aria-pressed="false">☾ Dark</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ICLR 2026 · GENERATIVE VIDEO</p>
+    <h1>LongLive: Turning Long-Video Generation into a Sustainable Streaming System</h1>
+    <p class="subtitle">From Autoregressive Exposure Bias to Cache Refresh and Long-Horizon State Management</p>
+    <div class="meta" aria-label="Report metadata">
+      <span class="chip source">ICLR 2026</span>
+      <span class="chip">2026-09-02</span>
+      <span class="chip">Real-time interactive long-video generation</span>
+    </div>
+    <p class="lede">LongLive reaches 20.7 FPS on a single H100 through streaming long tuning, a frame sink, and KV-recache; its real advantage is the long-horizon quality–speed Pareto frontier, not across-the-board semantic superiority on short clips.</p>
+  </header>
+
+  <main><div class="report-body">
+<p><strong>Core positioning in one sentence:</strong> LongLive decomposes the long-horizon problem of causal video diffusion into three parts—exposing the model to its own errors during training, retaining only a local window plus a first-frame anchor during inference, and recomputing the cache at prompt switches—allowing a 1.3B model to reach <strong>20.7 FPS</strong> on a single H100 and generate up to 240 seconds; however, its short-video Semantic score remains below Self-Forcing by <strong>4.81 points</strong>. Its most reliable contribution is therefore the long-horizon stability–throughput Pareto frontier, not universally superior absolute visual quality.</p>
+<section class="card" aria-labelledby="1-links-and-evidence-title"><h2 id="1-links-and-evidence-title">1. Link Table and Evidence Boundaries</h2>
+<p>All URLs below were accessed, and the numbers come from the paper’s v2 PDF. Page numbers refer to PDF pages. The LongLive GitHub repository switched its main branch to 2.0 in 2026; the 1.0 code is on the
+<code>v1.0</code> branch. This report analyzes only LongLive 1.0, corresponding to the paper.</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="Data table; scroll horizontally"><table>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Conference / official page</th>
+<th scope="col">arXiv (version and date)</th>
+<th scope="col">Code</th>
+<th scope="col">Data / weights</th>
+<th scope="col">Project page / video</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>LongLive (primary)</td>
+<td><a href="https://openreview.net/forum?id=nCAODkpsPJ">ICLR 2026
+OpenReview</a></td>
+<td><a
+href="https://arxiv.org/abs/2509.22622">2509.22622v2, 2025-10-13; v1
+2025-09-26</a></td>
+<td><a
+href="https://github.com/NVlabs/LongLive">NVlabs/LongLive</a></td>
+<td><a
+href="https://huggingface.co/Efficient-Large-Model/LongLive-1.3B">LongLive-1.3B weights</a>; training prompts from VidProM</td>
+<td><a href="https://nvlabs.github.io/LongLive/">Project page and videos</a></td>
+</tr>
+<tr class="even">
+<td>Self-Forcing</td>
+<td>NeurIPS 2025 Spotlight (see arXiv comments)</td>
+<td><a
+href="https://arxiv.org/abs/2506.08009">2506.08009v2, 2025-11-10; v1
+2025-06-09</a></td>
+<td><a href="https://github.com/guandeh17/Self-Forcing">GitHub</a></td>
+<td>Repository links model weights</td>
+<td><a href="https://self-forcing.github.io/">Project page</a></td>
+</tr>
+<tr class="odd">
+<td>SkyReels-V2</td>
+<td>Technical report</td>
+<td><a
+href="https://arxiv.org/abs/2504.13074">2504.13074v3, 2025-04-21</a></td>
+<td><a href="https://github.com/SkyworkAI/SkyReels-V2">GitHub</a></td>
+<td>Repository provides weights at multiple scales</td>
+<td>Repository includes demo/playground</td>
+</tr>
+<tr class="even">
+<td>FramePack</td>
+<td>—</td>
+<td><a
+href="https://arxiv.org/abs/2504.12626">2504.12626v3, 2025-10-14</a></td>
+<td><a href="https://github.com/lllyasviel/FramePack">GitHub</a></td>
+<td>Repository provides desktop models and weights</td>
+<td><a
+href="https://lllyasviel.github.io/frame_pack_gitpage/">Project page</a></td>
+</tr>
+<tr class="odd">
+<td>StreamingT2V</td>
+<td><a
+href="https://openaccess.thecvf.com/content/CVPR2025/html/Henschel_StreamingT2V_Consistent_Dynamic_and_Extendable_Long_Video_Generation_from_Text_CVPR_2025_paper.html">CVPR
+2025</a></td>
+<td><a
+href="https://arxiv.org/abs/2403.14773">2403.14773v2, 2025-04-16; v1
+2024-03-21</a></td>
+<td><a
+href="https://github.com/Picsart-AI-Research/StreamingT2V">GitHub</a></td>
+<td>Repository/HF provides weights</td>
+<td><a href="https://streamingt2v.github.io/">Project page</a></td>
+</tr>
+</tbody>
+</table></div>
+<p>Evidence grading: exact table values are marked as reported by the paper; percentages, ratios, and differences are recalculated only from those values. Figure 7 does not provide decimals for every window configuration, so this report states only proximity and the saturation point rather than guessing bar heights. The paper reports no multiple random seeds, standard deviations, or confidence intervals, so “significant improvement” is not used.</p>
+</section>
+<section class="card" aria-labelledby="2-motivation-title"><h2 id="2-motivation-title">2. Motivation: Long Video Is More Than “Generating a Short Clip Repeatedly”</h2>
+<p>Short-video diffusion commonly uses bidirectional spatiotemporal attention, which yields high quality but cannot naturally reuse historical KV. Causal AR models can cache state, but rolling generation continually conditions on their own errors. LongLive summarizes three tensions: exposure bias from short training to long inference; quadratic computation and linear KV growth under full-history attention; and the prompt-switch dilemma in which deleting the cache causes jumps while retaining it preserves stale semantics.</p>
+<p>The quantitative pain points come from Table 1 (p.7): Wan2.1 runs at only <strong>0.78
+FPS</strong>, SkyReels-V2 <strong>0.49 FPS</strong>, MAGI-1 <strong>0.19
+FPS</strong>; the fastest existing CausVid/Self-Forcing chunk-wise method reaches <strong>17.0
+FPS</strong>. In the 30-second VBench-Long Table 3 (p.8), SkyReels-V2 scores
+<strong>75.29</strong>, FramePack <strong>81.95</strong>, Self-Forcing
+<strong>81.59</strong>. Thus, claims of “unlimited length” do not automatically solve generation speed and long-horizon consistency.</p>
+<p>Interaction adds a state-update problem: the old prompt is written into the self-attention KV cache through cross-attention, so the cache retains stale semantics after a new prompt arrives. Clearing the cache follows the new instruction but disrupts characters and scenes; retaining it preserves continuity but causes prompt inertia. LongLive is engineered not to generate one fixed long video in a single pass, but to let users append prompts continuously while the system keeps producing output at bounded per-step cost.</p>
+</section>
+<section class="card" aria-labelledby="3-narrative-assumptions-tradeoffs-title"><h2 id="3-narrative-assumptions-tradeoffs-title">3. Narrative, Core Assumptions, and Trade-offs</h2>
+<p>The narrative has three successive layers. First, based on Wan2.1-T2V-1.3B, it adapts a short-video model into a few-step causal generator through Self-Forcing/DMD. Second, training no longer sees only real short clips: each round extends five seconds of the model’s own generated history and computes gradients only for the current new segment, exposing the model during training to the degraded context encountered at deployment. Third, training and inference both use a local window plus a first-frame frame sink; at a prompt switch, KV is rebuilt from recent visual history and the new prompt.</p>
+<p>The assumptions are that most video motion depends on nearby frames; the first frame retains a low-frequency global anchor for identity and scene; a short-video teacher can provide local supervision segment by segment even if it cannot generate reliable long videos; detaching history does not remove gradients needed to learn long-horizon stability; and training with a single prompt switch generalizes to multiple switches. The trade-offs are bounded memory for limited long-range information, first-frame anchoring that may obstruct intended scene or identity changes, and inheritance of base-model biases through the local teacher.</p>
+</section>
+<section class="card" aria-labelledby="4-formulation-pseudocode-title"><h2 id="4-formulation-pseudocode-title">4. Equation-Level Formulation and Pseudocode</h2>
+<p>Let each five-second latent chunk be (x_t), the prompt be (p_t), and the historical cache be (C_t). The causal factorization is [ p_\theta(x_{1:T}|p_{1:T})=\prod_{t=1}^T p_\theta(x_t\mid C_{t-1},p_t), \quad C_t=\mathrm{Update}(C_{t-1},x_t,p_t). ] At a prompt switch (p^-\to p^+), ordinary KV retention uses (C^-), leaving stale semantics; clearing it produces (\varnothing), losing visual state. KV-recache is defined as [ C^+=G^{KV}<em>\theta(x</em>{t-W:t},p^+), ] which re-encodes the most recent (W) frames once with the new prompt. The paper reports that recaching for a single ten-second switch adds only about
+<strong>6%</strong> time (§3.1, p.3).</p>
+<p>Streaming long tuning stop-gradients the history: [ \tilde x_{&lt;t}\sim p_\theta,\quad \mathcal L_t=\mathcal L_{DMD}\bigl(x_t;\operatorname{sg}(\tilde x_{&lt;t}),p_t,G_{teacher}\bigr), ] so the backward graph covers only the current five seconds and does not grow with total duration. Resident KV consists of a local window (W), the current supervised segment (T), and a sink (S), requiring (O(W+T+S)) rather than (O(L)) space.</p>
+<pre class="text"><code>Initialize: Wan2.1-1.3B → ODE init → Self-Forcing DMD few-step causal model
+for each training rollout up to 60s:
+    cache = ∅
+    for chunk = 1..12:
+        at a random switch point: cache = Recache(most recent W frames, new prompt)
+        x_chunk = Student.sample(cache, active_prompt)
+        loss = DMD(x_chunk, Teacher14B, stopgrad(history))
+        update only the current chunk; cache retains [first-frame sink + most recent W]
+Inference: recache once at each prompt boundary; otherwise continue rolling output</code></pre>
+</section>
+<section class="card" aria-labelledby="5-mechanisms-engineering-title"><h2 id="5-mechanisms-engineering-title">5. Mechanisms and Engineering Details</h2>
+<div class="table-scroll" role="region" tabindex="0" aria-label="Data table; scroll horizontally"><table>
+<thead>
+<tr class="header">
+<th scope="col">Mechanism</th>
+<th scope="col">Specific setting</th>
+<th scope="col">What it solves</th>
+<th scope="col">Cost / risk</th>
+<th scope="col">Source</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Causal AR few-step adaptation</td>
+<td>Wan2.1-T2V-1.3B, 832×480, 5s/16FPS</td>
+<td>Supports KV cache and streaming output</td>
+<td>Depends on a 14B teacher and DMD</td>
+<td>§4 and Appendix F, pp.6/16</td>
+</tr>
+<tr class="even">
+<td>Streaming long tuning</td>
+<td>Generate the next 5s segment per round, up to 60s</td>
+<td>Train-long/test-long; sees its own errors</td>
+<td>History is detached, truncating cross-segment gradients</td>
+<td>§3.2, p.4</td>
+</tr>
+<tr class="odd">
+<td>KV-recache</td>
+<td>Rebuild cache from the recent window + new prompt at a switch</td>
+<td>Preserves continuity while following new instructions</td>
+<td>About +6% time per switch</td>
+<td>§3.1, p.3</td>
+</tr>
+<tr class="even">
+<td>Short window</td>
+<td>local window 9 latent frames</td>
+<td>Compute/cache does not grow with total duration</td>
+<td>Distant events may be forgotten</td>
+<td>§3.3, p.5</td>
+</tr>
+<tr class="odd">
+<td>Frame sink</td>
+<td>Permanently retain 3 latent frames from the first chunk</td>
+<td>Global identity/scene anchor</td>
+<td>May lock in the initial state</td>
+<td>Appendix F, p.16</td>
+</tr>
+<tr class="even">
+<td>Prompt data</td>
+<td>Original VidProM prompt; Qwen2-72B generates subsequent prompts</td>
+<td>No additional real long videos required</td>
+<td>LLM-synthesized switch patterns are fairly regular</td>
+<td>§4 and Appendix E</td>
+</tr>
+<tr class="odd">
+<td>Optimization</td>
+<td>64 H100, batch 64, 3,000 iter; actor lr 1e-5, critic 2e-6; EMA
+.99</td>
+<td>Completes long tuning in 12h</td>
+<td>About 32 H100 GPU-days</td>
+<td>Appendix F, p.16</td>
+</tr>
+<tr class="even">
+<td>LoRA</td>
+<td>rank 32–512; rank256 = 350M parameters</td>
+<td>Reduces optimizer-state overhead</td>
+<td>Best setting still requires 27% of parameters</td>
+<td>Table A, p.16</td>
+</tr>
+</tbody>
+</table></div>
+<p>The paper states that window + sink, relative to full history on one H100, reduces end-to-end computation time by
+<strong>28%</strong>and peak memory by
+<strong>17%</strong>(§3.3, p.5). This is neither relative to every baseline nor a complete attribution of the 20.7 FPS result.</p>
+</section>
+<section class="card" aria-labelledby="6-data-benchmarks-metrics-title"><h2 id="6-data-benchmarks-metrics-title">6. Data, Benchmarks, and Metrics</h2>
+<p>Short clips use official VBench prompts and report Total, Quality, and Semantic. Single-prompt long videos use VBench-Long: each prompt generates 30 seconds, segmented by the official script. The authors’ interactive evaluation contains <strong>160 videos of 60 seconds each</strong>, each with six consecutive ten-second prompts. Full-video quality uses customizable VBench-Long dimensions, while semantic alignment computes CLIP per ten-second segment. The user study contains <strong>48 pairwise questions × 26 valid participants = 1,248 judgments</strong>(Appendix L, p.17), but Figure 1 in the main paper provides neither itemized values that can be recomputed nor confidence intervals.</p>
+<p>All FPS results use one H100 (Tables 1/3), yet resolutions and model sizes are not fully standardized: 640×384 to 960×540 and 0.6B to 4.5B. LongLive at 20.7 FPS is most comparable with Self-Forcing at 17.0 FPS because both use 1.3B/832×480; ratios against SkyReels at 960×540 or MAGI at 4.5B cannot be attributed solely to the algorithm.</p>
+</section>
+<section class="card" aria-labelledby="7-main-results-title"><h2 id="7-main-results-title">7. Complete Main-Result Matrix</h2>
+<section class="subsection" aria-labelledby="71-short-video-vbench-title"><h3 id="71-short-video-vbench-title">7.1 Short-Video VBench (Table 1, p.7)</h3>
+<div class="table-scroll" role="region" tabindex="0" aria-label="Data table; scroll horizontally"><table>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">Parameters</th>
+<th scope="col" style="text-align: right;">Resolution</th>
+<th scope="col" style="text-align: right;">FPS↑</th>
+<th scope="col" style="text-align: right;">Total↑</th>
+<th scope="col" style="text-align: right;">Quality↑</th>
+<th scope="col" style="text-align: right;">Semantic↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>LTX-Video</td>
+<td style="text-align: right;">1.9B</td>
+<td style="text-align: right;">768×512</td>
+<td style="text-align: right;">8.98</td>
+<td style="text-align: right;">80.00</td>
+<td style="text-align: right;">82.30</td>
+<td style="text-align: right;">70.79</td>
+</tr>
+<tr class="even">
+<td>Wan2.1</td>
+<td style="text-align: right;">1.3B</td>
+<td style="text-align: right;">832×480</td>
+<td style="text-align: right;">0.78</td>
+<td style="text-align: right;">84.26</td>
+<td style="text-align: right;">85.30</td>
+<td style="text-align: right;">80.09</td>
+</tr>
+<tr class="odd">
+<td>SkyReels-V2</td>
+<td style="text-align: right;">1.3B</td>
+<td style="text-align: right;">960×540</td>
+<td style="text-align: right;">0.49</td>
+<td style="text-align: right;">82.67</td>
+<td style="text-align: right;">84.70</td>
+<td style="text-align: right;">74.53</td>
+</tr>
+<tr class="even">
+<td>MAGI-1</td>
+<td style="text-align: right;">4.5B</td>
+<td style="text-align: right;">832×480</td>
+<td style="text-align: right;">0.19</td>
+<td style="text-align: right;">79.18</td>
+<td style="text-align: right;">82.04</td>
+<td style="text-align: right;">67.74</td>
+</tr>
+<tr class="odd">
+<td>CausVid</td>
+<td style="text-align: right;">1.3B</td>
+<td style="text-align: right;">832×480</td>
+<td style="text-align: right;">17.0</td>
+<td style="text-align: right;">81.20</td>
+<td style="text-align: right;">84.05</td>
+<td style="text-align: right;">69.80</td>
+</tr>
+<tr class="even">
+<td>NOVA</td>
+<td style="text-align: right;">0.6B</td>
+<td style="text-align: right;">768×480</td>
+<td style="text-align: right;">0.88</td>
+<td style="text-align: right;">80.12</td>
+<td style="text-align: right;">80.39</td>
+<td style="text-align: right;">79.05</td>
+</tr>
+<tr class="odd">
+<td>Pyramid Flow</td>
+<td style="text-align: right;">2B</td>
+<td style="text-align: right;">640×384</td>
+<td style="text-align: right;">6.7</td>
+<td style="text-align: right;">81.72</td>
+<td style="text-align: right;">84.74</td>
+<td style="text-align: right;">69.62</td>
+</tr>
+<tr class="even">
+<td>Self-Forcing chunk</td>
+<td style="text-align: right;">1.3B</td>
+<td style="text-align: right;">832×480</td>
+<td style="text-align: right;">17.0</td>
+<td style="text-align: right;">84.31</td>
+<td style="text-align: right;">85.07</td>
+<td style="text-align: right;"><strong>81.28</strong></td>
+</tr>
+<tr class="odd">
+<td>Self-Forcing frame</td>
+<td style="text-align: right;">1.3B</td>
+<td style="text-align: right;">832×480</td>
+<td style="text-align: right;">8.9</td>
+<td style="text-align: right;">84.26</td>
+<td style="text-align: right;">85.25</td>
+<td style="text-align: right;">80.30</td>
+</tr>
+<tr class="even">
+<td><strong>LongLive</strong></td>
+<td style="text-align: right;">1.3B</td>
+<td style="text-align: right;">832×480</td>
+<td style="text-align: right;"><strong>20.7</strong></td>
+<td style="text-align: right;"><strong>84.87</strong></td>
+<td style="text-align: right;"><strong>86.97</strong></td>
+<td style="text-align: right;">76.47</td>
+</tr>
+</tbody>
+</table></div>
+<p>Against the most comparable Self-Forcing chunk baseline, LongLive throughput is <strong>+3.7 FPS /
++21.76%</strong>, Total <strong>+0.56 / +0.66%</strong>, Quality
+<strong>+1.90 / +2.23%</strong>, while Semantic is <strong>−4.81 /
+−5.92%</strong>(recalculated here). Relative to SkyReels-V2, throughput is
+<strong>42.24×</strong> FPS, but at a different resolution.</p>
+</section>
+<section class="subsection" aria-labelledby="72-vbench-long-title"><h3 id="72-vbench-long-title">7.2 30-Second VBench-Long (Table 3, p.8)</h3>
+<div class="table-scroll" role="region" tabindex="0" aria-label="Data table; scroll horizontally"><table>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">Total↑</th>
+<th scope="col" style="text-align: right;">Quality↑</th>
+<th scope="col" style="text-align: right;">Semantic↑</th>
+<th scope="col" style="text-align: right;">FPS↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>SkyReels-V2</td>
+<td style="text-align: right;">75.29</td>
+<td style="text-align: right;">80.77</td>
+<td style="text-align: right;">53.37</td>
+<td style="text-align: right;">0.49</td>
+</tr>
+<tr class="even">
+<td>FramePack</td>
+<td style="text-align: right;">81.95</td>
+<td style="text-align: right;">83.61</td>
+<td style="text-align: right;">75.32</td>
+<td style="text-align: right;">0.92</td>
+</tr>
+<tr class="odd">
+<td>Self-Forcing</td>
+<td style="text-align: right;">81.59</td>
+<td style="text-align: right;">83.82</td>
+<td style="text-align: right;">72.70</td>
+<td style="text-align: right;">17.0</td>
+</tr>
+<tr class="even">
+<td><strong>LongLive</strong></td>
+<td style="text-align: right;"><strong>83.52</strong></td>
+<td style="text-align: right;"><strong>85.44</strong></td>
+<td style="text-align: right;"><strong>75.82</strong></td>
+<td style="text-align: right;"><strong>20.7</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>LongLive exceeds the runner-up FramePack in Total by <strong>+1.57 /
++1.92%</strong>, the runner-up Self-Forcing in Quality by <strong>+1.62 /
++1.93%</strong>, and the runner-up FramePack in Semantic by <strong>+0.50 /
++0.66%</strong>. This table supports the method’s central claim more strongly than the short-video table.</p>
+</section>
+<section class="subsection" aria-labelledby="73-interaction-title"><h3 id="73-interaction-title">7.3 60-Second Interaction (Table 2, p.7)</h3>
+<div class="table-scroll" role="region" tabindex="0" aria-label="Data table; scroll horizontally"><table>
+<thead>
+<tr class="header">
+<th scope="col">Method</th>
+<th scope="col" style="text-align: right;">Quality↑</th>
+<th scope="col" style="text-align: right;">0–10s CLIP</th>
+<th scope="col" style="text-align: right;">10–20s</th>
+<th scope="col" style="text-align: right;">20–30s</th>
+<th scope="col" style="text-align: right;">30–40s</th>
+<th scope="col" style="text-align: right;">40–50s</th>
+<th scope="col" style="text-align: right;">50–60s</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>SkyReels-V2</td>
+<td style="text-align: right;">80.49</td>
+<td style="text-align: right;">20.96</td>
+<td style="text-align: right;">22.51</td>
+<td style="text-align: right;">25.78</td>
+<td style="text-align: right;">18.45</td>
+<td style="text-align: right;">19.57</td>
+<td style="text-align: right;">19.61</td>
+</tr>
+<tr class="even">
+<td>Self-Forcing</td>
+<td style="text-align: right;">82.46</td>
+<td style="text-align: right;">28.46</td>
+<td style="text-align: right;">24.89</td>
+<td style="text-align: right;">23.53</td>
+<td style="text-align: right;">22.96</td>
+<td style="text-align: right;">23.07</td>
+<td style="text-align: right;">23.19</td>
+</tr>
+<tr class="odd">
+<td><strong>LongLive</strong></td>
+<td style="text-align: right;"><strong>84.38</strong></td>
+<td style="text-align: right;"><strong>28.85</strong></td>
+<td style="text-align: right;"><strong>25.68</strong></td>
+<td style="text-align: right;"><strong>24.64</strong></td>
+<td style="text-align: right;"><strong>24.23</strong></td>
+<td style="text-align: right;"><strong>24.32</strong></td>
+<td style="text-align: right;"><strong>24.32</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>LongLive’s full-video Quality exceeds Self-Forcing by <strong>+1.92 /
++2.33%</strong>; final-segment CLIP is 24.32 versus 23.19, a difference of<strong>+1.13 /
++4.87%</strong>. Yet it still declines from 28.85 in the first segment to 24.32 in the last, an absolute <strong>−4.53 /
+−15.70%</strong>; “stable” therefore means slower relative decay, not no decay.</p>
+</section>
+</section>
+<section class="card" aria-labelledby="8-ablations-quantization-title"><h2 id="8-ablations-quantization-title">8. Layered Ablations, Hyperparameter Transitions, and Quantization</h2>
+<p>KV Table 4 (p.8):</p>
+<div class="table-scroll" role="region" tabindex="0" aria-label="Data table; scroll horizontally"><table>
+<thead>
+<tr class="header">
+<th scope="col">Cache strategy</th>
+<th scope="col" style="text-align: right;">Background consistency↑</th>
+<th scope="col" style="text-align: right;">Subject consistency↑</th>
+<th scope="col" style="text-align: right;">CLIP↑</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>No KV cache</td>
+<td style="text-align: right;">92.75</td>
+<td style="text-align: right;">89.59</td>
+<td style="text-align: right;"><strong>28.95</strong></td>
+</tr>
+<tr class="even">
+<td>KV cache</td>
+<td style="text-align: right;">94.77</td>
+<td style="text-align: right;">93.69</td>
+<td style="text-align: right;">25.92</td>
+</tr>
+<tr class="odd">
+<td><strong>KV-recache</strong></td>
+<td style="text-align: right;"><strong>94.81</strong></td>
+<td style="text-align: right;"><strong>94.04</strong></td>
+<td style="text-align: right;">27.87</td>
+</tr>
+</tbody>
+</table></div>
+<p>Relative to ordinary KV, recache changes background by +0.04, subject by +0.35, and CLIP by +1.95 (+7.52%); its CLIP remains 1.08 below clearing the cache. It is a compromise Pareto point, not best in every column.</p>
+<p>Figure 7 (p.8) shows trends only: as the window grows from 3 to 27 latent frames, consistency saturates at about
+<strong>24 frames</strong>; 9 local + 3 sink approaches a 21-frame window. The paper does not provide exact values for every bar, so no table should be fabricated. Table A (p.16) reports trainable LoRA parameters of 44M/87M/175M/350M/700M/1.3B for ranks 32/64/128/256/512/Full, with Total scores of
+<strong>81.08/82.68/82.98/83.12/83.04/83.52</strong>. Rank 256 is best among adapters; rank 512 drops by 0.08, showing clear saturation, though Full remains 0.40 higher.</p>
+<p>Table B (p.16), on RTX 5090: INT8/BF16 models occupy 1.4/2.7GB, with FPS of
+<strong>16.4/12.6</strong>, Total <strong>84.31/84.87</strong>, Quality
+<strong>86.20/86.97</strong>, Semantic
+<strong>76.74/76.47</strong>. INT8 increases throughput by 30.16% while Total falls by 0.56; Semantic rises by 0.27, but without multiple seeds this small reversal cannot be interpreted as a quantization gain. The abstract/HF later cites FP8 at 24.8 FPS, whereas v2 Table B uses INT8 on a 5090; hardware and precision regimes must not be conflated.</p>
+</section>
+<section class="card" aria-labelledby="9-significance-reproducibility-title"><h2 id="9-significance-reproducibility-title">9. Statistical Significance and Reproducibility</h2>
+<p>The paper<strong>does not report</strong>the number of generation seeds, mean ± standard deviation, bootstrap confidence intervals, VBench item-level paired tests, or confidence intervals for the user study. Repeated judgments by 26 participants are not 1,248 independent people. Consequently, the statistical stability of differences such as 0.50 Semantic or 0.04 Background cannot be determined.</p>
+<p>Reproducibility strengths include released training/inference code, weights, prompt-generation templates, and major hyperparameters; requirements are at least a 40GB GPU, Linux, and 64GB RAM. A risk is that the main repository has moved to LongLive 2.0, so one must pin the
+<code>v1.0</code> commit. Training depends on a Wan2.1-14B teacher, VidProM prompts, subsequent prompts synthesized by Qwen2-72B, and 64 H100s, leaving full reproduction expensive.</p>
+</section>
+<section class="card" aria-labelledby="10-related-work-title"><h2 id="10-related-work-title">10. Related Work: Problem Origins and Design Transfer</h2>
+<p><strong>StreamingT2V</strong> addresses hard cuts between short clips using short-term CAM from the previous chunk, long-term appearance preservation from the first chunk, and random blending, producing 80–1,200+ frames. Its gap is slow multi-stage inference rather than a few-step causal KV system, with no streaming prompt switching. LongLive inherits “near-term + first-segment long-term anchor” and compresses it into a rolling window + frame sink.</p>
+<p><strong>SkyReels-V2</strong> supports unlimited extension through diffusion forcing, structured cinematic captions, multi-stage training, and motion RL. Its gap is that the 1.3B model reaches only 0.49 FPS in LongLive Table 1, while interactive switching also needs complex state handling. LongLive keeps the AR diffusion-forcing route to long video but shifts emphasis from cinematic language to caching and online latency.</p>
+<p><strong>FramePack</strong> compresses historical frame context by importance to keep Transformer context fixed, adding reverse-time/endpoint anti-drift. Its core is context packing and an I2V workflow, not prompt-switch recache. LongLive instead avoids learned complex compression and keeps “recent window + fixed first frame,” a simpler design with less information capacity.</p>
+<p><strong>Self-Forcing</strong> is the most direct technical precursor: it autoregressively rolls out during training, conditions on its own outputs, and uses DMD/truncated gradients to remove the teacher-forcing gap. Its remaining gap is degradation when extending short training to long rollouts, plus no interactive prompt updates. LongLive extends self-forced training from short video to 60-second streaming long tuning and embeds KV-recache in the same training condition.</p>
+<pre class="text"><code>Short-video diffusion
+   ├─ StreamingT2V: first-segment anchor + local transition ───┐
+   ├─ SkyReels-V2: diffusion forcing + cinematic post-training ├─→ LongLive
+   ├─ FramePack: fixed history budget + anti-drift ────────────┤    ├─ self-rollout long tuning
+   └─ Self-Forcing: train on its own outputs ──────────────────┘    ├─ window + frame sink
+                                                                  └─ KV-recache at prompt boundaries
+                Not yet unified: dynamic history retrieval + multi-event causal memory + compute-matched human evaluation</code></pre>
+<div class="table-scroll" role="region" tabindex="0" aria-label="Data table; scroll horizontally"><table>
+<thead>
+<tr class="header">
+<th scope="col">Work</th>
+<th scope="col">Long-horizon state</th>
+<th scope="col">Train–inference alignment</th>
+<th scope="col">Interactive switching</th>
+<th scope="col">Cost vs. duration</th>
+<th scope="col">How LongLive responds / what remains</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>StreamingT2V</td>
+<td>First segment + previous-chunk modules</td>
+<td>Limited</td>
+<td>Not a primary focus</td>
+<td>Multiple modules</td>
+<td>Simplifies to cache; weak semantic memory</td>
+</tr>
+<tr class="even">
+<td>SkyReels-V2</td>
+<td>diffusion forcing</td>
+<td>Progressive training</td>
+<td>Limited</td>
+<td>Slower</td>
+<td>20.7 vs. 0.49 FPS; unequal resolutions</td>
+</tr>
+<tr class="odd">
+<td>FramePack</td>
+<td>Importance-compressed history</td>
+<td>anti-drift</td>
+<td>No recache</td>
+<td>Fixed context</td>
+<td>Simpler; no dynamic retrieval</td>
+</tr>
+<tr class="even">
+<td>Self-Forcing</td>
+<td>rolling KV</td>
+<td>self-rollout</td>
+<td>Not a primary focus</td>
+<td>Bounded</td>
+<td>Extends to 60s; teacher dependence remains</td>
+</tr>
+<tr class="odd">
+<td>LongLive</td>
+<td>local 9 + sink 3</td>
+<td>streaming long tuning</td>
+<td>KV-recache</td>
+<td>(O(W+T+S))</td>
+<td>Distant events and multiple shots remain weak</td>
+</tr>
+</tbody>
+</table></div>
+</section>
+<section class="card" aria-labelledby="11-contributions-transfer-title"><h2 id="11-contributions-transfer-title">11. Real Contributions, Reusable Designs, and Transfer Potential</h2>
+<p>The real contribution is not a single new loss but three layers of alignment: training uses the model’s own history; training and inference use the same window/sink; and prompt switches trigger recache in both. Copying frame sink alone may not work; the paper explicitly notes that the sink becomes effective only after streaming tuning first mitigates long-rollout collapse (§3.3).</p>
+<p>Reusable ideas include streaming truncated backprop, which keeps memory constant as total sequence length grows; explicit state refresh at event boundaries; and separating stable anchors from sliding windows. These transfer to world models, robotic visual rollouts, long-audio generation, streaming avatars, and hybrid linear/full attention. In transfer, the fixed first frame should become retrievable or updatable memory; otherwise the anchor becomes an incorrect constraint during genuine scene changes.</p>
+</section>
+<section class="card" aria-labelledby="12-limitations-title"><h2 id="12-limitations-title">12. Limitations Stated by the Paper</h2>
+<ol type="1">
+<li><strong>Base-model ceiling.</strong> Appendix M (p.18) explicitly says the method is efficient fine-tuning on top of the base model, so absolute short-video quality is unlikely to consistently surpass the base; gains mainly come from adaptation and stability.</li>
+<li><strong>Inherited bias.</strong>
+The same section notes that without additional curated real video, systematic errors and biases of the base model cannot be corrected.</li>
+<li><strong>Long-range information trade-off.</strong>
+§3.3 (p.5) acknowledges that small windows harm consistency, which saturates only at about 24 frames; the sink is a compromise rather than a replacement for full history.</li>
+</ol>
+</section>
+<section class="card" aria-labelledby="13-independent-critique-title"><h2 id="13-independent-critique-title">13. Independent Critique: Because X, Therefore Y</h2>
+<ol type="1">
+<li><strong>[Semantic cost]</strong> Because short-video Semantic is 76.47, 4.81 points below Self-Forcing at 81.28 (Table 1), “no short-video capability degradation” holds only for Total/Quality and cannot be generalized to text adherence.</li>
+<li><strong>[Long-horizon decay remains]</strong> Because interactive CLIP falls from 28.85 in the first segment to 24.32 in the last (−15.70%), LongLive slows drift rather than eliminating it.</li>
+<li><strong>[Baseline fairness]</strong> Because Table 1 mixes 0.6–4.5B models and 640×384–960×540 resolutions, with only some methods at 1.3B/832×480, “fastest in the table” includes model/resolution differences.</li>
+<li><strong>[Metric validity]</strong> Because the interactive set is synthesized by Qwen2-72B from the original prompt, adding only one action while preserving the scene, whereas real users may change subject, style, and shot, KV-recache generalization may be overstated by a mild switch distribution.</li>
+<li><strong>[State ceiling]</strong> Because global memory fixes only the first chunk and local memory keeps only nine frames, a character/object introduced midway and returning later has no long-term slot; a 240-second demo does not prove event-level recall.</li>
+<li><strong>[Statistics]</strong> Because all main tables lack standard deviations/CIs and the user study has only 26 people with repeated measures, small differences such as 0.50 points cannot be claimed robust.</li>
+<li><strong>[Attribution]</strong> Because the system jointly introduces streaming tuning, a short window, sink, and recache after ODE+DMD adaptation, while the tables lack a complete factorial ablation, the 20.7 FPS and long-horizon scores cannot be attributed component by component.</li>
+<li><strong>[Definition of “real time”]</strong> Because FPS lacks a full breakdown of time to first frame, prompt encoding, VAE decoding/I/O, and p95 jitter, 20.7 FPS establishes steady-state throughput, not an interactive-service SLA.</li>
+</ol>
+</section>
+<section class="card" aria-labelledby="14-open-challenges-title"><h2 id="14-open-challenges-title">14. Actionable Open Challenges</h2>
+<section class="subsection" aria-labelledby="theory-title"><h3 id="theory-title">Theory</h3>
+<ul>
+<li><strong>Anchor vs. retrieval memory:</strong> With a fixed 9+3 token budget, compare a first-frame sink, uniform sink, CLIP-similarity retrieval, and learned eviction; measure identity retrieval and per-frame FLOPs on a set where a character returns after being absent for 30 seconds.</li>
+<li><strong>Truncated-gradient bias:</strong> On the same 60-second sequences, compare detached history, truncation every 2/4 chunks, and low-rank cross-segment gradients; report quality, memory, and gradient cosine to test whether local DMD misses long causal dependencies.</li>
+<li><strong>Switch-distribution transition:</strong> Control prompt edit distance from a single action through background or subject replacement to abrupt style changes, then plot the continuity–adherence Pareto for one, two, or no recache operations.</li>
+</ul>
+</section>
+<section class="subsection" aria-labelledby="engineering-title"><h3 id="engineering-title">Engineering Applications</h3>
+<ul>
+<li><strong>Hardware-matched end to end:</strong> Rerun LongLive/Self-Forcing/SkyReels on the same H100 at 832×480 and 80 frames with identical VAE and compilation settings; report TTFF, steady-state FPS, p50/p95, peak memory, and power.</li>
+<li><strong>Multi-user serving:</strong> At batch sizes 1/2/4/8 and different switch frequencies, compare dynamic batching and cache fragmentation using video-seconds per dollar and SLA miss rate.</li>
+<li><strong>Reproducing drift:</strong> Fix the public 160 prompts and seeds, test 60/240-second scores and hash reproducibility across CUDA/GPU combinations, and quantify the hardware sensitivity identified by FramePack.</li>
+</ul>
+</section>
+<section class="subsection" aria-labelledby="emerging-directions-title"><h3 id="emerging-directions-title">Emerging Directions</h3>
+<ul>
+<li><strong>Video world models:</strong> Under identical control trajectories, compare text prompts with keyboard/6DoF actions and measure controllability, state consistency, and closed-loop task success rather than only VBench.</li>
+<li><strong>Synchronized long-form audio-video generation:</strong> Add speech/environmental-audio caches; compare a separate audio sink with shared cross-modal memory, measuring four-minute drift in lip sync, speaker identity, and event synchronization.</li>
+<li><strong>Safety editing:</strong> Insert a disallowed action midway through a prompt; compare safety-policy activation latency, stale-semantic residue, and visual continuity before and after recache to test whether the cache becomes a safety-bypass channel.</li>
+</ul>
+</section>
+</section>
+<section class="card" aria-labelledby="15-further-reading-title"><h2 id="15-further-reading-title">15. Further Reading</h2>
+<ol type="1">
+<li><a href="https://arxiv.org/abs/2605.18739">LongLive-2.0</a>: upgrades the 1.0 algorithmic skeleton with NVFP4, sequence parallelism, and asynchronous VAE infrastructure, reporting 45.7 FPS for a 5B model; useful for separating algorithmic from hardware gains.</li>
+<li><a href="https://arxiv.org/abs/2608.11745">LiveAnimate</a>: retrieves historically pose-relevant segments with a pose-retrieval sink under a fixed budget, closer to dynamic memory than LongLive’s fixed first frame.</li>
+<li><a
+href="https://arxiv.org/abs/2608.23383">JoyAI-Echo-1.5</a>: combines cross-shot visual memory, speaker audio, and 6DoF control, representing the shift from long video toward persistent narratives/world models.</li>
+<li><a
+href="https://openreview.net/forum?id=4Q55RwYte9">MotionStream</a>: extends real-time AR video to fine-grained motion control, addressing LongLive’s reliance on coarse text prompts.</li>
+<li><a
+href="https://arxiv.org/abs/2506.08009">Self-Forcing</a>: LongLive’s most direct training precursor; reading it separates “supervision on self-generated history” from LongLive’s new long tuning/cache update.</li>
+<li><a
+href="https://arxiv.org/abs/2504.12626">FramePack</a>: offers another fixed-context path through importance compression and anti-drift, suitable for head-to-head comparison with dynamic memory.</li>
+</ol>
+</section>
+<section class="card" aria-labelledby="16-conclusion-title"><h2 id="16-conclusion-title">16. Conclusion</h2>
+<p>LongLive matters because it reframes long-video generation from “one expensive sample” into a stateful streaming system: state must be refreshed periodically, training must expose the model to its own errors, and global and local memory must divide responsibilities. Its key result is <strong>20.7 FPS</strong>on a single H100 and a 30-second VBench-Long Total of
+<strong>83.52</strong>, while short-video Semantic remains
+<strong>4.81</strong>below Self-Forcing and final-segment CLIP still drops
+<strong>15.70%</strong>from the first segment. The most accurate assessment is that it establishes a strong long-horizon quality–speed Pareto frontier without solving semantic decay, dynamic long-term memory, or service-level tail latency.</p>
+</section>
+</div>
+<figure class="figure" aria-labelledby="fps-title"><p class="fig-title" id="fps-title">Throughput of Matched 1.3B / 832×480 Models</p><p class="fig-sub">LongLive reaches 20.7 FPS, 21.76% above Self-Forcing chunk-wise; the vertical axis is FPS on a single H100.</p><svg class="chart" viewBox="0 0 720 380" role="img" xmlns="http://www.w3.org/2000/svg"><title>Throughput comparison between LongLive and matched baselines</title><desc>Wan2.1 0.78, Self-Forcing frame 8.9, Self-Forcing chunk 17.0, and LongLive 20.7 FPS.</desc><g stroke="var(--grid)"><line x1="70" y1="320" x2="690" y2="320"/><line x1="70" y1="250" x2="690" y2="250"/><line x1="70" y1="180" x2="690" y2="180"/><line x1="70" y1="110" x2="690" y2="110"/><line x1="70" y1="40" x2="690" y2="40"/></g><g font-size="12"><text x="35" y="324">0</text><text x="35" y="254">5</text><text x="29" y="184">10</text><text x="29" y="114">15</text><text x="29" y="44">20</text></g><g fill="var(--chart-comparison)"><rect tabindex="0" data-tip="Wan2.1: 0.78 FPS" x="105" y="309.1" width="90" height="10.9"/><rect tabindex="0" data-tip="Self-Forcing frame: 8.9 FPS" x="255" y="195.4" width="90" height="124.6"/><rect tabindex="0" data-tip="Self-Forcing chunk: 17.0 FPS" x="405" y="82" width="90" height="238"/></g><g fill="var(--chart-primary)"><rect tabindex="0" data-tip="LongLive: 20.7 FPS" x="555" y="30.2" width="90" height="289.8"/></g><g text-anchor="middle" font-size="12"><text x="150" y="345">Wan2.1</text><text x="300" y="345">SF frame</text><text x="450" y="345">SF chunk</text><text x="600" y="345">LongLive</text></g></svg><figcaption>Source: LongLive Table 1, p.7. Only models with the same parameter count, resolution, and hardware regime are plotted to avoid misleading comparisons.</figcaption></figure></main>
+
+  <footer>Sources: ICLR 2026 OpenReview, arXiv:2509.22622v2 (2025-10-13), official code/weights/project page, and four papers in the technical lineage; links verified on 2026-09-02.</footer>
+</div>
+<div class="tip" id="tip" role="tooltip" aria-live="polite"></div>
+<script>
+(() => {
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  const tip = document.getElementById('tip');
+  const stored = (() => { try { return localStorage.getItem('warm-editorial-theme'); } catch (_) { return null; } })();
+  const preferred = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+  function setTheme(theme, persist) {
+    root.dataset.theme = theme;
+    const dark = theme === 'dark';
+    toggle.setAttribute('aria-pressed', String(dark));
+    toggle.textContent = dark ? '☀ Light' : '☾ Dark';
+    if (persist) { try { localStorage.setItem('warm-editorial-theme', theme); } catch (_) {} }
+  }
+  setTheme(stored === 'dark' || stored === 'light' ? stored : preferred, false);
+  toggle.addEventListener('click', () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark', true));
+
+  function placeTip(target) {
+    const rect = target.getBoundingClientRect();
+    const x = Math.min(window.innerWidth - tip.offsetWidth - 12, Math.max(12, rect.left + rect.width / 2 - tip.offsetWidth / 2));
+    const y = Math.max(12, rect.top - tip.offsetHeight - 10);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+  }
+  function showTip(target) {
+    tip.textContent = target.dataset.tip || '';
+    tip.classList.add('visible');
+    requestAnimationFrame(() => placeTip(target));
+  }
+  function hideTip() { tip.classList.remove('visible'); }
+  document.addEventListener('pointerover', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('pointerout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  document.addEventListener('focusin', event => { const target = event.target.closest('[data-tip]'); if (target) showTip(target); });
+  document.addEventListener('focusout', event => { if (event.target.closest('[data-tip]')) hideTip(); });
+  window.addEventListener('scroll', hideTip, { passive: true });
+  window.addEventListener('resize', hideTip);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,952 @@
+---
+layout: null
+title: "NEMORI"
+date: 2026-08-04
+topic: agent-memory
+tags: ["agent-memory"]
+excerpt: "Prediction error as a signal for adaptive memory distillation: deciding which experiences an agent should retain."
+permalink: "/blog/2026/08/04/nemori-adaptive-memory-distillation/en/"
+blog_post: false
+lang: en
+sitemap: true
+alternate_zh: "/blog/2026/08/04/nemori-adaptive-memory-distillation/"
+---
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NEMORI · Prediction Error as a Memory-Distillation Criterion · 2026-08-04 · Daily Agent Memory Review</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --accent-soft: #cde2fb;
+    --good: #006300;
+    --crit: #d03b3b;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --accent-soft: #184f95;
+    --good: #0ca30c;
+    --crit: #e66767;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    font-size: 16px;
+    line-height: 1.75;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 28px 96px; }
+  header.hero {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 32px 34px;
+    margin-bottom: 34px;
+  }
+  .eyebrow {
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; margin: 0 0 10px;
+  }
+  h1 { font-size: 30px; line-height: 1.3; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .subtitle { font-size: 17px; color: var(--text-secondary); margin: 0 0 18px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .chip {
+    font-size: 12.5px; padding: 4px 11px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--text-secondary);
+    background: var(--page);
+  }
+  .chip.venue { border-color: var(--series-1); color: var(--series-1); font-weight: 600; }
+  .lede {
+    border-left: 3px solid var(--series-1);
+    padding: 4px 0 4px 18px; margin: 20px 0 0;
+    color: var(--text-secondary); font-size: 15.5px;
+  }
+  h2 {
+    font-size: 22px; margin: 52px 0 16px; padding-bottom: 10px;
+    border-bottom: 1px solid var(--border); letter-spacing: -0.01em;
+  }
+  h3 { font-size: 18px; margin: 34px 0 12px; }
+  h3:first-child { margin-top: 0; }
+  h4 { font-size: 15.5px; margin: 24px 0 8px; color: var(--text-secondary); }
+  p { margin: 0 0 14px; }
+  section.card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 26px 30px; margin-bottom: 20px;
+  }
+  a { color: var(--series-1); text-decoration: none; border-bottom: 1px solid transparent; }
+  a:hover { border-bottom-color: var(--series-1); }
+  code {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13.5px; background: var(--page); padding: 1.5px 5px;
+    border-radius: 4px; border: 1px solid var(--border);
+  }
+  .formula {
+    background: var(--page); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 16px; margin: 12px 0; font-family: ui-monospace, Menlo, monospace;
+    font-size: 13.5px; overflow-x: auto; color: var(--text-primary);
+    white-space: pre; line-height: 1.7;
+  }
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0 20px; font-size: 14.5px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: .05em; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.best td { background: var(--accent-soft); font-weight: 600; }
+  :root[data-theme="dark"] tr.best td { background: rgba(57,135,229,.18); }
+  .up { color: var(--good); font-variant-numeric: tabular-nums; }
+  .down { color: var(--crit); font-variant-numeric: tabular-nums; }
+  ol, ul { margin: 0 0 14px; padding-left: 24px; }
+  li { margin-bottom: 8px; }
+  .callout {
+    border-left: 3px solid var(--series-2); background: var(--page);
+    padding: 14px 18px; border-radius: 0 8px 8px 0; margin: 18px 0;
+    font-size: 15px; color: var(--text-secondary);
+  }
+  .callout strong { color: var(--text-primary); }
+  .toolbar { display: flex; justify-content: flex-end; margin-bottom: 14px; }
+  button.tgl {
+    font: inherit; font-size: 13px; padding: 6px 14px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface-1);
+    color: var(--text-secondary); cursor: pointer;
+  }
+  button.tgl:hover { color: var(--text-primary); }
+  .figure { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 24px 26px; margin: 24px 0; }
+  .fig-title { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+  .fig-sub { font-size: 13.5px; color: var(--muted); margin: 0 0 18px; }
+  .legend { display: flex; gap: 20px; margin-bottom: 16px; font-size: 13.5px; color: var(--text-secondary); flex-wrap: wrap; }
+  .legend span.sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 7px; vertical-align: -1px; }
+  svg.chart { width: 100%; height: auto; display: block; }
+  svg.chart text { font-family: system-ui, -apple-system, "PingFang SC", sans-serif; }
+  .tip {
+    position: fixed; pointer-events: none; opacity: 0; transition: opacity .1s;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 12px; font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,.14);
+    z-index: 50; color: var(--text-primary); white-space: nowrap;
+  }
+  .flow {
+    background: var(--page); border: 1px solid var(--border); border-radius: 10px;
+    padding: 20px 22px; font-family: ui-monospace, Menlo, monospace;
+    font-size: 12.5px; line-height: 1.8; overflow-x: auto; color: var(--text-secondary);
+    white-space: pre;
+  }
+  footer { margin-top: 60px; padding-top: 22px; border-top: 1px solid var(--border); font-size: 13.5px; color: var(--muted); }
+  @media (max-width: 640px) {
+    .wrap { padding: 24px 16px 60px; }
+    h1 { font-size: 24px; }
+    header.hero { padding: 22px 18px; }
+    section.card { padding: 20px 18px; }
+    .figure { padding: 18px 14px; }
+    table { font-size: 12.5px; }
+    .tablewrap table { min-width: 620px; }
+    th, td { padding: 7px 8px; }
+    .flow { font-size: 10.5px; }
+  }
+</style>
+{% include report-alternates.html %}</head>
+<body>{% include report-navigation.html %}
+<div class="wrap">
+
+  <div class="toolbar">
+    <button class="tgl" id="themeBtn">☾ Dark</button>
+  </div>
+
+  <header class="hero">
+    <p class="eyebrow">ACL 2026 · Agent Memory · Daily Literature Review</p>
+    <h1>NEMORI: Replacing Designer Intuition About What to Remember<br>with the System's Own Prediction Error</h1>
+    <p class="subtitle"><em>What Deserves Memory: Adaptive Memory Distillation for LLM Agents</em> — In-depth analysis of the core paper and five predecessors</p>
+    <div class="meta">
+      <span class="chip venue">ACL 2026 Main · Long</span>
+      <span class="chip">2026-08-04</span>
+      <span class="chip">acl-long.1607 · pp. 34789–34812</span>
+      <span class="chip">arXiv:2508.03341 v4</span>
+      <span class="chip">Subfield: Memory distillation / compression</span>
+      <span class="chip">26 candidate papers</span>
+    </div>
+    <p class="lede">The value of memory is no longer decided by designer heuristics—importance scores, emotion tags, or fact templates—but by the interaction sequence's own <strong>prediction error</strong>. What to store becomes an endogenous signal recoverable from data, rather than a manually encoded prior.</p>
+  </header>
+
+  <section class="card">
+    <h3>0 · Search Disclosure</h3>
+    <ul>
+      <li><strong>Search scope</strong>: ACL Anthology 2026 (acl-long / findings-acl / eacl-long), arXiv cs.CL / cs.AI, OpenReview (ICLR 2026 MemAgents workshop), Agent-Memory-Paper-List. </li>
+      <li><strong>Candidate pool</strong>: Scanned <strong>26 papers</strong> covering eight subfields: memory architecture, distillation, compression, evolution, RL-trained memory policies, evaluation benchmarks, security and governance, and parametric memory.</li>
+      <li><strong>Exclusions</strong>: As agreed, MemGPT, A-MEM, Mem0, Memory-R1, MemAct, and AgeMem were excluded as core papers. arXiv:2607.08032 (rate–distortion memory compression) was also excluded because its formal framework had already appeared as an example in an earlier report.</li>
+      <li><strong>Transparency statement</strong>: <code>tabzhangjx.github.io/year-archive/</code> returned a retrieval-permission error in this run; <strong>the historical topic list could not be checked programmatically</strong>, so deduplication relied only on the exclusions in the task prompt.</li>
+      <li><strong>Selection rationale</strong>: An ACL 2026 main-conference long paper in the previously unvisited memory-distillation/compression rotation, with complete, verifiable quantitative matrices: main results, costs, ablations, retrieval strategies, third-party integration, scalability, and two hyperparameter sensitivity analyses.</li>
+    </ul>
+  </section>
+
+  <h2>1 · Links (All Visited for Verification)</h2>
+  <section class="card">
+    <div class="tablewrap">
+    <table>
+      <tr><th>Work</th><th>Official publication page</th><th>arXiv</th><th>Code</th><th>Dataset</th></tr>
+      <tr class="best">
+        <td><strong>NEMORI</strong><br>(core paper)</td>
+        <td><a href="https://aclanthology.org/2026.acl-long.1607/">ACL 2026 acl-long.1607</a> · <a href="https://aclanthology.org/2026.acl-long.1607.pdf">PDF</a></td>
+        <td><a href="https://arxiv.org/abs/2508.03341">arXiv:2508.03341</a><br>v1 2025-08-05 → v4 2026-04-16</td>
+        <td><a href="https://github.com/nemori-ai/nemori">nemori-ai/nemori</a><br><span style="font-size:12.5px">Existence confirmed through site search; direct retrieval blocked by permissions, so individual files were not verified</span></td>
+        <td>LoCoMo / LongMemEval-S</td>
+      </tr>
+      <tr>
+        <td>Generative Agents</td>
+        <td>UIST 2023 (DOI <em>Pending verification</em>)</td>
+        <td><a href="https://arxiv.org/abs/2304.03442">arXiv:2304.03442</a></td>
+        <td>joonspk-research/generative_agents (<em>Pending verification</em>)</td>
+        <td>No public benchmark</td>
+      </tr>
+      <tr>
+        <td>MemoryBank</td>
+        <td>AAAI 2024 (<em>Official proceedings page not found</em>)</td>
+        <td><a href="https://arxiv.org/abs/2305.10250">arXiv:2305.10250</a></td>
+        <td><em>No reachable repository verified</em></td>
+        <td>SiliconFriend scenarios (not publicly hosted)</td>
+      </tr>
+      <tr>
+        <td>A-MEM</td>
+        <td><em>No main-conference publication record found</em></td>
+        <td><a href="https://arxiv.org/abs/2502.12110">arXiv:2502.12110</a> (v9)</td>
+        <td><a href="https://github.com/agiresearch/A-mem">agiresearch/A-mem</a></td>
+        <td>LoCoMo</td>
+      </tr>
+      <tr>
+        <td>MemoryOS</td>
+        <td><a href="https://aclanthology.org/2025.emnlp-main.1318/">EMNLP 2025 Main, Oral</a></td>
+        <td><a href="https://arxiv.org/abs/2506.06326">arXiv:2506.06326</a></td>
+        <td><a href="https://github.com/BAI-LAB/MemoryOS">BAI-LAB/MemoryOS</a></td>
+        <td>LoCoMo</td>
+      </tr>
+      <tr>
+        <td>Zep / Graphiti</td>
+        <td><em>No conference publication record</em></td>
+        <td><a href="https://arxiv.org/abs/2501.13956">arXiv:2501.13956</a> (2025-01-20)</td>
+        <td>Graphiti open source (link <em>unverified</em>)</td>
+        <td>DMR / LongMemEval</td>
+      </tr>
+      <tr>
+        <td>LoCoMo (benchmark)</td>
+        <td><a href="https://aclanthology.org/2024.acl-long.747/">ACL 2024 acl-long.747</a></td>
+        <td><a href="https://arxiv.org/abs/2402.17753">arXiv:2402.17753</a></td>
+        <td><a href="https://github.com/snap-research/locomo">snap-research/locomo</a></td>
+        <td><a href="https://snap-research.github.io/locomo/">Project page</a></td>
+      </tr>
+      <tr>
+        <td>LongMemEval (benchmark)</td>
+        <td>ICLR 2025</td>
+        <td>—</td>
+        <td><a href="https://github.com/xiaowu0162/LongMemEval">xiaowu0162/LongMemEval</a></td>
+        <td>Same as left</td>
+      </tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>Verification standard.</strong> Entries marked pending, not found, or unverified reflect WebFetch permission errors or searches that did not locate official pages. Leaving a field blank is preferable to inventing a URL, a strict rule for this report series.
+    </div>
+  </section>
+
+  <h2>2 · In-Depth Analysis of the Core Paper</h2>
+
+  <section class="card">
+    <h3>2.1 Abstract Summary and Positioning</h3>
+    <p>NEMORI's problem fits in one sentence: <strong>How should a memory system decide which information is worth retaining?</strong> The authors diagnose existing answers as <strong>encoded designer intuition</strong>: importance scores in Generative Agents, emotion tags in emotional memory, fact templates in Mem0, and heat scores in MemoryOS. The paper describes these methods as <em>“encoding designer intuition rather than learning from the data itself”</em>, with two consequences: <strong>subjective bias</strong> causes irreversible information distortion, while <strong>systemic bloat</strong> causes excessive storage and amplifies retrieval noise.</p>
+    <p>NEMORI draws on predictive coding (Rao &amp; Ballard 1999; Friston's 2010 free-energy principle): <strong>information predictable from existing knowledge is redundant; the unpredictable portion is the candidate for memory</strong>. The system first uses existing semantic knowledge to generate an anticipatory schema for an upcoming interaction segment, then distills the difference between actual content and expectation into semantic knowledge.</p>
+    <div class="callout">
+      <strong>The innovation in one sentence:</strong> Replace a manually specified scoring function for what to remember with a measure of the system's <em>own prediction failures</em>.
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>2.2 Motivation and Problem Evidence</h3>
+    <p>The argument develops through three levels.</p>
+    <p><strong>Level 1: Capacity Constraints Are Hard Limits.</strong> Stateless LLMs rely on growing interaction histories despite limited context windows and the <em>Lost in the Middle</em> phenomenon. This is field-wide consensus rather than NEMORI's distinctive claim.</p>
+    <p><strong>Level 2: Heuristic Distillation Introduces Irreversible Loss.</strong> This is the paper's real target. Table 1 reorganizes memory systems around <code>Distillation / Management / Retrieval</code> three stages (see Table A), revealing a structural fact: <strong>only five of 13 baselines have a distillation entry, and all use manually imposed priors</strong>; another seven leave that column blank, storing raw interactions wholesale and shifting the burden to management and retrieval.</p>
+    <p><strong>Level 3: The Problem Is Quantified.</strong></p>
+    <ul>
+      <li><strong>Ablation (Table 5)</strong>: Replacing prediction-error distillation with direct distillation (Nemori-s) changes the average LoCoMo LLM-judge score from <strong>73.0 → 51.7</strong> (gpt-4o-mini, <span class="down">−29.2%</span>, calculated in this report), <strong>80.8 → 66.0</strong> (gpt-4.1-mini, <span class="down">−18.3%</span>). Changing only the distillation criterion within the same episodic pipeline creates a relative gap of nearly 30%.</li>
+      <li><strong>Construction cost (Table 3)</strong>: NEMORI's total memory-construction token count is <strong>322.9k</strong>, versus Mem0's <strong>1693.4k</strong>, A-MEM <strong>1149.4k</strong>, LangMem <strong>1010.2k</strong>. NEMORI reduces cost by <strong>80.9%</strong>(relative to Mem0, calculated here) while scoring higher (73.0 vs 61.3).</li>
+    </ul>
+    <div class="callout">
+      <strong>This cost evidence is stronger than the performance gain alone.</strong> Cheaper <em>and</em> better suggests that the discarded material is redundancy rather than useful information—exactly the evidence needed for the claim that heuristics cause systemic bloat.
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>2.3 The Paper's Argument</h3>
+    <p>The argument is not simply a list of modules. It is a deductive chain linked by three <strong>priors</strong> that form the paper's backbone and distinguish it from another generic memory framework.</p>
+    <div class="flow">Observation ① Interaction sequences have natural group boundaries; messages within a group contextualize one another.
+     ⇒ [Structure Prior · Integrity of Episode]
+     ⇒ Memory's atomic unit is an episode, not a message or fixed-size chunk.
+     ⇒ Design: LLM-driven Local Message Partitioning rather than fixed-length splitting.
+
+Observation ② Memory serves recall; recall is reasoning and allocentric reconstruction,
+              whereas raw episodes are egocentric and noisy.
+     ⇒ [Representation Prior · Asymmetry of Perspective]
+     ⇒ Stored representations must differ from raw representations through a perspective shift.
+     ⇒ Design: Narrative Episode Generation with narrative rewriting and episodic cues.
+
+Observation ③ Interaction sequences are highly redundant; predictive coding makes surprise a consolidation candidate.
+     ⇒ [Distillation Prior · Predictability Implies Redundancy]
+     ⇒ Distillation criterion = difference between prediction and reality.
+     ⇒ Design: Anticipatory Schema → Prediction Error Distillation.</div>
+    <div class="callout">
+      <strong>The critical leap is from observation ③ to the design.</strong> It requires a nontrivial assumption: <em>the current semantic knowledge base can generate a meaningful expectation</em>. With an empty knowledge base at cold start, the expectation is empty and everything becomes prediction error, degenerating into full distillation. With a saturated knowledge base, expectations cover most content and distilled output approaches zero. <strong>The paper does not experimentally characterize these cold-start-to-saturation dynamics</strong>, the clearest gap in its argument.
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>2.4 Methodology and Mechanisms</h3>
+
+    <h4>Table A · Paper Table 1: Memory Systems Reorganized by Distillation / Management / Retrieval (Transcribed)</h4>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Category</th><th>Method</th><th>Distillation</th><th>Management</th><th>Retrieval</th></tr>
+      <tr><td>Retrieval-time</td><td>Lewis et al. (2020) RAG</td><td>—</td><td>—</td><td>Similarity search</td></tr>
+      <tr><td>Management-time</td><td>Packer et al. (2023) MemGPT</td><td>—</td><td>Tiered storage</td><td>Function calls</td></tr>
+      <tr><td>Management-time</td><td>Zhong et al. (2024) MemoryBank</td><td>—</td><td>Summary + forgetting</td><td>—</td></tr>
+      <tr><td>Management-time</td><td>Kang et al. (2025) MemoryOS</td><td>—</td><td>Heat scoring</td><td>Two-step search</td></tr>
+      <tr><td>Management-time</td><td>Li et al. (2025b)</td><td>—</td><td>Hierarchical summary</td><td>Multi-step search</td></tr>
+      <tr><td>Management-time</td><td>Anokhin et al. (2025)</td><td>—</td><td>Graph update</td><td>Graph spreading</td></tr>
+      <tr><td>Management-time</td><td>Xu et al. (2025) A-MEM</td><td>—</td><td>Adaptive note linking</td><td>—</td></tr>
+      <tr><td>Management-time</td><td>Rasmussen et al. (2025) Zep</td><td>—</td><td>Validity management</td><td>Reranking</td></tr>
+      <tr><td>Distillation-time</td><td>Park et al. (2023) Generative Agents</td><td>Importance scoring</td><td>Reflection trees</td><td>Weighted scoring</td></tr>
+      <tr><td>Distillation-time</td><td>Huang et al. (2024)</td><td>Emotion tagging</td><td>—</td><td>Emotion matching</td></tr>
+      <tr><td>Distillation-time</td><td>Chhikara et al. (2025) Mem0</td><td>Facts extraction</td><td>—</td><td>—</td></tr>
+      <tr><td>Distillation-time</td><td>Li et al. (2025a)</td><td>Summary + persona</td><td>—</td><td>Noun overlap</td></tr>
+      <tr><td>Distillation-time</td><td>Pan et al. (2025)</td><td>Topic</td><td>Token compression</td><td>—</td></tr>
+      <tr class="best"><td>Distillation-time</td><td><strong>NEMORI (this paper)</strong></td><td><strong>Prediction error</strong></td><td><strong>Agnostic</strong></td><td>—</td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>This table is itself a powerful positioning tool.</strong> NEMORI's Management entry is <code>Agnostic</code>(agnostic/neutral), deliberately avoiding competition at the management layer and claiming only the distillation layer. This scope restriction is candid, but also becomes a weakness examined in §2.8.
+    </div>
+
+    <h4>Formal Definition · Module 1: Episodic Memory Integration</h4>
+    <div class="formula">(1a) Local message partitioning   B_t = {m_1,…,m_z}, m_i = (r_i, c_i, τ_i), window w ∈ Z⁺
+      O ← f_LLM(P_par ‖ B_t), O = {O_1,…,O_n}, a partition of indices {1,…,w}
+      P = {P_1,…,P_n}           Map indices back to messages to obtain raw episodes
+
+(1b) Narrative generation
+      (N_j, c_j) ← f_LLM(P_nar ‖ P_j)      # N_j: narrative; c_j: retrieval cue
+      v_j        ← f_emb(c_j ‖ N_j)
+      M_j        = (c_j, N_j, P_j, v_j)
+
+(1c) Associative integration (supersede semantics)
+      C = {U_1,…,U_{K_e}} ← Search(D_e, v_j, K_e)
+      idx ← f_LLM(P_sel ‖ (c_j,N_j) ‖ {(c_k,N_k)})
+      idx = k  ⇒ (c_ν,N_ν) ← f_LLM(P_int ‖ c_k ‖ N_k ‖ c_j ‖ N_j)
+                 M_ν = (c_ν, N_ν, P_k ‖ P_j, f_emb(c_ν ‖ N_ν))   # M_ν replaces U_k
+      idx = -1 ⇒ No continuity; insert M_j as an independent entry</div>
+
+    <h4>Formal Definition · Module 2: Semantic Knowledge Distillation (Core Contribution)</h4>
+    <div class="formula">(2a) Anticipatory schema synthesis
+      S_in ← Evoke(M_in, M)
+      Native implementation: S_in ← Top-K_s { S_r ∈ D_s | sim(v_in, u_r) &gt; τ }, τ = 0.70
+      P̂_in ← f_LLM(P_ant ‖ c_in ‖ S_in)        # Predict the episode from existing knowledge
+
+(2b) Prediction-error distillation
+      K_in = {k_1,…,k_d} ← f_LLM(P_dis ‖ P_in ‖ P̂_in)
+                                    ↑ ground truth  ↑ prediction
+
+(2c) Semantic consolidation (three-way decision)
+      S̃_q ← Search(D_s, u_q, K_m), K_m = 5
+      (δ, idxs, k_μ) ← f_LLM(P_con ‖ k_q ‖ {k_h})
+      δ ∈ { new      : Insert (k_q, u_q)
+            merge    : Replace entries at idxs with (k_μ, f_emb(k_μ))
+            conflict : Remove outdated entries and replace with (k_q, u_q) }
+
+Response generation
+      R̃_e ← Search(D_e, v_Q, k)    # k = 10 narrative episodes
+      R̃_s ← Search(D_s, v_Q, m)    # m = 2k = 20 semantic entries
+      a   ← f_LLM(P_ans ‖ Q ‖ R_e ‖ R_p ‖ R_s)   # R_p: r = 2 original episodes</div>
+
+    <h4>Table B · Hyperparameters and Sensitivity Coverage</h4>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Hyperparameter</th><th class="num">Value</th><th>Role</th><th>Sensitivity analysis?</th></tr>
+      <tr><td><code>τ</code> Similarity threshold</td><td class="num">0.70</td><td>Context-evocation threshold for anticipatory schemas</td><td><span class="down">No — key gap</span></td></tr>
+      <tr><td><code>K_e</code> Episodic candidates</td><td class="num">5</td><td>Retrieval count during integration</td><td><span class="down">No</span></td></tr>
+      <tr><td><code>K_m</code> Semantic candidates</td><td class="num">5</td><td>Retrieval count during consolidation</td><td><span class="down">No</span></td></tr>
+      <tr><td><code>K_s</code> Evoked entries</td><td class="num">10</td><td>Anticipatory-schema context size</td><td><span class="down">No</span></td></tr>
+      <tr><td><code>w</code> Observation window</td><td class="num">20</td><td>Messages triggering partitioning</td><td><span class="up">Yes — Figure 2 / Table 11, w ∈ {5,10,20,30,40}</span></td></tr>
+      <tr><td><code>k</code> Episodic retrieval</td><td class="num">10</td><td>Response generation</td><td><span class="up">Yes — Figure 3 / Table 12, k ∈ {2…30}</span></td></tr>
+      <tr><td><code>m</code> Semantic retrieval</td><td class="num">20</td><td>Response generation (= 2k)</td><td>Varies with k</td></tr>
+      <tr><td><code>r</code> Original episodes</td><td class="num">2</td><td>Full text included in the response context</td><td><span class="down">No</span></td></tr>
+    </table>
+    </div>
+
+    <h4>Pipeline and Cost Breakdown</h4>
+    <div class="flow">Raw dialogue stream B_t
+   │
+   ├─[① Partition]──▶ LLM identifies episode boundaries P = {P_1..P_n}   Cost 15.3%
+   │
+   ├─[② Narrate]────▶ (N_j, c_j) narrative + cue, index v_j               Cost 38.3% ← largest
+   │                     │
+   │                     └─[③ Integrate]─▶ supersede / insert             Cost 16.2%
+   │                                          ↓ D_e (episodic store)
+   │
+   └─[④ Distill]────▶ Evoke(τ=0.70) ─▶ anticipatory schema P̂
+                          │
+                          ├─ Actual P vs expected P̂ ⇒ prediction error K Cost 30.3% ← core
+                          │
+                          └─[⑤ Consolidate]─▶ new / merge / conflict
+                                                 ↓ D_s (semantic store)</div>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">Figure 1 · Mean LoCoMo LLM-Judge Scores: Eight Methods × Two Generation Models</p>
+    <p class="fig-sub">Source: Average column of NEMORI Table 2. Dashed lines mark each model's Full Context oracle level. Hover for exact values.</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-1)"></span> gpt-4o-mini</span>
+      <span><span class="sw" style="background:var(--series-2)"></span> gpt-4.1-mini</span>
+      <span><span class="sw" style="background:var(--baseline)"></span> Full Context baseline</span>
+    </div>
+    <svg class="chart" id="chart1" viewBox="0 0 900 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Grouped bar chart of mean LoCoMo LLM-judge scores"></svg>
+    <div class="tip" id="tip"></div>
+  </div>
+
+  <section class="card">
+    <h3>2.5 Experimental Design and Quantitative Results</h3>
+
+    <h4>Evaluation Setup</h4>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Item</th><th>LoCoMo</th><th>LongMemEval-S</th></tr>
+      <tr><td>Size</td><td>10 conversations, averaging 24K tokens; 1,540 questions</td><td>500 conversations, averaging <strong>105K</strong> tokens</td></tr>
+      <tr><td>Question types</td><td>Temporal / Open Domain / Multi-Hop / Single-Hop</td><td>Six categories: preference, assistant, temporal, cross-session, knowledge update, and user</td></tr>
+      <tr><td>Metric</td><td>LLM-judge (0–100) / F1 / BLEU-1</td><td>LLM-judge</td></tr>
+      <tr><td>Generation models</td><td colspan="2">gpt-4.1-mini and gpt-4o-mini; embeddings: text-embedding-3-small; judge: gpt-4o-mini</td></tr>
+      <tr><td>Number of runs</td><td colspan="2"><span class="down">Single run; no variance reported</span></td></tr>
+    </table>
+    </div>
+
+    <h4>Table C · Main LoCoMo Results (Paper Table 2; LLM-Judge / F1 / BLEU-1)</h4>
+    <p style="font-size:14px;color:var(--muted);margin-bottom:4px">gpt-4.1-mini</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Method</th><th class="num">Temporal</th><th class="num">Open Domain</th><th class="num">Multi-Hop</th><th class="num">Single-Hop</th><th class="num">Average</th></tr>
+      <tr><td>Full Context (oracle)</td><td class="num">74.2 / 47.5 / 40.0</td><td class="num">56.6 / 28.4 / 22.2</td><td class="num">77.2 / 44.2 / 33.7</td><td class="num">86.9 / 61.4 / 53.4</td><td class="num">80.6 / 53.3 / 45.0</td></tr>
+      <tr><td>RAG-4096</td><td class="num">27.4 / 22.3 / 19.1</td><td class="num">28.8 / 17.9 / 13.9</td><td class="num">31.7 / 20.1 / 12.8</td><td class="num">35.9 / 25.8 / 22.0</td><td class="num">32.9 / 23.5 / 19.2</td></tr>
+      <tr><td>LangMem</td><td class="num">50.8 / 48.5 / 40.9</td><td class="num">59.0 / 32.8 / 26.4</td><td class="num">71.0 / 41.5 / 32.5</td><td class="num">84.5 / 51.0 / 43.6</td><td class="num">73.4 / 47.6 / 40.0</td></tr>
+      <tr><td>Zep</td><td class="num">60.2 / 23.9 / 20.0</td><td class="num">43.8 / 24.2 / 19.3</td><td class="num">53.7 / 30.5 / 20.4</td><td class="num">66.9 / 45.5 / 40.0</td><td class="num">61.6 / 36.9 / 30.9</td></tr>
+      <tr><td>Mem0</td><td class="num">56.9 / 39.2 / 33.2</td><td class="num">47.9 / 23.7 / 17.7</td><td class="num">68.2 / 40.1 / 30.3</td><td class="num">71.4 / 48.6 / 42.0</td><td class="num">66.3 / 43.5 / 36.5</td></tr>
+      <tr><td>A-MEM</td><td class="num">66.7 / 40.3 / 33.7</td><td class="num">37.5 / 13.4 / 12.7</td><td class="num">55.7 / 30.4 / 20.0</td><td class="num">64.0 / 45.0 / 39.8</td><td class="num">61.4 / 39.4 / 33.2</td></tr>
+      <tr><td>MemoryOS</td><td class="num">37.7 / 36.5 / 27.4</td><td class="num">60.4 / 30.2 / 25.6</td><td class="num">62.4 / 34.0 / 25.8</td><td class="num">68.9 / 44.2 / 37.5</td><td class="num">60.6 / 39.9 / 32.5</td></tr>
+      <tr class="best"><td><strong>NEMORI</strong></td><td class="num">77.3 / 58.7 / 50.7</td><td class="num">56.3 / 31.7 / 25.1</td><td class="num">74.8 / 40.8 / 31.7</td><td class="num">87.0 / 55.7 / 49.5</td><td class="num">80.8 / 52.1 / 45.0</td></tr>
+      <tr><td><em>Relative improvement reported by the paper</em></td><td class="num">+15.9 / +21.0 / +24.0%</td><td class="num">—</td><td class="num">+5.4% / — / —</td><td class="num">+3.0 / +9.2 / +13.5%</td><td class="num"><strong>+10.1 / +9.5 / +12.5%</strong></td></tr>
+    </table>
+    </div>
+    <p style="font-size:14px;color:var(--muted);margin-bottom:4px">gpt-4o-mini</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Method</th><th class="num">Temporal</th><th class="num">Open Domain</th><th class="num">Multi-Hop</th><th class="num">Single-Hop</th><th class="num">Average</th></tr>
+      <tr><td>Full Context (oracle)</td><td class="num">56.2 / 44.1 / 36.1</td><td class="num">48.6 / 24.5 / 17.2</td><td class="num">66.8 / 35.4 / 26.1</td><td class="num">83.0 / 53.1 / 44.7</td><td class="num">72.3 / 46.2 / 37.8</td></tr>
+      <tr><td>RAG-4096</td><td class="num">23.7 / 19.5 / 15.7</td><td class="num">32.6 / 19.0 / 13.5</td><td class="num">31.3 / 18.6 / 11.7</td><td class="num">32.0 / 22.2 / 18.6</td><td class="num">30.2 / 20.8 / 16.4</td></tr>
+      <tr><td>LangMem</td><td class="num">24.9 / 31.9 / 26.2</td><td class="num">47.6 / 29.4 / 23.5</td><td class="num">52.4 / 33.5 / 23.9</td><td class="num">61.4 / 38.8 / 33.1</td><td class="num">51.3 / 35.8 / 29.4</td></tr>
+      <tr><td>Zep</td><td class="num">58.9 / 44.8 / 38.1</td><td class="num">39.6 / 22.9 / 15.7</td><td class="num">50.5 / 27.5 / 19.3</td><td class="num">63.2 / 39.7 / 33.7</td><td class="num">58.5 / 37.5 / 30.9</td></tr>
+      <tr><td>Mem0</td><td class="num">50.4 / 44.4 / 37.6</td><td class="num">40.6 / 27.1 / 19.4</td><td class="num">60.3 / 34.3 / 25.2</td><td class="num">68.1 / 44.4 / 37.7</td><td class="num">61.3 / 41.5 / 34.2</td></tr>
+      <tr><td>A-MEM</td><td class="num">54.2 / 38.1 / 33.8</td><td class="num">22.9 / 9.0 / 8.6</td><td class="num">43.6 / 24.0 / 18.8</td><td class="num">58.2 / 35.6 / 29.2</td><td class="num">52.5 / 32.4 / 27.0</td></tr>
+      <tr><td>MemoryOS</td><td class="num">38.0 / 38.5 / 27.5</td><td class="num">45.8 / 26.0 / 19.2</td><td class="num">52.5 / 35.2 / 24.1</td><td class="num">62.5 / 43.7 / 37.7</td><td class="num">54.5 / 39.9 / 31.9</td></tr>
+      <tr class="best"><td><strong>NEMORI</strong></td><td class="num">67.6 / 57.3 / 47.6</td><td class="num">45.8 / 23.9 / 18.5</td><td class="num">61.7 / 38.1 / 26.0</td><td class="num">81.9 / 54.8 / 43.8</td><td class="num">73.0 / 50.3 / 39.7</td></tr>
+      <tr><td><em>Relative improvement reported by the paper</em></td><td class="num">+14.8 / +27.9 / +24.9%</td><td class="num">—</td><td class="num">+2.3 / +8.2 / +3.2%</td><td class="num">+20.3 / +23.4 / +16.2%</td><td class="num"><strong>+19.1 / +21.2 / +16.1%</strong></td></tr>
+    </table>
+    </div>
+
+    <h4>Table D · <span style="color:var(--series-2)">Independently calculated</span>: NEMORI vs <strong>Full Context</strong> category-level results (LLM-judge)</h4>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Category</th><th class="num">gpt-4.1-mini Δ</th><th class="num">Relative to</th><th class="num">gpt-4o-mini Δ</th><th class="num">Relative to</th></tr>
+      <tr><td>Temporal Reasoning</td><td class="num up">+3.1 pp</td><td class="num up">+4.18%</td><td class="num up">+11.4 pp</td><td class="num up">+20.28%</td></tr>
+      <tr><td>Open Domain</td><td class="num down">−0.3 pp</td><td class="num down">−0.53%</td><td class="num down">−2.8 pp</td><td class="num down">−5.76%</td></tr>
+      <tr><td>Multi-Hop</td><td class="num down">−2.4 pp</td><td class="num down">−3.11%</td><td class="num down">−5.1 pp</td><td class="num down">−7.63%</td></tr>
+      <tr><td>Single-Hop</td><td class="num up">+0.1 pp</td><td class="num up">+0.12%</td><td class="num down">−1.1 pp</td><td class="num down">−1.33%</td></tr>
+      <tr><td><strong>Average (paper's definition)</strong></td><td class="num up">+0.2 pp</td><td class="num up">+0.25%</td><td class="num up">+0.7 pp</td><td class="num up">+0.97%</td></tr>
+      <tr><td>Average (F1)</td><td class="num down">−1.2 pp</td><td class="num down">−2.25%</td><td class="num up">+4.1 pp</td><td class="num up">+8.87%</td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>This is the report's most important recalculation.</strong> The paper's +10.1% / +19.1% compares against the <em>strongest memory-system baseline</em>(LangMem 73.4 for gpt-4.1-mini; Mem0 61.3 for gpt-4o-mini), not Full Context. Against Full Context, NEMORI with gpt-4.1-mini records <strong>two wins and two losses, a +0.25% mean advantage, and F1 2.25% lower</strong>; with gpt-4o-mini, <strong>one win and three losses, with a +0.97% mean advantage</strong>. In other words, <strong>nearly all of NEMORI's mean advantage over full context comes from Temporal Reasoning alone.</strong>
+    </div>
+
+    <h4>Table E · Memory-Construction Cost (Paper Table 3; LoCoMo / gpt-4o-mini)</h4>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Method</th><th class="num">LLM-judge</th><th class="num">API calls</th><th class="num">Input (k)</th><th class="num">Output (k)</th><th class="num">Total tokens (k)</th><th class="num">Cost per point*</th></tr>
+      <tr><td>LangMem</td><td class="num">51.3</td><td class="num">920.6</td><td class="num">898.3</td><td class="num">112.0</td><td class="num">1010.2</td><td class="num">19.7</td></tr>
+      <tr><td>Mem0</td><td class="num">61.3</td><td class="num">1602.2</td><td class="num">1483.4</td><td class="num">210.0</td><td class="num">1693.4</td><td class="num">27.6</td></tr>
+      <tr><td>A-MEM</td><td class="num">52.5</td><td class="num">1175.5</td><td class="num">912.6</td><td class="num">236.8</td><td class="num">1149.4</td><td class="num">21.9</td></tr>
+      <tr><td>MemoryOS</td><td class="num">54.5</td><td class="num">1016.1</td><td class="num">404.5</td><td class="num">122.0</td><td class="num">526.5</td><td class="num">9.7</td></tr>
+      <tr class="best"><td><strong>NEMORI</strong></td><td class="num">73.0</td><td class="num">373.2</td><td class="num">277.2</td><td class="num">45.7</td><td class="num">322.9</td><td class="num">4.4</td></tr>
+      <tr><td><em>Improvement reported by the paper</em></td><td class="num up">+19.1%</td><td class="num up">↓59.5%</td><td class="num up">↓31.5%</td><td class="num up">↓59.2%</td><td class="num up">↓38.7%</td><td class="num">—</td></tr>
+    </table>
+    </div>
+    <p style="font-size:14px;color:var(--muted)">* Cost per point is calculated here as total tokens divided by the LLM-judge score, comparing efficiency after accounting for performance differences. <strong>NEMORI's cost per score point is 1/6.3 of Mem0's and 1/2.2 of MemoryOS's.</strong> The paper's ↓38.7% compares against the cheapest baseline, MemoryOS; relative to Mem0, the reduction is <strong>↓80.9%</strong>. </p>
+
+    <h4>Table F · Ablations (Paper Table 5) + <span style="color:var(--series-2)">Relative Declines Calculated Here</span></h4>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Configuration</th><th>Native management</th><th class="num">gpt-4o-mini</th><th class="num">Δ</th><th class="num">gpt-4.1-mini</th><th class="num">Δ</th></tr>
+      <tr><td>w/o NEMORI (no memory)</td><td>–</td><td class="num">0.6 / 0.5 / 0.9</td><td class="num down">−99.2%</td><td class="num">1.2 / 1.6 / 1.5</td><td class="num down">−98.5%</td></tr>
+      <tr><td>Nemori-s (direct distillation replaces prediction error)</td><td>✓</td><td class="num">51.7 / 36.4 / 28.9</td><td class="num down">−29.2%</td><td class="num">66.0 / 41.4 / 34.9</td><td class="num down">−18.3%</td></tr>
+      <tr><td>Nemori-s (without native management)</td><td>✗</td><td class="num">52.0 / 36.6 / 29.1</td><td class="num down">−28.8%</td><td class="num">65.5 / 41.1 / 34.1</td><td class="num down">−18.9%</td></tr>
+      <tr><td>w/o e (without episodic retrieval)</td><td>✓</td><td class="num">64.6 / 46.2 / 37.1</td><td class="num down">−11.5%</td><td class="num">74.7 / 48.2 / 40.9</td><td class="num down">−7.5%</td></tr>
+      <tr><td>w/o e (replaced by naive RAG)</td><td>✗</td><td class="num">65.0 / 46.2 / 36.9</td><td class="num down">−11.0%</td><td class="num">74.9 / 48.1 / 40.7</td><td class="num down">−7.3%</td></tr>
+      <tr><td>w/o s (without semantic retrieval)</td><td>✓</td><td class="num">54.7 / 39.6 / 31.7</td><td class="num down">−25.1%</td><td class="num">76.9 / 50.0 / 42.9</td><td class="num down">−4.8%</td></tr>
+      <tr><td>w/o p (fixed partitions of 20 messages)</td><td>✓</td><td class="num">68.0 / 47.4 / 36.8</td><td class="num down">−6.8%</td><td class="num">75.7 / 48.1 / 40.9</td><td class="num down">−6.3%</td></tr>
+      <tr class="best"><td><strong>Full NEMORI</strong></td><td>✓</td><td class="num">73.0 / 50.3 / 39.7</td><td class="num">—</td><td class="num">80.8 / 52.1 / 45.0</td><td class="num">—</td></tr>
+    </table>
+    </div>
+
+    <h4>Table G · Construction-Cost Breakdown (Paper Table 9, gpt-4o-mini)</h4>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Component</th><th class="num">Input (k)</th><th class="num">Output (k)</th><th class="num">Total (k)</th><th class="num">Share</th></tr>
+      <tr><td>Partition (§3.2.1)</td><td class="num">44.7</td><td class="num">4.6</td><td class="num">49.3</td><td class="num">15.3%</td></tr>
+      <tr class="best"><td>Narration (§3.2.2)</td><td class="num">99.8</td><td class="num">23.9</td><td class="num">123.6</td><td class="num">38.3%</td></tr>
+      <tr><td>Integration (§3.2.3)</td><td class="num">43.8</td><td class="num">8.4</td><td class="num">52.2</td><td class="num">16.2%</td></tr>
+      <tr><td><strong>Distillation (§3.3)</strong></td><td class="num">88.9</td><td class="num">8.8</td><td class="num">97.7</td><td class="num">30.3%</td></tr>
+    </table>
+    </div>
+    <div class="callout">
+      <strong>Narration (38.3%), rather than prediction-error distillation (30.3%), is the largest cost component</strong>, yet no clean ablation removes narration while retaining raw episodes. Table 6's Partitioned→Partitioned scores only 75.3 (−6.8%), but simultaneously changes both indexing and retrieval representations. <em>The most expensive component lacks a clean ablation.</em>
+    </div>
+
+    <h4>Table H · Retrieval-Strategy Ablation (Paper Table 6, LoCoMo / gpt-4.1-mini)</h4>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Index representation</th><th>Retrieved representation</th><th class="num">LLM-judge</th><th class="num">F1</th><th class="num">BLEU-1</th></tr>
+      <tr class="best"><td>Narrative</td><td>Narrative (default)</td><td class="num">76.9</td><td class="num">50.0</td><td class="num">42.9</td></tr>
+      <tr><td>Partitioned</td><td>Narrative</td><td class="num">76.4</td><td class="num">50.7</td><td class="num">43.7</td></tr>
+      <tr><td>Narrative</td><td>Partitioned</td><td class="num">77.0</td><td class="num">50.2</td><td class="num">42.6</td></tr>
+      <tr><td>Partitioned</td><td>Partitioned</td><td class="num">75.3</td><td class="num">50.1</td><td class="num">42.7</td></tr>
+    </table>
+    </div>
+    <p>Across four combinations, the LLM-judge range is only <strong>1.7 pp</strong>(75.3–77.0), and the F1 range is <strong>0.7 pp</strong>. <strong>This ablation actually suggests that indexing/retrieval representation barely matters</strong>, in tension with the strong Representation Prior in §2.3. N→N is the default, yet N→P achieves a slightly higher LLM-judge score of 77.0.</p>
+
+    <h4>Table I · Third-Party Integration (Paper Table 7): NEMORI as a Front-End Distiller</h4>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Host system</th><th>Model</th><th>Input</th><th class="num">LLM-judge</th><th class="num">Core Score</th><th class="num">MemTokens</th></tr>
+      <tr><td>A-MEM</td><td>gpt-4o-mini</td><td>Raw (P)</td><td class="num">52.5</td><td class="num">52.6</td><td class="num">397K</td></tr>
+      <tr><td>A-MEM</td><td>gpt-4o-mini</td><td>NEMORI (K)</td><td class="num down">50.9 (↓3.0%)</td><td class="num up">55.8 (↑6.1%)</td><td class="num up">142K (↓64.3%)</td></tr>
+      <tr><td>A-MEM</td><td>gpt-4.1-mini</td><td>Raw (P)</td><td class="num">61.4</td><td class="num">60.4</td><td class="num">498K</td></tr>
+      <tr><td>A-MEM</td><td>gpt-4.1-mini</td><td>NEMORI (K)</td><td class="num down">59.0 (↓3.9%)</td><td class="num up">64.1 (↑6.1%)</td><td class="num up">243K (↓51.3%)</td></tr>
+      <tr><td>MemoryOS</td><td>gpt-4o-mini</td><td>Raw (P)</td><td class="num">54.6</td><td class="num">59.2</td><td class="num">405K</td></tr>
+      <tr><td>MemoryOS</td><td>gpt-4o-mini</td><td>NEMORI (K)</td><td class="num down">54.0 (↓1.1%)</td><td class="num up">60.3 (↑1.9%)</td><td class="num up">190K (↓53.1%)</td></tr>
+      <tr><td>MemoryOS</td><td>gpt-4.1-mini</td><td>Raw (P)</td><td class="num">60.7</td><td class="num">66.9</td><td class="num">354K</td></tr>
+      <tr class="best"><td>MemoryOS</td><td>gpt-4.1-mini</td><td>NEMORI (K)</td><td class="num up">61.4 (↑1.2%)</td><td class="num up">69.2 (↑3.4%)</td><td class="num up">194K (↓45.3%)</td></tr>
+    </table>
+    </div>
+
+    <h4>Table J · Scalability (Paper Table 8, LongMemEval-S, 105K Average Tokens)</h4>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Question types</th><th class="num">4o-mini Full Ctx</th><th class="num">4o-mini NEMORI</th><th class="num">Relative to</th><th class="num">4.1-mini Full Ctx</th><th class="num">4.1-mini NEMORI</th><th class="num">Relative to</th></tr>
+      <tr class="best"><td><strong>Single-session Preference</strong></td><td class="num">6.7</td><td class="num">46.7</td><td class="num up">+597%</td><td class="num">16.7</td><td class="num">86.7</td><td class="num up">+419%</td></tr>
+      <tr><td>Single-session Assistant</td><td class="num">89.3</td><td class="num">83.9</td><td class="num down">−6.0%</td><td class="num">98.2</td><td class="num">92.9</td><td class="num down">−5.4%</td></tr>
+      <tr><td>Temporal Reasoning</td><td class="num">42.1</td><td class="num">61.7</td><td class="num up">+46.6%</td><td class="num">60.2</td><td class="num">72.2</td><td class="num up">+19.9%</td></tr>
+      <tr><td>Multi-session</td><td class="num">38.3</td><td class="num">51.1</td><td class="num up">+33.4%</td><td class="num">51.1</td><td class="num">55.6</td><td class="num up">+8.8%</td></tr>
+      <tr><td><strong>Knowledge Update</strong></td><td class="num">78.2</td><td class="num">61.5</td><td class="num down">−21.4%</td><td class="num">76.9</td><td class="num">79.5</td><td class="num up">+3.4%</td></tr>
+      <tr><td>Single-session User</td><td class="num">78.6</td><td class="num">88.6</td><td class="num up">+12.7%</td><td class="num">85.7</td><td class="num">90.0</td><td class="num up">+5.0%</td></tr>
+      <tr><td><strong>Average</strong></td><td class="num">55.0</td><td class="num">64.2</td><td class="num up">+16.7%</td><td class="num">65.6</td><td class="num">74.6</td><td class="num up">+13.7%</td></tr>
+    </table>
+    </div>
+    <p style="font-size:14px;color:var(--muted)">Full Context uses 101K tokens; NEMORI uses 3.7–4.8K (<strong>↓95–96%</strong>). Relative changes are calculated in this report.</p>
+
+    <h4>Table K · Hyperparameter Sensitivity</h4>
+    <p style="font-size:14px;color:var(--muted);margin-bottom:4px">Observation window w (Table 11, gpt-4.1-mini)</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th class="num">w</th><th class="num">Temporal</th><th class="num">Open Domain</th><th class="num">Multi-Hop</th><th class="num">Single-Hop</th><th class="num">Overall</th></tr>
+      <tr><td class="num">5</td><td class="num">77.0</td><td class="num">59.4</td><td class="num">73.8</td><td class="num">86.3</td><td class="num">80.4</td></tr>
+      <tr><td class="num">10</td><td class="num">77.6</td><td class="num">57.3</td><td class="num">77.0</td><td class="num">85.7</td><td class="num">80.7</td></tr>
+      <tr><td class="num">20 (default)</td><td class="num">77.3</td><td class="num">56.3</td><td class="num">74.8</td><td class="num">87.0</td><td class="num">80.8</td></tr>
+      <tr class="best"><td class="num">30</td><td class="num">76.6</td><td class="num">60.4</td><td class="num">79.4</td><td class="num">86.0</td><td class="num">81.2</td></tr>
+      <tr><td class="num">40</td><td class="num">76.3</td><td class="num">54.2</td><td class="num">77.3</td><td class="num">86.4</td><td class="num">80.7</td></tr>
+    </table>
+    </div>
+    <p style="font-size:14px;color:var(--muted);margin-bottom:4px">Retrieval count k (Figure 3 / Table 12)</p>
+    <div class="tablewrap">
+    <table>
+      <tr><th class="num">k</th><th class="num">gpt-4o-mini</th><th class="num">gpt-4.1-mini</th></tr>
+      <tr><td class="num">2</td><td class="num">65.0 / 66.6*</td><td class="num">73.4</td></tr>
+      <tr><td class="num">5</td><td class="num">70.0</td><td class="num">79.3</td></tr>
+      <tr><td class="num">10 (default)</td><td class="num">73.0</td><td class="num">80.8</td></tr>
+      <tr><td class="num">15</td><td class="num">72.5</td><td class="num">82.7</td></tr>
+      <tr class="best"><td class="num">20</td><td class="num">72.5</td><td class="num">83.4</td></tr>
+      <tr><td class="num">30</td><td class="num">73.0 / 74.4*</td><td class="num">83.3</td></tr>
+    </table>
+    </div>
+    <p style="font-size:14px;color:var(--muted)">* Extracted Figure 3 and Table 12 values differ slightly at k=2 and k=30 (65.0 vs 66.6; 73.0 vs 74.4). <strong>This report could not determine which values reflect the main-text convention and presents both transparently.</strong></p>
+  </section>
+
+  <section class="card" style="border-color:var(--series-2)">
+    <h3>2.6 A Phase Transition: The Most Convincing Qualitative Evidence</h3>
+    <div class="callout">
+      <strong>On LongMemEval-S Single-session Preference, gpt-4o-mini scores only 6.7 with the full 101K-token context, but 46.7 with NEMORI's 3.7–4.8K distilled tokens (+597%). For gpt-4.1-mini, the change is 16.7 → 86.7 (+419%, 5.19×).</strong>
+    </div>
+    <p>This goes beyond a marginal compression gain; it is a <strong>sign reversal</strong>: Reducing context to 1/25 improves performance by 5–7×. For preference questions, <strong>raw context is actively harmful rather than merely insufficient</strong>—preferences are scattered across long conversations and buried in irrelevant content, preventing localization within 101K tokens. Prediction-error distillation isolates new preferences inconsistent with the existing profile as semantic knowledge.</p>
+    <p>This is the paper's only evidence of a change in <strong>kind rather than degree</strong> : Elsewhere, differences from Full Context remain within ±20% (Table J); Preference alone approaches an order-of-magnitude change. <strong>If the paper were to center one claim, it should be that memory combats context dilution rather than context length</strong>, but it does not develop this transition as a standalone core argument.</p>
+    <p><strong>The Counterevidence Also Deserves Attention</strong>: <code>Knowledge Update</code> sees gpt-4o-mini fall from 78.2 to 61.5 (<span class="down">−21.4%</span>). Yet <code>conflict</code> is one of NEMORI's three semantic-consolidation states, specifically designed for knowledge updates. <strong>The dedicated mechanism fails most severely on its intended question type</strong>—an internal contradiction the paper does not discuss.</p>
+  </section>
+
+  <div class="figure">
+    <p class="fig-title">Figure 2 · Six LongMemEval-S Categories: Full Context vs NEMORI</p>
+    <p class="fig-sub">Source: NEMORI Table 8 (gpt-4o-mini). Full Context uses 101K tokens; NEMORI uses 3.7–4.8K. Note the phase-transition-like gain on Preference and regression on Knowledge Update. Hover for exact values.</p>
+    <div class="legend">
+      <span><span class="sw" style="background:var(--series-1)"></span> Full Context (101K tokens)</span>
+      <span><span class="sw" style="background:var(--series-2)"></span> NEMORI (3.7–4.8K tokens)</span>
+    </div>
+    <svg class="chart" id="chart2" viewBox="0 0 900 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Grouped bar chart of six LongMemEval-S question categories"></svg>
+  </div>
+
+  <section class="card">
+    <h3>2.7 Assessment of Value</h3>
+    <p><strong>The substantive contribution consists of three things beyond better performance:</strong></p>
+    <ol>
+      <li><strong>Redefining what to store as a measurable quantity.</strong> Before NEMORI, <code>importance</code>, <code>heat</code>, <code>emotion</code> were all <em>exogenous</em>, requiring a prompt, threshold, or decay coefficient. Prediction error is <em>endogenous</em>, jointly determined by current knowledge and input, without an additional configuration interface. The shift resembles moving from handcrafted features to a self-supervised objective.</li>
+      <li><strong>An existence proof of 80.9% lower cost and 19.1% better performance</strong>(Table E, relative to Mem0). It challenges the assumption that memory-system cost is unavoidable: much of it comes from storing unnecessary material.</li>
+      <li><strong>A Detachable, Modular Contribution.</strong> Table I shows prediction-error distillation can serve as a <em>front-end filter</em> for other systems: A-MEM's storage falls 51–64% while Core Score rises 6.1%. The mechanism therefore <strong>does not depend on the rest of NEMORI</strong> and can be adopted directly by A-MEM, MemoryOS, or Mem0.</li>
+    </ol>
+    <h4>Independently Reusable Design Principles</h4>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Design</th><th>Reusable form</th><th>Transfer destination</th></tr>
+      <tr class="best"><td>Predictability Implies Redundancy</td><td>A write gate that first predicts the input and stores only the difference</td><td>KV-cache compression, RAG indexing, and agent-trajectory logs</td></tr>
+      <tr><td>LLM-driven episode-boundary partitioning</td><td>Table F attributes a −6.3–6.8% ablation drop to it at only 15.3% of cost, indicating good value</td><td>Long-document chunking and multiround tool-trajectory segmentation</td></tr>
+      <tr><td>Three-way consolidation <code>new / merge / conflict</code></td><td>Explicitly distinguish new / merge / conflict instead of a uniform upsert</td><td>Incremental knowledge-graph updates and user-profile maintenance</td></tr>
+      <tr><td>Narrative rewriting (allocentric transformation)</td><td>Decouple stored and raw representations</td><td>Table H shows ≤1.7pp gains, leaving cost-effectiveness uncertain</td></tr>
+    </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>2.8 Limitations</h3>
+
+    <h4>(A) Author-Acknowledged Limitations — Quoted from the Formal ACL Version</h4>
+    <ol>
+      <li><strong>Distillation-centered scope</strong>: “NEMORI focuses on distillation and adopts naive strategies for management and retrieval. This simplicity suffices for the benchmarks studied here, but may become a bottleneck for tasks that demand more sophisticated reasoning over memory. The performance we report should be understood as reflecting this design scope rather than the ceiling of what a complete memory system could achieve.”</li>
+      <li><strong>Interfaces are not yet standardized</strong>: “The interfaces we define are currently conceptual, and due to the lack of standardized protocols in the area, concrete integration still requires case-by-case implementation.”</li>
+    </ol>
+    <div class="callout">
+      <strong>A verifiable version difference:</strong> The arXiv v4 HTML moves from Section 5 directly to References and Appendices A–D, <strong>without a Limitations section</strong>. The two points above come from the official ACL Anthology PDF; cite that version.
+    </div>
+
+    <h4>(B) Nine Additional Criticisms, Each with Evidence</h4>
+    <p><strong>① The Near-Zero Advantage Over Full Context Is Obscured by the Reporting Baseline</strong>(Argument gap). All relative gains use the strongest <em>memory-system</em> baseline as denominator. Against Full Context (Table D), gpt-4.1-mini gains only 0.2pp in Average (+0.25%), while <strong>F1 is 1.2pp lower (52.1 vs 53.3, −2.25%)</strong> and Multi-Hop is 2.4pp lower. This differs from the abstract's impression of improved performance alongside reduced storage: <strong>when the full context fits, NEMORI's performance gains are within the noise scale, leaving cost as the real selling point.</strong> A narrower claim of equal performance at one-fifth the cost would be stronger.</p>
+    <p><strong>② The Core Mechanism's Contribution Declines Sharply with Model Capability</strong>(Metric validity + extrapolation risk). In Table F, <code>w/o s</code>(removing the semantic layer distilled from prediction errors) reduces gpt-4o-mini by <span class="down">−25.1%</span> but gpt-4.1-mini by only <span class="down">−4.8%</span>. Across just one model generation, the marginal contribution shrinks <strong>5.2×</strong>. Linear extrapolation to frontier models could imply a near-zero semantic-layer contribution: prediction-error distillation may compensate for <em>weaker models' retrieval and integration abilities</em> rather than supply irreplaceable information. No stronger model tests whether this trend levels off; <strong>this is the most needed experiment</strong>. </p>
+    <p><strong>③ The Knowledge-Update <code>conflict</code> Mechanism Fails Most on Knowledge-Update Questions</strong>(Internal contradiction). Table J: <code>Knowledge Update</code> gpt-4o-mini 78.2 → 61.5 (<span class="down">−21.4%</span>), the only double-digit negative change among six categories, while Preference improves 597% on the same model. If <code>conflict</code> really removes outdated entries, this should be its strongest category. A plausible hypothesis is that <code>conflict</code> depends on <code>Search(D_s, u_q, K_m=5)</code> retrieving the old entry. If old and new expressions fall below the similarity threshold, the conflict is never detected—<strong>pointing directly to the untested sensitivity of <code>τ = 0.70</code></strong>. The paper offers no discussion.</p>
+    <p><strong>④ The Critical Hyperparameter <code>τ = 0.70</code> Has No Sensitivity Analysis</strong>(Experimental gap). Table B shows sweeps of <code>w</code>(5→40) and <code>k</code>(2→30), but none for <code>τ</code>. Yet <code>τ</code> Yes <em>is the context-evocation threshold for anticipatory schemas</em>, directly controlling how much the system believes it knows and thus prediction-error magnitude—the central knob of the Distillation Prior. Skipping <code>τ</code> while sweeping <code>w</code> examines secondary parameters while leaving the central mechanism unchecked. Additionally, <code>K_e = K_m = 5</code>, <code>K_s = 10</code>, <code>r = 2</code> also lack ablations.</p>
+    <p><strong>⑤ Native Management Has a Negative Contribution in Both Comparisons</strong>(Argument gap). Table F: <code>Nemori-s</code> 51.7 with management versus 52.0 without (−0.3); <code>w/o e</code> 64.6 with management versus 65.0 with naive RAG (−0.4). <strong>Management slightly hurts performance in both comparisons.</strong> The paper calls this negligible management overhead. More rigorously, single-run differences of ±0.3–0.4pp without variance cannot establish either harmlessness or harm, but the two differences have <em>the same sign</em>. Thus “Agnostic” in Table 1's Management column is more than a scope restriction: it reflects an unvalidated default.</p>
+    <p><strong>⑥ No Head-to-Head Comparison with Learned Memory Policies</strong>(Missing key baselines). Another major 2025–2026 line delegates memory operations to RL-trained policies—Memory-R1, MemAct, and AgeMem—using <em>exogenous rewards</em>, whereas NEMORI uses <em>endogenous prediction error</em>. These directly compete on what should drive memory writes, yet among seven baselines, <strong>none comes from the RL branch</strong>. The implicit claim that endogenous signals outperform external rewards remains entirely untested. This is the most valuable next comparison.</p>
+    <p><strong>⑦ Table I's Metrics Move in Opposite Directions, Raising Validity Questions</strong>(Metric issue). When NEMORI precedes A-MEM, <code>LLM-judge</code> falls 3.0%/3.9%, while <code>Core Score</code> rises 6.1%/6.1%. The paper uses the latter to claim maintained or improved performance. <strong>When two metrics disagree within one experiment, favoring the positive one requires justification</strong>. The paper does not explain Core Score's definition, its divergence from LLM-judge, or why the main table does not use it.</p>
+    <p><strong>⑧ Narrow Evaluation Overpromises “LLM Agents” in the Title</strong>(Experimental design). LoCoMo and LongMemEval-S are both <em>conversational question-answering</em> benchmarks, with no tool use, web or embodied environments, or planning tasks such as ALFWorld, WebArena, or PDDL. Agent memory must retain <strong>behavioral experience</strong>—failed tool calls or unworkable paths—whose redundancy differs from conversational facts. LoCoMo also has only <strong>10 conversations, 1,540 questions, one run, and no confidence intervals</strong>, while several key Table D differences are only 0.1–1.2pp, <strong>indistinguishable at this sample size</strong>. </p>
+    <p><strong>⑨ Limitations of This Report (Disclosure).</strong> This analysis uses extracted text from the official ACL PDF and arXiv v4 HTML; <strong>the code was not run</strong>; <code>github.com/nemori-ai/nemori</code> was located through search only, without verifying whether it fully implements the paper. Its public description calls it “a minimalist MVP,” potentially differing from the paper's “a production-grade implementation”; <strong>reproduction efforts should note this</strong>. The discrepancy between Figure 3 and Table 12 also remains unresolved.</p>
+  </section>
+
+  <h2>3 · Related Work: A Chain of Increasingly Endogenous Priors</h2>
+  <section class="card">
+    <p style="color:var(--text-secondary)">Selection criterion: All five works <strong>address the same question—what to remember or forget</strong>—and are explicitly classified in NEMORI's Table 1. They represent five ways to turn the same knob; NEMORI attempts to remove that knob.</p>
+
+    <h3>3.1 Generative Agents — Park et al., UIST 2023</h3>
+    <p><strong>Problem addressed.</strong> The first operational long-term agent-memory loop: a memory stream records every observation, retrieval weights <code>importance × recency × relevance</code> three factors, and reflection synthesizes low-level observations into high-level insights. It is the first entry in NEMORI Table 1 with <strong>a populated Distillation column</strong>. </p>
+    <p><strong>Unresolved problem.</strong><code>importance</code> is rated 1–10 by a prompted LLM, <strong>without supervision linking that score to downstream utility</strong>. It proxies the designer's intuition about importance. Overrating creates systemic bloat; underrating causes irreversible loss. More fundamentally, importance is an <em>absolute quantity</em> that does not vary with existing knowledge: a sentence scores the same on its first and tenth occurrence.</p>
+    <p><strong>How the core paper responds.</strong> NEMORI replaces an absolute quantity with a <em>relative quantity</em>: information value equals surprise relative to current knowledge. The tenth repetition is matched by <code>Evoke</code> , covered by the anticipatory schema, and yields no distilled output. Table F's <code>Nemori-s</code> drops 18.3–29.2%, quantifying the cost of replacing this criterion.</p>
+    <p><strong>Transfer of key designs.</strong> Generative Agents' <strong>reflection tree</strong> evolves in NEMORI into the <code>merge</code> consolidation state, triggered only when <em>semantically adjacent entries are retrieved</em> rather than when accumulated importance crosses a fixed threshold. A counter becomes an associative match.</p>
+
+    <h3>3.2 MemoryBank — Zhong et al., AAAI 2024</h3>
+    <p><strong>Problem addressed.</strong> Forgetting becomes a first-class operation: the Ebbinghaus forgetting curve makes memory strength decay exponentially with time and increase with repeated recall, providing an early computable answer to what to forget.</p>
+    <p><strong>Unresolved problem.</strong> The forgetting curve is a <em>prior about time</em> rather than a content criterion. An unvisited week-old fact about a drug allergy decays at the same rate as unvisited week-old small talk. Importance is outsourced to access frequency, which depends on what questions are asked and <strong>provides little information during cold starts or infrequent use</strong>. </p>
+    <p><strong>How the core paper responds.</strong> NEMORI avoids temporal decay. Forgetting happens <em>before writing</em>: predictable information never enters semantic storage, and stored entries are removed only during <code>conflict</code> when new information contradicts them. <strong>Time decay becomes predictability filtering plus contradiction-based removal</strong>—forgetting shifts from postprocessing to write gating.</p>
+    <div class="callout">
+      <strong>The lineage's most interesting sign reversal:</strong> MemoryBank's Hebbian intuition that repeated recall strengthens memory is reversed in NEMORI—<strong>repeated content is discarded rather than strengthened</strong> because it is predictable. Repetition means “retain more strongly” under memory strength, but “already known, no need to store again” under predictive coding.
+    </div>
+
+    <h3>3.3 A-MEM — Xu et al., 2025 <span style="font-weight:400;color:var(--muted);font-size:14px">(Brief by agreement; discussed in detail in earlier reports)</span></h3>
+    <p><strong>Problem addressed.</strong> Inspired by Zettelkasten, memory entries generate keywords and tags, link to existing entries, and trigger neighboring entries'<em>memory evolution</em> when new memories arrive. Without a predefined schema, it exemplifies self-organizing structure.</p>
+    <p><strong>Unresolved problem.</strong> A-MEM optimizes <em>organization among stored items</em> but is silent on whether to store them: its Distillation column is empty. Links therefore form over unfiltered material; noisy entries also generate tags and links, <strong>propagating redundancy from storage into graph structure</strong>. </p>
+    <p><strong>How the core paper responds.</strong> Table I answers directly: feeding NEMORI's distilled K rather than raw episodes P to A-MEM reduces MemTokens from 397K to 142K (<span class="up">↓64.3%</span>), while Core Score rises from 52.6 to 55.8 (<span class="up">↑6.1%</span>). <strong>A-MEM's organizational ability is unchanged; the material it organizes is cleaner.</strong></p>
+    <p><strong>Transfer of key designs.</strong> A-MEM's new-entry-driven updates become NEMORI's <code>Supersede</code>: <code>M_ν</code> direct replacement <code>U_k</code>, with <code>P_k ‖ P_j</code> preserving raw provenance. A-MEM uses <em>append-style evolution</em>(old entries are rewritten but remain), whereas NEMORI uses <em>replacement-style evolution</em>(old entries are displaced)—cheaper, but more irreversible.</p>
+
+    <h3>3.4 MemoryOS — Kang et al., EMNLP 2025 Main (Oral)</h3>
+    <p><strong>Problem addressed.</strong> Operating-system paging becomes short-/mid-/long-term memory storage, using <strong>heat score</strong> to govern movement between tiers alongside two-stage retrieval. This is highly engineered heuristics; the paper reports a LoCoMo gain over its baseline of <strong>F1 +48.36%, BLEU-1 +46.18%</strong> (gpt-4o-mini). </p>
+    <p><strong>Unresolved problem.</strong> Heat scores remain exogenous: migration thresholds, decay coefficients, and capacities are manually configured. More importantly, <strong>the system decides which tier to use, not whether to store an item</strong>—everything enters short-term storage. Hierarchy shifts the cost of bloat from retrieval latency to tier management.</p>
+    <div class="callout">
+      <strong>A Cross-Paper Quantitative Comparison (This Report's Observation).</strong> Under NEMORI's common evaluation setup (Table C, gpt-4o-mini), MemoryOS's mean LoCoMo LLM-judge score is <strong>54.5</strong>, F1 <strong>39.9</strong>——<strong>below Mem0 in the same table (61.3 / 41.5)</strong>. This contrasts sharply with MemoryOS's self-reported +48.36% F1. The figures need not contradict because baselines, prompts, and judges differ, but together show: <strong>self-reported memory-system gains depend heavily on the evaluation harness; independent, standardized reproduction is essential.</strong> Zep shows the same pattern: it reports +18.5% and −90% latency on LongMemEval, yet averages only 58.5 on LoCoMo in Table C (gpt-4o-mini), also below Mem0. <strong>This is itself an underappreciated methodological problem in the field.</strong>
+    </div>
+    <p><strong>Transfer of key designs.</strong> MemoryOS's hierarchy becomes two orthogonal stores in NEMORI (<code>D_e</code> episodic / <code>D_s</code> semantic), and migration shifts from heat thresholds to nonempty prediction errors. The hierarchy changes from <em>time-based tiers</em> to <em>division by representation type</em>, aligning with McClelland et al.'s Complementary Learning Systems theory, which the paper explicitly cites.</p>
+
+    <h3>3.5 Zep / Graphiti — Rasmussen et al., 2025</h3>
+    <p><strong>Problem addressed.</strong> Use <strong>a temporal knowledge graph</strong> handles expiring memory: edges carry validity intervals, new facts invalidate rather than delete old edges, enabling point-in-time queries and conflict resolution.</p>
+    <p><strong>Unresolved problem.</strong> Validity management first requires information to be <em>structured as triples</em>, itself a lossy distillation guided by manually chosen entity/relation schemas. Graph extraction is also expensive, while Zep averages only 58.5 / 61.6 on LoCoMo in the common evaluation; <strong>its Temporal Reasoning score of 60.2 (gpt-4.1-mini) trails NEMORI's 77.3</strong>—a system explicitly designed for temporal semantics loses by 17.1pp on temporal questions.</p>
+    <p><strong>How the core paper responds.</strong> NEMORI uses <code>conflict</code> for the same problem at much lower cost: no graph maintenance, only deciding whether new evidence contradicts an old semantic entry. <strong>The price is losing point-in-time queries</strong>: NEMORI cannot answer what a user's preference was three months ago after purging that entry. Table J's <code>Knowledge Update</code> −21.4% may be the bill for this inexpensive conflict resolution.</p>
+    <p><strong>Transfer of key designs.</strong> Zep's conservative invalidate-rather-than-delete strategy becomes purge-and-replace in NEMORI. <strong>This is the lineage's sole regression rather than advance</strong>: NEMORI is weaker on this dimension. Future work could restore temporal validity within the prediction-error framework (see §5 ⑤).</p>
+  </section>
+
+  <h2>4 · Technical Evolution</h2>
+  <section class="card">
+    <div class="flow">                     Core question: What is worth remembering, and where does the criterion come from?
+                                     │
+     ┌───────────────────────────────┴────────────────────────────────┐
+     │                                                                │
+[Exogenous, manually encoded priors]                     [Self-organizing structure, no schema]
+     │                                                                │
+2023 Generative Agents — importance × recency × relevance   2025 A-MEM — Zettelkasten links
+     │ [Absolute importance; reflection tree]                         │ [Generated tags; neighbor evolution]
+     │                                                                │ ✗ No distillation
+2023 MemGPT — virtual memory paging                                   │
+     │ [Tiered storage; function calls]                               │
+     │                                                                │
+2024 MemoryBank — Ebbinghaus forgetting curve                          │
+     │ [Temporal prior; recall reinforcement]                         │
+     │                                                                │
+2025 MemoryOS — heat-score three-tier paging ← engineered heuristics ──┤
+     │ [EMNLP 2025 Oral; self-reported F1 +48.4%]                      │
+     │                                                                │
+2025 Zep/Graphiti — temporal-validity graph                            │
+     │ [Validity intervals; invalidate rather than delete]            │
+     │                                                                │
+     └──────────────┬─────────────────────────────────────────────────┘
+                    │
+        Shared gap: Exogenous criteria. Thresholds, coefficients, and schemas
+                    require manual configuration without supervision linking them to utility.
+                    │
+                    ├──────────────────────┬──────────────────────────┐
+                    ▼                      ▼                          ▼
+      [Internalize external rewards] [Replace priors with endogenous signals] [Evaluation/governance]
+    2025–26 Memory-R1 / MemAct    2026 NEMORI (ACL Long)      2026 Forgetting benchmarks /
+            AgeMem unified policy ═══════════════════        memory poisoning /
+      RL rewards learn operations Prediction error distills   security/governance surveys
+      ✗ Requires task rewards     ✓ No extra supervision
+      ✗ High training cost        ✓ Cost ↓80.9% vs Mem0
+                    ╲                    ╱
+                     ╲                  ╱
+              ✗ No head-to-head comparison (§2.8, criticism ⑥)
+                      — The clearest current gap —</div>
+
+    <h4>Underlying Logic: Criteria Become Increasingly Internal</h4>
+    <div class="tablewrap">
+    <table>
+      <tr><th>Stage</th><th>Source of criterion</th><th>Representative</th><th>What must be configured manually</th></tr>
+      <tr><td>I. Encoded intuition</td><td>The designer's semantic intuition</td><td>Generative Agents</td><td>Importance prompt and threshold</td></tr>
+      <tr><td>II. Cognitive prior</td><td>Empirical regularities of human memory</td><td>MemoryBank</td><td>Forgetting-curve half-life</td></tr>
+      <tr><td>III. Structural prior</td><td>Let entries organize themselves</td><td>A-MEM</td><td>Linking policy (schema no longer needed)</td></tr>
+      <tr><td>IV. Engineering prior</td><td>Combine multiple intuitions in a heat function</td><td>MemoryOS / Zep</td><td>Heat coefficients, tier capacities, graph schema</td></tr>
+      <tr><td>V. Exogenous reward</td><td>Feedback from downstream tasks</td><td>Memory-R1 / MemAct / AgeMem</td><td>Reward design and RL training budget</td></tr>
+      <tr class="best"><td><strong>VI. Endogenous signal</strong></td><td><strong>The system's own prediction failures</strong></td><td><strong>NEMORI</strong></td><td><strong>One similarity threshold τ (without sensitivity analysis)</strong></td></tr>
+    </table>
+    </div>
+    <p><strong>Two Key Turning Points:</strong> IV→V delegates the criterion to optimization: if manual design fails, learn it from rewards, at the cost of task rewards and training. IV→VI delegates it to system state: let the system measure surprise, at the cost that <strong>criterion quality depends entirely on anticipatory-schema quality</strong>. </p>
+    <div class="callout">
+      <strong>This Report's Central Judgment on the Evolution:</strong> NEMORI claims to eliminate designer intuition, but actually compresses it from <em>a semantic prior</em>(what matters) into <em>a geometric prior</em>(how similar is sufficiently known). This is genuine dimensionality reduction: fewer geometric priors are more transferable and easier to tune automatically, <strong>but they are not eliminated</strong>. The paper conducts no experiment on precisely this residual prior (<code>τ</code>).
+    </div>
+  </section>
+
+  <h2>5 · Open Challenges and Research Opportunities</h2>
+  <section class="card">
+    <h3>5.1 Theory</h3>
+    <p><strong>① Formalizing Cold-Start-to-Saturation Dynamics (High Value, Low Barrier).</strong> Prediction-error distillation output <code>|K_in|</code> is a function of existing knowledge <code>|D_s|</code> : <code>|D_s| = 0</code> degenerates into full distillation, while <code>|D_s| → ∞</code> approaches zero. <strong>The curve determines steady-state memory size, yet the paper never measures it.</strong> An actionable experiment: across LoCoMo's ten conversations, plot the joint trajectory of <code>|K_in|</code> with <code>|D_s|</code> by session index, testing whether saturation exists and depends on <code>τ</code>. This requires only logging the current pipeline, with no new training.</p>
+    <p><strong>② <code>τ</code> and Prediction-Error Quality: Quantifying the Trade-Off.</strong><code>τ</code> High ⇒ fewer evoked entries ⇒ weaker expectation ⇒ more false surprise (redundant storage); <code>τ</code> low ⇒ more evoked entries ⇒ stronger expectation ⇒ false negatives (missed new information). This is a standard precision–recall trade-off, but <strong>no empirical curve has been provided</strong>. Sweep <code>τ ∈ [0.5, 0.9]</code> and record (a) semantic-store size, (b) per-category LoCoMo scores, and (c) <code>conflict</code> trigger counts. The third directly tests the hypothesis in §2.8, criticism ③.</p>
+    <p><strong>③ Comparing Attainable Limits of Endogenous Signals and External Rewards.</strong> Prediction error is an <em>unsupervised</em> criterion, whereas RL reward is a <em>supervised</em> criterion. In principle, the latter has no lower ceiling because it can learn any criterion, including prediction error. The question becomes: <strong>At what training budget does an RL memory policy surpass the training-free prediction-error criterion?</strong> This experiment could identify a crossover point and adjudicate the two branches in §4.</p>
+
+    <h3>5.2 Engineering and Applications</h3>
+    <p><strong>④ Evaluate Agent Settings (Most Urgent).</strong> NEMORI's title says “for LLM Agents,” but both benchmarks are dialogue QA. On ALFWorld, WebArena, or τ-bench, define an episode as a tool-call sequence and prediction error as the difference between expected and actual tool outputs. <strong>The transfer is almost literal</strong>: Predictive coding naturally fits expected-versus-actual outcomes, precisely the structure of agent trajectories. Success here would be more persuasive than dialogue results.</p>
+    <p><strong>⑤ Restore Zep's Temporal Validity Within Predictive Coding.</strong> NEMORI's <code>conflict</code> purges entries for efficiency, losing historical queries. Change <code>conflict</code> from purge-and-replace to marking <code>invalid_at</code> and appending, filtering by query time only during retrieval. Storage growth should be limited because old distilled entries are short, while temporal information is restored. <strong>Test directly on LongMemEval-S Knowledge Update and Temporal Reasoning to see whether this repairs the −21.4% regression.</strong></p>
+    <p><strong>⑥ Memory Stability in Online, Dynamic Settings.</strong> Current evaluation constructs memory offline and asks questions afterward; real agents read and write continuously. <strong>An unaddressed online risk is that early distillation errors contaminate anticipatory schemas, systematically distorting later prediction errors</strong> in a positive feedback loop. This closely resembles the <em>How Memory Management Impacts LLM Agents</em>(acl-long.27) finding of <strong>error propagation</strong> at ACL 2026—<strong>its use of future task outcomes as a memory-quality signal offers a ready-made way to clean NEMORI's semantic store retrospectively.</strong></p>
+
+    <h3>5.3 Emerging Directions</h3>
+    <p><strong>⑦ Reversible Distillation or Controllable Loss.</strong> NEMORI's distillation is irreversible: although <code>M_j</code> retains <code>P_j</code> the original text, the semantic layer <code>K_in</code> cannot be inverted. Could prediction-error distillation have an <em>adjustable lossiness</em> control, switching one memory system between expensive high fidelity and cheap low fidelity? This naturally connects to rate–distortion memory compression (arXiv:2607.08032): <strong>prediction error corresponds to residual coding in rate–distortion theory; NEMORI effectively implements a residual encoder without an explicit rate constraint.</strong> Making that constraint explicit is the shortest path to unifying the two lines.</p>
+    <p><strong>⑧ Multiple Perspectives for Anticipatory Schemas.</strong> Currently, <code>Evoke</code> uses one similarity retrieval to generate one expectation. Generate K expectations from factual, preference, and causal perspectives; use the <em>intersection of their errors</em> as high-confidence new information and the <em>union</em> as a candidate pool. This may reduce the missed conflicts in §2.8, criticism ③. It parallels MAGMA's four orthogonal graphs (acl-long.1709), but at distillation rather than retrieval.</p>
+    <p><strong>⑨ Prediction Error as a Memory-Poisoning Attack Surface.</strong> A concrete, as-yet-unproposed risk: <strong>an attacker who infers the semantic store could craft high-error but worthless inputs, forcing garbage into memory</strong>, because NEMORI's write gate depends entirely on manipulable surprise. This may be easier than attacking heuristics: the input need only look surprising, not important. Combined with arXiv:2607.06595's poisoning framework, <strong>this is an immediately testable attack.</strong></p>
+    <div class="callout">
+      <strong>⑩ The Missing Decisive Comparison Is the Largest Opportunity.</strong> The opportunity is more specific than exploring predictive coding: <strong>no study evaluates heuristic distillation, structural self-organization, RL policies, and prediction error under the same harness, model, and retrieval budget.</strong> MemoryOS's self-reported +48.4% versus below-Mem0 performance in a third-party harness (§3.4) shows that this gap already causes substantive confusion. A rigorous four-way reproduction study could be more valuable than another incremental advance along any one branch.
+    </div>
+  </section>
+
+  <h2>6 · Related-Work Comparison</h2>
+  <section class="card">
+    <div class="tablewrap">
+    <table>
+      <tr><th>Work</th><th>Publication</th><th>Venue / publication</th><th>Core contribution</th><th>Main metric (source)</th><th>Relationship to the core paper</th></tr>
+      <tr class="best">
+        <td><strong>NEMORI</strong></td><td>2026-07<br>(arXiv 2025-08)</td><td><strong>ACL 2026 Main, Long</strong></td>
+        <td>Prediction error as the memory-distillation criterion</td>
+        <td>LoCoMo avg <strong>73.0 / 80.8</strong>(Table 2); construction <strong>322.9k</strong> tokens (Table 3)</td>
+        <td><strong>Core paper</strong></td>
+      </tr>
+      <tr><td>Generative Agents</td><td>2023-04</td><td>UIST 2023</td><td>memory stream + importance×recency×relevance + reflection</td><td>No public benchmark score</td><td><strong>Origin of the problem</strong>: Absolute importance → relative surprise</td></tr>
+      <tr><td>MemoryBank</td><td>2023-05</td><td>AAAI 2024</td><td>Ebbinghaus-curve-driven memory decay</td><td>Self-reported scenario evaluation; absent from NEMORI baselines</td><td><strong>Temporal prior</strong>: Forgetting moves from postprocessing to write gating</td></tr>
+      <tr><td>A-MEM</td><td>2025-02</td><td>No main-conference publication found (arXiv v9)</td><td>Zettelkasten self-organizing links + neighbor evolution</td><td>LoCoMo avg <strong>52.5 / 61.4</strong> (NEMORI Table 2)</td><td><strong>Orthogonal layer</strong>: Table 7 shows front-end distillation cuts MemTokens 64.3% and raises Core 6.1%</td></tr>
+      <tr><td>MemoryOS</td><td>2025-06</td><td><strong>EMNLP 2025 Main, Oral</strong></td><td>Heat-score-driven three-tier paging</td><td>Self-reported LoCoMo F1 <strong>+48.36%</strong>; third-party harness average <strong>54.5 / 60.6</strong></td><td><strong>Highly engineered heuristics</strong>: Hierarchical management → two orthogonal stores</td></tr>
+      <tr><td>Zep / Graphiti</td><td>2025-01</td><td>No conference publication record</td><td>Temporal knowledge graph + validity intervals</td><td>Self-reported DMR <strong>94.8%</strong>, LongMemEval <strong>+18.5%</strong>; third-party LoCoMo average <strong>58.5 / 61.6</strong></td><td><strong>Temporal dimension</strong>: Invalidate → purge (the sole regression)</td></tr>
+      <tr><td>LoCoMo</td><td>2024-02</td><td>ACL 2024 Long</td><td>Very-long-conversation memory benchmark</td><td>10 conversations / 1,540 questions / 24K tokens</td><td><strong>Evaluation foundation</strong>: Small sample size prevents distinguishing Table D's 0.1–1.2pp differences</td></tr>
+      <tr><td>LongMemEval</td><td>2024-10</td><td>ICLR 2025</td><td>Six-category long-term interaction memory evaluation</td><td>500 conversations / 105K tokens</td><td><strong>Where the phase transition appears</strong>: The +597% Preference result comes from this benchmark</td></tr>
+    </table>
+    </div>
+    <h4>Three Trends in This Table</h4>
+    <ol>
+      <li><strong>Performance is saturating; cost is not.</strong> From Generative Agents to NEMORI, LoCoMo means rise to 73–81, but NEMORI exceeds Full Context by only 0.2–0.7pp (Table D). <em>The next order-of-magnitude advance will not come from LoCoMo scores.</em></li>
+      <li><strong>Self-reported gains and independent reproduction systematically diverge.</strong> MemoryOS (+48.4% → below Mem0 independently) and Zep (+18.5% → below Mem0 independently) are two separate examples.</li>
+      <li><strong>Publication venues are moving upward.</strong> Many representative 2023–2025 works were arXiv papers or workshops (A-MEM still lacks a main-conference record; Zep lacks a publication record). By 2025–2026, the area regularly reaches EMNLP/ACL long papers and oral presentations, with tightening review standards.</li>
+    </ol>
+  </section>
+
+  <h2>7 · Other Recent Work Worth Following</h2>
+  <section class="card">
+    <p><strong>How Memory Management Impacts LLM Agents: An Empirical Study of Experience-Following Behavior</strong> (2026-07, ACL 2026 Main Long)</p>
+    <ul><li>Systematically characterizes agents' experience-following behavior through <strong>error propagation</strong> with <strong>misaligned experience replay</strong> two failure modes, using future task outcomes as a quality signal for stored experience. <strong>Directly complementary to NEMORI</strong>: NEMORI gates writes; this work corrects quality afterward.<br><a href="https://aclanthology.org/2026.acl-long.27/">ACL Anthology</a> · <a href="https://aclanthology.org/2026.acl-long.27.pdf">PDF</a> · Code: Not found</li></ul>
+
+    <p><strong>EverMemOS: A Self-Organizing Memory Operating System for Structured Long-Horizon Reasoning</strong> (2026-07, ACL 2026 Main Long)</p>
+    <ul><li>A neuroscience-inspired three-stage lifecycle—Episodic Trace Formation → Semantic Consolidation → Reconstructive Recollection—with MemCell/MemScene abstractions. <strong>Highly comparable to NEMORI's dual stores, but consolidation uses clustering rather than prediction error</strong>—an ideal head-to-head comparator.<br><a href="https://aclanthology.org/2026.acl-long.2125/">ACL Anthology</a> · Code: Not found</li></ul>
+
+    <p><strong>MAGMA: A Multi-Graph based Agentic Memory Architecture for AI Agents</strong> (2026-07, ACL 2026 Main Long)</p>
+    <ul><li>Projects memories into semantic, temporal, causal, and entity graphs; retrieval becomes guided cross-graph traversal, addressing the entanglement of relations in a single similarity space. <strong>The multiperspective anticipatory schemas in §5.3 ⑧ could adopt this four-axis decomposition.</strong><br><a href="https://aclanthology.org/2026.acl-long.1709/">ACL Anthology</a> · Code: Not found</li></ul>
+
+    <p><strong>Dynamic Long Context Reasoning over Compressed Memory via End-to-End RL (LycheeMemory)</strong> (2026-07, ACL 2026 Main Long)</p>
+    <ul><li>Compressor / Gate / Reasoner plus end-to-end RL; context extrapolates from 7K to <strong>1.75M</strong> tokens, with gains over MemAgent of <strong>2× lower peak memory and 6× faster inference</strong>. This represents the latest engineering progress on §4's external-reward branch.<br><a href="https://aclanthology.org/2026.acl-long.365/">ACL Anthology</a> · Code: Not found</li></ul>
+
+    <p><strong>FOREVER: Forgetting Curve-Inspired Memory Replay for Language Model Continual Learning</strong> (2026-07, ACL 2026 Main Long)</p>
+    <ul><li>Aligns replay with model time, defined by optimizer-update magnitude, rather than training steps, across 0.6B–13B models. <strong>The parametric-memory counterpart to MemoryBank's forgetting-curve idea</strong>, allowing the two lines to be read together for the first time.<br><a href="https://aclanthology.org/2026.acl-long.1144/">ACL Anthology</a></li></ul>
+
+    <p><strong>Scaling Self-Evolving Agents via Parametric Memory (TMEM)</strong> (2026-06, arXiv)</p>
+    <ul><li>Uses online LoRA weight updates <code>Δ_t</code> to carry memory, allowing an agent to change behavior within <em>a single episode</em>. It shifts from looking up past experience to learning from it, outperforming summary- and retrieval-based baselines on LoCoMo, LongMemEval-S, and CL-Bench. <strong>A particularly important work on the parametric-versus-external-memory axis.</strong><br><a href="https://arxiv.org/abs/2606.04536">arXiv:2606.04536</a></li></ul>
+
+    <p><strong>When Agents Remember Too Much: Memory Poisoning Attacks on LLM Agents</strong> (2026-07, arXiv)</p>
+    <ul><li>A systematic memory-poisoning attack framework. <strong>In connection with §5.3 ⑨, surprise-gated systems such as NEMORI may be easier to poison than heuristic systems</strong> because appearing surprising is easier than appearing important.<br><a href="https://arxiv.org/abs/2607.06595">arXiv:2607.06595</a></li></ul>
+
+    <p><strong>From Recall to Forgetting: Benchmarking Long-Term Memory for Personalized Agents</strong> (2026-04, arXiv)</p>
+    <ul><li>Unusually, it treats forgetting rather than recall as a primary evaluation target. <strong>LoCoMo and LongMemEval test only recall, structurally contributing to the small NEMORI–Full Context gap in Table D</strong>: Current benchmarks cannot reward correct forgetting.<br><a href="https://arxiv.org/abs/2604.20006">arXiv:2604.20006</a></li></ul>
+  </section>
+
+  <section class="card" style="border-color:var(--series-1)">
+    <h3>8 · One-Sentence Summary</h3>
+    <p style="font-size:17px">NEMORI's key contribution is not its LoCoMo score (+0.25% over Full Context), but evidence that <strong>80% of memory-system cost goes toward information the system already knows</strong>—alongside the LongMemEval Preference transition from 6.7 to 46.7 when 101K tokens are reduced to 4K: <strong>the enemy of long context is dilution, not length.</strong></p>
+  </section>
+
+  <footer>
+    <p>Daily Agent Memory Literature Review · Generated 2026-08-04 · Core paper: <a href="https://aclanthology.org/2026.acl-long.1607/">What Deserves Memory: Adaptive Memory Distillation for LLM Agents</a> (ACL 2026 Main, Long)</p>
+    <p>All performance figures cite their source tables; values marked as calculated in this report are derived from original paper numbers. Unverified links are left blank and labeled rather than filled in. The paper's code was not run.</p>
+  </footer>
+
+</div>
+
+<div class="tip" id="tip"></div>
+
+<script>
+(function () {
+  var root = document.documentElement, btn = document.getElementById('themeBtn');
+  btn.addEventListener('click', function () {
+    var d = root.getAttribute('data-theme') === 'dark';
+    root.setAttribute('data-theme', d ? 'light' : 'dark');
+    btn.textContent = d ? '☾ Dark' : '☀ Light';
+    draw();
+  });
+
+  var tip = document.getElementById('tip');
+  function cssv(n) { return getComputedStyle(root).getPropertyValue(n).trim(); }
+  function el(tag, attrs, text) {
+    var e = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  function bind(node, label) {
+    node.addEventListener('mousemove', function (ev) {
+      tip.textContent = label;
+      tip.style.left = (ev.clientX + 14) + 'px';
+      tip.style.top = (ev.clientY - 34) + 'px';
+      tip.style.opacity = 1;
+    });
+    node.addEventListener('mouseleave', function () { tip.style.opacity = 0; });
+  }
+
+  var CH1 = {
+    svg: 'chart1', W: 900, H: 380, max: 100, unit: '',
+    labels: ['Full\nContext', 'RAG-4096', 'LangMem', 'Zep', 'Mem0', 'A-MEM', 'MemoryOS', 'NEMORI'],
+    s1: { name: 'gpt-4o-mini', v: [72.3, 30.2, 51.3, 58.5, 61.3, 52.5, 54.5, 73.0] },
+    s2: { name: 'gpt-4.1-mini', v: [80.6, 32.9, 73.4, 61.6, 66.3, 61.4, 60.6, 80.8] },
+    refs: [{ y: 72.3, t: 'Full Context · gpt-4o-mini = 72.3' }, { y: 80.6, t: 'Full Context · gpt-4.1-mini = 80.6' }],
+    ylab: 'Mean LoCoMo LLM-judge score'
+  };
+  var CH2 = {
+    svg: 'chart2', W: 900, H: 360, max: 100, unit: '',
+    labels: ['Preference', 'Assistant', 'Temporal', 'Multi-\nsession', 'Knowledge\nUpdate', 'User'],
+    s1: { name: 'Full Context (101K tok)', v: [6.7, 89.3, 42.1, 38.3, 78.2, 78.6] },
+    s2: { name: 'NEMORI (3.7–4.8K tok)', v: [46.7, 83.9, 61.7, 51.1, 61.5, 88.6] },
+    refs: [],
+    ylab: 'LongMemEval-S score (gpt-4o-mini)'
+  };
+
+  function drawOne(C) {
+    var svg = document.getElementById(C.svg);
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    var W = C.W, H = C.H, L = 62, R = 18, T = 18, B = 62;
+    var pw = W - L - R, ph = H - T - B;
+    var grid = cssv('--grid'), muted = cssv('--muted'), base = cssv('--baseline');
+    var c1 = cssv('--series-1'), c2 = cssv('--series-2');
+
+    for (var g = 0; g <= 5; g++) {
+      var val = g * 20, y = T + ph - (val / C.max) * ph;
+      svg.appendChild(el('line', { x1: L, y1: y, x2: W - R, y2: y, stroke: grid, 'stroke-width': 1 }));
+      svg.appendChild(el('text', { x: L - 10, y: y + 4, 'text-anchor': 'end', 'font-size': 12, fill: muted }, String(val)));
+    }
+    svg.appendChild(el('text', { x: L - 46, y: T + ph / 2, 'text-anchor': 'middle', 'font-size': 12, fill: muted,
+      transform: 'rotate(-90 ' + (L - 46) + ' ' + (T + ph / 2) + ')' }, C.ylab));
+
+    C.refs.forEach(function (r, i) {
+      var y = T + ph - (r.y / C.max) * ph;
+      var ln = el('line', { x1: L, y1: y, x2: W - R, y2: y, stroke: base, 'stroke-width': 1.5, 'stroke-dasharray': '6 5' });
+      svg.appendChild(ln); bind(ln, r.t);
+    });
+
+    var n = C.labels.length, slot = pw / n, bw = Math.min(30, slot * 0.30), gap = 6;
+    C.labels.forEach(function (lab, i) {
+      var cx = L + slot * i + slot / 2;
+      [[C.s1, c1, -1], [C.s2, c2, 1]].forEach(function (p) {
+        var s = p[0], col = p[1], side = p[2];
+        var v = s.v[i], h = (v / C.max) * ph;
+        var x = side < 0 ? cx - gap / 2 - bw : cx + gap / 2;
+        var rect = el('rect', { x: x, y: T + ph - h, width: bw, height: Math.max(h, 1), fill: col, rx: 3 });
+        bind(rect, lab.replace(/\n/g, ' ') + ' · ' + s.name + ' = ' + v.toFixed(1));
+        svg.appendChild(rect);
+        svg.appendChild(el('text', { x: x + bw / 2, y: T + ph - h - 6, 'text-anchor': 'middle', 'font-size': 11,
+          fill: muted }, v.toFixed(1)));
+      });
+      var lines = lab.split('\n');
+      lines.forEach(function (ln2, li) {
+        svg.appendChild(el('text', { x: cx, y: T + ph + 20 + li * 14, 'text-anchor': 'middle', 'font-size': 12,
+          fill: muted }, ln2));
+      });
+    });
+    svg.appendChild(el('line', { x1: L, y1: T + ph, x2: W - R, y2: T + ph, stroke: base, 'stroke-width': 1.5 }));
+  }
+
+  function draw() { drawOne(CH1); drawOne(CH2); }
+  draw();
+})();
+</script>
+</body>
+</html>
